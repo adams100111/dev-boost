@@ -563,7 +563,31 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 - **`multimedia`** profile (exact from source) — `sudo dnf swap ffmpeg-free ffmpeg --allowerasing` + `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`. In `full`.
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
 - **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
-- **`gnome`** profile — declarative desktop setup: install `gnome-tweaks` + Extension Manager (`com.mattjakeman.ExtensionManager`), and apply GNOME settings via **`gsettings`/`dconf load`** (chezmoi-managed), NOT the GUI browser connector. Settings: `color-scheme=prefer-dark`, fractional scaling (`org.gnome.mutter experimental-features`), window button layout, center-new-windows, tap-to-click, accent color. Extensions installed via `gnome-extensions-cli`/`gext` + `gnome-extensions enable <uuid>`, **UUIDs pinned + authorship verified**. Functional set: AppIndicator (tray icons), Clipboard Indicator, Caffeine (inhibit sleep during long builds), GSConnect (Android). Opt-in aesthetics sub-bundle: Dash-to-Dock, Blur-my-Shell, Just-Perfection, V-Shell, Vitals / Astra-Monitor (system monitor), Coverflow-Alt-Tab (window switcher).
+- **`gnome`** profile — declarative desktop setup. **Extension tooling (note the
+  relocation):** the official Extensions manager app is now a **gnome-shell
+  subproject** — `org.gnome.Extensions` / `gnome-extensions-app` (ships with GNOME
+  / Flathub); it *manages* installed extensions but can't browse/install from
+  extensions.gnome.org. We therefore: (a) install **`org.gnome.Extensions`** (the
+  official manager) + optionally **Extension Manager** (`com.mattjakeman.ExtensionManager`,
+  third-party) for in-app *discovery*; and (b) for the unattended bootstrap, **install
+  + enable headlessly via the `gnome-extensions` CLI** (part of gnome-shell) +
+  `gext`/`gnome-extensions-cli` (download from EGO), then `dconf load` for settings —
+  the CLI path is unaffected by the app's relocation. Plus `gnome-tweaks` as the
+  manual escape hatch. GNOME settings applied via **`gsettings`/`dconf load`**
+  (chezmoi-managed): `color-scheme=prefer-dark`, fractional scaling
+  (`org.gnome.mutter experimental-features`), window button layout,
+  center-new-windows, tap-to-click, accent color. **UUIDs pinned + authorship
+  verified.**
+
+  **Curated extensions (best-UX, with UUIDs — verify at install time):**
+  *Functional (default in `gnome`):*
+  - **AppIndicator/KStatusNotifier** `appindicatorsupport@rgcjonas.gmail.com` — restores tray icons GNOME dropped (Discord, OBS, Slack, Bitwarden).
+  - **Clipboard Indicator** `clipboard-indicator@tudmotu.com` — clipboard history (verify author "Tudmotu").
+  - **Caffeine** `caffeine@patapon.info` — inhibit sleep/blank during long builds, runs, presentations.
+  - **GSConnect** `gsconnect@andyholmes.github.io` — Android integration (notifications, file transfer, SMS, shared clipboard).
+
+  *Aesthetics/productivity (opt-in sub-bundle):*
+  - **Dash to Dock** `dash-to-dock@micxgx.gmail.com` · **Blur My Shell** `blur-my-shell@aunetx` · **Just Perfection** `just-perfection-desktop@just-perfection` · **V-Shell** `vertical-workspaces@G-dH.github.com` · **Astra Monitor** `monitor@astraext.github.io` (modern system monitor; or **Vitals** `Vitals@CoreCoding.com`) · **Coverflow Alt-Tab** `CoverflowAltTab@palatis.blogspot.com`.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
 - **`editors`/`fresh`** — modern Rust terminal text-editor/IDE
