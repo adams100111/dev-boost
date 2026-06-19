@@ -604,9 +604,10 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   - **Clipboard Indicator** `clipboard-indicator@tudmotu.com` — clipboard history (verify author "Tudmotu").
   - **Caffeine** `caffeine@patapon.info` — inhibit sleep/blank during long builds, runs, presentations.
   - **GSConnect** `gsconnect@andyholmes.github.io` — Android integration (notifications, file transfer, SMS, shared clipboard).
+  - **Dash to Dock** `dash-to-dock@micxgx.gmail.com` — always-visible, configurable dock (promoted to default — primary launcher workflow).
 
   *Aesthetics/productivity (opt-in sub-bundle):*
-  - **Dash to Dock** `dash-to-dock@micxgx.gmail.com` · **Blur My Shell** `blur-my-shell@aunetx` · **Just Perfection** `just-perfection-desktop@just-perfection` · **V-Shell** `vertical-workspaces@G-dH.github.com` · **Astra Monitor** `monitor@astraext.github.io` (modern system monitor; or **Vitals** `Vitals@CoreCoding.com`) · **Coverflow Alt-Tab** `CoverflowAltTab@palatis.blogspot.com`.
+  - **Blur My Shell** `blur-my-shell@aunetx` · **Just Perfection** `just-perfection-desktop@just-perfection` · **V-Shell** `vertical-workspaces@G-dH.github.com` · **Astra Monitor** `monitor@astraext.github.io` (modern system monitor; or **Vitals** `Vitals@CoreCoding.com`) · **Coverflow Alt-Tab** `CoverflowAltTab@palatis.blogspot.com`.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
 - **`editors`/`fresh`** — modern Rust terminal text-editor/IDE
