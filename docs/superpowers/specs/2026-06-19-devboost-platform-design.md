@@ -166,8 +166,11 @@ react-native = ["node","jdk","android-sdk","android-cmdline","expo","watchman"]
 devops       = ["terraform","kubectl","helm","k9s"]
 data         = ["postgres-container","redis-container","dbeaver"]
 apps         = ["obsidian","obsidian-sync","bruno","bitwarden","flameshot","localsend"]
+system       = ["snapper","grub-btrfs","snapper-dnf-hook","btrfsmaintenance","fwupd",
+                "power-profiles-daemon","thermald","earlyoom","smartmontools",
+                "dnf-automatic-security","restic-backup"]
 full         = ["base","cli","shell","editors","laravel","dotnet","python","web",
-                "react-native","devops","data","apps"]
+                "react-native","devops","data","apps","system"]
 
 # opt-in, NOT in full:
 optional-editors = ["neovim","jetbrains-toolbox"]
@@ -210,7 +213,31 @@ Run examples:
   **JetBrains Toolbox** (PhpStorm for Laravel, Rider for .NET) shipped as
   `optional-editors`.
 
-### 6.3 Best-practice configs (data, in `dotfiles/` + `config/`)
+### 6.3 System resilience profile (`system`, in `full`)
+
+Fedora Workstation runs on Btrfs but ships **no** snapshot/rollback config — this
+profile adds the real recovery story so a bad update is a reboot, not a rebuild.
+
+- **snapper + grub-btrfs + dnf hook** — snapper manages Btrfs snapshots;
+  `python3-dnf-plugin-snapper` auto-snapshots before/after every dnf transaction;
+  grub-btrfs adds a **"Fedora snapshots" boot menu** to roll back into any
+  snapshot. Bad update ⇒ reboot ⇒ pick the pre-update snapshot.
+- **btrfsmaintenance** — scheduled scrub/balance timers.
+- **fwupd** — firmware (BIOS/SSD/peripherals) updates via LVFS.
+- **power-profiles-daemon** — laptop power/thermal profiles (GNOME-native, plays
+  well with NVIDIA Optimus). *TLP documented as the swap-in alternative.*
+- **thermald** — Intel thermal daemon for the i5 (prevents throttle/overheat).
+- **earlyoom** — out-of-memory protection so a runaway build can't hard-freeze
+  the machine.
+- **smartmontools** — `smartd` SSD/disk health monitoring + alerts.
+- **dnf-automatic-security** — auto-apply **security updates only** (OS CVEs
+  patched; pinned dev tools stay controlled). Safe because snapper provides the
+  rollback safety net.
+- **restic-backup** — real data backup (snapshots are *not* backups) with a
+  sample repo config + systemd timer; protects against disk death, not just bad
+  updates.
+
+### 6.4 Best-practice configs (data, in `dotfiles/` + `config/`)
 Pinned runtime versions; opinionated `.gitconfig` (delta, aliases, sane
 defaults); global `.gitignore`; `.editorconfig`; VS Code `settings.json` +
 extensions; hardened `~/.ssh/config`; `direnv`/`mise` integration; per-stack
@@ -289,6 +316,8 @@ engine.
 - `devboost verify --profile full` is fully green; **re-running install is a
   no-op** (idempotent).
 - Terminal/prompt/tmux match the imported `setup-scripts` experience.
+- A "Fedora snapshots" entry appears in GRUB; a bad update is recoverable by
+  rebooting into a pre-update snapshot (no rebuild needed).
 - Adding a new tool is a single new file; adding an OS is a single new key.
 
 ---
@@ -305,6 +334,8 @@ engine.
    + `templates/`.
 5. **apps + Obsidian sync** — obsidian, obsidian-sync, bruno, dbeaver, etc.
 6. **Lifecycle** — `update`/`export`/`diff`/`add`/`self-update`, `devboost.lock`.
-7. **hardware-nvidia** (port from setup-scripts) + **optional-editors**.
+7. **system** resilience (snapper + grub-btrfs + dnf hook, fwupd, power/thermal,
+   earlyoom, smartmontools, dnf-automatic-security, restic) +
+   **hardware-nvidia** (port from setup-scripts) + **optional-editors**.
 8. **Ventoy/Kickstart** + **Windows** PowerShell engine.
 9. **Docs** — architecture, recovery runbook, adding-a-module, maintenance.
