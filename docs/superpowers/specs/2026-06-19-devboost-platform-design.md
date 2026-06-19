@@ -237,7 +237,26 @@ profile adds the real recovery story so a bad update is a reboot, not a rebuild.
   sample repo config + systemd timer; protects against disk death, not just bad
   updates.
 
-### 6.4 Best-practice configs (data, in `dotfiles/` + `config/`)
+### 6.4 Runtime management (mise) & migration from existing tools
+
+**mise is the single runtime manager** for all language runtimes — Node, Bun,
+Java/JDK, Go, Rust, Terraform — pinned in `config/mise.toml` + `devboost.lock`.
+Exceptions, by design: **Python via `uv`** (best-in-class envs; mise defers to it)
+and **.NET via the rpm SDK** (system package, current LTS).
+
+The reference machine currently fragments this across **nvm** (node), **sdkman**
+(java), and standalone **bun**/**pnpm** installs. The `mise` module therefore
+ships an **idempotent migration step** (not a clean-slate assumption):
+
+- Read existing versions (nvm `node`, sdkman `java`) and pin the equivalents in
+  `config/mise.toml`, so nothing silently changes version.
+- Install them via mise; switch `pnpm` to mise/corepack-managed.
+- Comment out (don't delete) the nvm/sdkman init blocks in `~/.bashrc`, leaving a
+  clearly-marked migration note; the old dirs (`~/.nvm`, `~/.sdkman`) are left in
+  place for rollback and can be removed manually once trusted.
+- `devboost doctor` warns if both mise and nvm/sdkman are active (drift signal).
+
+### 6.5 Best-practice configs (data, in `dotfiles/` + `config/`)
 Pinned runtime versions; opinionated `.gitconfig` (delta, aliases, sane
 defaults); global `.gitignore`; `.editorconfig`; VS Code `settings.json` +
 extensions; hardened `~/.ssh/config`; `direnv`/`mise` integration; per-stack
@@ -322,6 +341,30 @@ engine.
 
 ---
 
+## 10b. Reconciliation with the reference machine (2026-06-19 audit)
+
+A live audit of the reference machine refined five assumptions; the modules
+account for these:
+
+1. **Power:** detect **tuned-ppd** (Fedora 41+) as already satisfying power
+   management — do not install `power-profiles-daemon` when tuned-ppd is present.
+2. **DB GUI:** the machine uses **dbgate (container)**, not DBeaver — DBeaver is
+   demoted to optional; ship a dbgate compose service in `templates/`.
+3. **Laravel:** **ddev-only** (no host php/composer); `laravel new` runs through
+   ddev. Host `php`/`composer` modules are opt-in.
+4. **Obsidian is a flatpak** → config/vault registration lives at
+   `~/.var/app/md.obsidian.Obsidian/`, **not** `~/.config/obsidian`. The
+   `obsidian-sync` module must target the flatpak path.
+5. **Runtimes** currently fragmented across nvm/sdkman/standalone — see §6.4
+   migration to mise.
+
+Audit also confirmed already-present, keep-as-is: LUKS+Btrfs, containerized DBs,
+ddev, uv, dotnet 10 LTS, ghostty, oh-my-posh+zoxide+fzf, JetBrainsMono Nerd Font,
+smartd/thermald/fstrim/firewalld. And urgent gaps the `system` profile closes:
+**earlyoom** (no OOM protection under live memory pressure), **snapper
+unconfigured + no grub-btrfs** (recovery tooling present but inert), **dotfiles
+unmanaged** (plain files, adopt chezmoi), **SSH RSA-only** (add ed25519).
+
 ## 11. Implementation phasing (for the plan)
 
 1. **Engine core** — `lib/*`, `bin/devboost`, TOML parse, OS detect, dep-sort,
@@ -329,7 +372,8 @@ engine.
 2. **Auth + secrets** — `secrets`/`ssh-setup` modules, `age` decrypt, PAT
    credential store, SSH key API upload.
 3. **base + cli + shell** modules + dotfiles import (tmux, oh-my-posh, ghostty,
-   bash, fonts) via chezmoi.
+   bash, fonts) via chezmoi. Includes the **mise module + nvm/sdkman→mise
+   migration** (§6.4) and adopting existing plain dotfiles into chezmoi.
 4. **Stacks** — laravel, dotnet, python, web, react-native, devops, data modules
    + `templates/`.
 5. **apps + Obsidian sync** — obsidian, obsidian-sync, bruno, dbeaver, etc.
