@@ -363,17 +363,83 @@ clients) — so a runaway build sacrifices a browser tab, not your toolchain.
 **ddev hygiene:** confirmed lightweight and correct; `dev down` powers it off
 when switching contexts. No per-project change required.
 
-## 9. Ventoy USB & Windows
+## 9. Ventoy USB, Kickstart & Windows
 
-- **Ventoy layout** (`ventoy/`): `ISO/` (Fedora, Ubuntu, Windows 11, SystemRescue,
-  Rescuezilla, GParted), `Bootstrap/` (offline copy of dev-boost + `secrets.age` +
-  `ks.cfg`), `Installers/` (offline VS Code/Git/etc.), `Backups/`, `Docs/`.
-- **Kickstart** `ks.cfg`: automated Fedora partition/install (using the BTRFS
-  subvolume layout in §10c — incl. the mandatory `var/lib/gdm` subvol,
-  `compress=zstd:1`, `/boot`-in-root, zram-only) + a `%post` / first-boot unit
-  that runs `install.sh` → the zero-touch path.
-- **Windows** (`windows/install.ps1`): winget-based PowerShell engine reading the
-  same module manifests; secondary support (thinner than Fedora).
+Three clean layers: **Ventoy** = delivery (multi-ISO boot + auto-install + file
+injection) · **Kickstart** = unattended OS install + the BTRFS layout · **dev-boost
+`install.sh`** = everything above the OS.
+
+### 9.1 The Ventoy model
+Ventoy is installed to the USB **once**; thereafter you **copy ISO files onto it**
+and it shows a boot menu to pick any of them — no per-ISO re-flashing. dev-boost
+ships a `ventoy/` directory that drives the USB build + config (not the engine; its
+own implementation plan later).
+
+```
+ventoy/
+├── make-usb.sh     # helper: ventoy -i <dev> + lay out the USB tree below
+├── ventoy.json     # Ventoy config (menu/auto-install/injection) → copied to USB:/ventoy/
+├── ks.cfg          # Fedora Kickstart (zero-touch); BTRFS layout from §10c
+└── Docs/recovery-runbook.md
+```
+
+### 9.2 Create the USB (once, any OS)
+```bash
+sudo ventoy -i /dev/sdX     # ⚠️ DESTRUCTIVE: wipes USB; creates VTOYEFI + exFAT "VTOY"
+# (-u update Ventoy in place without wiping; -I force reinstall)
+```
+make-usb.sh wraps this, refuses to run against a non-removable/system disk, and
+prompts to confirm the device.
+
+### 9.3 Populate it (just copy files — no flashing)
+```
+VTOY/                       # exFAT data partition, writable from any OS
+├── ISO/        Fedora-44.iso · Ubuntu.iso · Win11.iso · SystemRescue · Rescuezilla · GParted
+├── Bootstrap/  dev-boost/ (repo copy) · secrets.age (encrypted PAT) · ks.cfg · devboost.tar.gz
+├── Installers/ offline rpms/AppImages (vscode, fresh-editor, …) — for air-gapped recovery
+├── Backups/
+└── ventoy/ventoy.json
+```
+"Keep latest versions only": `make-usb.sh` can sync newest ISOs and prune old ones.
+
+### 9.4 Configure behavior — `ventoy/ventoy.json`
+```json
+{
+  "control": [ { "VTOY_MENU_TIMEOUT": "10" }, { "VTOY_DEFAULT_IMAGE": "/ISO/Fedora-44.iso" } ],
+  "auto_install": [
+    { "image": "/ISO/Fedora-44.iso", "template": "/Bootstrap/ks.cfg" }
+  ],
+  "injection": [
+    { "image": "/ISO/Fedora-44.iso", "archive": "/Bootstrap/devboost.tar.gz" }
+  ]
+}
+```
+- **`auto_install`** binds `ks.cfg` to the Fedora ISO → unattended install path.
+- **`injection`** unpacks `dev-boost/` + `secrets.age` into the live installer so
+  `%post` / first boot can run them with no network round-trip.
+
+### 9.5 Two boot paths (from the Ventoy menu)
+1. **Manual (primary, most reliable):** boot Fedora ISO → click through the GNOME
+   installer (~10 min) → reboot → `cd /run/media/$USER/VTOY/Bootstrap/dev-boost &&
+   ./install.sh` (or `curl … | bash`) → unattended in minutes.
+2. **Zero-touch (Kickstart):** pick the auto-install entry → Ventoy feeds `ks.cfg`
+   → Fedora installs unattended **with the §10c BTRFS subvolume layout** (root,
+   home, mandatory `var/lib/gdm`, `compress=zstd:1`, `/boot`-in-root, zram-only) →
+   a first-boot `systemd` oneshot runs `install.sh --profile full`, which decrypts
+   `secrets.age` and provisions everything → fully hands-off from USB.
+
+### 9.6 `ks.cfg` responsibilities
+- **Partitioning**: the exact §10c BTRFS subvolume set + ESP + `compress=zstd:1`.
+- **`%packages`**: minimal base (git, the python3/jq the engine needs).
+- **`%post`**: install + enable a `devboost-firstboot.service` oneshot that, on the
+  first networked boot, runs `install.sh --profile full --secrets /…/secrets.age`,
+  logs to `/var/log/devboost-firstboot.log`, then disables itself.
+
+### 9.7 Windows (secondary)
+`windows/install.ps1`: winget-based PowerShell engine reading the **same** TOML
+module manifests (a thinner path than Fedora; cross-OS `install.windows` keys).
+For zero-touch Windows, an `autounattend.xml` can be bound the same way via
+Ventoy's `auto_install`.
 
 ---
 
