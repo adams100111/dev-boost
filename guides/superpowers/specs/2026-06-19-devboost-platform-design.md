@@ -155,7 +155,7 @@ missing), legible (a failure names the module + the exact command that failed).
 base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
                 "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
-                "dust","duf","sd","yq","gh","tealdeer","tpm"]
+                "dust","duf","sd","yq","gh","tealdeer","tpm","claude-code"]
 shell        = ["oh-my-posh","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
 multimedia   = ["ffmpeg-full","codecs"]
@@ -176,7 +176,7 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 
 # opt-in, NOT in full:
 optional-editors = ["neovim","jetbrains-toolbox"]
-ai               = ["opencode","lm-studio"]
+ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
 hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","secureboot-mok","nvidia-resign-service"]
 hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
 ```
@@ -418,7 +418,12 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
 - **`apps`/`vlc`** — optional Flatpak media player.
-- **`ai`** profile (opt-in) — OpenCode (CLI agent), LM Studio (local LLM).
+- **`claude-code`** (in **`cli`**, default) — the user's **primary AI agent of
+  choice**; installed as an npm global via mise-managed node. Its config
+  (`~/.claude/`, settings, and the **oh-my-posh Claude statusline** from
+  `setup-scripts`, §6.1) is chezmoi-managed so it restores with the dotfiles.
+- **`ai`** profile (opt-in) — OpenCode and LM Studio (local/offline LLM) as
+  *secondary* tools; Claude Code is the default and lives in `cli`.
 - **`hardware-amd`** profile (opt-in) — mirror of `hardware-nvidia` for AMD GPUs (RPM Fusion Mesa freeworld VA/VDPAU).
 
 ### Kickstart BTRFS layout (foundation for snapshots — §9)
