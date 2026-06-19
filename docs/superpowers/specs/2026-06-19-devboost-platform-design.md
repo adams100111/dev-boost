@@ -156,7 +156,7 @@ base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","f
                 "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
                 "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
-shell        = ["oh-my-posh","bash-config","ghostty","nerd-fonts"]
+shell        = ["starship","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
 multimedia   = ["ffmpeg-full","codecs"]
 editors      = ["vscode","fresh"]               # GUI primary (vscode) + terminal editor (fresh); neovim/jetbrains opt-in
@@ -176,6 +176,7 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 
 # opt-in, NOT in full:
 optional-editors = ["neovim","jetbrains-toolbox"]
+oh-my-posh       = ["oh-my-posh"]             # opt-in alternative prompt; also installs the Claude Code statusline
 ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
 hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","secureboot-mok","nvidia-resign-service"]
 hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
@@ -195,8 +196,11 @@ Run examples:
 ### 6.1 Imported verbatim from `../setup-scripts` (existing curation)
 - **tmux** 3.6+ config (mouse, 50k scrollback, true-color/undercurl, 1-based
   index, vim pane nav, cwd-preserving splits, vi copy-mode, `wl-copy`).
-- **oh-my-posh** — catppuccin theme + transient prompt + the split **Claude Code
-  statusline** (left/right groups, `$COLUMNS` justify, `claude-statusline.sh`).
+- **oh-my-posh** config (catppuccin theme + transient prompt + the split **Claude
+  Code statusline**: left/right groups, `$COLUMNS` justify, `claude-statusline.sh`)
+  → preserved for the **opt-in `oh-my-posh` profile** (Starship is now the default
+  prompt — §6.2). The Claude statusline render is independent of the interactive
+  prompt, so it can be used alongside Starship if desired.
 - **JetBrainsMono / Meslo Nerd Font Mono** (+ the Ptyxis `Mono` font gotcha
   documented).
 - **NVIDIA + CUDA + Secure-Boot MOK signing + kernel-update resign service** →
@@ -206,9 +210,16 @@ Run examples:
 ### 6.2 New 2026 additions
 - **Terminal:** Ghostty as primary (shipped config: JetBrainsMono Nerd Font Mono,
   catppuccin-mocha, keybinds), **Ptyxis kept** as the GNOME fallback.
-- **Shell:** stay on **bash** (oh-my-posh already wired); add **atuin** (history),
-  **zoxide** (cd), **fzf**, **direnv** + curated aliases/functions in
-  `dotfiles/bash/`.
+- **Shell:** **bash** + **Starship** as the **default prompt** (2026 comparison:
+  faster, simpler TOML, larger ecosystem). dev-boost ships a **complete, opinionated
+  `starship.toml`** (chezmoi-managed) — **not** a default install: catppuccin-mocha
+  palette matching ghostty, Nerd-Font symbols, **transient prompt**, **`right_format`**
+  (cmd_duration + time), a tuned `[git_branch]`/`[git_status]`, and language/runtime
+  modules for the actual stacks (`nodejs`, `bun`, `python`, `php`, `dotnet`, `rust`,
+  `golang`, `docker_context`, `package`), plus `[directory]` truncation and a custom
+  `[character]`. **oh-my-posh** remains a fully-configured **opt-in** (`--profile
+  oh-my-posh`) carrying the Claude Code statusline. Plus **atuin** (history),
+  **zoxide** (cd), **fzf**, **direnv** + curated aliases/functions in `dotfiles/bash/`.
 - **Modern CLI:** eza, bat, delta, lazygit, lazydocker, btop, dust, duf, sd, yq,
   gh, tealdeer.
 - **GUI apps (flatpak):** Obsidian, Bruno, DBeaver, VS Code, Bitwarden,
@@ -434,8 +445,7 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   **pinned**, and `~/.cargo/bin`/`~/go/bin`/mise-shims added to PATH by the shell
   module. Adds the **C#/.NET** and **terraform** servers the source script omits.
   **Beyond LSP**, the chezmoi-managed `~/.config/fresh/config.json` also sets (per
-  context7 `/sinelaw/fresh`): `theme` (match ghostty/oh-my-posh — Tokyo Night /
-  catppuccin); **`formatter` per language + format-on-save** (prettier↔web,
+  context7 `/sinelaw/fresh`): `theme` (match ghostty/starship — catppuccin); **`formatter` per language + format-on-save** (prettier↔web,
   ruff↔python, **pint↔laravel**, **csharpier↔dotnet**, rustfmt, gofmt) — the
   complement to LSPs; `languages` file-associations + per-lang `tab_size`/
   `comment_prefix`/`wrap_column` (incl. Blade, csharp); `editor` defaults synced
@@ -459,7 +469,6 @@ RPM Fusion + `dnf-tune` run **before** the first big upgrade · reboot after GPU
 
 ### Deliberately rejected (kept dev-boost's choice)
 - **auto-cpufreq** → conflicts with TLP *and* tuned-ppd; keep **tuned-ppd**.
-- **Starship** → keep **oh-my-posh** (already wired with the Claude statusline).
 - **Timeshift / Pika Backup** → keep **snapper + restic** (native btrfs + scriptable).
 - **Etcher / Rufus / Fedora Media Writer** → keep **Ventoy + Kickstart**.
 
