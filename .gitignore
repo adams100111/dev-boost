@@ -1,0 +1,20 @@
+# Installer binaries / images — belong on the Ventoy USB, not in git
+*.rpm
+*.deb
+*.AppImage
+*.iso
+
+# Secrets — never commit (decrypted at bootstrap from the age file on USB)
+secrets.age
+*.env
+.env
+id_ed25519*
+id_rsa*
+
+# Generated lock/state may be committed deliberately; local caches are not
+*.bak
+*.bak.*
+
+# Editor/OS cruft
+.DS_Store
+.claude/settings.local.json
