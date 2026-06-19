@@ -433,6 +433,15 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   basedpyright↔python, **terraform-ls↔devops**, ts/eslint/tailwind↔web), versions
   **pinned**, and `~/.cargo/bin`/`~/go/bin`/mise-shims added to PATH by the shell
   module. Adds the **C#/.NET** and **terraform** servers the source script omits.
+  **Beyond LSP**, the chezmoi-managed `~/.config/fresh/config.json` also sets (per
+  context7 `/sinelaw/fresh`): `theme` (match ghostty/oh-my-posh — Tokyo Night /
+  catppuccin); **`formatter` per language + format-on-save** (prettier↔web,
+  ruff↔python, **pint↔laravel**, **csharpier↔dotnet**, rustfmt, gofmt) — the
+  complement to LSPs; `languages` file-associations + per-lang `tab_size`/
+  `comment_prefix`/`wrap_column` (incl. Blade, csharp); `editor` defaults synced
+  with `.editorconfig`; `keybindings` + optional **Vim mode**. Each `templates/*`
+  ships a **project-level `.fresh/config.json`** with stack-appropriate tab size +
+  formatter.
 - **`apps`/`vlc`** — optional Flatpak media player.
 - **`claude-code`** (in **`cli`**, default) — the user's **primary AI agent of
   choice**; installed as an npm global via mise-managed node. Its config
