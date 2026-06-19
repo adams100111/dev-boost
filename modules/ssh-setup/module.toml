@@ -1,0 +1,9 @@
+name        = "ssh-setup"
+category    = "base"
+description = "Generate ed25519 key and register it with GitHub (non-blocking)"
+requires    = ["secrets"]
+profiles    = ["base"]
+verify      = "[ -f \"$HOME/.ssh/id_ed25519.pub\" ] && [ -f \"${XDG_STATE_HOME:-$HOME/.local/state}/devboost/ssh-key-registered\" ]"
+
+[install]
+default = "bash \"$DEVBOOST_ROOT/modules/ssh-setup/install.sh\""
