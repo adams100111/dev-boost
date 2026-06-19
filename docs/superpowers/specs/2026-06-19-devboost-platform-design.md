@@ -72,8 +72,10 @@ dev-boost/                         # single version-controlled monorepo
 ```
 
 **Engine language:** pure Bash — the only interpreter guaranteed on a fresh
-Fedora. TOML is parsed by Python 3 `tomllib` (ships with Fedora 40+/Ubuntu
-24.04+); the first bootstrap step guarantees `python3` + `jq` + `age` exist.
+Fedora. TOML is parsed by the **system `python3`** via stdlib `tomllib` — on the
+target (**Fedora 44 ships Python 3.14**) that's what's used; `tomllib` only needs
+**≥3.11**, which is the documented floor for portability (Ubuntu 24.04 = 3.12),
+not a pin. The first bootstrap step guarantees `python3` + `jq` + `age` exist.
 Windows gets a parallel PowerShell engine reading the same `.toml` manifests.
 
 ---
@@ -93,6 +95,7 @@ category    = "javascript"
 description = "Bun runtime"
 requires    = ["mise"]                  # installed before this; drives topo-sort
 profiles    = ["web", "react-native"]   # optional self-tagging
+verify      = "bun --version"           # TOP-LEVEL key (sibling of [install]) — must come BEFORE [install]; success ⇒ already installed ⇒ skip
 
 [install]
 default = "mise use -g bun@latest"      # used for any OS lacking a specific key
@@ -100,8 +103,6 @@ fedora  = "…"                           # optional per-OS override
 ubuntu  = "…"
 macos   = "…"
 windows = "winget install Oven-sh.Bun"
-
-verify  = "bun --version"               # success ⇒ already installed ⇒ skip
 
 [update]
 default = "mise upgrade bun"            # optional; how this module updates itself
