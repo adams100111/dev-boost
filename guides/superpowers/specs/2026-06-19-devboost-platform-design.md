@@ -425,6 +425,14 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   listed it ambiguously as "Fresh (text editor)"; identified and **adopted as the
   default terminal editor** beside VS Code. Install via rpm/official installer
   (fallback `cargo install --locked fresh-editor`).
+  **Post-install LSP provisioning** (`modules/fresh/post.sh`, seeded from
+  `workstation-config/fresh-lsp.sh`): installs language servers and jq-merges the
+  `.lsp` block of `~/.config/fresh/config.json` (chezmoi owns the base config).
+  Adapted to dev-boost: runtimes sourced from **mise** (not dnf/rustup), LSP set
+  **scoped to selected profiles** (intelephense↔laravel, **csharp-ls↔dotnet**,
+  basedpyright↔python, **terraform-ls↔devops**, ts/eslint/tailwind↔web), versions
+  **pinned**, and `~/.cargo/bin`/`~/go/bin`/mise-shims added to PATH by the shell
+  module. Adds the **C#/.NET** and **terraform** servers the source script omits.
 - **`apps`/`vlc`** — optional Flatpak media player.
 - **`claude-code`** (in **`cli`**, default) — the user's **primary AI agent of
   choice**; installed as an npm global via mise-managed node. Its config
