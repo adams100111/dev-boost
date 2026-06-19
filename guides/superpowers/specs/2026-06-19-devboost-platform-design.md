@@ -159,7 +159,7 @@ cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydoc
 shell        = ["oh-my-posh","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
 multimedia   = ["ffmpeg-full","codecs"]
-editors      = ["vscode"]                       # neovim / jetbrains-toolbox are opt-in (below)
+editors      = ["vscode","fresh"]               # GUI primary (vscode) + terminal editor (fresh); neovim/jetbrains opt-in
 laravel      = ["docker","ddev","composer","php","laravel-installer"]
 dotnet       = ["dotnet-sdk","aspire"]
 python       = ["uv","python"]
@@ -417,6 +417,12 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 - **`gnome`** profile — declarative desktop setup: install `gnome-tweaks` + Extension Manager (`com.mattjakeman.ExtensionManager`), and apply GNOME settings via **`gsettings`/`dconf load`** (chezmoi-managed), NOT the GUI browser connector. Settings: `color-scheme=prefer-dark`, fractional scaling (`org.gnome.mutter experimental-features`), window button layout, center-new-windows, tap-to-click, accent color. Extensions installed via `gnome-extensions-cli`/`gext` + `gnome-extensions enable <uuid>`, **UUIDs pinned + authorship verified**. Functional set: AppIndicator (tray icons), Clipboard Indicator, Caffeine (inhibit sleep during long builds), GSConnect (Android). Opt-in aesthetics sub-bundle: Dash-to-Dock, Blur-my-Shell, Just-Perfection, V-Shell, Vitals.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
+- **`editors`/`fresh`** — modern Rust terminal text-editor/IDE
+  ([getfresh.dev](https://getfresh.dev), GPL-2.0): LSP, multi-cursor, magit-style
+  git, Vim mode, SSH remote editing, plugin system, multi-GB files. Guide 2
+  listed it ambiguously as "Fresh (text editor)"; identified and **adopted as the
+  default terminal editor** beside VS Code. Install via rpm/official installer
+  (fallback `cargo install --locked fresh-editor`).
 - **`apps`/`vlc`** — optional Flatpak media player.
 - **`claude-code`** (in **`cli`**, default) — the user's **primary AI agent of
   choice**; installed as an npm global via mise-managed node. Its config
