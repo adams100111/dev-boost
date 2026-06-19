@@ -561,6 +561,8 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 - **`base`/`rpmfusion`** — RPM Fusion **free + nonfree** as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Distinct from `fedora-third-party` (which doesn't add the full RPM Fusion repos). Idempotent, runs before any nonfree install. Exact (from source):
   `verify`: `rpm -q rpmfusion-free-release rpmfusion-nonfree-release`
   `install`: `sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm && sudo dnf upgrade --refresh -y`
+  AppStream post-step (rpmfusion.org/Configuration, was missing): `sudo dnf update @core -y && sudo dnf install -y rpmfusion-\*-appstream-data` so RPM Fusion apps show in GNOME Software.
+- **`base`/`flatpak`** — install flatpak + enable the **full (unfiltered) Flathub** remote (Fedora ships a *filtered* one): `flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo` (and unfilter Fedora's if present). `verify`: `flatpak remotes | grep -q flathub`.
 - **`base`/`fedora-third-party`** — automates GNOME's "Enable Third-Party
   Repositories" toggle: `verify = fedora-third-party query` (enabled?), `install =
   sudo fedora-third-party enable`. Enables Fedora's curated, opt-in third-party
@@ -577,6 +579,7 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
      - **AMD:** `sudo dnf swap mesa-va-drivers mesa-va-drivers-freeworld` + `mesa-vdpau-drivers → mesa-vdpau-drivers-freeworld` (also surfaced by `hardware-amd`)
      - **NVIDIA:** `sudo dnf install nvidia-vaapi-driver` (also in `hardware-nvidia`)
      `verify`: `vainfo` reports a working driver. On the reference machine VA-API runs on the **Intel iGPU** (`intel-media-driver`).
+  4. **OpenH264 / Cisco (Firefox H.264, was missing)** — `sudo dnf config-manager setopt fedora-cisco-openh264.enabled=1` then `sudo dnf install -y openh264 gstreamer1-plugin-openh264 mozilla-openh264`.
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
 - **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
 - **`gnome`** profile — declarative desktop setup. **Extension tooling (note the
