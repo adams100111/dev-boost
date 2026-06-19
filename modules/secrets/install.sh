@@ -76,7 +76,8 @@ chmod 600 "${creds_file}"
 # Remove any pre-existing github.com line (replace-not-append idempotency).
 # Use a temp file for atomic replacement so no partial writes occur.
 tmp_creds="$(mktemp)"
-grep -v '@github\.com' "${creds_file}" > "${tmp_creds}" || true
+trap 'rm -f "${tmp_creds}"' EXIT
+grep -v '@github\.com$' "${creds_file}" > "${tmp_creds}" || true
 printf '%s\n' "${new_line}" >> "${tmp_creds}"
 chmod 600 "${tmp_creds}"
 mv "${tmp_creds}" "${creds_file}"

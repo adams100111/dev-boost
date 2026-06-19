@@ -78,14 +78,18 @@ marker absent) unless the engine ran with `--strict`.
 
 **Decision**:
 - `secrets` verify: git identity set **and** `~/.git-credentials` contains a
-  `github.com` entry.
+  `github.com` entry — matched with the end-of-line–anchored pattern `@github\.com$`
+  so that a line like `https://u:t@github.company.com` is not wrongly treated as the
+  github.com credential.
 - `ssh-setup` verify: `~/.ssh/id_ed25519.pub` exists **and** a local marker
   `~/.local/state/devboost/ssh-key-registered` exists (written only after a confirmed
   registration / detected pre-existing remote key).
 
 **Rationale**: verify must be fast and offline-safe; the marker records the
 network-confirmed fact so a re-run skips without another API call, while the upload
-function still de-dupes remotely when it does run.
+function still de-dupes remotely when it does run. The anchored grep pattern prevents
+a false-positive match on `@github.company.com` or any other domain whose suffix
+happens to contain the substring `github.com`.
 
 ## D6. Testing strategy (no network, no real secrets)
 

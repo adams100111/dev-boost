@@ -290,7 +290,7 @@ _run_install_sh() {
 @test "secrets module: install writes ~/.git-credentials with github.com line" {
   _run_install_sh
   [ -f "${HOME}/.git-credentials" ]
-  grep -q '@github.com' "${HOME}/.git-credentials"
+  grep -q '@github\.com$' "${HOME}/.git-credentials"
 }
 
 @test "secrets module: ~/.git-credentials has mode 600" {
@@ -304,7 +304,7 @@ _run_install_sh() {
   _run_install_sh
   _run_install_sh
   local count
-  count="$(grep -c '@github.com' "${HOME}/.git-credentials")"
+  count="$(grep -c '@github\.com$' "${HOME}/.git-credentials")"
   [ "$count" -eq 1 ]
 }
 
@@ -355,16 +355,31 @@ _run_install_sh() {
 
 @test "secrets module: verify string returns success after install" {
   _run_install_sh
-  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github.com'"'"' "$HOME/.git-credentials"'
+  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github\.com$'"'"' "$HOME/.git-credentials"'
   run bash -c "export HOME='${HOME}'; ${vcmd}"
   [ "$status" -eq 0 ]
 }
 
 @test "secrets module: verify string fails before install" {
   # Fresh scratch HOME, nothing installed yet
-  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github.com'"'"' "$HOME/.git-credentials"'
+  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github\.com$'"'"' "$HOME/.git-credentials"'
   run bash -c "export HOME='${HOME}'; ${vcmd}"
   [ "$status" -ne 0 ]
+}
+
+@test "secrets module: install does not treat github.company.com as github.com credential" {
+  # Verify anchoring: a line with @github.company.com must NOT be matched/replaced as if
+  # it were a real github.com credential (it should survive a second install run).
+  _run_install_sh
+  # Inject a lookalike subdomain entry into the credentials file.
+  printf 'https://corp:tok@github.company.com\n' >> "${HOME}/.git-credentials"
+  _run_install_sh
+  # The subdomain line must still be present (install must not remove it).
+  grep -q '@github\.company\.com' "${HOME}/.git-credentials"
+  # And exactly one real github.com line (no duplication).
+  local count
+  count="$(grep -c '@github\.com$' "${HOME}/.git-credentials")"
+  [ "$count" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------
