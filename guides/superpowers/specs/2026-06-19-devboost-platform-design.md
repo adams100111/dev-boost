@@ -155,7 +155,7 @@ missing), legible (a failure names the module + the exact command that failed).
 base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
                 "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
-                "dust","duf","sd","yq","gh","tealdeer","tpm","claude-code"]
+                "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell        = ["oh-my-posh","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
 multimedia   = ["ffmpeg-full","codecs"]
@@ -164,7 +164,7 @@ laravel      = ["docker","ddev","composer","php","laravel-installer"]
 dotnet       = ["dotnet-sdk","aspire"]
 python       = ["uv","python"]
 web          = ["node","pnpm","bun"]
-react-native = ["node","jdk","android-sdk","android-cmdline","expo","watchman"]
+react-native = ["node","jdk","android-sdk","android-cmdline","android-tools","expo","watchman"]
 devops       = ["terraform","kubectl","helm","k9s"]
 data         = ["postgres-container","redis-container","dbeaver"]
 apps         = ["obsidian","obsidian-sync","bruno","bitwarden","flameshot","localsend","vlc"]
@@ -412,8 +412,10 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 
 ### New modules / profiles
 - **`base`/`rpmfusion`** — RPM Fusion free+nonfree enabled as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Idempotent, runs before any nonfree install.
-- **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf`: `max_parallel_downloads=10`, `fastestmirror=True`, `defaultyes=True`. Runs early so it speeds the bootstrap itself.
-- **`multimedia`** profile — `dnf swap ffmpeg-free ffmpeg --allowerasing` + `dnf group install multimedia` (codecs). In `full`.
+- **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf` (exact from source): `max_parallel_downloads=10`, `fastestmirror=true` (+ optional dev-boost addition `defaultyes=true`). Runs early so it speeds the bootstrap itself.
+- **`multimedia`** profile (exact from source) — `sudo dnf swap ffmpeg-free ffmpeg --allowerasing` + `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`. In `full`.
+- **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
+- **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
 - **`gnome`** profile — declarative desktop setup: install `gnome-tweaks` + Extension Manager (`com.mattjakeman.ExtensionManager`), and apply GNOME settings via **`gsettings`/`dconf load`** (chezmoi-managed), NOT the GUI browser connector. Settings: `color-scheme=prefer-dark`, fractional scaling (`org.gnome.mutter experimental-features`), window button layout, center-new-windows, tap-to-click, accent color. Extensions installed via `gnome-extensions-cli`/`gext` + `gnome-extensions enable <uuid>`, **UUIDs pinned + authorship verified**. Functional set: AppIndicator (tray icons), Clipboard Indicator, Caffeine (inhibit sleep during long builds), GSConnect (Android). Opt-in aesthetics sub-bundle: Dash-to-Dock, Blur-my-Shell, Just-Perfection, V-Shell, Vitals.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.

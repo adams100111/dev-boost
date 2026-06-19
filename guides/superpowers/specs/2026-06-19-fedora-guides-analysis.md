@@ -77,3 +77,69 @@ RPM Fusion + `dnf-tune` run **before** the first big upgrade · reboot after GPU
 - **Kickstart** += full BTRFS subvolume layout
 
 **Biggest gaps the guides exposed:** (1) the BTRFS *subvolume layout* that snapper/grub-btrfs depend on (we had the tools, not the layout); (2) a GNOME *desktop* layer (none existed before).
+
+---
+
+## Source-article deep-dive (kskroyal.com) — verbatim commands
+
+> ⚠️ The files in `guides/` are **transcripts**; they omitted exact commands.
+> The original article ([kskroyal.com/things-to-do-after-installing-fedora-44](https://kskroyal.com/things-to-do-after-installing-fedora-44/),
+> the source of `fedora-44-2.md`) was fetched and analyzed directly. Exact content below.
+> (`fedora-44-1/3/4` are *video* sources — only transcripts available; provide URLs to deep-dive those too.)
+
+**`/etc/dnf/dnf.conf` (exact):**
+```
+max_parallel_downloads=10
+fastestmirror=true
+```
+(Note: the transcript-agent *guessed* `defaultyes` — it is **not** in the source. dev-boost keeps `defaultyes=true` as an explicit optional addition.)
+
+**RPM Fusion (exact):**
+```bash
+sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf upgrade --refresh
+```
+
+**Multimedia codecs (exact):**
+```bash
+sudo dnf swap ffmpeg-free ffmpeg --allowerasing
+sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
+```
+
+**NVIDIA (exact):**
+```bash
+sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-cuda
+sudo modinfo -F version nvidia   # wait for build, then reboot
+```
+
+**Dev-tools bundle (exact):**
+```bash
+sudo dnf install make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar python3 python3-pip nodejs npm java-latest-openjdk-devel android-tools fuse-libs ripgrep
+```
+→ dev-boost adopts most into `build-tools`, **excludes** `python3/nodejs/npm/java` (managed by mise/uv), and routes `android-tools` to `react-native` too.
+
+**Fonts (exact):**
+```bash
+sudo dnf install fira-code-fonts jetbrains-mono-fonts liberation-fonts google-noto-sans-fonts google-noto-emoji-color-fonts cascadia-fonts-all
+```
+→ dev-boost keeps its **JetBrainsMono *Nerd Font*** (dnf `jetbrains-mono-fonts` lacks glyphs) but adds `google-noto-emoji-color-fonts` + `liberation-fonts` for rendering.
+
+**GNOME (exact):**
+```bash
+sudo dnf install gnome-tweaks
+flatpak install flathub com.mattjakeman.ExtensionManager
+```
+Extensions named in the article: **Astra Monitor, Blur My Shell, Clipboard Manager, V-Shell, Coverflow Alt-Tab**.
+
+**GUI apps named (Software):** OBS Studio, VS Code, GIMP, GParted, VLC, **AppImageLauncher**, **Fresh**.
+
+**Other tools (with dev-boost verdict):**
+```bash
+curl -sS https://starship.rs/install.sh | sh          # ❌ rejected — keep oh-my-posh
+sudo dnf install kde-connect                            # ↔ GSConnect used instead
+sudo dnf install timeshift                              # ❌ rejected — keep snapper + restic
+curl -fsSL https://opencode.ai/install | bash          # ➕ opt-in `ai`
+sudo dnf remove tlp tlp-rdw && <auto-cpufreq installer> # ❌ rejected — conflicts with tuned-ppd
+```
+
+**Spec deltas from this deep-dive:** `cli` += `fastfetch`; `react-native` += `android-tools`; `dnf-tune` + `multimedia` now carry the **exact** commands; `build-tools` bundle made explicit (mise/uv runtimes excluded); GIMP/AppImageLauncher/OBS/GParted noted as optional `apps`.
