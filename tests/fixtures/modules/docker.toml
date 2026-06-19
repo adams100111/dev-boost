@@ -1,0 +1,4 @@
+name = "docker"
+[install]
+default = "echo docker"
+verify = "true"

@@ -1,0 +1,4 @@
+name = "mise"
+[install]
+default = "echo mise"
+verify = "true"
