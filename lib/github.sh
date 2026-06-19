@@ -28,6 +28,9 @@ gh_api() {
   # the argument list (which is logged by the test stub and potentially by ps/audit).
   local auth_header_file
   auth_header_file="$(mktemp)"
+  # Defense-in-depth: restrict permissions so the file is only readable by the
+  # current user even if the system umask is permissive (e.g. 022).
+  chmod 600 "${auth_header_file}"
   # shellcheck disable=SC2064
   trap "rm -f '${auth_header_file}'" RETURN
   printf 'Authorization: Bearer %s\n' "${pat}" > "${auth_header_file}"

@@ -130,18 +130,44 @@ stubs_install_curl() {
 #!/usr/bin/env bash
 # Stub: curl — fake HTTP client for bats tests.
 # Logs every call; returns canned GitHub API responses.
+#
+# Auth-header file handling:
+#   When a -H/@<path> argument is encountered (a header sourced from a file),
+#   the stub reads the file and appends a REDACTED marker line to the call-log
+#   instead of the raw header value.  Format:
+#     AUTHHEADER present scheme=Bearer token_len=<N>
+#   where N is the byte-length of the token (PAT) portion.
+#   The actual token characters are NEVER written to the log.
 
 log_file="${STUB_CURL_LOG:-/tmp/stub-curl-calls.log}"
 # Append argument list to the call log (one line per invocation).
 printf '%s\n' "$*" >> "${log_file}"
 
-# Determine request method and URL from args.
+# Determine request method and URL from args; also detect and redact auth header files.
 method="GET"
 url=""
+prev=""
 for i in "$@"; do
   case "$prev" in
     -X|--request) method="$i" ;;
-    -H|--header)  : ;;  # skip header values
+    -H|--header)
+      # If the header value starts with '@', it references a file.
+      if [[ "$i" == @* ]]; then
+        header_file="${i#@}"
+        if [[ -r "${header_file}" ]]; then
+          header_content="$(cat "${header_file}")"
+          # Detect Authorization: Bearer <token> and record a redacted marker.
+          if [[ "${header_content}" =~ ^Authorization:[[:space:]]+Bearer[[:space:]]+(.+)$ ]]; then
+            token_val="${BASH_REMATCH[1]}"
+            # Strip trailing whitespace/newline from token value
+            token_val="${token_val%%[[:space:]]*}"
+            # Use printf to accurately count the length without any leaking
+            token_len="${#token_val}"
+            printf 'AUTHHEADER present scheme=Bearer token_len=%d\n' "${token_len}" >> "${log_file}"
+          fi
+        fi
+      fi
+      ;;
     *)
       # First non-flag, non-value argument that looks like a URL.
       if [[ "$i" == https://* && -z "$url" ]]; then

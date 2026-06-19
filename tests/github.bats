@@ -199,7 +199,7 @@ _write_pubkey() {
 # gh_upload_ssh_key — HTTP error path
 # ---------------------------------------------------------------------------
 
-@test "gh_upload_ssh_key: returns non-zero on HTTP error during upload" {
+@test "gh_upload_ssh_key: returns non-zero on HTTP error from API" {
   local pubkey="${BATS_TEST_TMPDIR}/id_ed25519.pub"
   _write_pubkey "${pubkey}"
 
@@ -275,6 +275,66 @@ _write_pubkey() {
     gh_add_deploy_key 'myowner' 'myrepo' '${pubkey}' 'devboost:testhost'
   " 2>&1
   [ "$status" -eq 0 ]
+  local post_count
+  post_count="$(grep -c 'POST' "${STUB_CURL_LOG}" || true)"
+  [ "${post_count}" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# Finding 1: verify Authorization header is correctly formed (hermetically).
+# The curl stub reads the @<path> header file and writes a REDACTED marker;
+# we assert the marker is present with a non-zero token_len and that the raw
+# PAT still never appears in the log.
+# ---------------------------------------------------------------------------
+
+@test "gh_api: auth header file contains well-formed Authorization: Bearer header (redacted in log)" {
+  local pat="ghp_TESTfaketoken0000000000000000000001"
+
+  bash -c "
+    export PATH='${PATH}'
+    export STUB_CURL_LOG='${STUB_CURL_LOG}'
+    export GITHUB_PAT='${pat}'
+    export GITHUB_API='https://api.github.com'
+    $(_src_gh)
+    gh_api GET /user/keys >/dev/null
+  " 2>&1
+
+  # (a) REDACTED marker must be present with a plausible non-zero token_len.
+  grep -qE '^AUTHHEADER present scheme=Bearer token_len=[1-9][0-9]*$' "${STUB_CURL_LOG}"
+  local token_len
+  token_len="$(grep -oE 'token_len=[0-9]+' "${STUB_CURL_LOG}" | head -1 | cut -d= -f2)"
+  [ "${token_len}" -gt 0 ]
+
+  # (b) The raw PAT must still not appear anywhere in the log.
+  stubs_assert_no_pat_in_log "${STUB_CURL_LOG}" "${pat}"
+}
+
+# ---------------------------------------------------------------------------
+# Finding 3: gh_add_deploy_key skips POST when key BODY already exists.
+# Mirrors the existing title-match dedup test for the "key body" path.
+# ---------------------------------------------------------------------------
+
+@test "gh_add_deploy_key: skips POST when key body already exists on repo" {
+  local pubkey="${BATS_TEST_TMPDIR}/id_ed25519.pub"
+  _write_pubkey "${pubkey}"
+  local key_body
+  key_body="$(cat "${pubkey}")"
+  key_body="${key_body%$'\n'}"
+
+  # Configure stub to return a deploy key with a different title but same key body.
+  stubs_with_duplicate_keys "devboost:otherhost" "${key_body}"
+
+  run bash -c "
+    export PATH='${PATH}'
+    export STUB_CURL_LOG='${STUB_CURL_LOG}'
+    export STUB_CURL_BODY='${STUB_CURL_BODY}'
+    export GITHUB_PAT='ghp_TESTfaketoken0000000000000000000001'
+    export GITHUB_API='https://api.github.com'
+    $(_src_gh)
+    gh_add_deploy_key 'myowner' 'myrepo' '${pubkey}' 'devboost:newhost'
+  " 2>&1
+  [ "$status" -eq 0 ]
+  # No POST should have been issued — key body match triggered early return.
   local post_count
   post_count="$(grep -c 'POST' "${STUB_CURL_LOG}" || true)"
   [ "${post_count}" -eq 0 ]
