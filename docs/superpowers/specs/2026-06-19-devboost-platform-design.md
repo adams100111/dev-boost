@@ -297,12 +297,60 @@ Boot sequence (all non-interactive):
    non-blocking, no pause; the machine ends with a real registered SSH key.
 5. Clone `dotfiles` → `chezmoi apply`; clone `notes-vault` → `~/Vault`; clone
    `templates`.
-6. **Obsidian:** register `~/Vault` in `~/.config/obsidian/obsidian.json` (opens
-   automatically); pre-seed `.obsidian` with the **Obsidian Git** plugin
-   (auto-pull on open, auto-commit/push on a timer) + a systemd user timer as a
-   belt-and-suspenders push; export `$VAULT_DIR` in bash rc + register an XDG
-   user dir so the OS knows where notes live.
+6. **Obsidian:** register `~/Vault` in the app config (flatpak path
+   `~/.var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json`; native
+   `~/.config/obsidian/obsidian.json`) so it opens automatically; set up the
+   GitHub sync per §7.1; export `$VAULT_DIR` in bash rc + register an XDG user dir.
 7. Run the selected profiles. Final timed summary.
+
+### 7.1 Obsidian ↔ GitHub sync (pull on open + secure daily push)
+
+**Repo & layout.** `notes-vault` clones to `~/Vault`. The vault's `.obsidian/`
+folder is **committed** to the repo, so the plugin set + its settings travel with
+the vault — dev-boost just pre-seeds them.
+
+**Auth — secure by default (best practice).** The vault remote uses **SSH with a
+dedicated, repo-scoped deploy key**, not the account-wide key or a plaintext PAT:
+- generate `~/.ssh/notes_vault_ed25519`; add it as a **deploy key (write)** on the
+  `notes-vault` repo via the GitHub API (using the bootstrap PAT, once);
+- `~/.ssh/config` alias isolates it:
+  ```
+  Host notes-vault.github.com
+    HostName github.com
+    IdentityFile ~/.ssh/notes_vault_ed25519
+    IdentitiesOnly yes
+  ```
+- remote set to `git@notes-vault.github.com:USER/notes-vault.git`.
+  → A leaked laptop never exposes more than the notes repo; no token expiry; no
+  prompts (key has no passphrase, or is unlocked via the gnome-keyring agent).
+
+**Pull on open + live sync (best DX) — Obsidian Git plugin** (`vinzent03/obsidian-git`),
+pre-seeded in `~/Vault/.obsidian/plugins/obsidian-git/data.json`:
+```jsonc
+{
+  "autoPullOnBoot": true,              // always start current
+  "autoBackupAfterFileChange": true,  // debounced commit-and-sync as you edit
+  "autoSaveInterval": 10,             // catch-all commit-and-sync every 10 min
+  "autoPullInterval": 10,
+  "pullBeforePush": true,
+  "syncMethod": "rebase",             // linear history for a single-user multi-device vault
+  "commitMessage": "vault backup: {{date}}",
+  "autoCommitMessage": "vault backup: {{date}}",
+  "commitDateFormat": "YYYY-MM-DD HH:mm:ss"
+}
+```
+and enabled in `~/Vault/.obsidian/community-plugins.json`.
+
+**Daily push backstop — the plugin only runs while Obsidian is open**, so a
+`systemd --user` timer guarantees a push even on days Obsidian never launches:
+- `devboost-vault-sync.service` (oneshot): `git -C ~/Vault add -A && git commit -m
+  "vault backup: $(date -Is)" --quiet || true; git pull --rebase --autostash &&
+  git push` — using the deploy key, logging to `~/.local/state/devboost/vault-sync.log`.
+- `devboost-vault-sync.timer`: `OnCalendar=daily` + `Persistent=true` (catches up
+  if the machine was off), plus an hourly variant is available.
+
+**Hygiene.** Vault `.gitignore` excludes `.obsidian/workspace*.json` (local UI
+state) and `.trash/` to avoid noisy commits and cross-device conflicts.
 
 ---
 
@@ -442,6 +490,27 @@ For zero-touch Windows, an `autounattend.xml` can be bound the same way via
 Ventoy's `auto_install`.
 
 ---
+
+## 9b. Documentation (top-level README + `docs/`)
+
+The repo's **`README.md`** is the front door — usage-first, not architecture:
+- **What it is** (one paragraph) + the 60-minute recovery promise.
+- **Quick start:** the one command (`./install.sh` / `curl … | bash`) and the
+  `--profile` selector, with a copy-paste block per common case.
+- **Profiles table:** every profile and what it installs (generated from
+  `profiles.toml` so it never drifts).
+- **Commands:** `devboost install/verify/list/doctor/update/export/diff/add` with
+  one-line descriptions + examples.
+- **Recovery walkthrough:** boot Ventoy → install Fedora (manual or zero-touch) →
+  run → restore (links to the runbook).
+- **Adding a tool / OS:** the 5-line module example + where it goes.
+- **Requirements & supported OS matrix.**
+
+Deeper docs live in **`docs/`**: `architecture.md`, `recovery-runbook.md`,
+`adding-a-module.md`, `maintenance.md` (quarterly cadence), `obsidian-sync.md`
+(§7.1), `ventoy.md` (§9). The engine's own `README` (plan #1, Task 10) is the
+seed; the full platform README is written as subsystems land. **`devboost list`
+output and the profiles table are generated**, so docs stay truthful.
 
 ## 10. Success criteria
 
