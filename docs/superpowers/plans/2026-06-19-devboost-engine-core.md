@@ -6,11 +6,11 @@
 
 **Architecture:** An "engine + data" design. Small Bash libs under `lib/` each own one responsibility (logging, OS detection, TOML parsing, module model, dep-sort, profile expansion, install loop). `bin/devboost` is a thin CLI dispatcher. TOML is parsed by shelling to Python 3 `tomllib` → JSON, then queried with `jq`. Modules are data, never touched by the engine.
 
-**Tech Stack:** Bash 5, Python 3.11+ (`tomllib`, stdlib only), `jq`, `bats-core` (tests).
+**Tech Stack:** Bash 5, system Python 3 (Fedora 44 = 3.14; `tomllib` needs ≥3.11, the portability floor — not a pin), `jq`, `bats-core` (tests).
 
 ## Global Constraints
 
-- Engine language is **pure Bash**; the only external runtime deps are **`python3` (≥3.11, stdlib `tomllib`)** and **`jq`**. No other interpreters.
+- Engine language is **pure Bash**; the only external runtime deps are the **system `python3`** (Fedora 44 = 3.14; stdlib `tomllib` floor ≥3.11 for portability) and **`jq`**. No other interpreters.
 - TOML → JSON conversion goes through `python3 -c 'import tomllib…'` — never a hand-rolled parser.
 - Cross-OS install resolution precedence is exactly **`<distro>` → `<os-family>` → `default`**; no match ⇒ module reported *unsupported*, never silently skipped.
 - Installs are **idempotent / verify-guarded**: a module whose `verify` command exits 0 is skipped unless `--force`.

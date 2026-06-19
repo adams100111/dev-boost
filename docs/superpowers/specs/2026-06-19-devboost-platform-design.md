@@ -72,8 +72,10 @@ dev-boost/                         # single version-controlled monorepo
 ```
 
 **Engine language:** pure Bash — the only interpreter guaranteed on a fresh
-Fedora. TOML is parsed by Python 3 `tomllib` (ships with Fedora 40+/Ubuntu
-24.04+); the first bootstrap step guarantees `python3` + `jq` + `age` exist.
+Fedora. TOML is parsed by the **system `python3`** via stdlib `tomllib` — on the
+target (**Fedora 44 ships Python 3.14**) that's what's used; `tomllib` only needs
+**≥3.11**, which is the documented floor for portability (Ubuntu 24.04 = 3.12),
+not a pin. The first bootstrap step guarantees `python3` + `jq` + `age` exist.
 Windows gets a parallel PowerShell engine reading the same `.toml` manifests.
 
 ---
@@ -93,6 +95,7 @@ category    = "javascript"
 description = "Bun runtime"
 requires    = ["mise"]                  # installed before this; drives topo-sort
 profiles    = ["web", "react-native"]   # optional self-tagging
+verify      = "bun --version"           # TOP-LEVEL key (sibling of [install]) — must come BEFORE [install]; success ⇒ already installed ⇒ skip
 
 [install]
 default = "mise use -g bun@latest"      # used for any OS lacking a specific key
@@ -100,8 +103,6 @@ fedora  = "…"                           # optional per-OS override
 ubuntu  = "…"
 macos   = "…"
 windows = "winget install Oven-sh.Bun"
-
-verify  = "bun --version"               # success ⇒ already installed ⇒ skip
 
 [update]
 default = "mise upgrade bun"            # optional; how this module updates itself
@@ -153,12 +154,12 @@ missing), legible (a failure names the module + the exact command that failed).
 # profiles.toml
 [profiles]
 base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
-                "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
+                "build-tools","flatpak","fedora-third-party","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
                 "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell        = ["starship","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
-multimedia   = ["ffmpeg-full","codecs"]
+multimedia   = ["ffmpeg-full","codecs","va-hwaccel"]
 editors      = ["vscode","fresh"]               # GUI primary (vscode) + terminal editor (fresh); neovim/jetbrains opt-in
 laravel      = ["docker","ddev","composer","php","laravel-installer"]
 dotnet       = ["dotnet-sdk","aspire"]
@@ -178,7 +179,7 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 optional-editors = ["neovim","jetbrains-toolbox"]
 oh-my-posh       = ["oh-my-posh"]             # opt-in alternative prompt; also installs the Claude Code statusline
 ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
-hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","secureboot-mok","nvidia-resign-service"]
+hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","nvidia-vaapi-driver","secureboot-mok","nvidia-resign-service"]
 hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
 ```
 
@@ -557,12 +558,52 @@ unmanaged** (plain files, adopt chezmoi), **SSH RSA-only** (add ed25519).
 Four Fedora-44 setup guides were analyzed; the following are folded in.
 
 ### New modules / profiles
-- **`base`/`rpmfusion`** — RPM Fusion free+nonfree enabled as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Idempotent, runs before any nonfree install.
+- **`base`/`rpmfusion`** — RPM Fusion **free + nonfree** as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Distinct from `fedora-third-party` (which doesn't add the full RPM Fusion repos). Idempotent, runs before any nonfree install. Exact (from source):
+  `verify`: `rpm -q rpmfusion-free-release rpmfusion-nonfree-release`
+  `install`: `sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm && sudo dnf upgrade --refresh -y`
+- **`base`/`fedora-third-party`** — automates GNOME's "Enable Third-Party
+  Repositories" toggle: `verify = fedora-third-party query` (enabled?), `install =
+  sudo fedora-third-party enable`. Enables Fedora's curated, opt-in third-party
+  repos (Google Chrome, PyCharm, Steam, NVIDIA, …). **Per-tool repos** (COPRs,
+  vendor repos) are NOT here — each lives inside its own module's `install`
+  (e.g. ghostty → `dnf copr enable scottames/ghostty`; docker → docker-ce repo;
+  ddev → ddev repo; vscode → MS repo), run immediately before the package install.
 - **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf` (exact from source): `max_parallel_downloads=10`, `fastestmirror=true` (+ optional dev-boost addition `defaultyes=true`). Runs early so it speeds the bootstrap itself.
-- **`multimedia`** profile (exact from source) — `sudo dnf swap ffmpeg-free ffmpeg --allowerasing` + `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`. In `full`.
+- **`multimedia`** profile (full RPM Fusion *Howto/Multimedia*, exact) — in `full`. Three layers:
+  1. **Full ffmpeg:** `sudo dnf swap ffmpeg-free ffmpeg --allowerasing`
+  2. **Codecs:** `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`
+  3. **`va-hwaccel` (Hardware-Accelerated Codec — GPU-aware, was missing):** install `libva-utils` (`vainfo` = the verify), then per detected GPU (`OS`/`lspci`):
+     - **Intel (recent, incl. UHD 630):** `sudo dnf install intel-media-driver` (older gens: `libva-intel-driver`)
+     - **AMD:** `sudo dnf swap mesa-va-drivers mesa-va-drivers-freeworld` + `mesa-vdpau-drivers → mesa-vdpau-drivers-freeworld` (also surfaced by `hardware-amd`)
+     - **NVIDIA:** `sudo dnf install nvidia-vaapi-driver` (also in `hardware-nvidia`)
+     `verify`: `vainfo` reports a working driver. On the reference machine VA-API runs on the **Intel iGPU** (`intel-media-driver`).
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
 - **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
-- **`gnome`** profile — declarative desktop setup: install `gnome-tweaks` + Extension Manager (`com.mattjakeman.ExtensionManager`), and apply GNOME settings via **`gsettings`/`dconf load`** (chezmoi-managed), NOT the GUI browser connector. Settings: `color-scheme=prefer-dark`, fractional scaling (`org.gnome.mutter experimental-features`), window button layout, center-new-windows, tap-to-click, accent color. Extensions installed via `gnome-extensions-cli`/`gext` + `gnome-extensions enable <uuid>`, **UUIDs pinned + authorship verified**. Functional set: AppIndicator (tray icons), Clipboard Indicator, Caffeine (inhibit sleep during long builds), GSConnect (Android). Opt-in aesthetics sub-bundle: Dash-to-Dock, Blur-my-Shell, Just-Perfection, V-Shell, Vitals / Astra-Monitor (system monitor), Coverflow-Alt-Tab (window switcher).
+- **`gnome`** profile — declarative desktop setup. **Extension tooling (note the
+  relocation):** the official Extensions manager app is now a **gnome-shell
+  subproject** — `org.gnome.Extensions` / `gnome-extensions-app` (ships with GNOME
+  / Flathub); it *manages* installed extensions but can't browse/install from
+  extensions.gnome.org. We therefore: (a) install **`org.gnome.Extensions`** (the
+  official manager) + optionally **Extension Manager** (`com.mattjakeman.ExtensionManager`,
+  third-party) for in-app *discovery*; and (b) for the unattended bootstrap, **install
+  + enable headlessly via the `gnome-extensions` CLI** (part of gnome-shell) +
+  `gext`/`gnome-extensions-cli` (download from EGO), then `dconf load` for settings —
+  the CLI path is unaffected by the app's relocation. Plus `gnome-tweaks` as the
+  manual escape hatch. GNOME settings applied via **`gsettings`/`dconf load`**
+  (chezmoi-managed): `color-scheme=prefer-dark`, fractional scaling
+  (`org.gnome.mutter experimental-features`), window button layout,
+  center-new-windows, tap-to-click, accent color. **UUIDs pinned + authorship
+  verified.**
+
+  **Curated extensions (best-UX, with UUIDs — verify at install time):**
+  *Functional (default in `gnome`):*
+  - **AppIndicator/KStatusNotifier** `appindicatorsupport@rgcjonas.gmail.com` — restores tray icons GNOME dropped (Discord, OBS, Slack, Bitwarden).
+  - **Clipboard Indicator** `clipboard-indicator@tudmotu.com` — clipboard history (verify author "Tudmotu").
+  - **Caffeine** `caffeine@patapon.info` — inhibit sleep/blank during long builds, runs, presentations.
+  - **GSConnect** `gsconnect@andyholmes.github.io` — Android integration (notifications, file transfer, SMS, shared clipboard).
+
+  *Aesthetics/productivity (opt-in sub-bundle):*
+  - **Dash to Dock** `dash-to-dock@micxgx.gmail.com` · **Blur My Shell** `blur-my-shell@aunetx` · **Just Perfection** `just-perfection-desktop@just-perfection` · **V-Shell** `vertical-workspaces@G-dH.github.com` · **Astra Monitor** `monitor@astraext.github.io` (modern system monitor; or **Vitals** `Vitals@CoreCoding.com`) · **Coverflow Alt-Tab** `CoverflowAltTab@palatis.blogspot.com`.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
 - **`editors`/`fresh`** — modern Rust terminal text-editor/IDE

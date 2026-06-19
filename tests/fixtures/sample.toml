@@ -1,0 +1,6 @@
+name = "bun"
+requires = ["mise"]
+[install]
+default = "mise use -g bun@latest"
+fedora = "dnf install -y bun"
+verify = "bun --version"

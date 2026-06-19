@@ -1,0 +1,6 @@
+name = "bun"
+requires = ["mise"]
+[install]
+default = "echo default bun"
+fedora = "echo fedora bun"
+verify = "false"
