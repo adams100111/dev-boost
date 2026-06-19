@@ -1,0 +1,4 @@
+[profiles]
+base = ["git", "mise"]
+web  = ["bun"]
+full = ["base", "web", "ddev"]
