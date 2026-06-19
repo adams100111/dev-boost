@@ -1,0 +1,5 @@
+name = "ddev"
+requires = ["docker"]
+[install]
+fedora = "echo fedora ddev"
+verify = "true"
