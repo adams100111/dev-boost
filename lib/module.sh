@@ -32,4 +32,4 @@ module_install_cmd() {
   printf '%s' "$cmd"
 }
 
-module_verify_cmd() { module_field "$1" '.install.verify // .verify'; }
+module_verify_cmd() { module_field "$1" '.verify // .install.verify'; }
