@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+DEVBOOST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export DEVBOOST_ROOT
+for l in log os toml module depsort profile install; do source "$DEVBOOST_ROOT/lib/$l.sh"; done
+os_detect
+
+_parse_profile() {  # echoes comma list → space-separated tokens; default full
+  local p="full"
+  while [[ $# -gt 0 ]]; do case "$1" in --profile) p="$2"; shift 2;; *) shift;; esac; done
+  echo "${p//,/ }"
+}
+
+usage() {
+  cat <<EOF
+Usage: devboost <command> [options]
+
+Commands:
+  install [--profile a,b] [--force] [--strict]   install modules (default: full)
+  verify  [--profile a,b]                         check what's installed
+  list    [--profile a,b]                         show resolved module order
+  doctor                                          environment preflight
+  help                                            this message
+EOF
+}
+
+cmd_list() {
+  local toks; toks="$(_parse_profile "$@")"
+  # shellcheck disable=SC2086
+  depsort $(profile_expand $toks)
+}
+
+cmd_install() {
+  local force="" strict="" toks
+  for a in "$@"; do case "$a" in --force) force=--force;; --strict) strict=--strict;; esac; done
+  toks="$(_parse_profile "$@")"
+  # shellcheck disable=SC2086
+  run_install $force $strict -- $(profile_expand $toks)
+}
+
+cmd_verify() {
+  local toks; toks="$(_parse_profile "$@")"; summary_reset
+  local n v
+  # shellcheck disable=SC2086
+  for n in $(depsort $(profile_expand $toks)); do
+    v="$(module_verify_cmd "$n")"
+    if [[ -n "$v" ]] && bash -c "$v" >/dev/null 2>&1; then summary_add ok "$n"
+    else summary_add fail "$n" "not verified"; fi
+  done
+  summary_print
+}
+
+cmd_doctor() {
+  local ok=0
+  command -v python3 >/dev/null || { log_error "python3 missing"; ok=1; }
+  command -v jq      >/dev/null || { log_error "jq missing"; ok=1; }
+  [[ "$OS_DISTRO" != unknown ]] || { log_error "OS not detected"; ok=1; }
+  [[ -d "${DEVBOOST_MODULES_DIR:-$DEVBOOST_ROOT/modules}" ]] || { log_error "modules dir missing"; ok=1; }
+  [[ "$ok" -eq 0 ]] && log_ok "doctor: environment OK ($OS_DISTRO/$OS_FAMILY $OS_ARCH)"
+  return "$ok"
+}
+
+main() {
+  local cmd="${1:-help}"; shift || true
+  case "$cmd" in
+    install) cmd_install "$@";;
+    verify)  cmd_verify "$@";;
+    list)    cmd_list "$@";;
+    doctor)  cmd_doctor "$@";;
+    help|-h|--help) usage;;
+    *) usage; exit 1;;
+  esac
+}
+main "$@"
