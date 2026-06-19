@@ -128,6 +128,25 @@ _marker_path() {
   [ "${count}" -eq 1 ]
 }
 
+@test "ssh-setup: no block duplication when pre-existing BEGIN marker has trailing whitespace" {
+  # Seed ~/.ssh/config with a BEGIN marker that has a trailing space — the old
+  # exact-match awk ($0 == begin) would miss it and append a second block.
+  # The regex-based awk must detect and replace it, leaving exactly one block.
+  mkdir -p "${HOME}/.ssh"
+  chmod 700 "${HOME}/.ssh"
+  # Write the config with a trailing space on the BEGIN marker line.
+  printf '# BEGIN devboost-managed \nHost *\n  IdentityFile ~/.ssh/id_rsa\n  IdentitiesOnly yes\n# END devboost-managed\n' \
+    > "${HOME}/.ssh/config"
+
+  # Run install twice — both runs must detect the existing block and replace it.
+  _run_install_sh
+  _run_install_sh
+
+  local count
+  count="$(grep -cE '^# BEGIN devboost-managed' "${HOME}/.ssh/config")"
+  [ "${count}" -eq 1 ]
+}
+
 # ---------------------------------------------------------------------------
 # T012 — State marker
 # ---------------------------------------------------------------------------
@@ -203,8 +222,9 @@ _marker_path() {
     export OS_ARCH='x86_64'
     bash '${DEVBOOST_ROOT}/modules/ssh-setup/install.sh'
   " 2>&1
-  # bats merges stderr into $output — warning message must appear
-  [[ "$output" == *"warn"* ]] || [[ "$output" == *"WARN"* ]] || [[ "$output" == *"ssh-setup"* ]]
+  # bats merges stderr into $output — log_warn emits '[!]'; must appear in output.
+  # This will fail if log_warn is regressed to log_info ('[*]').
+  [[ "$output" == *"[!]"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -270,7 +290,8 @@ _marker_path() {
 # ---------------------------------------------------------------------------
 
 @test "ssh-setup: PAT never appears in stdout or stderr" {
-  local pat="ghp_TESTfaketoken0000000000000000000001"
+  local pat
+  pat="$(jq -r .GITHUB_PAT "${DEVBOOST_ROOT}/tests/fixtures/secrets/bundle.json")"
   local output_log
   output_log="$(mktemp)"
 

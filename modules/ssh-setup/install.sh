@@ -41,15 +41,15 @@ Host *
   HashKnownHosts yes
 ${end_marker}"
 
-if grep -qF "${begin_marker}" "${ssh_config}" 2>/dev/null; then
+if grep -qE "^# BEGIN devboost-managed" "${ssh_config}" 2>/dev/null; then
   # Block already present — replace content between markers (idempotent).
   # Build a temp file with the block replaced.
   tmp_cfg="$(mktemp)"
   trap 'rm -f "${tmp_cfg}"' EXIT
 
-  awk -v begin="${begin_marker}" -v end="${end_marker}" -v block="${devboost_block}" '
-    $0 == begin { in_block=1; print block; next }
-    in_block && $0 == end { in_block=0; next }
+  awk -v block="${devboost_block}" '
+    /^# BEGIN devboost-managed/ { in_block=1; print block; next }
+    in_block && /^# END devboost-managed/ { in_block=0; next }
     in_block { next }
     { print }
   ' "${ssh_config}" > "${tmp_cfg}"
