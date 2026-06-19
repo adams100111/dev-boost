@@ -244,3 +244,172 @@ _src() {
   [ ! -f "${marker}" ]
   rm -f "${marker}"
 }
+
+# ---------------------------------------------------------------------------
+# T006: modules/secrets/install.sh — install behavior tests
+# ---------------------------------------------------------------------------
+
+# Helper: run install.sh in a subshell with all required env exported.
+_run_install_sh() {
+  bash \
+    -c "
+      export HOME='${HOME}'
+      export PATH='${PATH}'
+      export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+      export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+      export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+      export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+      export OS_DISTRO='fedora'
+      export OS_FAMILY='fedora'
+      export OS_ARCH='x86_64'
+      bash '${DEVBOOST_ROOT}/modules/secrets/install.sh'
+    " 2>&1
+}
+
+@test "secrets module: install sets git user.name from bundle" {
+  _run_install_sh
+  run git config --global user.name
+  [ "$status" -eq 0 ]
+  [ "$output" = "devboost-test-user" ]
+}
+
+@test "secrets module: install sets git user.email from bundle" {
+  _run_install_sh
+  run git config --global user.email
+  [ "$status" -eq 0 ]
+  [ "$output" = "devboost-test@example.com" ]
+}
+
+@test "secrets module: install sets credential.helper to store" {
+  _run_install_sh
+  run git config --global credential.helper
+  [ "$status" -eq 0 ]
+  [ "$output" = "store" ]
+}
+
+@test "secrets module: install writes ~/.git-credentials with github.com line" {
+  _run_install_sh
+  [ -f "${HOME}/.git-credentials" ]
+  grep -q '@github.com' "${HOME}/.git-credentials"
+}
+
+@test "secrets module: ~/.git-credentials has mode 600" {
+  _run_install_sh
+  local perms
+  perms="$(stat -c '%a' "${HOME}/.git-credentials")"
+  [ "$perms" = "600" ]
+}
+
+@test "secrets module: second run does NOT duplicate the github.com line" {
+  _run_install_sh
+  _run_install_sh
+  local count
+  count="$(grep -c '@github.com' "${HOME}/.git-credentials")"
+  [ "$count" -eq 1 ]
+}
+
+@test "secrets module: missing bundle field causes failure naming the field" {
+  # Create a bundle missing GITHUB_PAT
+  local bad_bundle
+  bad_bundle="$(mktemp)"
+  printf '{"GIT_USER":"alice","GIT_EMAIL":"alice@example.com"}\n' > "${bad_bundle}"
+
+  run bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_SECRETS='${bad_bundle}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    export OS_DISTRO='fedora'
+    export OS_FAMILY='fedora'
+    export OS_ARCH='x86_64'
+    bash '${DEVBOOST_ROOT}/modules/secrets/install.sh'
+  " 2>&1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"GITHUB_PAT"* ]]
+  rm -f "${bad_bundle}"
+}
+
+@test "secrets module: PAT never appears in stdout or stderr" {
+  local pat="ghp_TESTfaketoken0000000000000000000001"
+  local output_log
+  output_log="$(mktemp)"
+
+  bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    export OS_DISTRO='fedora'
+    export OS_FAMILY='fedora'
+    export OS_ARCH='x86_64'
+    bash '${DEVBOOST_ROOT}/modules/secrets/install.sh'
+  " >"${output_log}" 2>&1
+
+  stubs_assert_no_pat_in_log "${output_log}" "${pat}"
+  rm -f "${output_log}"
+}
+
+@test "secrets module: verify string returns success after install" {
+  _run_install_sh
+  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github.com'"'"' "$HOME/.git-credentials"'
+  run bash -c "export HOME='${HOME}'; ${vcmd}"
+  [ "$status" -eq 0 ]
+}
+
+@test "secrets module: verify string fails before install" {
+  # Fresh scratch HOME, nothing installed yet
+  local vcmd='git config --global user.email >/dev/null 2>&1 && [ -f "$HOME/.git-credentials" ] && grep -q '"'"'@github.com'"'"' "$HOME/.git-credentials"'
+  run bash -c "export HOME='${HOME}'; ${vcmd}"
+  [ "$status" -ne 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# T009: end-to-end idempotency via the real engine
+# ---------------------------------------------------------------------------
+
+@test "engine e2e: first run installs secrets module (ok status)" {
+  run bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_MODULES_DIR='${DEVBOOST_ROOT}/modules'
+    export DEVBOOST_PROFILES='${DEVBOOST_ROOT}/tests/fixtures/secrets/profiles.toml'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    '${DEVBOOST_ROOT}/bin/devboost' install secrets
+  " 2>&1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"secrets"* ]]
+}
+
+@test "engine e2e: second run skips secrets module (verify-guard)" {
+  # First run: install
+  bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_MODULES_DIR='${DEVBOOST_ROOT}/modules'
+    export DEVBOOST_PROFILES='${DEVBOOST_ROOT}/tests/fixtures/secrets/profiles.toml'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    '${DEVBOOST_ROOT}/bin/devboost' install secrets
+  " 2>&1
+
+  # Second run: should skip
+  run bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_MODULES_DIR='${DEVBOOST_ROOT}/modules'
+    export DEVBOOST_PROFILES='${DEVBOOST_ROOT}/tests/fixtures/secrets/profiles.toml'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    '${DEVBOOST_ROOT}/bin/devboost' install secrets
+  " 2>&1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already installed"* ]]
+}
