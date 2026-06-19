@@ -154,7 +154,7 @@ missing), legible (a failure names the module + the exact command that failed).
 # profiles.toml
 [profiles]
 base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
-                "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
+                "build-tools","flatpak","fedora-third-party","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
                 "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell        = ["starship","bash-config","ghostty","nerd-fonts"]
@@ -559,6 +559,13 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
 
 ### New modules / profiles
 - **`base`/`rpmfusion`** — RPM Fusion free+nonfree enabled as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Idempotent, runs before any nonfree install.
+- **`base`/`fedora-third-party`** — automates GNOME's "Enable Third-Party
+  Repositories" toggle: `verify = fedora-third-party query` (enabled?), `install =
+  sudo fedora-third-party enable`. Enables Fedora's curated, opt-in third-party
+  repos (Google Chrome, PyCharm, Steam, NVIDIA, …). **Per-tool repos** (COPRs,
+  vendor repos) are NOT here — each lives inside its own module's `install`
+  (e.g. ghostty → `dnf copr enable scottames/ghostty`; docker → docker-ce repo;
+  ddev → ddev repo; vscode → MS repo), run immediately before the package install.
 - **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf` (exact from source): `max_parallel_downloads=10`, `fastestmirror=true` (+ optional dev-boost addition `defaultyes=true`). Runs early so it speeds the bootstrap itself.
 - **`multimedia`** profile (exact from source) — `sudo dnf swap ffmpeg-free ffmpeg --allowerasing` + `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`. In `full`.
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
