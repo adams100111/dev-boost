@@ -44,7 +44,7 @@
 | Fira Code Nerd Font | 2 | Terminal font | ✅ covered by `shell/nerd-fonts` (we use JetBrainsMono) |
 | Steam | 3 | Gaming | ❌ out of scope (dev platform) |
 | Balena Etcher / Rufus / Fedora Media Writer | 3 | ISO writers | ❌ superseded by Ventoy + Kickstart |
-| Starship | 2 | Shell prompt | ❌ rejected — keep oh-my-posh |
+| Starship | 2 | Shell prompt | ✅ **adopted as default prompt** (2026 re-eval) with a complete custom config; oh-my-posh demoted to opt-in (keeps Claude statusline) |
 | auto-cpufreq | 2 | CPU scaling | ❌ rejected — conflicts with TLP **and** tuned-ppd |
 | Timeshift / Pika Backup | 2 | Snapshots / file backup | ❌ rejected — keep snapper + restic |
 | KDE Connect | 2 | Phone integration | ↔ overlaps localsend; GSConnect added in `gnome` instead |
@@ -135,7 +135,7 @@ Extensions named in the article: **Astra Monitor, Blur My Shell, Clipboard Manag
 
 **Other tools (with dev-boost verdict):**
 ```bash
-curl -sS https://starship.rs/install.sh | sh          # ❌ rejected — keep oh-my-posh
+curl -sS https://starship.rs/install.sh | sh          # ✅ now DEFAULT prompt (complete custom config); oh-my-posh = opt-in
 sudo dnf install kde-connect                            # ↔ GSConnect used instead
 sudo dnf install timeshift                              # ❌ rejected — keep snapper + restic
 curl -fsSL https://opencode.ai/install | bash          # ➕ opt-in `ai`
