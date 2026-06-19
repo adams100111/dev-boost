@@ -313,6 +313,41 @@ engine.
 
 ---
 
+## 8b. Dev-environment lifecycle & resource hygiene
+
+Audit finding (2026-06-19): the machine's memory starvation was **not** caused by
+containers (all containers combined = ~0.5 GB) but by desktop apps + a **stale
+duplicate Aspire AppHost** left running 10h alongside a fresh one (each spinning
+its own postgres/redis/rustfs). Root cause: session-lifetime containers recreated
+per AppHost instance, and no cleanup of orphaned/duplicate dev orchestrations.
+This component addresses that class of problem.
+
+**`devboost dev` subcommands:**
+
+| Verb | Behavior |
+|------|----------|
+| `devboost dev status` | List running Aspire AppHosts (with age + project path), ddev projects, per-container RAM, and swap pressure. Warns on **duplicate live AppHosts of the same project**. |
+| `devboost dev gc` | Remove DCP **session** containers (`com.microsoft.developer.usvc-dev.persistent=false`) whose creator PID is dead (precise orphan GC), prune exited containers, and report duplicate live AppHosts. |
+| `devboost dev down` | End-of-day reclaim: `ddev poweroff` + stop stale AppHosts + `docker container prune` + `dev gc`. |
+
+**Automation:** an `aspire-gc` **systemd user timer** runs `dev gc` hourly so
+OOM-driven orphans never accumulate.
+
+**Project-level defaults (the real fix):** Aspire's `ContainerLifetime.Persistent`
+gives a deterministic container name that is **reused** across runs/instances
+(instead of recreated), eliminating duplication and speeding startup. The
+`templates/dotnet` AppHost ships with **all shared infra (postgres, redis,
+object-storage) set to `Persistent` + `WithDataVolume()`** by default. Existing
+repos are remediated to match (see `docs/aspire-persistent-fix.md`).
+
+**OOM protection (in `system` profile):** `earlyoom` is configured to **protect**
+dev processes (`dockerd`, `dotnet`, `dcp*`, `sshd`, `code`, `gnome-shell`) and
+**prefer killing** memory-hog desktop apps (browsers, QtWebEngine/Electron chat
+clients) — so a runaway build sacrifices a browser tab, not your toolchain.
+
+**ddev hygiene:** confirmed lightweight and correct; `dev down` powers it off
+when switching contexts. No per-project change required.
+
 ## 9. Ventoy USB & Windows
 
 - **Ventoy layout** (`ventoy/`): `ISO/` (Fedora, Ubuntu, Windows 11, SystemRescue,
