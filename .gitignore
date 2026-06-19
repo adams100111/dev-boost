@@ -18,3 +18,6 @@ id_rsa*
 # Editor/OS cruft
 .DS_Store
 .claude/settings.local.json
+
+# subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/
