@@ -153,10 +153,12 @@ missing), legible (a failure names the module + the exact command that failed).
 # profiles.toml
 [profiles]
 base         = ["coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
-                "build-tools","flatpak","mise","chezmoi","docker","secrets","ssh-setup"]
+                "build-tools","flatpak","rpmfusion","dnf-tune","mise","chezmoi","docker","secrets","ssh-setup"]
 cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydocker","btop",
                 "dust","duf","sd","yq","gh","tealdeer","tpm"]
 shell        = ["oh-my-posh","bash-config","ghostty","nerd-fonts"]
+gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
+multimedia   = ["ffmpeg-full","codecs"]
 editors      = ["vscode"]                       # neovim / jetbrains-toolbox are opt-in (below)
 laravel      = ["docker","ddev","composer","php","laravel-installer"]
 dotnet       = ["dotnet-sdk","aspire"]
@@ -165,16 +167,18 @@ web          = ["node","pnpm","bun"]
 react-native = ["node","jdk","android-sdk","android-cmdline","expo","watchman"]
 devops       = ["terraform","kubectl","helm","k9s"]
 data         = ["postgres-container","redis-container","dbeaver"]
-apps         = ["obsidian","obsidian-sync","bruno","bitwarden","flameshot","localsend"]
-system       = ["snapper","grub-btrfs","snapper-dnf-hook","btrfsmaintenance","fwupd",
+apps         = ["obsidian","obsidian-sync","bruno","bitwarden","flameshot","localsend","vlc"]
+system       = ["snapper","grub-btrfs","snapper-dnf-hook","btrfs-assistant","btrfsmaintenance","fwupd",
                 "power-profiles-daemon","thermald","earlyoom","smartmontools",
                 "dnf-automatic-security","restic-backup"]
-full         = ["base","cli","shell","editors","laravel","dotnet","python","web",
+full         = ["base","cli","shell","gnome","multimedia","editors","laravel","dotnet","python","web",
                 "react-native","devops","data","apps","system"]
 
 # opt-in, NOT in full:
 optional-editors = ["neovim","jetbrains-toolbox"]
+ai               = ["opencode","lm-studio"]
 hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","secureboot-mok","nvidia-resign-service"]
+hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
 ```
 
 Run examples:
@@ -353,8 +357,10 @@ when switching contexts. No per-project change required.
 - **Ventoy layout** (`ventoy/`): `ISO/` (Fedora, Ubuntu, Windows 11, SystemRescue,
   Rescuezilla, GParted), `Bootstrap/` (offline copy of dev-boost + `secrets.age` +
   `ks.cfg`), `Installers/` (offline VS Code/Git/etc.), `Backups/`, `Docs/`.
-- **Kickstart** `ks.cfg`: automated Fedora partition/install + a `%post` /
-  first-boot unit that runs `install.sh` → the zero-touch path.
+- **Kickstart** `ks.cfg`: automated Fedora partition/install (using the BTRFS
+  subvolume layout in §10c — incl. the mandatory `var/lib/gdm` subvol,
+  `compress=zstd:1`, `/boot`-in-root, zram-only) + a `%post` / first-boot unit
+  that runs `install.sh` → the zero-touch path.
 - **Windows** (`windows/install.ps1`): winget-based PowerShell engine reading the
   same module manifests; secondary support (thinner than Fedora).
 
@@ -400,15 +406,44 @@ smartd/thermald/fstrim/firewalld. And urgent gaps the `system` profile closes:
 unconfigured + no grub-btrfs** (recovery tooling present but inert), **dotfiles
 unmanaged** (plain files, adopt chezmoi), **SSH RSA-only** (add ed25519).
 
+## 10c. Adopted from the Fedora-44 guides (`guides/fedora-44-*.md`)
+
+Four Fedora-44 setup guides were analyzed; the following are folded in.
+
+### New modules / profiles
+- **`base`/`rpmfusion`** — RPM Fusion free+nonfree enabled as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Idempotent, runs before any nonfree install.
+- **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf`: `max_parallel_downloads=10`, `fastestmirror=True`, `defaultyes=True`. Runs early so it speeds the bootstrap itself.
+- **`multimedia`** profile — `dnf swap ffmpeg-free ffmpeg --allowerasing` + `dnf group install multimedia` (codecs). In `full`.
+- **`gnome`** profile — declarative desktop setup: install `gnome-tweaks` + Extension Manager (`com.mattjakeman.ExtensionManager`), and apply GNOME settings via **`gsettings`/`dconf load`** (chezmoi-managed), NOT the GUI browser connector. Settings: `color-scheme=prefer-dark`, fractional scaling (`org.gnome.mutter experimental-features`), window button layout, center-new-windows, tap-to-click, accent color. Extensions installed via `gnome-extensions-cli`/`gext` + `gnome-extensions enable <uuid>`, **UUIDs pinned + authorship verified**. Functional set: AppIndicator (tray icons), Clipboard Indicator, Caffeine (inhibit sleep during long builds), GSConnect (Android). Opt-in aesthetics sub-bundle: Dash-to-Dock, Blur-my-Shell, Just-Perfection, V-Shell, Vitals.
+- **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
+- **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
+- **`apps`/`vlc`** — optional Flatpak media player.
+- **`ai`** profile (opt-in) — OpenCode (CLI agent), LM Studio (local LLM).
+- **`hardware-amd`** profile (opt-in) — mirror of `hardware-nvidia` for AMD GPUs (RPM Fusion Mesa freeworld VA/VDPAU).
+
+### Kickstart BTRFS layout (foundation for snapshots — §9)
+The snapshot/rollback story depends on a subvolume layout the original spec omitted. Kickstart provisions: `root → /`, `home → /home` (both snapper-managed); **`var/lib/gdm` writable subvolume (mandatory — without it, booting a read-only snapshot fails at login)**; non-snapshotted high-churn subvols `opt`, `var/cache`, `var/log`, `var/spool`, `var/tmp`, `var/lib/containers`, `var/lib/flatpak`, `var/lib/libvirt`. `/boot` stays **inside root** (atomic kernel+initramfs snapshots); **no swap partition** (zram only); add **`compress=zstd:1`** to all btrfs fstab entries (custom layouts lack it by default).
+
+### Gotchas encoded in docs
+RPM Fusion + `dnf-tune` run **before** the first big upgrade · reboot after GPU-driver install · `/var/lib/gdm` subvol is mandatory for snapshot boot · **Flatpak apps bypass snapper** (live on the non-snapshotted `flatpak` subvol — excluded from rollback) · pin GNOME extension UUIDs (dconf state is fragile across GNOME versions).
+
+### Deliberately rejected (kept dev-boost's choice)
+- **auto-cpufreq** → conflicts with TLP *and* tuned-ppd; keep **tuned-ppd**.
+- **Starship** → keep **oh-my-posh** (already wired with the Claude statusline).
+- **Timeshift / Pika Backup** → keep **snapper + restic** (native btrfs + scriptable).
+- **Etcher / Rufus / Fedora Media Writer** → keep **Ventoy + Kickstart**.
+
 ## 11. Implementation phasing (for the plan)
 
 1. **Engine core** — `lib/*`, `bin/devboost`, TOML parse, OS detect, dep-sort,
    verify-guarded install, summary. Tests with 2–3 trivial modules.
 2. **Auth + secrets** — `secrets`/`ssh-setup` modules, `age` decrypt, PAT
    credential store, SSH key API upload.
-3. **base + cli + shell** modules + dotfiles import (tmux, oh-my-posh, ghostty,
-   bash, fonts) via chezmoi. Includes the **mise module + nvm/sdkman→mise
-   migration** (§6.4) and adopting existing plain dotfiles into chezmoi.
+3. **base + cli + shell + gnome + multimedia** modules + dotfiles import (tmux,
+   oh-my-posh, ghostty, bash, fonts) via chezmoi. Includes the **mise module +
+   nvm/sdkman→mise migration** (§6.4), adopting existing plain dotfiles into
+   chezmoi, **rpmfusion + dnf-tune** (run early), and the declarative GNOME
+   module (gsettings/dconf + pinned extensions) — see §10c.
 4. **Stacks** — laravel, dotnet, python, web, react-native, devops, data modules
    + `templates/`.
 5. **apps + Obsidian sync** — obsidian, obsidian-sync, bruno, dbeaver, etc.
