@@ -19,6 +19,7 @@ EOF
           OS_RELEASE_FILE="$DEVBOOST_ROOT/tests/fixtures/os-release/fedora")
 
   run env "${common[@]}" "$DEVBOOST_ROOT/bin/devboost" install --profile stack
+  [ "$status" -eq 0 ]
   [ -f "$mark.a" ]; [ -f "$mark.b" ]
 
   run env "${common[@]}" "$DEVBOOST_ROOT/bin/devboost" install --profile stack

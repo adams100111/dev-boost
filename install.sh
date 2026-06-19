@@ -23,6 +23,6 @@ ensure_dep python3 python3
 ensure_dep jq jq
 
 if [[ "${DEVBOOST_DRYRUN:-0}" == 1 ]]; then
-  echo "would run: bin/devboost install $*"; exit 0
+  printf 'would run: bin/devboost install %s\n' "$*"; exit 0
 fi
 exec "$HERE/bin/devboost" install "$@"

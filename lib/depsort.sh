@@ -38,5 +38,6 @@ depsort() {
     done
   done
   [[ "$emitted" -ne "${#all[@]}" ]] && die "dependency cycle detected among modules"
-  printf '%s\n' "${order[@]}"
+  [[ "${#order[@]}" -gt 0 ]] && printf '%s\n' "${order[@]}"
+  return 0
 }

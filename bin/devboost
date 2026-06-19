@@ -4,10 +4,19 @@ DEVBOOST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export DEVBOOS
 for l in log os toml module depsort profile install; do source "$DEVBOOST_ROOT/lib/$l.sh"; done
 os_detect
 
-_parse_profile() {  # echoes comma list → space-separated tokens; default full
-  local p="full"
-  while [[ $# -gt 0 ]]; do case "$1" in --profile) p="$2"; shift 2;; *) shift;; esac; done
-  echo "${p//,/ }"
+_parse_profile() {
+  local toks=()
+  while (($#)); do case "$1" in
+    --profile) toks+=("${2:?--profile requires a value}"); shift 2;;
+    --force|--strict) shift;;
+    --*) shift;;
+    *) toks+=("$1"); shift;;
+  esac; done
+  ((${#toks[@]})) || toks=(full)
+  # normalize commas to spaces, emit space-joined
+  local t out=""
+  for t in "${toks[@]}"; do out+=" ${t//,/ }"; done
+  printf '%s\n' "${out# }"
 }
 
 usage() {

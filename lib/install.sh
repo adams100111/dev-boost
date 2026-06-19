@@ -1,5 +1,6 @@
 # lib/install.sh — verify-guarded, dependency-ordered install loop. Source-only.
 run_install() {
+  summary_reset
   local force=0 strict=0
   while [[ "${1:-}" == --* ]]; do
     case "$1" in

@@ -27,3 +27,6 @@ setup() {
 @test "verify cmd read" {
   [ "$(module_verify_cmd git)" = "true" ]
 }
+@test "top-level verify key takes precedence over install.verify" {
+  [ "$(module_verify_cmd toplevelverify)" = "echo toplevel-verify-cmd" ]
+}

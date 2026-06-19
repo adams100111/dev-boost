@@ -26,3 +26,12 @@ setup() {
   run "$DEVBOOST_ROOT/bin/devboost" install --profile full
   [[ "$output" == *"summary"* ]]
 }
+@test "bare module arg: list git shows only git module" {
+  run "$DEVBOOST_ROOT/bin/devboost" list git
+  [ "$status" -eq 0 ]
+  [ "$output" = "git" ]
+}
+@test "--profile with no value exits non-zero" {
+  run "$DEVBOOST_ROOT/bin/devboost" install --profile
+  [ "$status" -ne 0 ]
+}

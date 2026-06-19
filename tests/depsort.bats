@@ -20,6 +20,12 @@ setup() {
   [ "$(echo "$output" | grep -cx bun)" -eq 1 ]
 }
 
+@test "empty input produces no output" {
+  run depsort
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "detects cycles" {
   d="$(mktemp -d)/modules"; mkdir -p "$d"
   printf 'name="a"\nrequires=["b"]\nverify="true"\n[install]\ndefault="x"\n' > "$d/a.toml"
