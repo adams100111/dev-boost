@@ -105,3 +105,55 @@ secrets_get() {
 secrets_user()  { secrets_get GIT_USER; }
 secrets_email() { secrets_get GIT_EMAIL; }
 secrets_pat()   { secrets_get GITHUB_PAT; }
+
+# ---------------------------------------------------------------------------
+# secrets_doctor
+#   Probe the secrets bundle and print one of four state tokens to stdout:
+#     ok             — bundle found, decrypts, all required fields present
+#     missing        — bundle file not found
+#     cannot-decrypt — bundle present but age decryption fails
+#     incomplete     — decrypts but a required field (GIT_USER/GIT_EMAIL/GITHUB_PAT) absent
+#   Exits 0 for ok, non-zero for the other three states.
+# ---------------------------------------------------------------------------
+secrets_doctor() {
+  # Check if the bundle exists.
+  local bundle
+  bundle="$(secrets_bundle_path 2>/dev/null)" || {
+    printf 'missing\n'
+    return 1
+  }
+
+  # Locate key file (same logic as secrets_decrypt).
+  local key="${DEVBOOST_SECRETS_KEY:-}"
+  if [[ -z "${key}" ]]; then
+    local bootstrap_dir="${DEVBOOST_BOOTSTRAP_DIR:-${DEVBOOST_ROOT}}"
+    key="${bootstrap_dir}/age-key.txt"
+  fi
+
+  # Attempt decryption.
+  local json
+  json="$(age -d -i "${key}" "${bundle}" 2>/dev/null)" || {
+    printf 'cannot-decrypt\n'
+    return 1
+  }
+
+  # Validate JSON.
+  if ! printf '%s' "${json}" | jq -e . >/dev/null 2>&1; then
+    printf 'cannot-decrypt\n'
+    return 1
+  fi
+
+  # Check required fields.
+  local field
+  for field in GIT_USER GIT_EMAIL GITHUB_PAT; do
+    local val
+    val="$(printf '%s' "${json}" | jq -r --arg k "${field}" '.[$k] // empty')"
+    if [[ -z "${val}" ]]; then
+      printf 'incomplete\n'
+      return 1
+    fi
+  done
+
+  printf 'ok\n'
+  return 0
+}

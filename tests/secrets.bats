@@ -428,3 +428,63 @@ _run_install_sh() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"already installed"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# T016: secrets_doctor — 4-state coverage
+# ---------------------------------------------------------------------------
+
+@test "secrets_doctor: ok — valid bundle + decryptable → prints 'ok', exits 0" {
+  run bash -c "
+    export PATH='${PATH}'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    $(_src) secrets_doctor"
+  [ "$status" -eq 0 ]
+  [ "$output" = "ok" ]
+}
+
+@test "secrets_doctor: missing — no bundle → prints 'missing', exits non-zero" {
+  run bash -c "
+    export PATH='${PATH}'
+    export DEVBOOST_SECRETS='/nonexistent/secrets.age'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='/nonexistent'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    $(_src) secrets_doctor"
+  [ "$status" -ne 0 ]
+  [ "$output" = "missing" ]
+}
+
+@test "secrets_doctor: cannot-decrypt — bad key (age fails) → prints 'cannot-decrypt', exits non-zero" {
+  run bash -c "
+    export PATH='${PATH}'
+    export STUB_AGE_FAIL=1
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    $(_src) secrets_doctor"
+  [ "$status" -ne 0 ]
+  [ "$output" = "cannot-decrypt" ]
+}
+
+@test "secrets_doctor: incomplete — missing required field → prints 'incomplete', exits non-zero" {
+  # Bundle with only two of the three required fields.
+  local incomplete_bundle
+  incomplete_bundle="$(mktemp)"
+  printf '{"GIT_USER":"alice","GIT_EMAIL":"alice@example.com"}\n' > "${incomplete_bundle}"
+
+  run bash -c "
+    export PATH='${PATH}'
+    export DEVBOOST_SECRETS='${incomplete_bundle}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    $(_src) secrets_doctor"
+  local s="$status" o="$output"
+  rm -f "${incomplete_bundle}"
+  [ "$s" -ne 0 ]
+  [ "$o" = "incomplete" ]
+}

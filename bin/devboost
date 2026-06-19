@@ -64,6 +64,24 @@ cmd_doctor() {
   command -v jq      >/dev/null || { log_error "jq missing"; ok=1; }
   [[ "$OS_DISTRO" != unknown ]] || { log_error "OS not detected"; ok=1; }
   [[ -d "${DEVBOOST_MODULES_DIR:-$DEVBOOST_ROOT/modules}" ]] || { log_error "modules dir missing"; ok=1; }
+
+  # age preflight (hard-fail: required for secrets bundle decryption)
+  command -v age >/dev/null || { log_error "age missing"; ok=1; }
+
+  # secrets preflight — delegate to secrets_doctor (4 states)
+  if command -v age >/dev/null; then
+    source "${DEVBOOST_ROOT}/lib/secrets.sh"
+    local secrets_state
+    secrets_state="$(secrets_doctor 2>/dev/null)" || true
+    case "${secrets_state}" in
+      ok)             log_ok  "secrets: ready" ;;
+      missing)        log_warn "secrets: no bundle found (set --secrets / \$DEVBOOST_SECRETS)" ;;
+      cannot-decrypt) log_error "secrets: bundle present but cannot decrypt"; ok=1 ;;
+      incomplete)     log_error "secrets: bundle missing required field(s)"; ok=1 ;;
+      *)              log_warn "secrets: unknown state '${secrets_state}'" ;;
+    esac
+  fi
+
   [[ "$ok" -eq 0 ]] && log_ok "doctor: environment OK ($OS_DISTRO/$OS_FAMILY $OS_ARCH)"
   return "$ok"
 }
