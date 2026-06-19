@@ -558,7 +558,9 @@ unmanaged** (plain files, adopt chezmoi), **SSH RSA-only** (add ed25519).
 Four Fedora-44 setup guides were analyzed; the following are folded in.
 
 ### New modules / profiles
-- **`base`/`rpmfusion`** — RPM Fusion free+nonfree enabled as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Idempotent, runs before any nonfree install.
+- **`base`/`rpmfusion`** — RPM Fusion **free + nonfree** as a **shared base dependency** (not Nvidia-only), so codecs/drivers work everywhere. Distinct from `fedora-third-party` (which doesn't add the full RPM Fusion repos). Idempotent, runs before any nonfree install. Exact (from source):
+  `verify`: `rpm -q rpmfusion-free-release rpmfusion-nonfree-release`
+  `install`: `sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm && sudo dnf upgrade --refresh -y`
 - **`base`/`fedora-third-party`** — automates GNOME's "Enable Third-Party
   Repositories" toggle: `verify = fedora-third-party query` (enabled?), `install =
   sudo fedora-third-party enable`. Enables Fedora's curated, opt-in third-party
