@@ -5,8 +5,9 @@ hermetic approach the bats suite uses). See `contracts/` for exact interfaces.
 
 ## Prerequisites
 - Repo checked out; `bats`, `jq`, `python3` available (engine deps).
-- `age`, `openssh`, `curl` may be **stubbed** (the suite provides PATH stubs under
-  `tests/fixtures/secrets/bin/`). No GitHub account needed.
+- `age`, `openssh`, `curl` may be **stubbed** (the suite provides a PATH-stub harness at
+  `tests/fixtures/secrets/stubs.bash`; stub binaries are created in a temp dir at test
+  setup time). No GitHub account needed.
 
 ## Run the tests (primary validation)
 ```bash
@@ -23,7 +24,7 @@ I/O (asserted by inspecting the curl-stub call log).
 # 1. make a throwaway identity + bundle
 age-keygen -o /tmp/age-key.txt
 jq -n '{GIT_USER:"Test Dev",GIT_EMAIL:"t@example.com",GITHUB_PAT:"ghp_dummy"}' \
-  | age -e -i /tmp/age-key.txt -o /tmp/secrets.age   # (recipient from the key)
+  | age -e -i /tmp/age-key.txt -o /tmp/secrets.age   # encrypts to the identity's public key
 
 # 2. point the engine at a scratch HOME and the bundle
 export HOME=/tmp/devboost-home && mkdir -p "$HOME"
@@ -39,7 +40,10 @@ Expected outcomes:
 - `~/.gitconfig` has user.name/email + `credential.helper=store`.
 - `~/.git-credentials` exists, mode `600`, contains a `github.com` line.
 - `~/.ssh/id_ed25519{,.pub}` exist; `~/.ssh/config` has the hardened devboost block.
-- Re-running `install` reports both modules **skipped** (idempotent).
+- Re-running `install` reports the `secrets` module **skipped** (idempotent; verify passes).
+- The `ssh-setup` module skips on the second run only if the GitHub key upload succeeded
+  on the first run (a dummy PAT will make the upload fail; the state marker won't be
+  written; the module re-runs but completes with exit 0 and a warning, not an error).
 - No prompt appeared at any point.
 - `git ls-files` shows no `*.age`, no key, no credentials.
 
