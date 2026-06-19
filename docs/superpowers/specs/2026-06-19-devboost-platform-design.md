@@ -159,7 +159,7 @@ cli          = ["eza","bat","zoxide","atuin","direnv","delta","lazygit","lazydoc
                 "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell        = ["starship","bash-config","ghostty","nerd-fonts"]
 gnome        = ["gnome-tweaks","extension-manager","gnome-extensions","gnome-settings"]
-multimedia   = ["ffmpeg-full","codecs"]
+multimedia   = ["ffmpeg-full","codecs","va-hwaccel"]
 editors      = ["vscode","fresh"]               # GUI primary (vscode) + terminal editor (fresh); neovim/jetbrains opt-in
 laravel      = ["docker","ddev","composer","php","laravel-installer"]
 dotnet       = ["dotnet-sdk","aspire"]
@@ -179,7 +179,7 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 optional-editors = ["neovim","jetbrains-toolbox"]
 oh-my-posh       = ["oh-my-posh"]             # opt-in alternative prompt; also installs the Claude Code statusline
 ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
-hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","secureboot-mok","nvidia-resign-service"]
+hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","nvidia-vaapi-driver","secureboot-mok","nvidia-resign-service"]
 hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
 ```
 
@@ -569,7 +569,14 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   (e.g. ghostty → `dnf copr enable scottames/ghostty`; docker → docker-ce repo;
   ddev → ddev repo; vscode → MS repo), run immediately before the package install.
 - **`base`/`dnf-tune`** — write `/etc/dnf/dnf.conf` (exact from source): `max_parallel_downloads=10`, `fastestmirror=true` (+ optional dev-boost addition `defaultyes=true`). Runs early so it speeds the bootstrap itself.
-- **`multimedia`** profile (exact from source) — `sudo dnf swap ffmpeg-free ffmpeg --allowerasing` + `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`. In `full`.
+- **`multimedia`** profile (full RPM Fusion *Howto/Multimedia*, exact) — in `full`. Three layers:
+  1. **Full ffmpeg:** `sudo dnf swap ffmpeg-free ffmpeg --allowerasing`
+  2. **Codecs:** `sudo dnf update @multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin`
+  3. **`va-hwaccel` (Hardware-Accelerated Codec — GPU-aware, was missing):** install `libva-utils` (`vainfo` = the verify), then per detected GPU (`OS`/`lspci`):
+     - **Intel (recent, incl. UHD 630):** `sudo dnf install intel-media-driver` (older gens: `libva-intel-driver`)
+     - **AMD:** `sudo dnf swap mesa-va-drivers mesa-va-drivers-freeworld` + `mesa-vdpau-drivers → mesa-vdpau-drivers-freeworld` (also surfaced by `hardware-amd`)
+     - **NVIDIA:** `sudo dnf install nvidia-vaapi-driver` (also in `hardware-nvidia`)
+     `verify`: `vainfo` reports a working driver. On the reference machine VA-API runs on the **Intel iGPU** (`intel-media-driver`).
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
 - **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
 - **`gnome`** profile — declarative desktop setup. **Extension tooling (note the
