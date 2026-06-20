@@ -101,7 +101,11 @@ _run_verify_lsp() {
   # lsp entries present, enabled, command = mise shim absolute path.
   [ "$(jq -r '.lsp.markdown.enabled' "${FRESH_CONFIG}")" = "true" ]
   [ "$(jq -r '.lsp.toml.command' "${FRESH_CONFIG}")" = "${HOME}/.local/share/mise/shims/taplo" ]
+  # Multi-token args ("lsp stdio") must split into a 2-element array (word-splitting path).
+  [ "$(jq -r '.lsp.toml.args | join(" ")' "${FRESH_CONFIG}")" = "lsp stdio" ]
+  [ "$(jq -r '.lsp.toml.args | length' "${FRESH_CONFIG}")" = "2" ]
   [ "$(jq -r '.lsp.bash.args | join(" ")' "${FRESH_CONFIG}")" = "start" ]
+  # Dash-leading arg must NOT be mistaken for a jq option.
   [ "$(jq -r '.lsp.yaml.args | join(" ")' "${FRESH_CONFIG}")" = "--stdio" ]
 }
 

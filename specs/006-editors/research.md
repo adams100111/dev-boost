@@ -49,7 +49,7 @@ mise use -g cargo:taplo-cli@<pin>       # toml
 # …also github:/aqua: for prebuilt binaries
 ```
 `lib/fresh.sh::fresh_lsp_provision <lang> <fresh-command> <backend:tool@pin>`:
-1. `mise use -g <backend:tool@pin>` (idempotent; records the pin) — also written to `config/mise.toml`.
+1. `mise use -g <backend:tool@pin>` (idempotent). The `@pin` lives in-repo in `modules/fresh-lsp/servers.base.tsv` (the source of truth); `mise use -g` records the resolved version into the user-global `~/.config/mise/config.toml` (machine state), as the base `mise` module already does.
 2. resolve the absolute binary path with `mise which <fresh-command>` (PATH-independent — no reliance on shims being on PATH at editor-launch time).
 3. jq-merge `{ "lsp": { "<lang>": { "command": "<abs path>", "args": [...], "enabled": true } } }`
    into `~/.config/fresh/config.json`, preserving every other key (theme, editor, formatter, languages).

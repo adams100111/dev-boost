@@ -33,7 +33,7 @@ them **unsupported** on non-Fedora — no module guard. Built test-first with ba
 **Target Platform**: Fedora Workstation (reference). Non-Fedora → engine-reported unsupported (only `[install].fedora` keys).
 **Project Type**: Single-project Bash bootstrap engine.
 **Performance Goals**: Not latency-sensitive; correctness + idempotency.
-**Constraints**: Unattended; idempotent (verify on end state); engine untouched; pins recorded (`config/mise.toml`); no secret in git.
+**Constraints**: Unattended; idempotent (verify on end state); engine untouched; tool pins recorded in-repo (`modules/fresh-lsp/servers.base.tsv`); no secret in git.
 **Scale/Scope**: 3 modules (`vscode`, `fresh`, `fresh-lsp`) + `lib/fresh.sh` + 1 `profiles.toml` entry (`editors`) + curated VS Code extension list (data) + `fresh` base-config template (data) + the stack→server map (documented data, base subset applied now) + ~3 bats files. Reuses Spec-1/2 escape-hatch + `lib/pkg.sh`. Per-stack server wiring is consumed by dev-stacks (Spec 7).
 
 ## Constitution Check
@@ -42,7 +42,7 @@ them **unsupported** on non-Fedora — no module guard. Built test-first with ba
 
 - **I. Engine + Data Separation** — PASS. No engine touch (`run_install`/`depsort`/`module.sh`/`profile.sh`/`bin/devboost` unchanged). 3 modules + 1 profile entry are data/escape-hatch. `lib/fresh.sh` is a profile-helper library consumed by modules (same pattern as `lib/secrets.sh`/`lib/github.sh`/`lib/gnome.sh`), not control flow. Per-stack servers are added later as data (one module per stack), so "adding a language server = one module" holds.
 - **II. Idempotent & Verify-Guarded** — PASS. `vscode` verify = `code` present AND every baseline extension already in `code --list-extensions` (installs only missing). `fresh` verify = `command -v fresh`. `fresh-lsp` verify = every base-set tool present in mise AND its `lsp` entry present in `config.json`; the jq-merge is idempotent (re-merge yields identical file) and never clobbers non-`lsp` keys. A failure names the module + exact command.
-- **III. Reproducible — Repo is Source of Truth** — PASS. Every LSP/formatter is installed via `mise use -g <backend>:<tool>@<pin>` with pins recorded in `config/mise.toml`; curated extension list + base-config template + stack→server map all live in the repo. No secrets, no auto-commit.
+- **III. Reproducible — Repo is Source of Truth** — PASS. Every LSP/formatter is installed via `mise use -g <backend>:<tool>@<pin>` with the pins held in-repo in `modules/fresh-lsp/servers.base.tsv` (the `@pin` per row); curated extension list + base-config template + stack→server map all live in the repo. `mise use -g` records the resolved version into the user-global `~/.config/mise/config.toml` (machine state) exactly as the base `mise` module already does. No secrets, no auto-commit.
 - **IV. Unattended by Default** — PASS. `dnf -y`, `code --install-extension`, the fresh installers, and `mise use -g` are all non-interactive; extension install is a CLI op needing no graphical session.
 - **V. Test-First (NON-NEGOTIABLE)** — PASS. vscode repo+install+extensions+idempotent skip; fresh primary-install + fallback chain; `lib/fresh.sh` mise-install + jq-merge (base set wired, non-`lsp` keys preserved, re-run no-op); editor-missing→named-fail; unsupported-OS — all failing-bats-first, all tooling stubbed.
 - **VI. Cross-OS via Data (Fedora reference)** — PASS. Only `[install].fedora` keys ⇒ engine reports unsupported on other OS (FR-013 by data, no guard). The stack→server map and extension list are in-repo data.
@@ -81,7 +81,6 @@ modules/                       # NEW editors modules (escape-hatch)
     └── servers.base.tsv      # DATA: always-on base set rows (lang, fresh-command, mise backend:tool@pin)
 lib/
 └── fresh.sh                  # NEW helper: fresh_lsp_provision <lang> <cmd> <backend:tool@pin>  (mise use -g + mise which + jq-merge lsp block)
-config/mise.toml              # EDIT — record base-set tool pins
 profiles.toml                 # EDIT — add `editors = ["vscode","fresh","fresh-lsp"]`
 tests/
 ├── vscode.bats, fresh.bats, fresh-lsp.bats   # NEW

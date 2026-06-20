@@ -7,7 +7,7 @@ reusing the same helper.
 
 ## `lib/fresh.sh`
 `fresh_lsp_provision <lang> <fresh-command> <backend:tool@pin> [args…]`:
-1. `mise use -g <backend:tool@pin>` — idempotent; records/pins the tool (also reflected in `config/mise.toml`).
+1. `mise use -g <backend:tool@pin>` — idempotent; the `@pin` is held in-repo in `servers.base.tsv`. (`mise use -g` records the resolved version into the user-global `~/.config/mise/config.toml`, as the base `mise` module does.)
 2. `abs=$(mise which <fresh-command>)` — absolute path; if unresolved → `die` naming the tool.
 3. jq-merge into `~/.config/fresh/config.json`:
    `{ "lsp": { "<lang>": { "command": <abs>, "args": [args…], "enabled": true } } }`,
