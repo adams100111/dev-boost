@@ -847,3 +847,34 @@ _assert_order() {
   _assert_order "$output" web-runtimes expo
   _assert_order "$output" mise android-sdk
 }
+
+# ---------------------------------------------------------------------------
+# T005 — apps-and-obsidian: profile membership (TOML-only). Depsort = T019.
+# ---------------------------------------------------------------------------
+@test "profiles.toml: apps profile is defined with 7 members" {
+  run _expand_stack apps
+  [ "$status" -eq 0 ]
+  for m in obsidian bruno bitwarden flameshot localsend vlc obsidian-sync; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING from apps: $m"; return 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
+# T019 — apps-and-obsidian: full depsort resolution against real modules/.
+# obsidian-sync after obsidian + secrets + ssh-setup; flatpak before each app.
+# ---------------------------------------------------------------------------
+@test "devboost list --profile apps: resolves, members + transitive present" {
+  run _list_profile apps
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in obsidian bruno bitwarden flameshot localsend vlc obsidian-sync flatpak secrets ssh-setup; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile apps: flatpak before apps; obsidian-sync after obsidian/secrets/ssh-setup" {
+  run _list_profile apps
+  [ "$status" -eq 0 ]
+  _assert_order "$output" flatpak obsidian
+  _assert_order "$output" obsidian obsidian-sync
+  _assert_order "$output" secrets obsidian-sync
+  _assert_order "$output" ssh-setup obsidian-sync
+}
