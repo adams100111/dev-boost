@@ -289,6 +289,44 @@ _run_theme_verify() {
   [[ "$output" == *"WhiteSur-Dark"* ]] || [[ "$output" == *"theme dir"* ]]
 }
 
+@test "gnome-theme-bundle: verify is RED when bibata-cursor-themes RPM absent" {
+  # Run install to populate gsettings state + theme dir; then exclude Bibata from RPM list.
+  _run_theme_install >/dev/null 2>&1
+  export STUB_RPM_INSTALLED="papirus-icon-theme rsms-inter-fonts"
+  export STUB_FONTS_INSTALLED="Inter:style=Regular"
+  run _run_theme_verify
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bibata-cursor-themes"* ]]
+}
+
+@test "gnome-theme-bundle: verify is RED when cursor-theme dconf key unset" {
+  # Seed all required state except cursor-theme.
+  _run_theme_install >/dev/null 2>&1
+  export STUB_RPM_INSTALLED="papirus-icon-theme bibata-cursor-themes rsms-inter-fonts"
+  export STUB_FONTS_INSTALLED="Inter:style=Regular"
+  # Overwrite the gsettings state file: remove the cursor-theme key.
+  grep -v '^org.gnome.desktop.interface cursor-theme=' "${STUB_GSETTINGS_STATE_FILE}" \
+    > "${STUB_GSETTINGS_STATE_FILE}.tmp" 2>/dev/null || true
+  mv "${STUB_GSETTINGS_STATE_FILE}.tmp" "${STUB_GSETTINGS_STATE_FILE}"
+  run _run_theme_verify
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cursor-theme"* ]]
+}
+
+@test "gnome-theme-bundle: verify is RED when icon-theme dconf key unset" {
+  # Seed all required state except icon-theme.
+  _run_theme_install >/dev/null 2>&1
+  export STUB_RPM_INSTALLED="papirus-icon-theme bibata-cursor-themes rsms-inter-fonts"
+  export STUB_FONTS_INSTALLED="Inter:style=Regular"
+  # Overwrite the gsettings state file: remove the icon-theme key.
+  grep -v '^org.gnome.desktop.interface icon-theme=' "${STUB_GSETTINGS_STATE_FILE}" \
+    > "${STUB_GSETTINGS_STATE_FILE}.tmp" 2>/dev/null || true
+  mv "${STUB_GSETTINGS_STATE_FILE}.tmp" "${STUB_GSETTINGS_STATE_FILE}"
+  run _run_theme_verify
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"icon-theme"* ]]
+}
+
 # ===========================================================================
 # T013 — GNOME absent → unsupported
 # ===========================================================================

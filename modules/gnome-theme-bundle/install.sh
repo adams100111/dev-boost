@@ -40,12 +40,26 @@ if [[ "${1:-}" == "--verify-only" ]]; then
     log_error "gnome-theme-bundle verify: papirus-icon-theme not installed"
     ok=0
   fi
+  if ! rpm -q bibata-cursor-themes >/dev/null 2>&1; then
+    log_error "gnome-theme-bundle verify: bibata-cursor-themes not installed"
+    ok=0
+  fi
+  icon_theme="$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || printf '')"
+  if [[ "${icon_theme}" != *"Papirus"* ]]; then
+    log_error "gnome-theme-bundle verify: icon-theme not set to a Papirus variant in gsettings"
+    ok=0
+  fi
+  cursor_theme="$(gsettings get org.gnome.desktop.interface cursor-theme 2>/dev/null || printf '')"
+  if [[ "${cursor_theme}" != *"Bibata"* ]]; then
+    log_error "gnome-theme-bundle verify: cursor-theme not set to a Bibata variant in gsettings"
+    ok=0
+  fi
   if ! fc-list 2>/dev/null | grep -qi 'Inter'; then
     log_error "gnome-theme-bundle verify: Inter font not found"
     ok=0
   fi
   [ "${ok}" -eq 1 ] || exit 1
-  log_ok "gnome-theme-bundle: User Themes enabled, WhiteSur-Dark present, gtk-theme set, Papirus installed, Inter font found"
+  log_ok "gnome-theme-bundle: User Themes enabled, WhiteSur-Dark present, gtk-theme/icon-theme/cursor-theme set, Papirus+Bibata installed, Inter font found"
   exit 0
 fi
 
