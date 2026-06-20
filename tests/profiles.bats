@@ -661,3 +661,189 @@ _EXPECTED_EDITORS_MEMBERS=(
   [ "$fresh_line" -lt "$lsp_line" ] \
     || { echo "fresh (line $fresh_line) must appear before fresh-lsp (line $lsp_line)"; return 1; }
 }
+
+# ---------------------------------------------------------------------------
+# T004 — dev-stacks: 7 stack profiles membership + count (TOML-only).
+# Full depsort tests are T026 (polish).
+# ---------------------------------------------------------------------------
+
+@test "profiles.toml: all 7 dev-stack profiles are defined" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"; source "$DEVBOOST_ROOT/lib/toml.sh"; source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for p in python web laravel dotnet data devops react-native; do
+    [[ "$output" == *"$p"* ]] || { echo "MISSING profile: $p"; return 1; }
+  done
+}
+
+_expand_stack() {
+  bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"; source "$DEVBOOST_ROOT/lib/toml.sh"; source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand "'"$1"'" | sort | tr "\n" " "
+  '
+}
+
+@test "profiles.toml: python = uv + python-lsp" {
+  run _expand_stack python
+  [ "$status" -eq 0 ]; [[ "$output" == *"uv"* && "$output" == *"python-lsp"* ]]
+}
+@test "profiles.toml: web = web-runtimes + web-lsp" {
+  run _expand_stack web
+  [ "$status" -eq 0 ]; [[ "$output" == *"web-runtimes"* && "$output" == *"web-lsp"* ]]
+}
+@test "profiles.toml: laravel = ddev + laravel-lsp" {
+  run _expand_stack laravel
+  [ "$status" -eq 0 ]; [[ "$output" == *"ddev"* && "$output" == *"laravel-lsp"* ]]
+}
+@test "profiles.toml: dotnet = dotnet-sdk + aspire + dotnet-lsp" {
+  run _expand_stack dotnet
+  [ "$status" -eq 0 ]; [[ "$output" == *"dotnet-sdk"* && "$output" == *"aspire"* && "$output" == *"dotnet-lsp"* ]]
+}
+@test "profiles.toml: data = data-services" {
+  run _expand_stack data
+  [ "$status" -eq 0 ]; [[ "$output" == *"data-services"* ]]
+}
+@test "profiles.toml: devops = devops-tools + devops-lsp" {
+  run _expand_stack devops
+  [ "$status" -eq 0 ]; [[ "$output" == *"devops-tools"* && "$output" == *"devops-lsp"* ]]
+}
+@test "profiles.toml: react-native = web-runtimes + android-sdk + expo" {
+  run _expand_stack react-native
+  [ "$status" -eq 0 ]; [[ "$output" == *"web-runtimes"* && "$output" == *"android-sdk"* && "$output" == *"expo"* ]]
+}
+
+# ===========================================================================
+# T026 — full depsort resolution: 7 dev-stacks against real modules/
+# `devboost list --profile <stack>` resolves without cycle (exit 0), surfaces
+# every expanded member + transitive deps, and orders each `*-lsp` (and other
+# dependents) AFTER its toolchain and after mise/fresh. react-native pulls in
+# the web-runtimes module (shared with the web stack).
+# ===========================================================================
+
+# Print the resolved module list for a stack profile (one module per line).
+_list_profile() {
+  env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+      DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+      "${DEVBOOST_ROOT}/bin/devboost" list --profile "$1"
+}
+
+# Assert module $2 appears strictly before module $3 in list output $1.
+_assert_order() {
+  local out="$1" before="$2" after="$3" bl al
+  bl="$(printf '%s\n' "$out" | grep -n "^${before}\$" | cut -d: -f1)"
+  al="$(printf '%s\n' "$out" | grep -n "^${after}\$"  | cut -d: -f1)"
+  [ -n "$bl" ] || { echo "missing ${before} in output"; return 1; }
+  [ -n "$al" ] || { echo "missing ${after} in output";  return 1; }
+  [ "$bl" -lt "$al" ] || { echo "${before} (line $bl) must precede ${after} (line $al)"; return 1; }
+}
+
+# --- python ---------------------------------------------------------------
+@test "devboost list --profile python: resolves, members + transitive present" {
+  run _list_profile python
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in uv python-lsp mise fresh; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile python: uv/mise/fresh ordered before python-lsp" {
+  run _list_profile python
+  [ "$status" -eq 0 ]
+  _assert_order "$output" uv python-lsp
+  _assert_order "$output" mise python-lsp
+  _assert_order "$output" fresh python-lsp
+}
+
+# --- web -------------------------------------------------------------------
+@test "devboost list --profile web: resolves, members + transitive present" {
+  run _list_profile web
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in web-runtimes web-lsp mise fresh; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile web: web-runtimes/mise/fresh ordered before web-lsp" {
+  run _list_profile web
+  [ "$status" -eq 0 ]
+  _assert_order "$output" web-runtimes web-lsp
+  _assert_order "$output" mise web-lsp
+  _assert_order "$output" fresh web-lsp
+}
+
+# --- laravel ---------------------------------------------------------------
+@test "devboost list --profile laravel: resolves, members + transitive present" {
+  run _list_profile laravel
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in ddev laravel-lsp docker mise fresh; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile laravel: ddev/mise/fresh ordered before laravel-lsp" {
+  run _list_profile laravel
+  [ "$status" -eq 0 ]
+  _assert_order "$output" ddev laravel-lsp
+  _assert_order "$output" mise laravel-lsp
+  _assert_order "$output" fresh laravel-lsp
+}
+
+# --- dotnet ----------------------------------------------------------------
+@test "devboost list --profile dotnet: resolves, members + transitive present" {
+  run _list_profile dotnet
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in dotnet-sdk aspire dotnet-lsp fresh; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile dotnet: dotnet-sdk before aspire and dotnet-lsp; fresh before dotnet-lsp" {
+  run _list_profile dotnet
+  [ "$status" -eq 0 ]
+  _assert_order "$output" dotnet-sdk aspire
+  _assert_order "$output" dotnet-sdk dotnet-lsp
+  _assert_order "$output" fresh dotnet-lsp
+}
+
+# --- data ------------------------------------------------------------------
+@test "devboost list --profile data: resolves, data-services + docker present" {
+  run _list_profile data
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in data-services docker; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile data: docker ordered before data-services" {
+  run _list_profile data
+  [ "$status" -eq 0 ]
+  _assert_order "$output" docker data-services
+}
+
+# --- devops ----------------------------------------------------------------
+@test "devboost list --profile devops: resolves, members + transitive present" {
+  run _list_profile devops
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in devops-tools devops-lsp mise fresh; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile devops: devops-tools/mise/fresh ordered before devops-lsp" {
+  run _list_profile devops
+  [ "$status" -eq 0 ]
+  _assert_order "$output" devops-tools devops-lsp
+  _assert_order "$output" mise devops-lsp
+  _assert_order "$output" fresh devops-lsp
+}
+
+# --- react-native ----------------------------------------------------------
+@test "devboost list --profile react-native: resolves, includes web-runtimes + android-sdk + expo" {
+  run _list_profile react-native
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in web-runtimes android-sdk expo mise; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "devboost list --profile react-native: web-runtimes ordered before expo; mise before android-sdk" {
+  run _list_profile react-native
+  [ "$status" -eq 0 ]
+  _assert_order "$output" web-runtimes expo
+  _assert_order "$output" mise android-sdk
+}

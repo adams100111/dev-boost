@@ -18,22 +18,21 @@
 #   `die`s (naming the tool) if mise cannot resolve the command, or if the
 #   config file is missing.
 # ---------------------------------------------------------------------------
-fresh_lsp_provision() {
-  local lang="$1" cmd="$2" spec="$3"; shift 3
+# ---------------------------------------------------------------------------
+# fresh_lsp_wire <lang> <absolute-command> [args…]
+#   Merge-only primitive: jq-merge {lsp:{<lang>:{command,args,enabled:true}}} into
+#   ~/.config/fresh/config.json, PRESERVING every other key. Idempotent.
+#   Used directly by stacks whose server binary is NOT mise-managed (e.g. the
+#   dotnet stack's `dotnet tool`-installed csharp-ls), and internally by
+#   fresh_lsp_provision after it resolves the mise path.
+#   `die`s if the command path is empty or the config file is missing.
+# ---------------------------------------------------------------------------
+fresh_lsp_wire() {
+  local lang="$1" abs="$2"; shift 2
   local -a extra_args=("$@")
 
-  log_info "fresh-lsp: provisioning ${lang} → ${spec}"
+  [[ -n "${abs}" ]] || die "fresh-lsp: empty command path for ${lang}"
 
-  # 1. Install via mise (idempotent; the @pin makes it reproducible).
-  mise use -g "${spec}" || die "fresh-lsp: 'mise use -g ${spec}' failed (${lang})"
-
-  # 2. Resolve the absolute command path.
-  local abs
-  abs="$(mise which "${cmd}" 2>/dev/null)" \
-    || die "fresh-lsp: could not resolve '${cmd}' via mise (tool ${spec})"
-  [[ -n "${abs}" ]] || die "fresh-lsp: empty path resolving '${cmd}' (tool ${spec})"
-
-  # 3. jq-merge the lsp entry, preserving all other config keys.
   local config="${HOME}/.config/fresh/config.json"
   [[ -f "${config}" ]] || die "fresh-lsp: config not found: ${config}"
 
@@ -52,4 +51,22 @@ fresh_lsp_provision() {
     || { rm -f "${tmp}"; die "fresh-lsp: jq merge failed for ${lang}"; }
   mv "${tmp}" "${config}" \
     || { rm -f "${tmp}"; die "fresh-lsp: could not write ${config}"; }
+}
+
+fresh_lsp_provision() {
+  local lang="$1" cmd="$2" spec="$3"; shift 3
+
+  log_info "fresh-lsp: provisioning ${lang} → ${spec}"
+
+  # 1. Install via mise (idempotent; the @pin makes it reproducible).
+  mise use -g "${spec}" || die "fresh-lsp: 'mise use -g ${spec}' failed (${lang})"
+
+  # 2. Resolve the absolute command path (PATH-independent).
+  local abs
+  abs="$(mise which "${cmd}" 2>/dev/null)" \
+    || die "fresh-lsp: could not resolve '${cmd}' via mise (tool ${spec})"
+  [[ -n "${abs}" ]] || die "fresh-lsp: empty path resolving '${cmd}' (tool ${spec})"
+
+  # 3. Merge the lsp entry, preserving all other config keys.
+  fresh_lsp_wire "${lang}" "${abs}" "$@"
 }

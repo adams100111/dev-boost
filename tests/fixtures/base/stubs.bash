@@ -197,6 +197,15 @@ base_setup() {
   export STUB_FRESH_INSTALL_VIA="${STUB_FRESH_INSTALL_VIA:-}"
   # STUB_MISE_WHICH_FAIL: space-separated bin names `mise which` should report unresolved.
   export STUB_MISE_WHICH_FAIL="${STUB_MISE_WHICH_FAIL:-}"
+  # Spec 7 (dev-stacks) log + state defaults.
+  export STUB_DDEV_LOG="${STUB_DDEV_LOG:-${BATS_TEST_TMPDIR}/ddev-calls.log}"
+  export STUB_DOTNET_LOG="${STUB_DOTNET_LOG:-${BATS_TEST_TMPDIR}/dotnet-calls.log}"
+  export STUB_SDKMANAGER_LOG="${STUB_SDKMANAGER_LOG:-${BATS_TEST_TMPDIR}/sdkmanager-calls.log}"
+  export STUB_UV_LOG="${STUB_UV_LOG:-${BATS_TEST_TMPDIR}/uv-calls.log}"
+  # STUB_DOTNET_SDKS: lines `dotnet --list-sdks` emits (default empty = no SDK installed).
+  export STUB_DOTNET_SDKS="${STUB_DOTNET_SDKS:-}"
+  # ANDROID_HOME for tests (scratch under HOME) so the android-sdk module needs no real SDK.
+  export ANDROID_HOME="${ANDROID_HOME:-${_base_home_dir}/Android/Sdk}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -229,6 +238,11 @@ base_setup() {
   : > "${STUB_VAINFO_LOG}"
   # Spec 6 (editors) log initialisation. (State file is seeded lazily by the code stub.)
   : > "${STUB_CODE_LOG}"
+  # Spec 7 (dev-stacks) log initialisation.
+  : > "${STUB_DDEV_LOG}"
+  : > "${STUB_DOTNET_LOG}"
+  : > "${STUB_SDKMANAGER_LOG}"
+  : > "${STUB_UV_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -272,6 +286,11 @@ base_setup() {
   base_install_vainfo
   # Spec 6 (editors) stubs.
   base_install_code
+  # Spec 7 (dev-stacks) stubs.
+  base_install_ddev
+  base_install_mkcert
+  base_install_dotnet
+  base_install_sdkmanager
 }
 
 # ---------------------------------------------------------------------------
@@ -954,6 +973,14 @@ if [[ "${_fresh_url}" == *fresh*install.sh* ]]; then
   fi
   exit 0
 fi
+# (c) Spec 7: uv pinned installer (`curl -LsSf astral.sh/uv/<ver>/install.sh | sh`) →
+#     emit a script (to stdout, for the downstream `sh`) that creates the `uv` binary.
+if [[ "${_fresh_url}" == *astral.sh/uv* ]]; then
+  printf 'uv-installer %s\n' "${_fresh_url}" >> "${STUB_UV_LOG:-/tmp/stub-uv-calls.log}"
+  stub_dir="$(dirname "$(command -v curl)")"
+  printf 'printf "#!/usr/bin/env bash\\nexit 0\\n" > "%s/uv"; chmod +x "%s/uv"\n' "${stub_dir}" "${stub_dir}"
+  exit 0
+fi
 
 # Parse -o / --output <file> to create a placeholder at the destination.
 output_file=""
@@ -1402,3 +1429,101 @@ base_scratch_yum_repos_dir() {
   mkdir -p "${d}"
   printf '%s\n' "${d}"
 }
+
+# ===========================================================================
+# Spec 7 (dev-stacks) stubs
+# ===========================================================================
+
+# base_install_ddev — fake `ddev` (laravel orchestrator). Logs; `version`/`config` benign.
+base_install_ddev() {
+  cat > "${_base_bin_dir}/ddev" <<'STUB'
+#!/usr/bin/env bash
+printf 'ddev %s\n' "$*" >> "${STUB_DDEV_LOG:-/tmp/stub-ddev-calls.log}"
+[[ "$1" == "version" ]] && printf 'ddev version v1.24.0\n'
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/ddev"
+}
+
+# base_install_mkcert — benign `mkcert` stub (ddev calls `mkcert -install`).
+base_install_mkcert() {
+  cat > "${_base_bin_dir}/mkcert" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/mkcert"
+}
+
+# base_install_dotnet — fake `dotnet`.
+#   dotnet --list-sdks        → emits STUB_DOTNET_SDKS lines (empty = none installed)
+#   dotnet tool install -g X  → logs; creates the tool binary in ~/.dotnet/tools AND the stub dir
+#                               (Aspire.Cli→aspire; otherwise the package name verbatim)
+#   (any other form)          → exit 0; logs
+base_install_dotnet() {
+  cat > "${_base_bin_dir}/dotnet" <<'STUB'
+#!/usr/bin/env bash
+log_file="${STUB_DOTNET_LOG:-/tmp/stub-dotnet-calls.log}"
+printf 'dotnet %s\n' "$*" >> "${log_file}"
+
+if [[ "$1" == "--list-sdks" ]]; then
+  [[ -n "${STUB_DOTNET_SDKS:-}" ]] && printf '%s\n' "${STUB_DOTNET_SDKS}"
+  exit 0
+fi
+
+if [[ "$1" == "tool" && "$2" == "install" ]]; then
+  pkg=""
+  for a in "$@"; do
+    [[ "$a" == -* || "$a" == "tool" || "$a" == "install" ]] && continue
+    pkg="$a"
+  done
+  case "${pkg}" in
+    Aspire.Cli|aspire.cli|Aspire*) bin="aspire" ;;
+    *) bin="${pkg}" ;;
+  esac
+  if [[ -n "${bin}" ]]; then
+    mkdir -p "${HOME}/.dotnet/tools"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "${HOME}/.dotnet/tools/${bin}"; chmod +x "${HOME}/.dotnet/tools/${bin}"
+    stub_dir="$(dirname "$(command -v dotnet)")"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_dir}/${bin}"; chmod +x "${stub_dir}/${bin}"
+  fi
+  exit 0
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/dotnet"
+}
+
+# base_install_sdkmanager — fake Android `sdkmanager`.
+#   sdkmanager --licenses     → logs (consumes stdin from `yes |`); writes a license-accepted marker
+#   sdkmanager <packages...>  → logs; creates $ANDROID_HOME/platform-tools/adb when platform-tools requested
+base_install_sdkmanager() {
+  cat > "${_base_bin_dir}/sdkmanager" <<'STUB'
+#!/usr/bin/env bash
+log_file="${STUB_SDKMANAGER_LOG:-/tmp/stub-sdkmanager-calls.log}"
+printf 'sdkmanager %s\n' "$*" >> "${log_file}"
+ah="${ANDROID_HOME:-${HOME}/Android/Sdk}"
+
+if [[ "$*" == *"--licenses"* ]]; then
+  cat >/dev/null 2>&1 || true   # consume `yes |` stdin
+  mkdir -p "${ah}/licenses"
+  : > "${ah}/licenses/android-sdk-license"
+  exit 0
+fi
+
+for a in "$@"; do
+  case "$a" in
+    platform-tools) mkdir -p "${ah}/platform-tools"; printf '#!/usr/bin/env bash\nexit 0\n' > "${ah}/platform-tools/adb"; chmod +x "${ah}/platform-tools/adb" ;;
+  esac
+done
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/sdkmanager"
+}
+
+# base_remove_dotnet — remove the dotnet stub (simulate .NET absent).
+base_remove_dotnet() { rm -f "${_base_bin_dir}/dotnet"; }
+# base_remove_ddev — remove the ddev stub.
+base_remove_ddev() { rm -f "${_base_bin_dir}/ddev"; }
+# base_remove_uv — remove the uv stub if a real/created one is on the stub dir.
+base_remove_uv() { rm -f "${_base_bin_dir}/uv"; }
