@@ -1,6 +1,6 @@
 # Contract: `data` stack (containers only)
 
-`data` module: `category="dev-stacks"`, `requires=["docker"]`, only `[install].fedora`.
+`data-services` module: `category="dev-stacks"`, `requires=["docker"]`, only `[install].fedora`.
 NO host database service is installed — databases are persistent containers.
 
 ## `install.sh`

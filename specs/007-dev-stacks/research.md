@@ -32,15 +32,19 @@ the live-registry latest as of that date; the in-repo source of truth for each i
 **Decision**: `ddev` via its Fedora dnf repo — write `/etc/yum.repos.d/ddev.repo` (`baseurl=https://pkg.ddev.com/yum/`, `gpgcheck=0`) then `sudo dnf install --refresh ddev` (+ `mkcert -install`). NO host php/composer. fresh server: intelephense (global); Pint is per-project (template).
 | lang | command | mise spec | args |
 |---|---|---|---|
-| php | intelephense | `npm:intelephense@latest-pinned` | `--stdio` |
+| php | intelephense | `npm:intelephense@1.12.0` | `--stdio` |
 **Rationale**: intelephense is still the leading PHP LSP (npm pkg `intelephense`, run `--stdio`). Pint ships as a composer dev-dependency in `templates/laravel`; that project's `.fresh/config.json` sets the PHP formatter to `vendor/bin/pint` (run via ddev). `templates/laravel` documents the ddev `laravel new` flow (`ddev config --project-type=laravel --docroot=public` + `ddev composer create laravel/laravel`).
 
 ## .NET stack (US4)
 **Decision**: **.NET 10 LTS** via Fedora in-distro `sudo dnf install -y dotnet-sdk-10.0` (no MS prod repo needed on Fedora 44; .NET 8/9 EOL Nov 2026 — not pinned). **Aspire = standalone CLI**: `dotnet tool install -g Aspire.Cli` (binary `aspire`; the old `dotnet workload install aspire` is deprecated). fresh server: csharp-ls (clean dotnet-tool, pinnable, wired default); csharpier (global dotnet tool) for C# formatting; roslyn-ls documented as the richer alternative.
 | lang | command | provisioning | args |
 |---|---|---|---|
-| csharp | csharp-ls | `dotnet tool install -g csharp-ls` (pinned) | — |
-| csharp (fmt) | csharpier | `dotnet tool install -g csharpier` (pinned) | — |
+| csharp | csharp-ls | `dotnet tool install -g csharp-ls` | — |
+| csharp (fmt) | csharpier | `dotnet tool install -g csharpier` | — |
+
+> Delivered: csharp-ls / csharpier / Aspire.Cli install **unpinned** (`dotnet tool install -g <pkg>`,
+> latest LTS-compatible) — the .NET SDK (`dotnet-sdk-10.0`) is the pinned reproducibility anchor for
+> this stack; the dotnet-tool layer tracks the SDK. Pin with `--version` later if drift bites.
 **Rationale**: csharp-ls installs cleanly as a pinnable dotnet global tool (Roslyn-ls ships inside the C# extension — no clean standalone pinned install, so it's the documented upgrade, not the wired default). `templates/dotnet` Aspire AppHost sets shared infra `.WithDataVolume()` + `.WithLifetime(ContainerLifetime.Persistent)`. (.NET tools are not mise-managed; they're `dotnet tool` — so the dotnet stack's fresh wiring uses dotnet-tool installs, resolved to absolute paths for the fresh config; `lib/fresh.sh` assumes mise, so the dotnet stack either extends the helper or wires csharp-ls/csharpier via a small dotnet-tool variant — finalized in data-model.)
 
 ## DevOps stack (US6) — **OpenTofu over Terraform**
@@ -54,7 +58,7 @@ the live-registry latest as of that date; the in-repo source of truth for each i
 fresh server:
 | lang | command | mise spec | args |
 |---|---|---|---|
-| terraform | tofu-ls | `aqua:opentofu/tofu-ls@<pin>` | `serve` |
+| terraform | tofu-ls | `aqua:opentofu/tofu-ls@0.0.22` | `serve` |
 **Rationale**: Terraform is BSL-1.1 (non-OSI); OpenTofu (MPL-2.0) is the 2026 open default → `tofu` + `tofu-ls`. Helm 4 is GA.
 
 ## Data stack (US5) — **Valkey over Redis**, containers only

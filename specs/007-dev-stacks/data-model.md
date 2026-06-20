@@ -10,7 +10,7 @@ python       = ["uv","python-lsp"]
 web          = ["web-runtimes","web-lsp"]
 laravel      = ["ddev","laravel-lsp"]
 dotnet       = ["dotnet-sdk","aspire","dotnet-lsp"]
-data         = ["data"]
+data         = ["data-services"]
 devops       = ["devops-tools","devops-lsp"]
 react-native = ["web-runtimes","android-sdk","expo"]   # shares web-runtimes (node@22)
 ```
@@ -32,7 +32,7 @@ react-native = ["web-runtimes","android-sdk","expo"]   # shares web-runtimes (no
 | `expo` | `["web-runtimes"]` | seed `templates/react-native` (npx create-expo-app flow); verify template present (no global expo-cli) |
 | `devops-tools` | `["mise"]` | `mise use -g aqua:opentofu/opentofu@1.11.6 aqua:kubernetes/kubectl@1.35.2 aqua:helm/helm@4.1.4 aqua:derailed/k9s@0.51.0`; verify mise-resolvable |
 | `devops-lsp` | `["fresh","mise","devops-tools"]` | provision `servers.devops.tsv` (tofu-ls) |
-| `data` | `["docker"]` | seed `templates/data/compose.yaml` (postgres:18 + valkey/valkey:8.1 + dbgate/dbgate:7.2.0, named volumes); verify compose.yaml present (NO host db install) |
+| `data-services` | `["docker"]` | seed `templates/data/compose.yaml` (postgres:18 + valkey/valkey:8.1 + dbgate/dbgate:7.2.0, named volumes); verify compose.yaml present (NO host db install) |
 
 ## Per-stack fresh server maps (`modules/<stack-lsp>/servers.tsv`, TAB-separated: lang, command, spec, args)
 **python** (`python-lsp/servers.tsv`):

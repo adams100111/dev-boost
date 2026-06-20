@@ -6,7 +6,7 @@ python       = ["uv","python-lsp"]
 web          = ["web-runtimes","web-lsp"]
 laravel      = ["ddev","laravel-lsp"]
 dotnet       = ["dotnet-sdk","aspire","dotnet-lsp"]
-data         = ["data"]
+data         = ["data-services"]
 devops       = ["devops-tools","devops-lsp"]
 react-native = ["web-runtimes","android-sdk","expo"]
 ```
