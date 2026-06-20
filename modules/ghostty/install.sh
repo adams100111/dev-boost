@@ -13,11 +13,15 @@ source "${DEVBOOST_ROOT}/lib/pkg.sh"
 
 # ---------------------------------------------------------------------------
 # Step 1: enable the scottames/ghostty COPR repository if not already present.
-# `dnf copr enable` is idempotent: when the repo is already enabled the stub
-# (and the real dnf) print a message and exit 0 without re-adding it.
+# Check first; only run `copr enable` when the COPR is absent so the operation
+# is strictly add-if-absent (mirrors rpmfusion/docker module pattern).
 # ---------------------------------------------------------------------------
-log_info "ghostty: enabling scottames/ghostty COPR"
-sudo dnf copr enable -y scottames/ghostty
+if dnf copr list 2>/dev/null | grep -q 'scottames/ghostty'; then
+  log_info "ghostty: scottames/ghostty COPR already enabled — skipping"
+else
+  log_info "ghostty: enabling scottames/ghostty COPR"
+  sudo dnf copr enable -y scottames/ghostty
+fi
 
 # ---------------------------------------------------------------------------
 # Step 2: install ghostty from the COPR repository.

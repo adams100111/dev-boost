@@ -31,6 +31,7 @@ _run_install_sh() {
     export STUB_DNF_LOG='${STUB_DNF_LOG}'
     export STUB_RPM_LOG='${STUB_RPM_LOG}'
     export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
+    export STUB_CURL_LOG='${STUB_CURL_LOG}'
     export STUB_FC_LIST_LOG='${STUB_FC_LIST_LOG}'
     export STUB_FC_CACHE_LOG='${STUB_FC_CACHE_LOG}'
     export STUB_FONTS_INSTALLED='${STUB_FONTS_INSTALLED:-}'

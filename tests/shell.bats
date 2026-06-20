@@ -93,8 +93,6 @@ _run_install_sh() {
 @test "starship: install.sh does NOT edit ~/.bashrc" {
   run _run_install_sh starship
   [ "$status" -eq 0 ]
-  # ~/.bashrc should not have been created or modified by the install script
-  ! grep -q "bashrc" <(printf '%s\n' "$output") 2>/dev/null || true
   # The actual file should not contain starship init line written by the module
   if [[ -f "${HOME}/.bashrc" ]]; then
     ! grep -q "starship init" "${HOME}/.bashrc"
@@ -119,7 +117,7 @@ _run_install_sh() {
 
 @test "starship: unsupported OS — engine logs failure" {
   run _engine_install starship arch arch
-  [[ "$output" == *"unsupported"* ]] || [[ "$output" == *"FAIL"* ]]
+  [[ "$output" == *"unsupported"* ]]
 }
 
 # ===========================================================================
@@ -185,9 +183,19 @@ _run_install_sh() {
   : > "${STUB_DNF_LOG}"
   run _run_install_sh ghostty
   [ "$status" -eq 0 ]
-  # copr enable should still be called but it's a no-op (stub exits 0 early)
-  # The key assertion: the install still completes successfully
-  grep -q "ghostty" "${STUB_DNF_LOG}"
+  # When the COPR is already enabled, copr enable must NOT be invoked.
+  ! grep -q "copr enable" "${STUB_DNF_LOG}"
+  # The package install must still proceed.
+  grep -q "install" "${STUB_DNF_LOG}"
+}
+
+@test "ghostty: COPR IS added when scottames/ghostty not yet enabled" {
+  unset STUB_COPR_ENABLED
+  : > "${STUB_DNF_LOG}"
+  run _run_install_sh ghostty
+  [ "$status" -eq 0 ]
+  # When the COPR is absent, copr enable must be invoked exactly once.
+  [ "$(grep -c "copr enable" "${STUB_DNF_LOG}")" -eq 1 ]
 }
 
 @test "ghostty: engine skips when ghostty binary is present (idempotent)" {
@@ -212,7 +220,7 @@ _run_install_sh() {
   # even when ghostty binary happens to be on the host PATH.
   rm -f "$(base_stub_dir)/ghostty"
   DEVBOOST_INSTALL_FLAGS="--force" run _engine_install ghostty arch arch
-  [[ "$output" == *"unsupported"* ]] || [[ "$output" == *"FAIL"* ]]
+  [[ "$output" == *"unsupported"* ]]
 }
 
 @test "ghostty: Ptyxis is NOT removed by install.sh" {

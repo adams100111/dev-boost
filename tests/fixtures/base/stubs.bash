@@ -208,6 +208,15 @@ base_install_dnf() {
 log_file="${STUB_DNF_LOG:-/tmp/stub-dnf-calls.log}"
 printf 'dnf %s\n' "$*" >> "${log_file}"
 
+# Handle `dnf copr list`: emit enabled COPR repos from STUB_COPR_ENABLED.
+if [[ "$1" == "copr" && "$2" == "list" ]]; then
+  enabled="${STUB_COPR_ENABLED:-}"
+  for r in ${enabled}; do
+    printf '%s\n' "${r}"
+  done
+  exit 0
+fi
+
 # Handle `dnf copr enable -y <repo>`: record the COPR name; skip if already enabled.
 if [[ "$1" == "copr" && "$2" == "enable" ]]; then
   # Extract the last non-flag argument as the repo name.
