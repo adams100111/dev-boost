@@ -82,6 +82,14 @@ cmd_doctor() {
     esac
   fi
 
+  # runtime-manager drift warning — delegate to mise_drift (FR-008)
+  source "${DEVBOOST_ROOT}/lib/pkg.sh"
+  local drift_state
+  drift_state="$(mise_drift 2>/dev/null)" || true
+  if [[ "${drift_state}" == "both" ]]; then
+    log_warn "runtime managers: mise and a legacy manager (nvm/sdkman) are both active — migrate or disable the legacy one"
+  fi
+
   [[ "$ok" -eq 0 ]] && log_ok "doctor: environment OK ($OS_DISTRO/$OS_FAMILY $OS_ARCH)"
   return "$ok"
 }
