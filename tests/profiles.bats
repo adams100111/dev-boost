@@ -435,3 +435,49 @@ _EXPECTED_GNOME_MEMBERS=(
   actual_count="$(printf '%s\n' "$output" | grep -c .)"
   [ "$actual_count" -gt 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# T003 — profile_expand multimedia (TOML-only membership + count)
+# Full depsort test deferred to T010 (polish).
+# ---------------------------------------------------------------------------
+
+_EXPECTED_MULTIMEDIA_COUNT=4
+_EXPECTED_MULTIMEDIA_MEMBERS=(
+  ffmpeg-full codecs va-hwaccel openh264
+)
+
+@test "profiles.toml: multimedia profile is defined (profile_names includes multimedia)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"multimedia"* ]]
+}
+
+@test "profiles.toml: profile_expand multimedia yields exactly ${_EXPECTED_MULTIMEDIA_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand multimedia | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_MULTIMEDIA_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand multimedia contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand multimedia | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_MULTIMEDIA_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
