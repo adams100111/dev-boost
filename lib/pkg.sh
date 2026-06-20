@@ -43,7 +43,7 @@ rpm_q() {
 # ---------------------------------------------------------------------------
 flatpak_remote_add() {
   local name="$1" url="$2"
-  if flatpak remotes | grep -q "^${name}$"; then
+  if flatpak remotes | awk '{print $1}' | grep -qxF "${name}"; then
     log_skip "flatpak remote '${name}' already present"
     return 0
   fi
@@ -67,17 +67,23 @@ write_kv_conf() {
   fi
 
   # If the key already exists with the correct value, nothing to do.
-  if grep -q "^${key}=${value}$" "${file}"; then
+  # Use a fixed-string first-field check so keys/values with regex metacharacters
+  # are safe: awk splits on the first '=' and compares both fields literally.
+  if awk -F= 'NR==1{found=0} $1==key && substr($0, length($1)+2)==val{found=1} END{exit !found}' \
+        key="${key}" val="${value}" "${file}"; then
     log_skip "write_kv_conf: ${key}=${value} already set in ${file}"
     return 0
   fi
 
-  # If the key exists with a different value, replace it in-place.
-  if grep -q "^${key}=" "${file}"; then
+  # If the key exists with a different value, replace it in-place using awk so
+  # that neither key nor value is interpolated into a regex or sed delimiter.
+  if awk -F= '$1==key{found=1} END{exit !found}' key="${key}" "${file}"; then
     log_info "pkg: reconciling ${key} in ${file}"
     local tmp
     tmp="$(mktemp)" || { log_error "write_kv_conf: mktemp failed"; return 1; }
-    sed "s|^${key}=.*|${key}=${value}|" "${file}" > "${tmp}" \
+    awk -F= -v key="${key}" -v val="${value}" \
+      '$1==key { print key "=" val; next } { print }' \
+      "${file}" > "${tmp}" \
       && mv "${tmp}" "${file}" \
       || { log_error "write_kv_conf: failed to update ${key} in ${file}"; rm -f "${tmp}"; return 1; }
     return 0
@@ -107,7 +113,7 @@ comment_block() {
   tmp="$(mktemp)" || { log_error "comment_block: mktemp failed"; return 1; }
 
   local inside=0
-  while IFS= read -r line; do
+  while IFS= read -r line || [[ -n "${line}" ]]; do
     if [[ "${line}" == "${begin}" ]]; then
       inside=1
       printf '%s\n' "${line}" >> "${tmp}"

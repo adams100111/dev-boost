@@ -95,6 +95,25 @@ teardown() {
   ! grep -q "remote-add" "${STUB_FLATPAK_LOG}"
 }
 
+@test "flatpak_remote_add: skips remote-add when flatpak remotes prints name<TAB>system" {
+  # Simulate real `flatpak remotes` output which includes a type column.
+  # Override the flatpak stub for this test by writing a custom one.
+  cat > "${_base_bin_dir}/flatpak" <<'TABSTUB'
+#!/usr/bin/env bash
+log_file="${STUB_FLATPAK_LOG:-/tmp/stub-flatpak-calls.log}"
+printf 'flatpak %s\n' "$*" >> "${log_file}"
+if [[ "$1" == "remotes" ]]; then
+  printf 'flathub\tsystem\n'
+  exit 0
+fi
+exit 0
+TABSTUB
+  chmod +x "${_base_bin_dir}/flatpak"
+  run flatpak_remote_add flathub https://flathub.org/repo/flathub.flatpakrepo
+  [ "$status" -eq 0 ]
+  ! grep -q "remote-add" "${STUB_FLATPAK_LOG}"
+}
+
 # ---------------------------------------------------------------------------
 # write_kv_conf
 # ---------------------------------------------------------------------------
@@ -133,6 +152,23 @@ teardown() {
   write_kv_conf "${conf}" max_parallel_downloads 10
   write_kv_conf "${conf}" max_parallel_downloads 10
   [ "$(grep -c "^max_parallel_downloads=" "${conf}")" -eq 1 ]
+}
+
+@test "write_kv_conf: handles value containing | and / without corruption" {
+  local conf
+  conf="$(base_scratch_dnf_conf)"
+  run write_kv_conf "${conf}" proxy "http://proxy.example|corp/mirror"
+  [ "$status" -eq 0 ]
+  grep -qF 'proxy=http://proxy.example|corp/mirror' "${conf}"
+}
+
+@test "write_kv_conf: idempotent when value contains | and / (no duplicate)" {
+  local conf
+  conf="$(base_scratch_dnf_conf)"
+  write_kv_conf "${conf}" proxy "http://proxy.example|corp/mirror"
+  run write_kv_conf "${conf}" proxy "http://proxy.example|corp/mirror"
+  [ "$status" -eq 0 ]
+  [ "$(grep -cF 'proxy=' "${conf}")" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -178,6 +214,19 @@ teardown() {
   run comment_block "${bashrc}" "# BEGIN SDKMAN" "# END SDKMAN"
   [ "$status" -eq 0 ]
   grep -q "^# export SDKMAN_DIR" "${bashrc}"
+}
+
+@test "comment_block: correctly processes file with no trailing newline (end marker on last line)" {
+  local bashrc
+  bashrc="$(base_scratch_bashrc)"
+  # Write block with NO trailing newline after the END marker.
+  printf '# BEGIN NVM\nexport NVM_DIR="$HOME/.nvm"\n# END NVM' > "${bashrc}"
+  run comment_block "${bashrc}" "# BEGIN NVM" "# END NVM"
+  [ "$status" -eq 0 ]
+  # Interior line must be commented.
+  grep -q '^# export NVM_DIR' "${bashrc}"
+  # End marker must be present (not swallowed).
+  grep -q '^# END NVM$' "${bashrc}"
 }
 
 # ---------------------------------------------------------------------------
