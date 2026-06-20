@@ -1,0 +1,9 @@
+name        = "vscode"
+category    = "editors"
+description = "Install VS Code from the Microsoft dnf repo + a curated baseline extension set (idempotent)"
+requires    = []
+profiles    = ["editors"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/vscode/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/vscode/install.sh\""

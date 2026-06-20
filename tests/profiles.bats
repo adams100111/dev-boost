@@ -555,3 +555,109 @@ _EXPECTED_MULTIMEDIA_MEMBERS=(
   [ "$rpmfusion_line" -lt "$vahwaccel_line" ] \
     || { echo "rpmfusion (line $rpmfusion_line) must appear before va-hwaccel (line $vahwaccel_line)"; return 1; }
 }
+
+# ---------------------------------------------------------------------------
+# T003 — profile_expand editors (TOML-only membership + count)
+# Full depsort test deferred to T011 (polish).
+# ---------------------------------------------------------------------------
+
+_EXPECTED_EDITORS_COUNT=3
+_EXPECTED_EDITORS_MEMBERS=(
+  vscode fresh fresh-lsp
+)
+
+@test "profiles.toml: editors profile is defined (profile_names includes editors)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"editors"* ]]
+}
+
+@test "profiles.toml: profile_expand editors yields exactly ${_EXPECTED_EDITORS_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand editors | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_EDITORS_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand editors contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand editors | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_EDITORS_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
+# T011 — full depsort resolution: editors against real modules/
+# ---------------------------------------------------------------------------
+
+@test "devboost list --profile editors: resolves without cycle, exit 0" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile editors
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+}
+
+@test "devboost list --profile editors: all 3 editors modules present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile editors
+  [ "$status" -eq 0 ]
+  for module in vscode fresh fresh-lsp; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile editors: transitive mise present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile editors
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mise"* ]] \
+    || { echo "transitive mise missing from list output"; return 1; }
+}
+
+@test "devboost list --profile editors: mise ordered before fresh-lsp" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile editors
+  [ "$status" -eq 0 ]
+  local mise_line lsp_line
+  mise_line="$(printf '%s\n' "$output" | grep -n '^mise$'      | cut -d: -f1)"
+  lsp_line="$(printf '%s\n'  "$output" | grep -n '^fresh-lsp$' | cut -d: -f1)"
+  [ -n "$mise_line" ] || { echo "mise not found in output";      return 1; }
+  [ -n "$lsp_line" ]  || { echo "fresh-lsp not found in output"; return 1; }
+  [ "$mise_line" -lt "$lsp_line" ] \
+    || { echo "mise (line $mise_line) must appear before fresh-lsp (line $lsp_line)"; return 1; }
+}
+
+@test "devboost list --profile editors: fresh ordered before fresh-lsp" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile editors
+  [ "$status" -eq 0 ]
+  local fresh_line lsp_line
+  fresh_line="$(printf '%s\n' "$output" | grep -n '^fresh$'     | cut -d: -f1)"
+  lsp_line="$(printf '%s\n'   "$output" | grep -n '^fresh-lsp$' | cut -d: -f1)"
+  [ -n "$fresh_line" ] || { echo "fresh not found in output";     return 1; }
+  [ -n "$lsp_line" ]   || { echo "fresh-lsp not found in output"; return 1; }
+  [ "$fresh_line" -lt "$lsp_line" ] \
+    || { echo "fresh (line $fresh_line) must appear before fresh-lsp (line $lsp_line)"; return 1; }
+}

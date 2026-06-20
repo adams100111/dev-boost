@@ -188,6 +188,15 @@ base_setup() {
   export STUB_VAINFO_OK="${STUB_VAINFO_OK:-1}"
   # STUB_REPO_ENABLED: space-separated repos already enabled (dnf config-manager setopt is a no-op for these).
   export STUB_REPO_ENABLED="${STUB_REPO_ENABLED:-}"
+  # Spec 6 (editors) log + state defaults.
+  export STUB_CODE_LOG="${STUB_CODE_LOG:-${BATS_TEST_TMPDIR}/code-calls.log}"
+  export STUB_CODE_EXT_STATE="${STUB_CODE_EXT_STATE:-${BATS_TEST_TMPDIR}/code-extensions.state}"
+  # STUB_CODE_EXTENSIONS: space-separated extension IDs already installed (seed). Default empty.
+  export STUB_CODE_EXTENSIONS="${STUB_CODE_EXTENSIONS:-}"
+  # STUB_FRESH_INSTALL_VIA: which fresh channel "succeeds" (rpm/script/cargo/none). Unset ⇒ off.
+  export STUB_FRESH_INSTALL_VIA="${STUB_FRESH_INSTALL_VIA:-}"
+  # STUB_MISE_WHICH_FAIL: space-separated bin names `mise which` should report unresolved.
+  export STUB_MISE_WHICH_FAIL="${STUB_MISE_WHICH_FAIL:-}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -218,6 +227,8 @@ base_setup() {
   # Spec 5 (multimedia-codecs) log initialisation.
   : > "${STUB_LSPCI_LOG}"
   : > "${STUB_VAINFO_LOG}"
+  # Spec 6 (editors) log initialisation. (State file is seeded lazily by the code stub.)
+  : > "${STUB_CODE_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -259,6 +270,8 @@ base_setup() {
   # Spec 5 (multimedia-codecs) stubs.
   base_install_lspci
   base_install_vainfo
+  # Spec 6 (editors) stubs.
+  base_install_code
 }
 
 # ---------------------------------------------------------------------------
@@ -369,6 +382,15 @@ printf 'rpm %s\n' "$*" >> "${log_file}"
 # Handle rpm -E %fedora (macro expansion used in install URLs).
 if [[ "$*" == *"-E"* && "$*" == *"%fedora"* ]]; then
   printf '44\n'
+  exit 0
+fi
+
+# Spec 6 (editors): simulate `rpm -U <…fresh….rpm>` installing the fresh binary
+# only when STUB_FRESH_INSTALL_VIA=rpm (the rpm channel is the one expected to win).
+if [[ ( "$1" == "-U" || "$1" == "-i" ) && "$*" == *fresh* && "${STUB_FRESH_INSTALL_VIA:-}" == "rpm" ]]; then
+  stub_dir="$(dirname "$(command -v rpm)")"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_dir}/fresh"
+  chmod +x "${stub_dir}/fresh"
   exit 0
 fi
 
@@ -562,6 +584,22 @@ printf 'mise %s\n' "$*" >> "${log_file}"
 # Also append to the shared ordering log (backward-compatible: no-op if unset).
 if [[ -n "${STUB_ORDER_LOG:-}" ]]; then
   printf 'mise:%s\n' "$*" >> "${STUB_ORDER_LOG}"
+fi
+
+# Spec 6 (editors): `mise which <bin>` resolves a deterministic fake absolute
+# shim path (exit 0) so fresh-lsp provisioning can wire fresh's config.json to a
+# PATH-independent command. STUB_MISE_WHICH_FAIL (space-separated bin names) forces
+# specific bins to be unresolved (exit 1) — used to test the die-on-unresolved path.
+if [[ "$1" == "which" && -n "${2:-}" ]]; then
+  bin="$2"
+  for f in ${STUB_MISE_WHICH_FAIL:-}; do
+    if [[ "${f}" == "${bin}" ]]; then
+      printf 'mise which: %s not found\n' "${bin}" >&2
+      exit 1
+    fi
+  done
+  printf '%s/.local/share/mise/shims/%s\n' "${HOME}" "${bin}"
+  exit 0
 fi
 exit 0
 STUB
@@ -768,6 +806,15 @@ base_install_cargo() {
 # Stub: cargo — fake Rust package manager for bats tests.
 log_file="${STUB_CARGO_LOG:-/tmp/stub-cargo-calls.log}"
 printf 'cargo %s\n' "$*" >> "${log_file}"
+
+# Spec 6 (editors): simulate `cargo install --locked fresh-editor` installing the
+# fresh binary only when STUB_FRESH_INSTALL_VIA=cargo (cargo is the last-resort channel).
+if [[ "$1" == "install" && "$*" == *fresh-editor* && "${STUB_FRESH_INSTALL_VIA:-}" == "cargo" ]]; then
+  stub_dir="$(dirname "$(command -v cargo)")"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_dir}/fresh"
+  chmod +x "${stub_dir}/fresh"
+  exit 0
+fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/cargo"
@@ -886,6 +933,27 @@ base_install_curl() {
 # Stub: curl — fake HTTP client for bats tests (places placeholder output files).
 log_file="${STUB_CURL_LOG:-/tmp/stub-curl-calls.log}"
 printf 'curl %s\n' "$*" >> "${log_file}"
+
+# Spec 6 (editors): fresh install-channel simulation. Detect the URL argument.
+_fresh_url=""
+for _a in "$@"; do
+  [[ "${_a}" == http* ]] && _fresh_url="${_a}"
+done
+# (a) GitHub releases API for sinelaw/fresh → emit JSON with an arch-matched .rpm URL,
+#     so `fresh/install.sh` can extract a browser_download_url for the rpm channel.
+if [[ "${_fresh_url}" == *api.github.com*fresh* ]]; then
+  printf '{ "tag_name": "v1.0.0", "assets": [ { "browser_download_url": "https://example.invalid/fresh-editor.%s.rpm" } ] }\n' "$(uname -m)"
+  exit 0
+fi
+# (b) Official install script (`curl … install.sh | sh`): when STUB_FRESH_INSTALL_VIA=script,
+#     emit a tiny script (to stdout, for the downstream `sh`) that creates the fresh binary.
+if [[ "${_fresh_url}" == *fresh*install.sh* ]]; then
+  if [[ "${STUB_FRESH_INSTALL_VIA:-}" == "script" ]]; then
+    stub_dir="$(dirname "$(command -v curl)")"
+    printf 'printf "#!/usr/bin/env bash\\nexit 0\\n" > "%s/fresh"; chmod +x "%s/fresh"\n' "${stub_dir}" "${stub_dir}"
+  fi
+  exit 0
+fi
 
 # Parse -o / --output <file> to create a placeholder at the destination.
 output_file=""
@@ -1263,4 +1331,74 @@ else
 fi
 STUB
   chmod +x "${_base_bin_dir}/vainfo"
+}
+
+# ===========================================================================
+# Spec 6 (editors) stubs
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# base_install_code — write a fake `code` (VS Code CLI) binary to the stub bin dir.
+#
+# Behaviour:
+#   code --list-extensions            → prints each extension ID in the scratch state
+#                                        file (seeded from STUB_CODE_EXTENSIONS).
+#   code --install-extension <id> [--force]
+#                                     → appends <id> to the state (if absent); logs.
+#   (any other form)                  → exits 0; logs invocation.
+#
+# State knobs:
+#   STUB_CODE_EXTENSIONS  — space-separated extension IDs already installed (seed).
+#   STUB_CODE_EXT_STATE   — path to the scratch installed-extensions state file.
+#   STUB_CODE_LOG         — path to the code invocation log.
+# ---------------------------------------------------------------------------
+base_install_code() {
+  cat > "${_base_bin_dir}/code" <<'STUB'
+#!/usr/bin/env bash
+# Stub: code — fake VS Code CLI for bats tests (Spec 6); scratch extension store.
+log_file="${STUB_CODE_LOG:-/tmp/stub-code-calls.log}"
+state_file="${STUB_CODE_EXT_STATE:-/tmp/stub-code-extensions.state}"
+printf 'code %s\n' "$*" >> "${log_file}"
+
+# Seed the state file from STUB_CODE_EXTENSIONS on first use.
+if [[ ! -f "${state_file}" ]]; then
+  for e in ${STUB_CODE_EXTENSIONS:-}; do printf '%s\n' "${e}"; done > "${state_file}"
+fi
+
+if [[ "$1" == "--list-extensions" ]]; then
+  cat "${state_file}"
+  exit 0
+fi
+
+if [[ "$1" == "--install-extension" && -n "${2:-}" ]]; then
+  id="$2"
+  if ! grep -qxF "${id}" "${state_file}" 2>/dev/null; then
+    printf '%s\n' "${id}" >> "${state_file}"
+  fi
+  exit 0
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/code"
+}
+
+# ---------------------------------------------------------------------------
+# base_remove_code — remove the code stub from PATH (simulate VS Code absent).
+# ---------------------------------------------------------------------------
+base_remove_code() { rm -f "${_base_bin_dir}/code"; }
+
+# ---------------------------------------------------------------------------
+# base_remove_fresh — remove the fresh stub from PATH (simulate fresh absent).
+# ---------------------------------------------------------------------------
+base_remove_fresh() { rm -f "${_base_bin_dir}/fresh"; }
+
+# ---------------------------------------------------------------------------
+# base_scratch_yum_repos_dir — return the scratch /etc/yum.repos.d dir (created).
+# Pass to vscode via DEVBOOST_YUM_REPOS_DIR so the repo file write needs no root.
+# ---------------------------------------------------------------------------
+base_scratch_yum_repos_dir() {
+  local d="${_base_root_dir}/etc/yum.repos.d"
+  mkdir -p "${d}"
+  printf '%s\n' "${d}"
 }

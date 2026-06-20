@@ -19,8 +19,8 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/005-multimedia-codecs/plan.md`
-(spec `specs/005-multimedia-codecs/spec.md`). Specs 1–4 (secrets-and-auth, base-profile,
-cli-and-shell, gnome-desktop) merged to main (666 tests). For technologies, project
-structure, shell commands, and other context, read that plan and the design doc / constitution.
+Active feature plan: `specs/006-editors/plan.md`
+(spec `specs/006-editors/spec.md`). Specs 1–5 (secrets-and-auth, base-profile,
+cli-and-shell, gnome-desktop, multimedia-codecs) merged to main (713 tests). For technologies,
+project structure, shell commands, and other context, read that plan and the design doc / constitution.
 <!-- SPECKIT END -->
