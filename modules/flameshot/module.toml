@@ -1,0 +1,9 @@
+name        = "flameshot"
+category    = "apps"
+description = "Flameshot screenshot tool (Flathub)"
+requires    = ["flatpak"]
+profiles    = ["apps"]
+verify      = "flatpak info org.flameshot.Flameshot"
+
+[install]
+fedora = "flatpak install -y flathub org.flameshot.Flameshot"
