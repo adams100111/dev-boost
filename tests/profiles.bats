@@ -78,6 +78,74 @@ _EXPECTED_BASE_MEMBERS=(
   done
 }
 
+# ---------------------------------------------------------------------------
+# T003 — profile_expand cli: membership and count
+# ---------------------------------------------------------------------------
+_EXPECTED_CLI_COUNT=18
+_EXPECTED_CLI_MEMBERS=(
+  eza bat btop zoxide atuin direnv delta lazygit lazydocker
+  dust duf sd yq gh tealdeer tpm fastfetch claude-code
+)
+
+@test "profiles.toml: profile_expand cli yields exactly ${_EXPECTED_CLI_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand cli | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_CLI_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand cli contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand cli | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_CLI_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
+# T003 — profile_expand shell: membership and count
+# ---------------------------------------------------------------------------
+_EXPECTED_SHELL_COUNT=5
+_EXPECTED_SHELL_MEMBERS=(
+  starship bash-config ghostty nerd-fonts dotfiles
+)
+
+@test "profiles.toml: profile_expand shell yields exactly ${_EXPECTED_SHELL_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand shell | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_SHELL_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand shell contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand shell | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_SHELL_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
 @test "devboost list --profile base: secrets appears before chezmoi and ssh-setup" {
   run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
           DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
