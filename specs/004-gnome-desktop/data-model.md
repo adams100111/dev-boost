@@ -6,17 +6,17 @@ desktop state each module reconciles. Paths overridable in tests.
 ## Module entities
 - Escape-hatch modules (`modules/<name>/{module.toml,install.sh}`) sourcing
   `lib/log.sh`+`lib/pkg.sh`+`lib/gnome.sh`: `gnome-settings`, `gnome-extensions`,
-  `gnome-manager-apps`, `gnome-aesthetics` (opt-in), `gnome-theme` (opt-in). All
+  `gnome-manager-apps`, `gnome-aesthetics-bundle` (opt-in), `gnome-theme-bundle` (opt-in). All
   `category="gnome"`.
 
 ## profiles.toml (EDIT — add 3 entries)
 ```toml
 gnome           = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
-gnome-aesthetics = ["gnome-aesthetics"]   # opt-in, NOT in full
-gnome-theme     = ["gnome-theme"]         # opt-in, NOT in full
+gnome-aesthetics = ["gnome-aesthetics-bundle"]   # opt-in, NOT in full
+gnome-theme     = ["gnome-theme-bundle"]         # opt-in, NOT in full
 ```
-`requires`: gnome-extensions/aesthetics `requires=["gnome-settings"]` (the enable-list key
-lives in the managed dconf state); gnome-theme `requires=["gnome-settings"]` (applies
+`requires`: gnome-extensions/`gnome-aesthetics-bundle` `requires=["gnome-settings"]` (the enable-list key
+lives in the managed dconf state); `gnome-theme-bundle` `requires=["gnome-settings"]` (applies
 theme keys). All require a GNOME desktop (guarded in install.sh, not via profile).
 
 ## dconf dump — repo data file `modules/gnome-settings/gnome.dconf` (F1/F2)
@@ -33,8 +33,8 @@ center-new-windows; `[org/gnome/desktop/wm/preferences]` button-layout;
 | gnome-settings | a representative key equals reference (e.g. `gsettings get org.gnome.desktop.interface color-scheme` == `'prefer-dark'`) |
 | gnome-extensions | each functional UUID dir present AND in `enabled-extensions` |
 | gnome-manager-apps | Extensions app + Extension Manager (flatpak) + gnome-tweaks present |
-| gnome-aesthetics (opt-in) | each aesthetics UUID present + enabled |
-| gnome-theme (opt-in) | User Themes ext present; theme/icon/cursor/font installed + set in dconf |
+| gnome-aesthetics-bundle (opt-in) | each aesthetics UUID present + enabled |
+| gnome-theme-bundle (opt-in) | User Themes ext present; theme/icon/cursor/font installed + set in dconf |
 
 ## Validation rules (from FRs)
 | Rule | Source |
@@ -51,7 +51,7 @@ center-new-windows; `[org/gnome/desktop/wm/preferences]` button-layout;
 
 ## Ordering (depsort via requires)
 ```
-gnome-settings → gnome-extensions → (gnome-aesthetics opt-in)
-gnome-settings → gnome-theme (opt-in)
+gnome-settings → gnome-extensions → (gnome-aesthetics-bundle opt-in)
+gnome-settings → gnome-theme-bundle (opt-in)
 all: gnome_require guard (unsupported if not GNOME)
 ```

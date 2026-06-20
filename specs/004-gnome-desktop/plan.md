@@ -31,7 +31,7 @@ installs or graphical session.
 **Project Type**: Single-project Bash bootstrap engine.
 **Performance Goals**: Not latency-sensitive; correctness + idempotency.
 **Constraints**: Unattended (no session needed); idempotent/verify-guarded; engine untouched; no secret in git; pinned UUIDs + verified authorship.
-**Scale/Scope**: `lib/gnome.sh` + ~5 modules (gnome-settings, gnome-extensions, gnome-manager-apps, gnome-aesthetics opt-in, gnome-theme opt-in) + a dconf dump + 3 profile entries (`gnome`, `gnome-aesthetics`, `gnome-theme`) + ~5 bats files.
+**Scale/Scope**: `lib/gnome.sh` + ~5 modules (gnome-settings, gnome-extensions, gnome-manager-apps, gnome-aesthetics-bundle opt-in, gnome-theme-bundle opt-in) + a dconf dump + 3 profile entries (`gnome`, `gnome-aesthetics`, `gnome-theme`) + ~5 bats files.
 
 ## Constitution Check
 
@@ -69,8 +69,8 @@ modules/                      # NEW gnome modules
 ├── gnome-settings/{module.toml,install.sh,gnome.dconf}  # dconf load the repo data dump (F1: plain repo file, not chezmoi dot_; F2: no enabled-extensions key)
 ├── gnome-extensions/{module.toml,install.sh}   # functional set (pinned UUIDs) install+enable; SOLE owner of enabled-extensions
 ├── gnome-manager-apps/{module.toml,install.sh} # org.gnome.Extensions + Extension Manager (flatpak) + gnome-tweaks
-├── gnome-aesthetics/{module.toml,install.sh}   # OPT-IN aesthetics extension sub-bundle
-└── gnome-theme/{module.toml,install.sh}        # OPT-IN User Themes + vinceliuice + papirus + bibata + inter
+├── gnome-aesthetics-bundle/{module.toml,install.sh}   # OPT-IN aesthetics extension sub-bundle
+└── gnome-theme-bundle/{module.toml,install.sh}        # OPT-IN User Themes + vinceliuice + papirus + bibata + inter
 profiles.toml                 # EDIT — add `gnome`, `gnome-aesthetics`, `gnome-theme`
 tests/
 ├── gnome-settings.bats, gnome-extensions.bats, gnome-manager.bats, gnome-theme.bats, gnome.bats(lib)  # NEW

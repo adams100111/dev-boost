@@ -15,7 +15,7 @@ extension + profile entries are Foundational. Paths repo-root relative.
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] Create module folders under `modules/` for `gnome-settings`, `gnome-extensions`, `gnome-manager-apps`, `gnome-aesthetics`, `gnome-theme` (with `.gitkeep`).
+- [ ] T001 [P] Create module folders under `modules/` for `gnome-settings`, `gnome-extensions`, `gnome-manager-apps`, `gnome-aesthetics-bundle`, `gnome-theme-bundle` (with `.gitkeep`).
 - [ ] T002 Extend `tests/fixtures/base/stubs.bash` (BACKWARD-COMPATIBLE — Specs 1–3 suite of 484 must stay green) with stubs for `gext` (records install by UUID; writes a fake `~/.local/share/gnome-shell/extensions/<UUID>/metadata.json` whose `uuid` = the requested UUID so author-verify passes; a knob to inject a MISMATCHED uuid for the failure test), `gnome-extensions`, `gnome-shell` (`--version` via `STUB_GNOME_SHELL_VERSION`), `dconf` (load records the dump path; a scratch dconf), `gsettings` (get/set an in-memory `enabled-extensions` list + interface keys, persisted to a scratch file), plus a `STUB_GNOME_PRESENT` knob (default 1). Run `bats tests/` → 484 still green.
 
 **Checkpoint**: scaffold + extended GNOME harness ready.
@@ -63,8 +63,8 @@ extension + profile entries are Foundational. Paths repo-root relative.
 **Independent test**: manager apps installed; aesthetics extensions installed+enabled (opt-in); theme provisioned (User Themes + vinceliuice tag + papirus/bibata/inter + dconf keys), no manual download; all idempotent.
 
 - [ ] T011 [P] [US3] Write `tests/gnome-manager.bats` (RED) then implement `modules/gnome-manager-apps/{module.toml,install.sh}` (`requires=["gnome-settings"]`; official Extensions app + Extension Manager flatpak + gnome-tweaks, add-if-absent; verify presence). GREEN.
-- [ ] T012 [P] [US3] Implement `modules/gnome-aesthetics/{module.toml,install.sh}` (OPT-IN; `requires=["gnome-settings"]`; install+enable the aesthetics UUID set via `lib/gnome.sh`, author-verify + enable-dedup; verify present+enabled) with its tests in `tests/gnome-manager.bats` or a section.
-- [ ] T013 [US3] Write `tests/gnome-theme.bats` (RED) then implement `modules/gnome-theme/{module.toml,install.sh}` (OPT-IN; `requires=["gnome-settings"]`; User Themes ext+enable; pinned vinceliuice theme via `git clone` at a TAG + `./install.sh -l -c dark`; `papirus-icon-theme`+Bibata+`rsms-inter-fonts` via dnf + `fc-cache`; apply dconf theme keys; NO manual gnome-look.org; idempotent; verify theme/icon/cursor/font + User Themes enabled). GREEN.
+- [ ] T012 [P] [US3] Implement `modules/gnome-aesthetics-bundle/{module.toml,install.sh}` (OPT-IN; `requires=["gnome-settings"]`; install+enable the aesthetics UUID set via `lib/gnome.sh`, author-verify + enable-dedup; verify present+enabled) with its tests in `tests/gnome-manager.bats` or a section.
+- [ ] T013 [US3] Write `tests/gnome-theme.bats` (RED) then implement `modules/gnome-theme-bundle/{module.toml,install.sh}` (OPT-IN; `requires=["gnome-settings"]`; User Themes ext+enable; pinned vinceliuice theme via `git clone` at a TAG + `./install.sh -l -c dark`; `papirus-icon-theme`+Bibata+`rsms-inter-fonts` via dnf + `fc-cache`; apply dconf theme keys; NO manual gnome-look.org; idempotent; verify theme/icon/cursor/font + User Themes enabled). GREEN.
 
 **Checkpoint**: US3 — manager tooling + opt-in polish.
 
