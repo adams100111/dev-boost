@@ -1,0 +1,9 @@
+name        = "dnf-tune"
+category    = "base"
+description = "Tune /etc/dnf/dnf.conf for parallel downloads and fastest mirror selection"
+requires    = []
+profiles    = ["base"]
+verify      = "grep -q '^max_parallel_downloads=10$' \"${DEVBOOST_DNF_CONF:-/etc/dnf/dnf.conf}\" && grep -q '^fastestmirror=true$' \"${DEVBOOST_DNF_CONF:-/etc/dnf/dnf.conf}\""
+
+[install]
+default = "bash \"$DEVBOOST_ROOT/modules/dnf-tune/install.sh\""

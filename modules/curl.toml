@@ -1,0 +1,9 @@
+name     = "curl"
+category = "base"
+requires = []
+verify   = "command -v curl"
+
+[install]
+fedora = "sudo dnf install -y curl"
+debian = "sudo apt-get install -y curl"
+macos  = "brew install curl"

@@ -1,0 +1,4 @@
+[profiles]
+base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
+        "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
+        "build-tools","mise","chezmoi","docker"]

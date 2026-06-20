@@ -1,0 +1,9 @@
+name     = "htop"
+category = "base"
+requires = []
+verify   = "command -v htop"
+
+[install]
+fedora = "sudo dnf install -y htop"
+debian = "sudo apt-get install -y htop"
+macos  = "brew install htop"

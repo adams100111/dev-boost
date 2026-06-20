@@ -1,0 +1,9 @@
+name        = "docker"
+category    = "base"
+description = "Install Docker CE + compose plugin; enable service; add user to docker group"
+requires    = []
+profiles    = ["base"]
+verify      = "command -v docker >/dev/null 2>&1 && systemctl is-enabled docker >/dev/null 2>&1 && getent group docker | grep -qw \"${USER}\""
+
+[install]
+default = "bash \"$DEVBOOST_ROOT/modules/docker/install.sh\""

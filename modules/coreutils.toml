@@ -1,0 +1,9 @@
+name     = "coreutils"
+category = "base"
+requires = []
+verify   = "command -v ls"
+
+[install]
+fedora = "sudo dnf install -y coreutils"
+debian = "sudo apt-get install -y coreutils"
+macos  = "brew install coreutils"

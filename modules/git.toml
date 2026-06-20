@@ -1,0 +1,9 @@
+name     = "git"
+category = "base"
+requires = []
+verify   = "command -v git"
+
+[install]
+fedora = "sudo dnf install -y git"
+debian = "sudo apt-get install -y git"
+macos  = "brew install git"
