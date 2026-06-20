@@ -51,23 +51,27 @@ _run_gnome_extensions_install() {
 }
 
 # ---------------------------------------------------------------------------
-# Helper: evaluate the module verify expression in a subshell.
-# Checks all 6 UUIDs are present in the ext dir AND in enabled-extensions.
+# Helper: run modules/gnome-extensions/install.sh --verify-only in a subshell.
+# This invokes the REAL verify command shipped in module.toml.
 # ---------------------------------------------------------------------------
 _run_gnome_extensions_verify() {
-  local uuid
-  for uuid in "${_FUNCTIONAL_UUIDS[@]}"; do
-    bash -c "
-      export HOME='${HOME}'
-      export PATH='${PATH}'
-      export STUB_GSETTINGS_STATE_FILE='${STUB_GSETTINGS_STATE_FILE}'
-      [ -d '${HOME}/.local/share/gnome-shell/extensions/${uuid}' ] || exit 1
-      enabled=\$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo '@as []')
-      [[ \"\${enabled}\" == *'${uuid}'* ]] || exit 1
-    " 2>&1
-    [[ $? -eq 0 ]] || return 1
-  done
-  return 0
+  bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export OS_DISTRO='${OS_DISTRO:-fedora}'
+    export OS_FAMILY='${OS_FAMILY:-fedora}'
+    export XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-GNOME}'
+    export STUB_GNOME_PRESENT='${STUB_GNOME_PRESENT:-1}'
+    export STUB_GNOME_SHELL_VERSION='${STUB_GNOME_SHELL_VERSION:-GNOME Shell 47.0}'
+    export STUB_GEXT_LOG='${STUB_GEXT_LOG}'
+    export STUB_GEXT_MISMATCH_UUID='${STUB_GEXT_MISMATCH_UUID:-}'
+    export STUB_GSETTINGS_STATE_FILE='${STUB_GSETTINGS_STATE_FILE}'
+    export STUB_DCONF_LOG='${STUB_DCONF_LOG}'
+    export STUB_DCONF_STATE_FILE='${STUB_DCONF_STATE_FILE}'
+    export STUB_DNF_LOG='${STUB_DNF_LOG}'
+    bash '${DEVBOOST_ROOT}/modules/gnome-extensions/install.sh' --verify-only
+  " 2>&1
 }
 
 # ===========================================================================
@@ -174,11 +178,11 @@ _run_gnome_extensions_verify() {
 @test "gnome-extensions: author-verify mismatch does NOT enable the mismatched UUID" {
   export STUB_GEXT_MISMATCH_UUID="evil@attacker.example"
   run _run_gnome_extensions_install
-  # enabled-extensions should not contain the first pinned UUID (install failed)
-  ! grep -qF 'appindicatorsupport@rgcjonas.gmail.com' "${STUB_GSETTINGS_STATE_FILE}" || \
-    [ "$status" -ne 0 ]
-  # The key assertion: the run must have failed
+  # Independent assertion 1: the module must have failed.
   [ "$status" -ne 0 ]
+  # Independent assertion 2: the first pinned UUID must genuinely be absent from
+  # enabled-extensions (the install aborted before any enable could happen).
+  ! grep -qF 'appindicatorsupport@rgcjonas.gmail.com' "${STUB_GSETTINGS_STATE_FILE}"
 }
 
 # ===========================================================================
@@ -276,6 +280,24 @@ _run_gnome_extensions_verify() {
   for uuid in "${_FUNCTIONAL_UUIDS[@]}"; do
     [[ "${enabled}" == *"${uuid}"* ]]
   done
+}
+
+# ===========================================================================
+# T009 — real --verify-only command: RED before install, GREEN after
+# These exercise the actual verify path shipped in module.toml.
+# ===========================================================================
+
+@test "gnome-extensions: --verify-only exits non-zero in pristine scratch HOME (no extensions installed)" {
+  # Nothing has been installed; the real --verify-only must fail.
+  run _run_gnome_extensions_verify
+  [ "$status" -ne 0 ]
+}
+
+@test "gnome-extensions: --verify-only exits 0 after a successful install" {
+  # Install first, then verify with the real --verify-only flag.
+  _run_gnome_extensions_install >/dev/null 2>&1
+  run _run_gnome_extensions_verify
+  [ "$status" -eq 0 ]
 }
 
 # ===========================================================================
