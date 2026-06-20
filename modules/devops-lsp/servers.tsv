@@ -1,0 +1,4 @@
+# DevOps stack fresh language servers (Terraform/OpenTofu LSP).
+# TAB-separated columns: lang <TAB> fresh-command <TAB> mise backend:tool@pin <TAB> args(space-sep, optional)
+# Pins here ARE the in-repo source of truth for these tools' versions (Principle III).
+terraform	tofu-ls	aqua:opentofu/tofu-ls@0.0.22	serve

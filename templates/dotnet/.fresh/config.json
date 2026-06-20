@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "theme": "catppuccin-mocha",
+  "editor": {
+    "tab_size": 4,
+    "format_on_save": true
+  },
+  "lsp": {
+    "csharp": {
+      "command": "csharp-ls",
+      "args": [],
+      "enabled": true
+    }
+  },
+  "formatter": {
+    "csharp": {
+      "command": "dotnet",
+      "args": ["csharpier", "format", "$FILE"]
+    }
+  }
+}

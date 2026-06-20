@@ -1,0 +1,9 @@
+name        = "devops-lsp"
+category    = "dev-stacks"
+description = "Provision fresh's DevOps language intelligence (tofu-ls / Terraform LSP, mise-sourced, pinned; idempotent jq-merge)"
+requires    = ["fresh", "mise", "devops-tools"]
+profiles    = ["devops"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/devops-lsp/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/devops-lsp/install.sh\""
