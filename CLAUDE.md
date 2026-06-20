@@ -19,9 +19,9 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/007-dev-stacks/plan.md`
-(spec `specs/007-dev-stacks/spec.md`). Specs 1–6 (secrets-and-auth, base-profile,
-cli-and-shell, gnome-desktop, multimedia-codecs, editors) merged to main (749 tests). For
+Active feature plan: `specs/008-apps-and-obsidian/plan.md`
+(spec `specs/008-apps-and-obsidian/spec.md`). Specs 1–7 (secrets-and-auth, base-profile,
+cli-and-shell, gnome-desktop, multimedia-codecs, editors, dev-stacks) merged to main (887 tests). For
 technologies, project structure, shell commands, and other context, read that plan and the design
-doc / constitution. Tool pins are context7-verified for 2026-06 (see specs/007-dev-stacks/research.md).
+doc / constitution. App IDs/plugin keys are registry/context7-verified for 2026-06 (see specs/008-apps-and-obsidian/research.md).
 <!-- SPECKIT END -->

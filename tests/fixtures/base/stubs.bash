@@ -206,6 +206,9 @@ base_setup() {
   export STUB_DOTNET_SDKS="${STUB_DOTNET_SDKS:-}"
   # ANDROID_HOME for tests (scratch under HOME) so the android-sdk module needs no real SDK.
   export ANDROID_HOME="${ANDROID_HOME:-${_base_home_dir}/Android/Sdk}"
+  # Spec 8 (apps-and-obsidian) log defaults.
+  export STUB_SSH_KEYGEN_LOG="${STUB_SSH_KEYGEN_LOG:-${BATS_TEST_TMPDIR}/ssh-keygen-calls.log}"
+  export STUB_LOGINCTL_LOG="${STUB_LOGINCTL_LOG:-${BATS_TEST_TMPDIR}/loginctl-calls.log}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -243,6 +246,9 @@ base_setup() {
   : > "${STUB_DOTNET_LOG}"
   : > "${STUB_SDKMANAGER_LOG}"
   : > "${STUB_UV_LOG}"
+  # Spec 8 (apps-and-obsidian) log initialisation.
+  : > "${STUB_SSH_KEYGEN_LOG}"
+  : > "${STUB_LOGINCTL_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -291,6 +297,9 @@ base_setup() {
   base_install_mkcert
   base_install_dotnet
   base_install_sdkmanager
+  # Spec 8 (apps-and-obsidian) stubs.
+  base_install_ssh_keygen
+  base_install_loginctl
 }
 
 # ---------------------------------------------------------------------------
@@ -465,7 +474,34 @@ if [[ "$1" == "list" ]]; then
   for app in ${STUB_FLATPAK_INSTALLED:-}; do
     printf '%s\n' "${app}"
   done
+  # Spec 8: also surface dynamically-installed apps (STUB_FLATPAK_INSTALLED_FILE).
+  if [[ -n "${STUB_FLATPAK_INSTALLED_FILE:-}" && -f "${STUB_FLATPAK_INSTALLED_FILE}" ]]; then
+    cat "${STUB_FLATPAK_INSTALLED_FILE}"
+  fi
   exit 0
+fi
+
+# Spec 8 (apps): `flatpak install [-y] flathub <id>` → record the app id (last arg) into
+# STUB_FLATPAK_INSTALLED_FILE so a subsequent `flatpak info <id>` verifies GREEN.
+if [[ "$1" == "install" ]]; then
+  if [[ -n "${STUB_FLATPAK_INSTALLED_FILE:-}" ]]; then
+    printf '%s\n' "${@: -1}" >> "${STUB_FLATPAK_INSTALLED_FILE}"
+  fi
+  exit 0
+fi
+
+# Spec 8 (apps): `flatpak info <id>` → exit 0 iff installed (static knob or dynamic file),
+# else exit 1. (No prior test calls `flatpak info`, so this is backward-compatible.)
+if [[ "$1" == "info" ]]; then
+  _fp_id="${2:-}"
+  for app in ${STUB_FLATPAK_INSTALLED:-}; do
+    [[ "${app}" == "${_fp_id}" ]] && exit 0
+  done
+  if [[ -n "${STUB_FLATPAK_INSTALLED_FILE:-}" && -f "${STUB_FLATPAK_INSTALLED_FILE}" ]] \
+     && grep -qxF "${_fp_id}" "${STUB_FLATPAK_INSTALLED_FILE}"; then
+    exit 0
+  fi
+  exit 1
 fi
 
 exit 0
@@ -516,6 +552,12 @@ base_install_systemctl() {
 # Stub: systemctl — fake systemd control for bats tests.
 log_file="${STUB_SYSTEMCTL_LOG:-/tmp/stub-systemctl-calls.log}"
 printf 'systemctl %s\n' "$*" >> "${log_file}"
+
+# Spec 8: tolerate a leading `--user` (user-scoped units) by shifting it off so
+# the verb routing below works for both system and user scopes.
+if [[ "$1" == "--user" ]]; then
+  shift
+fi
 
 if [[ "$1" == "is-enabled" ]]; then
   svc="$2"
@@ -742,6 +784,12 @@ base_install_git() {
 # Stub: git — fake version control client for bats tests.
 log_file="${STUB_GIT_LOG:-/tmp/stub-git-calls.log}"
 printf 'git %s\n' "$*" >> "${log_file}"
+# Spec 8 (opt-in): `git clone <url> <dir>` creates <dir>/.git so a follow-up verify
+# that checks the cloned working tree passes. Default OFF (zero behavior change).
+if [[ "${STUB_GIT_CLONE_CREATES_DIR:-}" == "1" && "$1" == "clone" ]]; then
+  dir="${@: -1}"
+  [[ -n "${dir}" && "${dir}" != http* && "${dir}" != git@* ]] && mkdir -p "${dir}/.git"
+fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/git"
@@ -979,6 +1027,29 @@ if [[ "${_fresh_url}" == *astral.sh/uv* ]]; then
   printf 'uv-installer %s\n' "${_fresh_url}" >> "${STUB_UV_LOG:-/tmp/stub-uv-calls.log}"
   stub_dir="$(dirname "$(command -v curl)")"
   printf 'printf "#!/usr/bin/env bash\\nexit 0\\n" > "%s/uv"; chmod +x "%s/uv"\n' "${stub_dir}" "${stub_dir}"
+  exit 0
+fi
+# (d) Spec 8 (obsidian-sync): GitHub REST API for deploy keys. lib/github.sh's gh_api
+#     uses `-X <method>`, the URL last, and `-w '\n%{http_code}'` (status on the final line),
+#     parsing body = everything before the last newline, status = the last line.
+#     Knobs: STUB_GH_DEPLOY_KEYS (JSON array for GET /repos/*/keys → dedup tests),
+#     STUB_GH_USER_KEYS (GET /user/keys), STUB_CURL_STATUS (override status).
+if [[ "${_fresh_url}" == *api.github.com* ]]; then
+  _gh_method="GET"; _gh_prev=""
+  for _a in "$@"; do
+    [[ "${_gh_prev}" == "-X" ]] && _gh_method="${_a}"
+    _gh_prev="${_a}"
+  done
+  _gh_path="${_fresh_url#*api.github.com}"
+  _gh_status="${STUB_CURL_STATUS:-200}"
+  _gh_body="[]"
+  case "${_gh_method}:${_gh_path}" in
+    GET:/repos/*/keys)  _gh_body="${STUB_GH_DEPLOY_KEYS:-[]}" ;;
+    POST:/repos/*/keys) _gh_body='{"id":2,"read_only":false,"verified":true}'; _gh_status="${STUB_CURL_STATUS:-201}" ;;
+    GET:/user/keys)     _gh_body="${STUB_GH_USER_KEYS:-[]}" ;;
+    POST:/user/keys)    _gh_body='{"id":1}'; _gh_status="${STUB_CURL_STATUS:-201}" ;;
+  esac
+  printf '%s\n%s' "${_gh_body}" "${_gh_status}"
   exit 0
 fi
 
@@ -1527,3 +1598,38 @@ base_remove_dotnet() { rm -f "${_base_bin_dir}/dotnet"; }
 base_remove_ddev() { rm -f "${_base_bin_dir}/ddev"; }
 # base_remove_uv — remove the uv stub if a real/created one is on the stub dir.
 base_remove_uv() { rm -f "${_base_bin_dir}/uv"; }
+
+# ---------------------------------------------------------------------------
+# base_install_ssh_keygen (Spec 8) — fake `ssh-keygen`.
+#   ssh-keygen -t ed25519 -N "" -C <c> -f <file>  → creates <file> + <file>.pub; logs.
+#   Honors -f <file>; writes a deterministic fake private + public key.
+# ---------------------------------------------------------------------------
+base_install_ssh_keygen() {
+  cat > "${_base_bin_dir}/ssh-keygen" <<'STUB'
+#!/usr/bin/env bash
+log_file="${STUB_SSH_KEYGEN_LOG:-/tmp/stub-ssh-keygen-calls.log}"
+printf 'ssh-keygen %s\n' "$*" >> "${log_file}"
+kf=""; prev=""
+for a in "$@"; do [[ "${prev}" == "-f" ]] && kf="${a}"; prev="${a}"; done
+if [[ -n "${kf}" ]]; then
+  mkdir -p "$(dirname "${kf}")"
+  printf '%s\n' "-----FAKE OPENSSH PRIVATE KEY-----" > "${kf}"
+  chmod 600 "${kf}"
+  printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB_FAKE_VAULT_PUBKEY devboost-vault\n' > "${kf}.pub"
+fi
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/ssh-keygen"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_loginctl (Spec 8) — fake `loginctl` (enable-linger etc.): log + exit 0.
+# ---------------------------------------------------------------------------
+base_install_loginctl() {
+  cat > "${_base_bin_dir}/loginctl" <<'STUB'
+#!/usr/bin/env bash
+printf 'loginctl %s\n' "$*" >> "${STUB_LOGINCTL_LOG:-/tmp/stub-loginctl-calls.log}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/loginctl"
+}

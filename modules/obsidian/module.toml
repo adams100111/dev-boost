@@ -1,0 +1,9 @@
+name        = "obsidian"
+category    = "apps"
+description = "Obsidian notes app (Flathub)"
+requires    = ["flatpak"]
+profiles    = ["apps"]
+verify      = "flatpak info md.obsidian.Obsidian"
+
+[install]
+fedora = "flatpak install -y flathub md.obsidian.Obsidian"

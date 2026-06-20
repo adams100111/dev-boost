@@ -1,0 +1,9 @@
+name        = "localsend"
+category    = "apps"
+description = "LocalSend local file transfer (Flathub)"
+requires    = ["flatpak"]
+profiles    = ["apps"]
+verify      = "flatpak info org.localsend.localsend_app"
+
+[install]
+fedora = "flatpak install -y flathub org.localsend.localsend_app"
