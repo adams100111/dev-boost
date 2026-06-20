@@ -146,6 +146,94 @@ _EXPECTED_SHELL_MEMBERS=(
 }
 
 # ---------------------------------------------------------------------------
+# T016 — full depsort resolution: cli+shell against real modules/
+# ---------------------------------------------------------------------------
+_EXPECTED_CLI_SHELL_CLI_MEMBERS=(
+  eza bat btop zoxide atuin direnv delta lazygit lazydocker
+  dust duf sd yq gh tealdeer tpm fastfetch claude-code
+)
+_EXPECTED_CLI_SHELL_SHELL_MEMBERS=(
+  starship bash-config ghostty nerd-fonts dotfiles
+)
+
+@test "devboost list --profile cli,shell: resolves without cycle, exit 0" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile cli,shell
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+}
+
+@test "devboost list --profile cli,shell: all 18 cli module names present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile cli,shell
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_CLI_SHELL_CLI_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING cli module from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile cli,shell: all 5 shell module names present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile cli,shell
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_CLI_SHELL_SHELL_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING shell module from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile cli,shell: mise appears before claude-code" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile cli,shell
+  [ "$status" -eq 0 ]
+  local mise_line claude_line
+  mise_line="$(printf '%s\n' "$output" | grep -n '^mise$' | cut -d: -f1)"
+  claude_line="$(printf '%s\n' "$output" | grep -n '^claude-code$' | cut -d: -f1)"
+  [ -n "$mise_line" ]   || { echo "mise not found in output"; return 1; }
+  [ -n "$claude_line" ] || { echo "claude-code not found in output"; return 1; }
+  [ "$mise_line" -lt "$claude_line" ] \
+    || { echo "mise (line $mise_line) must appear before claude-code (line $claude_line)"; return 1; }
+}
+
+@test "devboost list --profile cli,shell: init tools (starship/atuin/zoxide/direnv) before dotfiles before bash-config" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile cli,shell
+  [ "$status" -eq 0 ]
+  local dotfiles_line bash_config_line starship_line atuin_line zoxide_line direnv_line
+  dotfiles_line="$(printf '%s\n' "$output" | grep -n '^dotfiles$'   | cut -d: -f1)"
+  bash_config_line="$(printf '%s\n' "$output" | grep -n '^bash-config$' | cut -d: -f1)"
+  starship_line="$(printf '%s\n' "$output" | grep -n '^starship$'   | cut -d: -f1)"
+  atuin_line="$(printf '%s\n' "$output" | grep -n '^atuin$'      | cut -d: -f1)"
+  zoxide_line="$(printf '%s\n' "$output" | grep -n '^zoxide$'     | cut -d: -f1)"
+  direnv_line="$(printf '%s\n' "$output" | grep -n '^direnv$'     | cut -d: -f1)"
+  # All must be present
+  [ -n "$dotfiles_line" ]    || { echo "dotfiles not found";    return 1; }
+  [ -n "$bash_config_line" ] || { echo "bash-config not found"; return 1; }
+  [ -n "$starship_line" ]    || { echo "starship not found";    return 1; }
+  [ -n "$atuin_line" ]       || { echo "atuin not found";       return 1; }
+  [ -n "$zoxide_line" ]      || { echo "zoxide not found";      return 1; }
+  [ -n "$direnv_line" ]      || { echo "direnv not found";      return 1; }
+  # dotfiles before bash-config
+  [ "$dotfiles_line" -lt "$bash_config_line" ] \
+    || { echo "dotfiles (line $dotfiles_line) must appear before bash-config (line $bash_config_line)"; return 1; }
+  # init tools before dotfiles
+  [ "$starship_line" -lt "$dotfiles_line" ] \
+    || { echo "starship (line $starship_line) must appear before dotfiles (line $dotfiles_line)"; return 1; }
+  [ "$atuin_line" -lt "$dotfiles_line" ] \
+    || { echo "atuin (line $atuin_line) must appear before dotfiles (line $dotfiles_line)"; return 1; }
+  [ "$zoxide_line" -lt "$dotfiles_line" ] \
+    || { echo "zoxide (line $zoxide_line) must appear before dotfiles (line $dotfiles_line)"; return 1; }
+  [ "$direnv_line" -lt "$dotfiles_line" ] \
+    || { echo "direnv (line $direnv_line) must appear before dotfiles (line $dotfiles_line)"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
 @test "devboost list --profile base: secrets appears before chezmoi and ssh-setup" {
   run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
           DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
