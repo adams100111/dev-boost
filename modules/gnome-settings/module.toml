@@ -1,0 +1,9 @@
+name        = "gnome-settings"
+category    = "gnome"
+description = "Apply reference GNOME look-and-feel via a managed dconf dump (dark mode, accent color, scaling, button layout, center windows, tap-to-click)"
+requires    = []
+profiles    = ["gnome"]
+verify      = "[ \"$(gsettings get org.gnome.desktop.interface color-scheme)\" = \"'prefer-dark'\" ]"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/gnome-settings/install.sh\""
