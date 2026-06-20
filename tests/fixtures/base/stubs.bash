@@ -29,6 +29,15 @@
 #   base_install_curl             — install curl stub (Spec 3: cli-and-shell, nerd-fonts download)
 #   base_install_unzip            — install unzip stub (Spec 3: cli-and-shell, nerd-fonts extraction)
 #
+# Spec 4 (gnome-desktop) stubs and helpers:
+#   base_install_gext             — install gext stub (Spec 4: gnome extension installer)
+#   base_install_gnome_extensions — install gnome-extensions stub (Spec 4: benign list/info)
+#   base_install_gnome_shell      — install gnome-shell stub (Spec 4: --version knob)
+#   base_install_dconf            — install dconf stub (Spec 4: load records + scratch state)
+#   base_install_gsettings        — install gsettings stub (Spec 4: get/set scratch key-value)
+#   base_gnome_present_on         — enable gnome-shell on PATH (STUB_GNOME_PRESENT=1)
+#   base_gnome_present_off        — remove gnome-shell from PATH (STUB_GNOME_PRESENT=0)
+#
 # State knobs (set before calling base_setup or the relevant install helper):
 #   STUB_RPM_INSTALLED        — space-separated list of packages rpm reports as installed
 #                               e.g. STUB_RPM_INSTALLED="rpmfusion-free-release pkg2"
@@ -75,6 +84,21 @@
 #   STUB_ORDER_LOG            — shared chronological call-log that BOTH mise and npm stubs append to.
 #                               Each line is tagged: "mise:<args>" or "npm:<args>".
 #                               Use to assert cross-tool invocation ordering in a single file.
+#
+# Spec 4 (gnome-desktop) additional knobs:
+#   STUB_GEXT_LOG             — path to the gext invocation log (default: $BATS_TEST_TMPDIR/gext-calls.log)
+#   STUB_GEXT_MISMATCH_UUID   — if set, gext install writes metadata.json whose uuid= this value
+#                               instead of the requested UUID (triggers author-mismatch failure test)
+#   STUB_GNOME_EXTENSIONS_LOG — path to the gnome-extensions invocation log
+#   STUB_GNOME_SHELL_VERSION  — version string gnome-shell --version prints
+#                               (default: "GNOME Shell 47.0")
+#   STUB_DCONF_LOG            — path to the dconf invocation log (default: $BATS_TEST_TMPDIR/dconf-calls.log)
+#   STUB_DCONF_STATE_FILE     — path to the scratch dconf state file
+#                               (default: $BATS_TEST_TMPDIR/dconf-state.ini)
+#   STUB_GSETTINGS_STATE_FILE — path to the scratch gsettings key-value store
+#                               (default: $BATS_TEST_TMPDIR/gsettings-state.kv)
+#   STUB_GNOME_PRESENT        — if "1" (default), gnome-shell stub is on PATH;
+#                               if "0", gnome-shell is absent from PATH
 #
 # All stubs write no real network traffic or system changes; all temp files live under
 # BATS_TEST_TMPDIR / scratch dirs and are cleaned up by bats or by base_teardown.
@@ -127,6 +151,14 @@ base_setup() {
   export STUB_FC_CACHE_LOG="${STUB_FC_CACHE_LOG:-${BATS_TEST_TMPDIR}/fc-cache-calls.log}"
   # Shared cross-tool chronological ordering log (mise + npm both append here).
   export STUB_ORDER_LOG="${STUB_ORDER_LOG:-${BATS_TEST_TMPDIR}/order-calls.log}"
+  # Spec 4 log defaults.
+  export STUB_GEXT_LOG="${STUB_GEXT_LOG:-${BATS_TEST_TMPDIR}/gext-calls.log}"
+  export STUB_GNOME_EXTENSIONS_LOG="${STUB_GNOME_EXTENSIONS_LOG:-${BATS_TEST_TMPDIR}/gnome-extensions-calls.log}"
+  export STUB_DCONF_LOG="${STUB_DCONF_LOG:-${BATS_TEST_TMPDIR}/dconf-calls.log}"
+  export STUB_DCONF_STATE_FILE="${STUB_DCONF_STATE_FILE:-${BATS_TEST_TMPDIR}/dconf-state.ini}"
+  export STUB_GSETTINGS_STATE_FILE="${STUB_GSETTINGS_STATE_FILE:-${BATS_TEST_TMPDIR}/gsettings-state.kv}"
+  # STUB_GNOME_PRESENT defaults to 1 (gnome-shell present on PATH).
+  export STUB_GNOME_PRESENT="${STUB_GNOME_PRESENT:-1}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -148,6 +180,12 @@ base_setup() {
   : > "${STUB_FC_LIST_LOG}"
   : > "${STUB_FC_CACHE_LOG}"
   : > "${STUB_ORDER_LOG}"
+  # Spec 4 log initialisation.
+  : > "${STUB_GEXT_LOG}"
+  : > "${STUB_GNOME_EXTENSIONS_LOG}"
+  : > "${STUB_DCONF_LOG}"
+  : > "${STUB_DCONF_STATE_FILE}"
+  : > "${STUB_GSETTINGS_STATE_FILE}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -180,6 +218,12 @@ base_setup() {
   base_install_fc_cache
   base_install_curl
   base_install_unzip
+  # Spec 4 stubs (gnome-desktop).
+  base_install_gext
+  base_install_gnome_extensions
+  base_install_gnome_shell
+  base_install_dconf
+  base_install_gsettings
 }
 
 # ---------------------------------------------------------------------------
@@ -857,4 +901,208 @@ export SDKMAN_DIR="$HOME/.sdkman"
 [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
 # END SDKMAN
 SDKMAN_BLOCK
+}
+
+# ===========================================================================
+# Spec 4 (gnome-desktop) stubs
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# base_install_gext — write a fake `gext` binary to the stub bin dir.
+#
+# Behaviour:
+#   gext install <UUID>  → logs invocation; creates a fake extension dir with a
+#                          metadata.json whose "uuid" field matches the requested UUID
+#                          (so ext_verify_author passes); idempotent (skips if dir exists).
+#                          If STUB_GEXT_MISMATCH_UUID is set, writes that value instead
+#                          (triggers the author-mismatch failure test).
+#   (any other form)     → exits 0; logs invocation
+# ---------------------------------------------------------------------------
+base_install_gext() {
+  cat > "${_base_bin_dir}/gext" <<'STUB'
+#!/usr/bin/env bash
+# Stub: gext — fake gnome-extensions-cli for bats tests (Spec 4).
+log_file="${STUB_GEXT_LOG:-/tmp/stub-gext-calls.log}"
+printf 'gext %s\n' "$*" >> "${log_file}"
+
+if [[ "$1" == "install" && -n "${2:-}" ]]; then
+  uuid="$2"
+  ext_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
+  # Idempotent: skip creating metadata if the extension dir already exists.
+  if [[ ! -d "${ext_dir}" ]]; then
+    mkdir -p "${ext_dir}"
+    # Use STUB_GEXT_MISMATCH_UUID to inject a wrong uuid for failure tests.
+    metadata_uuid="${STUB_GEXT_MISMATCH_UUID:-${uuid}}"
+    printf '{"uuid":"%s","name":"Stub Extension","description":"test stub"}\n' \
+      "${metadata_uuid}" > "${ext_dir}/metadata.json"
+  fi
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/gext"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_gnome_extensions — write a fake `gnome-extensions` binary.
+#
+# Behaviour (benign):
+#   gnome-extensions list   → exits 0; logs invocation
+#   gnome-extensions info   → exits 0; logs invocation
+#   (any other form)        → exits 0; logs invocation
+# ---------------------------------------------------------------------------
+base_install_gnome_extensions() {
+  cat > "${_base_bin_dir}/gnome-extensions" <<'STUB'
+#!/usr/bin/env bash
+# Stub: gnome-extensions — fake GNOME extension manager CLI for bats tests (Spec 4).
+log_file="${STUB_GNOME_EXTENSIONS_LOG:-/tmp/stub-gnome-extensions-calls.log}"
+printf 'gnome-extensions %s\n' "$*" >> "${log_file}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/gnome-extensions"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_gnome_shell — write a fake `gnome-shell` binary to the stub bin dir.
+#
+# Behaviour (STUB_GNOME_PRESENT=1, default):
+#   gnome-shell --version  → prints STUB_GNOME_SHELL_VERSION (default: "GNOME Shell 47.0")
+#   (any other form)       → exits 0
+#
+# Behaviour (STUB_GNOME_PRESENT=0):
+#   gnome-shell (any args) → exits 1 (simulates a non-functional / absent GNOME shell)
+#   XDG_CURRENT_DESKTOP is set to "" so command-presence checks also fail by convention.
+# ---------------------------------------------------------------------------
+base_install_gnome_shell() {
+  if [[ "${STUB_GNOME_PRESENT:-1}" == "0" ]]; then
+    # Write a stub that always exits 1 so --version checks fail; also clear XDG_CURRENT_DESKTOP.
+    cat > "${_base_bin_dir}/gnome-shell" <<'STUB'
+#!/usr/bin/env bash
+# Stub: gnome-shell ABSENT — simulates non-GNOME environment (STUB_GNOME_PRESENT=0).
+exit 1
+STUB
+    chmod +x "${_base_bin_dir}/gnome-shell"
+    export XDG_CURRENT_DESKTOP=""
+  else
+    cat > "${_base_bin_dir}/gnome-shell" <<'STUB'
+#!/usr/bin/env bash
+# Stub: gnome-shell — fake GNOME Shell for bats tests (Spec 4).
+if [[ "$1" == "--version" ]]; then
+  printf '%s\n' "${STUB_GNOME_SHELL_VERSION:-GNOME Shell 47.0}"
+fi
+exit 0
+STUB
+    chmod +x "${_base_bin_dir}/gnome-shell"
+    export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# base_install_dconf — write a fake `dconf` binary to the stub bin dir.
+#
+# Behaviour:
+#   dconf load /org/gnome/  → reads stdin (the dump); records the dump content to
+#                             STUB_DCONF_LOG; appends to STUB_DCONF_STATE_FILE
+#   (any other form)        → exits 0; logs invocation
+# ---------------------------------------------------------------------------
+base_install_dconf() {
+  cat > "${_base_bin_dir}/dconf" <<'STUB'
+#!/usr/bin/env bash
+# Stub: dconf — fake dconf settings tool for bats tests (Spec 4).
+log_file="${STUB_DCONF_LOG:-/tmp/stub-dconf-calls.log}"
+state_file="${STUB_DCONF_STATE_FILE:-/tmp/stub-dconf-state.ini}"
+printf 'dconf %s\n' "$*" >> "${log_file}"
+
+# Handle `dconf load <path>`: read stdin dump; record it in log and state file.
+if [[ "$1" == "load" ]]; then
+  dump="$(cat)"
+  printf '%s\n' "${dump}" >> "${log_file}"
+  printf '%s\n' "${dump}" >> "${state_file}"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/dconf"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_gsettings — write a fake `gsettings` binary to the stub bin dir.
+#
+# Behaviour (scratch key-value store backed by STUB_GSETTINGS_STATE_FILE):
+#   gsettings get <schema> <key>   → reads the value for "schema key" from the state file;
+#                                    prints "@as []" if the key is absent (empty list default
+#                                    for enabled-extensions)
+#   gsettings set <schema> <key> <value> → writes/updates "schema key=value" in state file
+#   (any other form)               → exits 0
+#
+# Supports list-typed values (e.g. the enabled-extensions array) transparently.
+# ---------------------------------------------------------------------------
+base_install_gsettings() {
+  cat > "${_base_bin_dir}/gsettings" <<'STUB'
+#!/usr/bin/env bash
+# Stub: gsettings — fake GSettings CLI for bats tests (Spec 4); scratch key-value store.
+state_file="${STUB_GSETTINGS_STATE_FILE:-/tmp/stub-gsettings-state.kv}"
+
+if [[ "$1" == "get" && -n "${2:-}" && -n "${3:-}" ]]; then
+  schema="$2"
+  key="$3"
+  lookup="${schema} ${key}"
+  # Search state file for a matching "schema key=value" line.
+  value=""
+  while IFS= read -r line; do
+    if [[ "${line}" == "${lookup}="* ]]; then
+      value="${line#${lookup}=}"
+      break
+    fi
+  done < "${state_file}"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+  else
+    # Default empty list for enabled-extensions; empty string for other keys.
+    if [[ "${key}" == "enabled-extensions" ]]; then
+      printf '@as []\n'
+    else
+      printf '\n'
+    fi
+  fi
+  exit 0
+fi
+
+if [[ "$1" == "set" && -n "${2:-}" && -n "${3:-}" && -n "${4:-}" ]]; then
+  schema="$2"
+  key="$3"
+  shift 3
+  value="$*"
+  lookup="${schema} ${key}"
+  tmp_file="${state_file}.tmp"
+  # Remove any existing entry for this key, then append the new value.
+  grep -v "^${lookup}=" "${state_file}" > "${tmp_file}" 2>/dev/null || true
+  printf '%s=%s\n' "${lookup}" "${value}" >> "${tmp_file}"
+  mv "${tmp_file}" "${state_file}"
+  exit 0
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/gsettings"
+}
+
+# ---------------------------------------------------------------------------
+# base_gnome_present_on — make gnome-shell stub work normally (STUB_GNOME_PRESENT=1).
+# Call after base_setup when a test needs to re-enable GNOME presence.
+# Reinstalls the working stub and sets XDG_CURRENT_DESKTOP=GNOME.
+# ---------------------------------------------------------------------------
+base_gnome_present_on() {
+  export STUB_GNOME_PRESENT=1
+  base_install_gnome_shell
+}
+
+# ---------------------------------------------------------------------------
+# base_gnome_present_off — replace gnome-shell stub with an always-exit-1 version (STUB_GNOME_PRESENT=0).
+# Call after base_setup when a test needs `gnome-shell --version` (and presence checks) to fail.
+# Also clears XDG_CURRENT_DESKTOP so env-based GNOME detection also fails.
+# ---------------------------------------------------------------------------
+base_gnome_present_off() {
+  export STUB_GNOME_PRESENT=0
+  base_install_gnome_shell
 }
