@@ -49,8 +49,9 @@ _run_doctor() {
 
 @test "doctor: mise + nvm both active → prints drift warning" {
   # mise stub is already on PATH (installed by base_setup).
-  # Create ~/.nvm directory so mise_drift detects legacy.
-  mkdir -p "${HOME}/.nvm"
+  # Seed an UNCOMMENTED nvm init block in the scratch ~/.bashrc so mise_drift
+  # detects an active legacy hook (directory presence alone is not sufficient).
+  base_add_nvm_block
 
   _run_doctor
   [[ "$output" == *"runtime managers: mise and a legacy manager (nvm/sdkman) are both active"* ]]
@@ -59,7 +60,7 @@ _run_doctor() {
 @test "doctor: mise + nvm both active → drift warning is a warning not a hard fail" {
   # A passing doctor (age present, secrets wired, OS known, modules dir present)
   # with a drift warning must still exit 0.
-  mkdir -p "${HOME}/.nvm"
+  base_add_nvm_block
 
   _run_doctor
   [ "$status" -eq 0 ]
@@ -67,18 +68,45 @@ _run_doctor() {
 }
 
 @test "doctor: mise + sdkman both active → prints drift warning" {
-  mkdir -p "${HOME}/.sdkman"
+  base_add_sdkman_block
 
   _run_doctor
   [[ "$output" == *"runtime managers: mise and a legacy manager (nvm/sdkman) are both active"* ]]
 }
 
 # ---------------------------------------------------------------------------
-# T018-b: only mise active (no legacy dirs) → no drift warning
+# T018-a2: post-migration state (legacy dirs present, hooks commented) → NO drift warning
+# SC-004 regression guard
 # ---------------------------------------------------------------------------
 
-@test "doctor: only mise active (no legacy dirs) → no drift warning" {
-  # mise stub is on PATH; no ~/.nvm or ~/.sdkman.
+@test "doctor: migrated machine (legacy dirs present + hooks commented + mise active) → no drift warning" {
+  # This is the SC-004 regression guard: the mise migration comments out nvm/sdkman
+  # bashrc hooks but deliberately does NOT delete the legacy directories.
+  # After a correct migration, doctor must NOT nag about drift.
+  mkdir -p "${HOME}/.nvm"
+  mkdir -p "${HOME}/.sdkman"
+  # Seed the uncommented blocks first, then comment them out using comment_block
+  # (exactly what the mise migration module does).
+  base_add_nvm_block
+  base_add_sdkman_block
+  local bashrc="${HOME}/.bashrc"
+  # Load pkg.sh into this shell so comment_block is available.
+  # shellcheck source=/dev/null
+  source "${DEVBOOST_ROOT}/lib/log.sh"
+  source "${DEVBOOST_ROOT}/lib/pkg.sh"
+  comment_block "${bashrc}" "# BEGIN NVM" "# END NVM"
+  comment_block "${bashrc}" "# BEGIN SDKMAN" "# END SDKMAN"
+
+  _run_doctor
+  [[ "$output" != *"runtime managers:"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# T018-b: only mise active (no legacy hooks in bashrc) → no drift warning
+# ---------------------------------------------------------------------------
+
+@test "doctor: only mise active (no legacy hook in bashrc) → no drift warning" {
+  # mise stub is on PATH; ~/.bashrc has no nvm/sdkman hook lines.
 
   _run_doctor
   [[ "$output" != *"runtime managers:"* ]]

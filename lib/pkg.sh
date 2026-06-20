@@ -144,18 +144,32 @@ comment_block() {
 # mise_drift
 #   Detect whether both mise and a legacy manager are active simultaneously.
 #   Prints one of:
-#     both       — mise on PATH AND (~/.nvm OR ~/.sdkman) present
-#     mise-only  — mise on PATH, no legacy manager
+#     both       — mise on PATH AND an uncommented nvm/sdkman init line exists in ~/.bashrc
+#     mise-only  — mise on PATH, no uncommented legacy init hook in ~/.bashrc
 #     neither    — mise not on PATH
 #   Exits 0 always (read-only probe; used by cmd_doctor for FR-008).
+#
+#   "Legacy active" means an UNCOMMENTED shell-hook line is still present in
+#   ~/.bashrc that would cause nvm or sdkman to activate on login.  Mere
+#   directory presence (~/.nvm, ~/.sdkman) is NOT sufficient — the migration
+#   deliberately leaves those dirs intact and only comments out the hooks.
+#   Patterns matched (tolerant of leading whitespace, not starting with '#'):
+#     nvm   — line containing NVM_DIR or nvm.sh not starting with optional-ws '#'
+#     sdkman — line containing SDKMAN_DIR or sdkman-init.sh not starting with optional-ws '#'
 # ---------------------------------------------------------------------------
 mise_drift() {
   local has_mise=0 has_legacy=0
+  local bashrc="${HOME}/.bashrc"
 
   have mise && has_mise=1
 
-  if [[ -d "${HOME}/.nvm" || -d "${HOME}/.sdkman" ]]; then
-    has_legacy=1
+  if [[ -f "${bashrc}" ]]; then
+    # An uncommented line (not starting with optional-whitespace then '#') that
+    # references an nvm or sdkman hook.  grep -E; two separate patterns ORed.
+    if grep -qE '^[[:space:]]*[^#[:space:]][^#]*((NVM_DIR|nvm\.sh)|(SDKMAN_DIR|sdkman-init\.sh))' \
+         "${bashrc}" 2>/dev/null; then
+      has_legacy=1
+    fi
   fi
 
   if [[ "${has_mise}" -eq 1 && "${has_legacy}" -eq 1 ]]; then

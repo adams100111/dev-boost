@@ -232,23 +232,57 @@ TABSTUB
 # ---------------------------------------------------------------------------
 # mise_drift
 # ---------------------------------------------------------------------------
-@test "mise_drift: returns 'both' when mise and nvm are active" {
-  # mise stub is on PATH (installed by base_setup)
-  mkdir -p "${HOME}/.nvm"
+@test "mise_drift: returns 'both' when mise present and nvm hook uncommented in bashrc" {
+  # mise stub is on PATH (installed by base_setup).
+  # Seed an UNCOMMENTED nvm init block in the scratch ~/.bashrc.
+  base_add_nvm_block
   run mise_drift
   [ "$status" -eq 0 ]
   [[ "$output" == "both" ]]
 }
 
-@test "mise_drift: returns 'mise-only' when mise is present but no legacy manager" {
-  # mise stub is on PATH, no .nvm / .sdkman
+@test "mise_drift: returns 'both' when mise present and sdkman hook uncommented in bashrc" {
+  base_add_sdkman_block
+  run mise_drift
+  [ "$status" -eq 0 ]
+  [[ "$output" == "both" ]]
+}
+
+@test "mise_drift: returns 'mise-only' when mise present but no legacy hook in bashrc" {
+  # mise stub is on PATH; ~/.bashrc has no nvm/sdkman hook lines.
   run mise_drift
   [ "$status" -eq 0 ]
   [[ "$output" == "mise-only" ]]
 }
 
-@test "mise_drift: returns 'neither' when mise is absent and no legacy manager" {
+@test "mise_drift: returns 'mise-only' when mise present and legacy dirs exist but hooks are commented (post-migration)" {
+  # SC-004 regression guard: after migration, ~/.nvm / ~/.sdkman dirs still exist
+  # but their bashrc init blocks have been commented out by comment_block.
+  # mise_drift MUST return 'mise-only' — no false drift report.
+  mkdir -p "${HOME}/.nvm"
+  mkdir -p "${HOME}/.sdkman"
+  base_add_nvm_block
+  base_add_sdkman_block
+  local bashrc
+  bashrc="$(base_scratch_bashrc)"
+  comment_block "${bashrc}" "# BEGIN NVM" "# END NVM"
+  comment_block "${bashrc}" "# BEGIN SDKMAN" "# END SDKMAN"
+  run mise_drift
+  [ "$status" -eq 0 ]
+  [[ "$output" == "mise-only" ]]
+}
+
+@test "mise_drift: returns 'neither' when mise is absent and no legacy hook in bashrc" {
   base_remove_mise
+  run mise_drift
+  [ "$status" -eq 0 ]
+  [[ "$output" == "neither" ]]
+}
+
+@test "mise_drift: returns 'neither' when mise is absent even if legacy dirs exist" {
+  base_remove_mise
+  mkdir -p "${HOME}/.nvm"
+  base_add_nvm_block
   run mise_drift
   [ "$status" -eq 0 ]
   [[ "$output" == "neither" ]]
