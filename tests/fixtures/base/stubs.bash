@@ -26,6 +26,7 @@
 #   base_install_cargo            — install cargo stub (Spec 3: cli-and-shell)
 #   base_install_fc_list          — install fc-list stub (Spec 3: cli-and-shell)
 #   base_install_fc_cache         — install fc-cache stub (Spec 3: cli-and-shell)
+#   base_install_curl             — install curl stub (Spec 3: cli-and-shell, nerd-fonts download)
 #
 # State knobs (set before calling base_setup or the relevant install helper):
 #   STUB_RPM_INSTALLED        — space-separated list of packages rpm reports as installed
@@ -61,6 +62,7 @@
 #   STUB_NPM_GLOBALS          — space-separated list of binaries to place on PATH after npm install -g
 #                               e.g. STUB_NPM_GLOBALS="claude" creates a passthrough binary in the stub dir
 #   STUB_CARGO_LOG            — path to the cargo invocation log (default: $BATS_TEST_TMPDIR/cargo-calls.log)
+#   STUB_CURL_LOG             — path to the curl invocation log (default: $BATS_TEST_TMPDIR/curl-calls.log)
 #   STUB_FONTS_INSTALLED      — newline-separated (or space-separated) font names fc-list emits
 #                               e.g. STUB_FONTS_INSTALLED="JetBrainsMono Nerd Font:style=Regular"
 #                               Leave empty/unset to simulate no fonts installed.
@@ -115,6 +117,7 @@ base_setup() {
   export STUB_GIT_LOG="${STUB_GIT_LOG:-${BATS_TEST_TMPDIR}/git-calls.log}"
   export STUB_SUDO_LOG="${STUB_SUDO_LOG:-${BATS_TEST_TMPDIR}/sudo-calls.log}"
   # Spec 3 log defaults.
+  export STUB_CURL_LOG="${STUB_CURL_LOG:-${BATS_TEST_TMPDIR}/curl-calls.log}"
   export STUB_NPM_LOG="${STUB_NPM_LOG:-${BATS_TEST_TMPDIR}/npm-calls.log}"
   export STUB_CARGO_LOG="${STUB_CARGO_LOG:-${BATS_TEST_TMPDIR}/cargo-calls.log}"
   export STUB_FC_LIST_LOG="${STUB_FC_LIST_LOG:-${BATS_TEST_TMPDIR}/fc-list-calls.log}"
@@ -135,6 +138,7 @@ base_setup() {
   : > "${STUB_GIT_LOG}"
   : > "${STUB_SUDO_LOG}"
   # Spec 3 log initialisation.
+  : > "${STUB_CURL_LOG}"
   : > "${STUB_NPM_LOG}"
   : > "${STUB_CARGO_LOG}"
   : > "${STUB_FC_LIST_LOG}"
@@ -170,6 +174,7 @@ base_setup() {
   base_install_cargo
   base_install_fc_list
   base_install_fc_cache
+  base_install_curl
 }
 
 # ---------------------------------------------------------------------------
@@ -677,6 +682,54 @@ printf 'fc-cache %s\n' "$*" >> "${log_file}"
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/fc-cache"
+}
+
+# base_install_curl — write a fake `curl` binary to the stub bin dir.
+#
+# Behaviour (Spec 3: nerd-fonts download):
+#   curl ... -o <file> <url>   → creates a zero-byte placeholder at <file>; logs invocation
+#   curl ... --output <file> <url> → same
+#   curl ... -o <file>         → same (url may come before -o)
+#   (any other form)           → exits 0; logs invocation
+#
+# This allows nerd-fonts/install.sh to run to completion in tests without
+# real network access; font file presence is detected by `find`, not content.
+base_install_curl() {
+  cat > "${_base_bin_dir}/curl" <<'STUB'
+#!/usr/bin/env bash
+# Stub: curl — fake HTTP client for bats tests (places placeholder output files).
+log_file="${STUB_CURL_LOG:-/tmp/stub-curl-calls.log}"
+printf 'curl %s\n' "$*" >> "${log_file}"
+
+# Parse -o / --output <file> to create a placeholder at the destination.
+output_file=""
+args=("$@")
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+  arg="${args[$i]}"
+  case "${arg}" in
+    -o|--output)
+      (( i++ ))
+      output_file="${args[$i]}"
+      ;;
+    -o*)
+      output_file="${arg#-o}"
+      ;;
+    --output=*)
+      output_file="${arg#--output=}"
+      ;;
+  esac
+  (( i++ ))
+done
+
+if [[ -n "${output_file}" ]]; then
+  mkdir -p "$(dirname "${output_file}")"
+  : > "${output_file}"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/curl"
 }
 
 # ---------------------------------------------------------------------------

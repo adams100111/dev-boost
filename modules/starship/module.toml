@@ -1,0 +1,9 @@
+name        = "starship"
+category    = "shell"
+description = "Install Starship cross-shell prompt binary (init line managed by dotfiles module)"
+requires    = []
+profiles    = ["shell"]
+verify      = "command -v starship"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/starship/install.sh\""
