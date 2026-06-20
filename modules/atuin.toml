@@ -1,0 +1,9 @@
+name     = "atuin"
+category = "cli"
+requires = []
+verify   = "command -v atuin"
+
+[install]
+fedora = "sudo dnf install -y atuin"
+debian = "sudo apt-get install -y atuin"
+macos  = "brew install atuin"

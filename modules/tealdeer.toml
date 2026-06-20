@@ -1,0 +1,9 @@
+name     = "tealdeer"
+category = "cli"
+requires = []
+verify   = "command -v tldr"
+
+[install]
+fedora = "sudo dnf install -y tealdeer"
+debian = "sudo apt-get install -y tealdeer"
+macos  = "brew install tealdeer"

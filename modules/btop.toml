@@ -1,0 +1,9 @@
+name     = "btop"
+category = "cli"
+requires = []
+verify   = "command -v btop"
+
+[install]
+fedora = "sudo dnf install -y btop"
+debian = "sudo apt-get install -y btop"
+macos  = "brew install btop"
