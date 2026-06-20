@@ -1,0 +1,9 @@
+name        = "fresh"
+category    = "editors"
+description = "Install the sinelaw/fresh terminal editor (Fedora rpm → official script → cargo fallback)"
+requires    = []
+profiles    = ["editors"]
+verify      = "command -v fresh"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/fresh/install.sh\""

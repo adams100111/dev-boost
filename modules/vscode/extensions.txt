@@ -1,0 +1,13 @@
+# Curated baseline VS Code extensions (language-agnostic editor quality + theme).
+# Per-language extensions (Python, C#, …) are added by the dev-stacks feature (Spec 7).
+# One extension ID per line; blank lines and # comments are ignored.
+editorconfig.editorconfig
+esbenp.prettier-vscode
+eamodio.gitlens
+usernamehw.errorlens
+gruntfuggly.todo-tree
+tamasfe.even-better-toml
+redhat.vscode-yaml
+mikestead.dotenv
+catppuccin.catppuccin-vsc
+catppuccin.catppuccin-vsc-icons
