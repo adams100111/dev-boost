@@ -187,6 +187,7 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 optional-editors = ["neovim","jetbrains-toolbox"]
 oh-my-posh       = ["oh-my-posh"]             # opt-in alternative prompt; also installs the Claude Code statusline
 ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
+security-cli     = ["pass"]                    # opt-in CLI password-store (GPG+git-backed). COMPLEMENTS the default Bitwarden GUI (apps profile), does not replace it. NOT in full and NOT zero-touch: needs a GPG key provisioned (passphrase-less or gnome-keyring-unlocked for unattended decrypt) + a password-store git repo — designed in its own spec, analogous to how `secrets` provisions `age`. Usage: `pass init <gpg-id>`, `pass insert/show/-c`, `pass git push/pull`; shell pulls via `$(pass show …)`.
 
 # GPU driver bundles — AUTO-SELECTED by a `gpu-detect` module (lspci) inside `full`,
 # not manual flags. The matching bundle below is appended automatically; they remain
