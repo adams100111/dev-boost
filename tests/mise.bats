@@ -137,8 +137,23 @@ _engine_run_mise() {
 
   # Exact version must appear — no upgrade/downgrade
   grep -q "node@16.14.2" "${STUB_MISE_LOG}"
-  # Must NOT contain a different node version
-  ! grep -q "node@" "${STUB_MISE_LOG}" | grep -v "node@16.14.2" || true
+  # Exactly one node@ entry must exist in the log
+  [ "$(grep -c 'node@' "${STUB_MISE_LOG}")" -eq 1 ]
+}
+
+@test "mise: migration present — nvm v-prefix is stripped from version (SC-004 v-prefix)" {
+  mkdir -p "${HOME}/.nvm/alias"
+  # nvm stores versions with a leading 'v' in alias/default
+  printf '%s\n' "v18.20.0" > "${HOME}/.nvm/alias/default"
+  base_add_nvm_block
+
+  run _run_mise_install
+  [ "$status" -eq 0 ]
+
+  # mise log must show node@18.20.0 (no leading v)
+  grep -q "node@18.20.0" "${STUB_MISE_LOG}"
+  # Must NOT contain the v-prefixed form
+  ! grep -q "node@v18" "${STUB_MISE_LOG}"
 }
 
 @test "mise: migration present — nvm init block in bashrc is commented out" {
@@ -309,6 +324,8 @@ _engine_run_mise() {
   [ "$status" -eq 0 ]
 
   ! grep -q "use -g java" "${STUB_MISE_LOG}"
+  # Block should still be commented even with no version
+  grep -q "^# export SDKMAN_DIR" "${HOME}/.bashrc"
 }
 
 # ===========================================================================
@@ -370,6 +387,9 @@ _engine_run_mise() {
 
   # No "# # " double-prefix should appear
   ! grep -q "^# # " "${HOME}/.bashrc"
+
+  # mise log must be empty — no mise use -g call on re-run (idempotency)
+  [ ! -s "${STUB_MISE_LOG}" ]
 }
 
 @test "mise: idempotent — engine verify-guard skips install when mise already on PATH" {

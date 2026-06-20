@@ -25,6 +25,7 @@ _migrate_nvm() {
   if [[ -f "${bashrc}" ]] && grep -qF "# BEGIN NVM" "${bashrc}"; then
     if grep -qF "devboost: migrated nvm init to mise" "${bashrc}"; then
       log_skip "mise: nvm init block already migrated in ${bashrc}"
+      return 0
     else
       log_info "mise: commenting out nvm init block in ${bashrc}"
       comment_block "${bashrc}" "# BEGIN NVM" "# END NVM"
@@ -41,6 +42,8 @@ _migrate_nvm() {
 
   local node_ver
   node_ver="$(tr -d '[:space:]' < "${alias_file}")"
+  # Strip a leading 'v' prefix (nvm stores versions as e.g. v18.20.0).
+  node_ver="${node_ver#v}"
   if [[ -z "${node_ver}" ]]; then
     log_info "mise: ~/.nvm/alias/default is empty — skipping mise use node"
     return 0
@@ -60,6 +63,7 @@ _migrate_sdkman() {
   if [[ -f "${bashrc}" ]] && grep -qF "# BEGIN SDKMAN" "${bashrc}"; then
     if grep -qF "devboost: migrated sdkman init to mise" "${bashrc}"; then
       log_skip "mise: sdkman init block already migrated in ${bashrc}"
+      return 0
     else
       log_info "mise: commenting out sdkman init block in ${bashrc}"
       comment_block "${bashrc}" "# BEGIN SDKMAN" "# END SDKMAN"
