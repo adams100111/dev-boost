@@ -929,6 +929,9 @@ if [[ "$1" == "install" && -n "${2:-}" ]]; then
   uuid="$2"
   ext_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
   # Idempotent: skip creating metadata if the extension dir already exists.
+  # Note: STUB_GEXT_MISMATCH_UUID only applies when the ext dir does NOT yet exist.
+  # If the dir is already present, gext install is a no-op and the existing
+  # metadata.json (with its uuid) is left untouched by this stub.
   if [[ ! -d "${ext_dir}" ]]; then
     mkdir -p "${ext_dir}"
     # Use STUB_GEXT_MISMATCH_UUID to inject a wrong uuid for failure tests.
@@ -993,7 +996,7 @@ fi
 exit 0
 STUB
     chmod +x "${_base_bin_dir}/gnome-shell"
-    export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
+    export XDG_CURRENT_DESKTOP="GNOME"
   fi
 }
 
@@ -1047,6 +1050,8 @@ if [[ "$1" == "get" && -n "${2:-}" && -n "${3:-}" ]]; then
   schema="$2"
   key="$3"
   lookup="${schema} ${key}"
+  # Guard: ensure state file exists before reading (avoids read errors on fresh test runs).
+  [[ -f "${state_file}" ]] || touch "${state_file}"
   # Search state file for a matching "schema key=value" line.
   value=""
   while IFS= read -r line; do

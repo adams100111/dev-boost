@@ -251,3 +251,122 @@ _EXPECTED_CLI_SHELL_SHELL_MEMBERS=(
   [ "$ssh_line" -gt "$secrets_line" ] \
     || { echo "ssh-setup (line $ssh_line) must come after secrets (line $secrets_line)"; return 1; }
 }
+
+# ---------------------------------------------------------------------------
+# T005 — profile_expand gnome / gnome-aesthetics / gnome-theme (TOML-only)
+# ---------------------------------------------------------------------------
+
+_EXPECTED_GNOME_COUNT=3
+_EXPECTED_GNOME_MEMBERS=(
+  gnome-settings gnome-extensions gnome-manager-apps
+)
+
+@test "profiles.toml: gnome profile is defined (profile_names includes gnome)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome"* ]]
+}
+
+@test "profiles.toml: profile_expand gnome yields exactly ${_EXPECTED_GNOME_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_GNOME_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand gnome contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_GNOME_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+@test "profiles.toml: gnome-aesthetics profile is defined (TOML key present)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-aesthetics"* ]]
+}
+
+@test "profiles.toml: gnome-aesthetics TOML entry lists exactly 1 member (gnome-aesthetics)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml"
+    toml_to_json "$DEVBOOST_PROFILES" \
+      | jq -r ".profiles[\"gnome-aesthetics\"][]" | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+}
+
+@test "profiles.toml: gnome-aesthetics TOML entry contains module gnome-aesthetics" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml"
+    toml_to_json "$DEVBOOST_PROFILES" \
+      | jq -r ".profiles[\"gnome-aesthetics\"][]" | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-aesthetics"* ]]
+}
+
+@test "profiles.toml: gnome-theme profile is defined (TOML key present)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-theme"* ]]
+}
+
+@test "profiles.toml: gnome-theme TOML entry lists exactly 1 member (gnome-theme)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml"
+    toml_to_json "$DEVBOOST_PROFILES" \
+      | jq -r ".profiles[\"gnome-theme\"][]" | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+}
+
+@test "profiles.toml: gnome-theme TOML entry contains module gnome-theme" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml"
+    toml_to_json "$DEVBOOST_PROFILES" \
+      | jq -r ".profiles[\"gnome-theme\"][]" | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-theme"* ]]
+}

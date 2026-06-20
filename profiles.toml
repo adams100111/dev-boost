@@ -5,3 +5,6 @@ base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatp
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell = ["starship","bash-config","ghostty","nerd-fonts","dotfiles"]
+gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
+gnome-aesthetics = ["gnome-aesthetics"]
+gnome-theme      = ["gnome-theme"]
