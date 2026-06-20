@@ -57,3 +57,41 @@ _EXPECTED_BASE_MEMBERS=(
   [ "$status" -eq 0 ]
   [[ "$output" == *"base"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# T019 — full depsort resolution against real modules/
+# ---------------------------------------------------------------------------
+@test "devboost list --profile base: resolves without cycle, all 21 modules present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile base
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+  local expected_count=21
+  local actual_count
+  actual_count="$(printf '%s\n' "$output" | grep -c .)"
+  [ "$actual_count" -eq "$expected_count" ]
+  # Assert every base member appears in the output
+  for module in "${_EXPECTED_BASE_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile base: secrets appears before chezmoi and ssh-setup" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile base
+  [ "$status" -eq 0 ]
+  local secrets_line chezmoi_line ssh_line
+  secrets_line="$(printf '%s\n' "$output" | grep -n '^secrets$' | cut -d: -f1)"
+  chezmoi_line="$(printf '%s\n' "$output" | grep -n '^chezmoi$' | cut -d: -f1)"
+  ssh_line="$(printf '%s\n' "$output" | grep -n '^ssh-setup$' | cut -d: -f1)"
+  # secrets must be present
+  [ -n "$secrets_line" ] || { echo "secrets not found in output"; return 1; }
+  # chezmoi and ssh-setup must come after secrets
+  [ "$chezmoi_line" -gt "$secrets_line" ] \
+    || { echo "chezmoi (line $chezmoi_line) must come after secrets (line $secrets_line)"; return 1; }
+  [ "$ssh_line" -gt "$secrets_line" ] \
+    || { echo "ssh-setup (line $ssh_line) must come after secrets (line $secrets_line)"; return 1; }
+}

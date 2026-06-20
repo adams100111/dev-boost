@@ -39,8 +39,10 @@ Expected outcomes (on Fedora):
 - `flatpak remotes` shows full `flathub`; third-party repos enabled.
 - All CLI tools + the build toolchain verify present.
 - `mise` installed; any prior nvm/sdkman versions preserved + their bashrc init commented.
-- `chezmoi` initialized; `docker` installed, service enabled, user in `docker` group
-  (re-login reported).
+- `chezmoi` initialized; if `DEVBOOST_DOTFILES_REPO` is set the dotfiles repo is cloned via
+  `chezmoi init --apply <repo>` using credentials from `~/.git-credentials` (seeded by the
+  `secrets` module); clone failure is non-blocking (warns, does not abort).
+- `docker` installed, service enabled, user in `docker` group (re-login reported).
 - Re-running `install --profile base` reports every module **skipped** (idempotent).
 - `git ls-files` shows no secrets/keys.
 ```
