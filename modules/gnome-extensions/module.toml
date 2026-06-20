@@ -1,0 +1,9 @@
+name        = "gnome-extensions"
+category    = "gnome"
+description = "Install + enable the 6 curated functional GNOME extensions by pinned UUID, author-verified, session-free, idempotent"
+requires    = ["gnome-settings"]
+profiles    = ["gnome"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/gnome-extensions/install.sh\" --verify-only"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/gnome-extensions/install.sh\""

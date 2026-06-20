@@ -251,3 +251,187 @@ _EXPECTED_CLI_SHELL_SHELL_MEMBERS=(
   [ "$ssh_line" -gt "$secrets_line" ] \
     || { echo "ssh-setup (line $ssh_line) must come after secrets (line $secrets_line)"; return 1; }
 }
+
+# ---------------------------------------------------------------------------
+# T005 — profile_expand gnome / gnome-aesthetics / gnome-theme (TOML-only)
+# ---------------------------------------------------------------------------
+
+_EXPECTED_GNOME_COUNT=3
+_EXPECTED_GNOME_MEMBERS=(
+  gnome-settings gnome-extensions gnome-manager-apps
+)
+
+@test "profiles.toml: gnome profile is defined (profile_names includes gnome)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome"* ]]
+}
+
+@test "profiles.toml: profile_expand gnome yields exactly ${_EXPECTED_GNOME_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_GNOME_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand gnome contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_GNOME_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+@test "profiles.toml: gnome-aesthetics profile is defined (profile_names includes gnome-aesthetics)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-aesthetics"* ]]
+}
+
+@test "profiles.toml: profile_expand gnome-aesthetics yields exactly 1 module" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome-aesthetics | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+}
+
+@test "profiles.toml: profile_expand gnome-aesthetics contains module gnome-aesthetics-bundle" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome-aesthetics | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-aesthetics-bundle"* ]]
+}
+
+@test "profiles.toml: gnome-theme profile is defined (profile_names includes gnome-theme)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-theme"* ]]
+}
+
+@test "profiles.toml: profile_expand gnome-theme yields exactly 1 module" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome-theme | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+}
+
+@test "profiles.toml: profile_expand gnome-theme contains module gnome-theme-bundle" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand gnome-theme | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gnome-theme-bundle"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# T014 — full depsort resolution: gnome + opt-in bundles against real modules/
+# ---------------------------------------------------------------------------
+
+@test "devboost list --profile gnome: resolves without cycle, exit 0, all 3 modules present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile gnome
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+  local actual_count
+  actual_count="$(printf '%s\n' "$output" | grep -c .)"
+  [ "$actual_count" -eq 3 ]
+  for module in gnome-settings gnome-extensions gnome-manager-apps; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile gnome: gnome-settings ordered before gnome-extensions" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile gnome
+  [ "$status" -eq 0 ]
+  local settings_line extensions_line
+  settings_line="$(printf '%s\n' "$output" | grep -n '^gnome-settings$'   | cut -d: -f1)"
+  extensions_line="$(printf '%s\n' "$output" | grep -n '^gnome-extensions$' | cut -d: -f1)"
+  [ -n "$settings_line" ]   || { echo "gnome-settings not found in output";   return 1; }
+  [ -n "$extensions_line" ] || { echo "gnome-extensions not found in output"; return 1; }
+  [ "$settings_line" -lt "$extensions_line" ] \
+    || { echo "gnome-settings (line $settings_line) must appear before gnome-extensions (line $extensions_line)"; return 1; }
+}
+
+@test "devboost list --profile gnome: gnome-settings ordered before gnome-manager-apps" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile gnome
+  [ "$status" -eq 0 ]
+  local settings_line manager_line
+  settings_line="$(printf '%s\n' "$output" | grep -n '^gnome-settings$'     | cut -d: -f1)"
+  manager_line="$(printf '%s\n' "$output" | grep -n '^gnome-manager-apps$' | cut -d: -f1)"
+  [ -n "$settings_line" ] || { echo "gnome-settings not found in output";    return 1; }
+  [ -n "$manager_line" ]  || { echo "gnome-manager-apps not found in output"; return 1; }
+  [ "$settings_line" -lt "$manager_line" ] \
+    || { echo "gnome-settings (line $settings_line) must appear before gnome-manager-apps (line $manager_line)"; return 1; }
+}
+
+@test "devboost list --profile gnome-aesthetics: resolves to gnome-aesthetics-bundle (non-empty, no cycle)" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile gnome-aesthetics
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+  [[ "$output" == *"gnome-aesthetics-bundle"* ]] \
+    || { echo "gnome-aesthetics-bundle not found in list output"; return 1; }
+  local actual_count
+  actual_count="$(printf '%s\n' "$output" | grep -c .)"
+  [ "$actual_count" -gt 0 ]
+}
+
+@test "devboost list --profile gnome-theme: resolves to gnome-theme-bundle (non-empty, no cycle)" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile gnome-theme
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+  [[ "$output" == *"gnome-theme-bundle"* ]] \
+    || { echo "gnome-theme-bundle not found in list output"; return 1; }
+  local actual_count
+  actual_count="$(printf '%s\n' "$output" | grep -c .)"
+  [ "$actual_count" -gt 0 ]
+}

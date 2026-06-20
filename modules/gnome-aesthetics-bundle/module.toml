@@ -1,0 +1,9 @@
+name        = "gnome-aesthetics-bundle"
+category    = "gnome"
+description = "OPT-IN: install + enable the aesthetics extension set (blur-my-shell, just-perfection, vertical-workspaces, astra-monitor, CoverflowAltTab) via gext, author-verified, session-free, idempotent"
+requires    = ["gnome-settings"]
+profiles    = ["gnome-aesthetics"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/gnome-aesthetics-bundle/install.sh\" --verify-only"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/gnome-aesthetics-bundle/install.sh\""
