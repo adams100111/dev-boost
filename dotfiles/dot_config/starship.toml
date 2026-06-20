@@ -1,0 +1,81 @@
+# ~/.config/starship.toml — dev-boost managed Starship prompt configuration.
+# # devboost — managed by chezmoi; edit via dotfiles/dot_config/starship.toml in the dev-boost repo.
+# Theme: Catppuccin Mocha (opinionated dev-boost baseline).
+
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# Inserts a blank line between shell prompts
+add_newline = true
+
+# A minimal left prompt
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_state\
+$git_status\
+$cmd_duration\
+$line_break\
+$python\
+$character"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Catppuccin Mocha palette
+# ─────────────────────────────────────────────────────────────────────────────
+[palettes.catppuccin_mocha]
+rosewater = "#f5e0dc"
+flamingo  = "#f2cdcd"
+pink      = "#f5c2e7"
+mauve     = "#cba6f7"
+red       = "#f38ba8"
+maroon    = "#eba0ac"
+peach     = "#fab387"
+yellow    = "#f9e2af"
+green     = "#a6e3a1"
+teal      = "#94e2d5"
+sky       = "#89dceb"
+sapphire  = "#74c7ec"
+blue      = "#89b4fa"
+lavender  = "#b4befe"
+text      = "#cdd6f4"
+subtext1  = "#bac2de"
+subtext0  = "#a6adc8"
+overlay2  = "#9399b2"
+overlay1  = "#7f849c"
+overlay0  = "#6c7086"
+surface2  = "#585b70"
+surface1  = "#45475a"
+surface0  = "#313244"
+base      = "#1e1e2e"
+mantle    = "#181825"
+crust     = "#11111b"
+
+palette = "catppuccin_mocha"
+
+[directory]
+style = "bold blue"
+truncation_length = 3
+truncate_to_repo  = true
+
+[git_branch]
+format = "[$symbol$branch]($style) "
+symbol = " "
+style  = "bold mauve"
+
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style  = "bold red"
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol   = "[❯](bold red)"
+
+[cmd_duration]
+min_time = 2_000
+format   = "[ $duration]($style) "
+style    = "bold yellow"
+
+[python]
+format = '[$symbol$version]($style) '
+style  = "bold yellow"

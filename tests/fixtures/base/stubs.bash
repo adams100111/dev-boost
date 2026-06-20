@@ -19,9 +19,15 @@
 #   base_install_usermod          — install usermod stub
 #   base_install_getent           — install getent stub
 #   base_install_mise             — install mise stub
-#   base_install_chezmoi          — install chezmoi stub
+#   base_install_chezmoi          — install chezmoi stub (handles init + apply)
 #   base_install_git              — install git stub
 #   base_install_sudo             — install sudo stub (exec's its remaining args)
+#   base_install_npm              — install npm stub (Spec 3: cli-and-shell)
+#   base_install_cargo            — install cargo stub (Spec 3: cli-and-shell)
+#   base_install_fc_list          — install fc-list stub (Spec 3: cli-and-shell)
+#   base_install_fc_cache         — install fc-cache stub (Spec 3: cli-and-shell)
+#   base_install_curl             — install curl stub (Spec 3: cli-and-shell, nerd-fonts download)
+#   base_install_unzip            — install unzip stub (Spec 3: cli-and-shell, nerd-fonts extraction)
 #
 # State knobs (set before calling base_setup or the relevant install helper):
 #   STUB_RPM_INSTALLED        — space-separated list of packages rpm reports as installed
@@ -44,12 +50,31 @@
 #   STUB_MISE_INSTALLED       — if "1", `command -v mise` succeeds (mise already present)
 #   STUB_CHEZMOI_LOG          — path to the chezmoi invocation log
 #   STUB_CHEZMOI_CLONE_FAIL   — if "1", chezmoi init --source=... exits 1 (clone failure)
+#   STUB_CHEZMOI_APPLY_FAIL   — if "1", chezmoi apply exits 1 (Spec 3)
 #   STUB_GIT_LOG              — path to the git invocation log
 #   STUB_SUDO_LOG             — path to the sudo invocation log
 #   STUB_NVM_VERSION          — if set, creates ~/.nvm/alias/default with this version
 #                               e.g. STUB_NVM_VERSION="18.20.0"
 #   STUB_SDKMAN_VERSION       — if set, creates ~/.sdkman/candidates/java/current symlink dir
 #                               e.g. STUB_SDKMAN_VERSION="21.0.1-tem"
+#
+# Spec 3 (cli-and-shell) additional knobs:
+#   STUB_NPM_LOG              — path to the npm invocation log (default: $BATS_TEST_TMPDIR/npm-calls.log)
+#   STUB_NPM_GLOBALS          — space-separated list of binaries to place on PATH after npm install -g
+#                               e.g. STUB_NPM_GLOBALS="claude" creates a passthrough binary in the stub dir
+#   STUB_CARGO_LOG            — path to the cargo invocation log (default: $BATS_TEST_TMPDIR/cargo-calls.log)
+#   STUB_CURL_LOG             — path to the curl invocation log (default: $BATS_TEST_TMPDIR/curl-calls.log)
+#   STUB_UNZIP_LOG            — path to the unzip invocation log (default: $BATS_TEST_TMPDIR/unzip-calls.log)
+#   STUB_FONTS_INSTALLED      — newline-separated (or space-separated) font names fc-list emits
+#                               e.g. STUB_FONTS_INSTALLED="JetBrainsMono Nerd Font:style=Regular"
+#                               Leave empty/unset to simulate no fonts installed.
+#   STUB_FC_LIST_LOG          — path to the fc-list invocation log
+#   STUB_FC_CACHE_LOG         — path to the fc-cache invocation log
+#   STUB_COPR_ENABLED         — space-separated list of COPR repos already enabled
+#                               e.g. STUB_COPR_ENABLED="scottames/ghostty" — dnf copr enable is a no-op for these
+#   STUB_ORDER_LOG            — shared chronological call-log that BOTH mise and npm stubs append to.
+#                               Each line is tagged: "mise:<args>" or "npm:<args>".
+#                               Use to assert cross-tool invocation ordering in a single file.
 #
 # All stubs write no real network traffic or system changes; all temp files live under
 # BATS_TEST_TMPDIR / scratch dirs and are cleaned up by bats or by base_teardown.
@@ -93,6 +118,15 @@ base_setup() {
   export STUB_CHEZMOI_LOG="${STUB_CHEZMOI_LOG:-${BATS_TEST_TMPDIR}/chezmoi-calls.log}"
   export STUB_GIT_LOG="${STUB_GIT_LOG:-${BATS_TEST_TMPDIR}/git-calls.log}"
   export STUB_SUDO_LOG="${STUB_SUDO_LOG:-${BATS_TEST_TMPDIR}/sudo-calls.log}"
+  # Spec 3 log defaults.
+  export STUB_CURL_LOG="${STUB_CURL_LOG:-${BATS_TEST_TMPDIR}/curl-calls.log}"
+  export STUB_UNZIP_LOG="${STUB_UNZIP_LOG:-${BATS_TEST_TMPDIR}/unzip-calls.log}"
+  export STUB_NPM_LOG="${STUB_NPM_LOG:-${BATS_TEST_TMPDIR}/npm-calls.log}"
+  export STUB_CARGO_LOG="${STUB_CARGO_LOG:-${BATS_TEST_TMPDIR}/cargo-calls.log}"
+  export STUB_FC_LIST_LOG="${STUB_FC_LIST_LOG:-${BATS_TEST_TMPDIR}/fc-list-calls.log}"
+  export STUB_FC_CACHE_LOG="${STUB_FC_CACHE_LOG:-${BATS_TEST_TMPDIR}/fc-cache-calls.log}"
+  # Shared cross-tool chronological ordering log (mise + npm both append here).
+  export STUB_ORDER_LOG="${STUB_ORDER_LOG:-${BATS_TEST_TMPDIR}/order-calls.log}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -106,6 +140,14 @@ base_setup() {
   : > "${STUB_CHEZMOI_LOG}"
   : > "${STUB_GIT_LOG}"
   : > "${STUB_SUDO_LOG}"
+  # Spec 3 log initialisation.
+  : > "${STUB_CURL_LOG}"
+  : > "${STUB_UNZIP_LOG}"
+  : > "${STUB_NPM_LOG}"
+  : > "${STUB_CARGO_LOG}"
+  : > "${STUB_FC_LIST_LOG}"
+  : > "${STUB_FC_CACHE_LOG}"
+  : > "${STUB_ORDER_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -131,6 +173,13 @@ base_setup() {
   base_install_chezmoi
   base_install_git
   base_install_sudo
+  # Spec 3 stubs.
+  base_install_npm
+  base_install_cargo
+  base_install_fc_list
+  base_install_fc_cache
+  base_install_curl
+  base_install_unzip
 }
 
 # ---------------------------------------------------------------------------
@@ -160,9 +209,38 @@ base_root_dir()  { printf '%s\n' "${_base_root_dir}"; }
 base_install_dnf() {
   cat > "${_base_bin_dir}/dnf" <<'STUB'
 #!/usr/bin/env bash
-# Stub: dnf — fake package manager for bats tests.
+# Stub: dnf — fake package manager for bats tests (handles install, upgrade, copr).
 log_file="${STUB_DNF_LOG:-/tmp/stub-dnf-calls.log}"
 printf 'dnf %s\n' "$*" >> "${log_file}"
+
+# Handle `dnf copr list`: emit enabled COPR repos from STUB_COPR_ENABLED.
+if [[ "$1" == "copr" && "$2" == "list" ]]; then
+  enabled="${STUB_COPR_ENABLED:-}"
+  for r in ${enabled}; do
+    printf '%s\n' "${r}"
+  done
+  exit 0
+fi
+
+# Handle `dnf copr enable -y <repo>`: record the COPR name; skip if already enabled.
+if [[ "$1" == "copr" && "$2" == "enable" ]]; then
+  # Extract the last non-flag argument as the repo name.
+  copr_repo=""
+  for arg in "$@"; do
+    [[ "${arg}" == -* ]] && continue
+    [[ "${arg}" == "copr" || "${arg}" == "enable" ]] && continue
+    copr_repo="${arg}"
+  done
+  enabled="${STUB_COPR_ENABLED:-}"
+  for r in ${enabled}; do
+    if [[ "${r}" == "${copr_repo}" ]]; then
+      printf 'Repository %s is already enabled.\n' "${copr_repo}"
+      exit 0
+    fi
+  done
+  exit 0
+fi
+
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/dnf"
@@ -369,6 +447,10 @@ base_install_mise() {
 # Stub: mise — fake runtime manager for bats tests.
 log_file="${STUB_MISE_LOG:-/tmp/stub-mise-calls.log}"
 printf 'mise %s\n' "$*" >> "${log_file}"
+# Also append to the shared ordering log (backward-compatible: no-op if unset).
+if [[ -n "${STUB_ORDER_LOG:-}" ]]; then
+  printf 'mise:%s\n' "$*" >> "${STUB_ORDER_LOG}"
+fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/mise"
@@ -384,7 +466,7 @@ STUB
 base_install_chezmoi() {
   cat > "${_base_bin_dir}/chezmoi" <<'STUB'
 #!/usr/bin/env bash
-# Stub: chezmoi — fake dotfile manager for bats tests.
+# Stub: chezmoi — fake dotfile manager for bats tests (handles init + apply).
 log_file="${STUB_CHEZMOI_LOG:-/tmp/stub-chezmoi-calls.log}"
 printf 'chezmoi %s\n' "$*" >> "${log_file}"
 
@@ -395,6 +477,81 @@ if [[ "$1" == "init" ]]; then
   fi
   # Create the chezmoi source directory to simulate a successful init+clone.
   mkdir -p "${HOME}/.local/share/chezmoi"
+  exit 0
+fi
+
+# Handle `chezmoi apply [--source <src>] [--destination <dest>]`
+if [[ "$1" == "apply" ]]; then
+  if [[ "${STUB_CHEZMOI_APPLY_FAIL:-0}" == "1" ]]; then
+    printf 'chezmoi: error: apply failed\n' >&2
+    exit 1
+  fi
+
+  # Parse --source and --destination from args.
+  apply_source=""
+  apply_dest="${HOME}"
+  args=("$@")
+  i=1
+  while [[ $i -lt ${#args[@]} ]]; do
+    arg="${args[$i]}"
+    case "${arg}" in
+      --source=*)  apply_source="${arg#--source=}" ;;
+      --source)    (( i++ )); apply_source="${args[$i]}" ;;
+      --destination=*) apply_dest="${arg#--destination=}" ;;
+      --destination)   (( i++ )); apply_dest="${args[$i]}" ;;
+    esac
+    (( i++ ))
+  done
+
+  # Record parsed source and destination for test assertions.
+  printf 'chezmoi apply --source %s --destination %s\n' "${apply_source}" "${apply_dest}" \
+    >> "${log_file}.parsed"
+
+  # Simulate applying: write deterministic managed files into the destination HOME.
+  # Tests can inspect these to verify apply ran.
+  mkdir -p "${apply_dest}/.config/starship"
+  mkdir -p "${apply_dest}/.config/ghostty"
+  mkdir -p "${apply_dest}/.config/atuin"
+  mkdir -p "${apply_dest}/.tmux/plugins"
+
+  # ~/.bashrc — contains dev-boost sentinel + representative init lines (single copy).
+  # Only write if not already present, preserving idempotency (re-apply is a no-op).
+  bashrc="${apply_dest}/.bashrc"
+  if ! grep -q '# devboost managed' "${bashrc}" 2>/dev/null; then
+    cat > "${bashrc}" <<'BASHRC'
+# devboost managed — do not edit manually
+eval "$(starship init bash)"
+eval "$(atuin init bash)"
+eval "$(zoxide init bash)"
+eval "$(direnv hook bash)"
+[ -f /usr/share/fzf/shell/key-bindings.bash ] && source /usr/share/fzf/shell/key-bindings.bash
+BASHRC
+  fi
+
+  # ~/.config/starship.toml — placeholder starship config.
+  starship_cfg="${apply_dest}/.config/starship.toml"
+  if [[ ! -f "${starship_cfg}" ]]; then
+    printf '# devboost managed starship config\nadd_newline = true\n' > "${starship_cfg}"
+  fi
+
+  # ~/.tmux.conf — placeholder tmux config.
+  tmux_conf="${apply_dest}/.tmux.conf"
+  if [[ ! -f "${tmux_conf}" ]]; then
+    printf '# devboost managed tmux config\nset -g default-terminal "screen-256color"\n' > "${tmux_conf}"
+  fi
+
+  # ~/.config/ghostty/config — placeholder ghostty config.
+  ghostty_cfg="${apply_dest}/.config/ghostty/config"
+  if [[ ! -f "${ghostty_cfg}" ]]; then
+    printf '# devboost managed ghostty config\nfont-family = JetBrainsMono Nerd Font\n' > "${ghostty_cfg}"
+  fi
+
+  # ~/.config/atuin/config.toml — placeholder atuin config.
+  atuin_cfg="${apply_dest}/.config/atuin/config.toml"
+  if [[ ! -f "${atuin_cfg}" ]]; then
+    printf '# devboost managed atuin config\n[settings]\nsearch_mode = "fuzzy"\n' > "${atuin_cfg}"
+  fi
+
   exit 0
 fi
 
@@ -437,6 +594,216 @@ printf 'sudo %s\n' "$*" >> "${log_file}"
 exec "$@"
 STUB
   chmod +x "${_base_bin_dir}/sudo"
+}
+
+# ---------------------------------------------------------------------------
+# Spec 3 (cli-and-shell) stubs
+# ---------------------------------------------------------------------------
+
+# base_install_npm — write a fake `npm` binary to the stub bin dir.
+#
+# Behaviour:
+#   npm install -g <pkg>  → logs invocation; if <pkg> name in STUB_NPM_GLOBALS, writes a
+#                           passthrough stub binary named after the pkg's expected binary into
+#                           the stub dir (so `command -v <binary>` succeeds after install).
+#   (any other form)      → exits 0; logs invocation
+base_install_npm() {
+  cat > "${_base_bin_dir}/npm" <<'STUB'
+#!/usr/bin/env bash
+# Stub: npm — fake Node package manager for bats tests.
+log_file="${STUB_NPM_LOG:-/tmp/stub-npm-calls.log}"
+printf 'npm %s\n' "$*" >> "${log_file}"
+# Also append to the shared ordering log (backward-compatible: no-op if unset).
+if [[ -n "${STUB_ORDER_LOG:-}" ]]; then
+  printf 'npm:%s\n' "$*" >> "${STUB_ORDER_LOG}"
+fi
+
+# Simulate placing a global binary on PATH for `npm install -g <pkg>`.
+if [[ "$1" == "install" && "$2" == "-g" && -n "${3:-}" ]]; then
+  pkg="$3"
+  stub_bin_dir="$(dirname "$(command -v npm)")"
+  for global in ${STUB_NPM_GLOBALS:-}; do
+    # STUB_NPM_GLOBALS lists binary names (e.g. "claude") to create for the installed pkg.
+    # Format: "pkgname:binary" or just "binary" (matched against the package name).
+    if [[ "${global}" == "${pkg}:"* ]]; then
+      bin_name="${global#${pkg}:}"
+    elif [[ "${global}" == "${pkg}" ]]; then
+      bin_name="${global}"
+    else
+      continue
+    fi
+    if [[ ! -f "${stub_bin_dir}/${bin_name}" ]]; then
+      printf '#!/usr/bin/env bash\n# Stub: %s (placed by npm install -g stub)\nexit 0\n' \
+        "${bin_name}" > "${stub_bin_dir}/${bin_name}"
+      chmod +x "${stub_bin_dir}/${bin_name}"
+    fi
+  done
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/npm"
+}
+
+# base_install_cargo — write a fake `cargo` binary to the stub bin dir.
+#
+# Behaviour:
+#   cargo install <pkg>  → logs invocation; exits 0
+#   (any other form)     → exits 0; logs invocation
+base_install_cargo() {
+  cat > "${_base_bin_dir}/cargo" <<'STUB'
+#!/usr/bin/env bash
+# Stub: cargo — fake Rust package manager for bats tests.
+log_file="${STUB_CARGO_LOG:-/tmp/stub-cargo-calls.log}"
+printf 'cargo %s\n' "$*" >> "${log_file}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/cargo"
+}
+
+# base_install_fc_list — write a fake `fc-list` binary to the stub bin dir.
+#
+# Behaviour:
+#   fc-list  → emits the contents of STUB_FONTS_INSTALLED (newline-separated font descriptors)
+#              or nothing if unset (simulates no fonts installed); logs invocation
+base_install_fc_list() {
+  cat > "${_base_bin_dir}/fc-list" <<'STUB'
+#!/usr/bin/env bash
+# Stub: fc-list — fake fontconfig list command for bats tests.
+log_file="${STUB_FC_LIST_LOG:-/tmp/stub-fc-list-calls.log}"
+printf 'fc-list %s\n' "$*" >> "${log_file}"
+
+# Emit the configured font list (empty = no fonts installed).
+if [[ -n "${STUB_FONTS_INSTALLED:-}" ]]; then
+  printf '%s\n' "${STUB_FONTS_INSTALLED}"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/fc-list"
+}
+
+# base_install_fc_cache — write a fake `fc-cache` binary to the stub bin dir.
+#
+# Behaviour:
+#   fc-cache [-f]  → exits 0; logs invocation
+base_install_fc_cache() {
+  cat > "${_base_bin_dir}/fc-cache" <<'STUB'
+#!/usr/bin/env bash
+# Stub: fc-cache — fake fontconfig cache rebuild command for bats tests.
+log_file="${STUB_FC_CACHE_LOG:-/tmp/stub-fc-cache-calls.log}"
+printf 'fc-cache %s\n' "$*" >> "${log_file}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/fc-cache"
+}
+
+# base_install_unzip — write a fake `unzip` binary to the stub bin dir.
+#
+# Behaviour (Spec 3: nerd-fonts extraction):
+#   unzip -o -j <zip> '*.ttf' -d <dir>  → writes a placeholder <stem>.ttf file into <dir>;
+#                                          logs the invocation to STUB_UNZIP_LOG
+#   (any other form)                     → exits 0; logs invocation
+#
+# This simulates font archive extraction so tests can assert that a real .ttf
+# file results from the install (catching the "raw ZIP written as .ttf" bug).
+#
+# State knobs:
+#   STUB_UNZIP_LOG   — path to the unzip invocation log (default: $BATS_TEST_TMPDIR/unzip-calls.log)
+base_install_unzip() {
+  cat > "${_base_bin_dir}/unzip" <<'STUB'
+#!/usr/bin/env bash
+# Stub: unzip — fake archive extractor for bats tests (simulates ttf extraction).
+log_file="${STUB_UNZIP_LOG:-/tmp/stub-unzip-calls.log}"
+printf 'unzip %s\n' "$*" >> "${log_file}"
+
+# Parse -d <dir> from args to find the output directory.
+# Also detect a .zip source file so we can derive a placeholder name.
+dest_dir=""
+zip_file=""
+args=("$@")
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+  arg="${args[$i]}"
+  case "${arg}" in
+    -d)
+      (( i++ ))
+      dest_dir="${args[$i]}"
+      ;;
+    -d*)
+      dest_dir="${arg#-d}"
+      ;;
+    *.zip)
+      zip_file="${arg}"
+      ;;
+  esac
+  (( i++ ))
+done
+
+# If we have a destination directory, write a placeholder .ttf into it so the
+# test can assert a real font file resulted from extraction.
+if [[ -n "${dest_dir}" ]]; then
+  mkdir -p "${dest_dir}"
+  # Derive a stem from the zip filename (e.g. JetBrainsMono.zip → JetBrainsMono.ttf).
+  if [[ -n "${zip_file}" ]]; then
+    stem="$(basename "${zip_file}" .zip)"
+  else
+    stem="placeholder"
+  fi
+  : > "${dest_dir}/${stem}NerdFont-Regular.ttf"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/unzip"
+}
+
+# base_install_curl — write a fake `curl` binary to the stub bin dir.
+#
+# Behaviour (Spec 3: nerd-fonts download):
+#   curl ... -o <file> <url>   → creates a zero-byte placeholder at <file>; logs invocation
+#   curl ... --output <file> <url> → same
+#   curl ... -o <file>         → same (url may come before -o)
+#   (any other form)           → exits 0; logs invocation
+#
+# This allows nerd-fonts/install.sh to run to completion in tests without
+# real network access; font file presence is detected by `find`, not content.
+base_install_curl() {
+  cat > "${_base_bin_dir}/curl" <<'STUB'
+#!/usr/bin/env bash
+# Stub: curl — fake HTTP client for bats tests (places placeholder output files).
+log_file="${STUB_CURL_LOG:-/tmp/stub-curl-calls.log}"
+printf 'curl %s\n' "$*" >> "${log_file}"
+
+# Parse -o / --output <file> to create a placeholder at the destination.
+output_file=""
+args=("$@")
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+  arg="${args[$i]}"
+  case "${arg}" in
+    -o|--output)
+      (( i++ ))
+      output_file="${args[$i]}"
+      ;;
+    -o*)
+      output_file="${arg#-o}"
+      ;;
+    --output=*)
+      output_file="${arg#--output=}"
+      ;;
+  esac
+  (( i++ ))
+done
+
+if [[ -n "${output_file}" ]]; then
+  mkdir -p "$(dirname "${output_file}")"
+  : > "${output_file}"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/curl"
 }
 
 # ---------------------------------------------------------------------------

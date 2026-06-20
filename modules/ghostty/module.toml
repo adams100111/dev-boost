@@ -1,0 +1,9 @@
+name        = "ghostty"
+category    = "shell"
+description = "Install Ghostty terminal via scottames/ghostty COPR (Fedora only); Ptyxis left as fallback"
+requires    = []
+profiles    = ["shell"]
+verify      = "command -v ghostty"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/ghostty/install.sh\""

@@ -1,0 +1,9 @@
+name     = "fastfetch"
+category = "cli"
+requires = []
+verify   = "command -v fastfetch"
+
+[install]
+fedora = "sudo dnf install -y fastfetch"
+debian = "sudo apt-get install -y fastfetch"
+macos  = "brew install fastfetch"

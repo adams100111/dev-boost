@@ -19,8 +19,8 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/002-base-profile/plan.md`
-(spec `specs/002-base-profile/spec.md`). Spec 1 secrets-and-auth is merged to main.
-For technologies, project structure, shell commands, and other context, read that plan
-and the design doc / constitution it references.
+Active feature plan: `specs/003-cli-and-shell/plan.md`
+(spec `specs/003-cli-and-shell/spec.md`). Specs 1 (secrets-and-auth) + 2 (base-profile)
+are merged to main. For technologies, project structure, shell commands, and other
+context, read that plan and the design doc / constitution it references.
 <!-- SPECKIT END -->

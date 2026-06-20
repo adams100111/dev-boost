@@ -1,0 +1,3 @@
+# This directory is managed by chezmoi as the skeleton for ~/.claude/
+# No secrets or tokens are stored here (FR-014).
+# Claude Code user configuration goes in ~/.claude/ — see the claude-code module.

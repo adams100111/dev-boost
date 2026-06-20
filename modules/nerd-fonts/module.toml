@@ -1,0 +1,9 @@
+name        = "nerd-fonts"
+category    = "shell"
+description = "Install JetBrainsMono and MesloLGS Nerd Font Mono into ~/.local/share/fonts/"
+requires    = []
+profiles    = ["shell"]
+verify      = "fc-list | grep -qi 'JetBrainsMono Nerd Font'"
+
+[install]
+default = "bash \"$DEVBOOST_ROOT/modules/nerd-fonts/install.sh\""

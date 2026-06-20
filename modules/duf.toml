@@ -1,0 +1,9 @@
+name     = "duf"
+category = "cli"
+requires = []
+verify   = "command -v duf"
+
+[install]
+fedora = "sudo dnf install -y duf"
+debian = "sudo apt-get install -y duf"
+macos  = "brew install duf"

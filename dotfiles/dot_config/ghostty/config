@@ -1,0 +1,57 @@
+# ~/.config/ghostty/config — dev-boost managed Ghostty terminal configuration.
+# # devboost — managed by chezmoi; edit via dotfiles/dot_config/ghostty/config in the dev-boost repo.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Theme — Catppuccin Mocha
+# ─────────────────────────────────────────────────────────────────────────────
+theme = catppuccin-mocha
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Font
+# ─────────────────────────────────────────────────────────────────────────────
+# Primary font: JetBrainsMono Nerd Font (installed by the nerd-fonts module).
+font-family = "JetBrainsMono Nerd Font Mono"
+font-size = 13
+
+# NOTE — Ptyxis Mono gotcha:
+#   Ptyxis uses "Ptyxis Mono" as a font name alias. If you switch between
+#   Ghostty and Ptyxis, ensure you use the *exact* font name that each app
+#   expects. JetBrainsMono Nerd Font works in Ghostty; Ptyxis may list it
+#   under a slightly different display name. Run `fc-list | grep -i jetbrains`
+#   to find the exact name on your system.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Window / rendering
+# ─────────────────────────────────────────────────────────────────────────────
+window-padding-x = 8
+window-padding-y = 8
+window-decoration = none
+gtk-single-instance = false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shell integration
+# ─────────────────────────────────────────────────────────────────────────────
+shell-integration = bash
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Key bindings
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy / paste
+keybind = ctrl+shift+c=copy_to_clipboard
+keybind = ctrl+shift+v=paste_from_clipboard
+
+# New window / tab
+keybind = ctrl+shift+n=new_window
+keybind = ctrl+shift+t=new_tab
+
+# Navigate tabs
+keybind = ctrl+shift+right=next_tab
+keybind = ctrl+shift+left=previous_tab
+
+# Zoom pane
+keybind = ctrl+shift+z=toggle_zoom
+
+# Font size
+keybind = ctrl+equal=increase_font_size:1
+keybind = ctrl+minus=decrease_font_size:1
+keybind = ctrl+zero=reset_font_size
