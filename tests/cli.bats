@@ -1,8 +1,15 @@
 load test_helper
+load fixtures/secrets/stubs
+
 setup() {
   export DEVBOOST_MODULES_DIR="$DEVBOOST_ROOT/tests/fixtures/modules"
   export DEVBOOST_PROFILES="$DEVBOOST_ROOT/tests/fixtures/profiles.toml"
   export OS_RELEASE_FILE="$DEVBOOST_ROOT/tests/fixtures/os-release/fedora"
+  stubs_setup
+}
+
+teardown() {
+  stubs_teardown
 }
 
 @test "help exits 0 and shows usage" {
@@ -19,7 +26,17 @@ setup() {
   [[ "$output" == *"git"* ]]; [[ "$output" == *"mise"* ]]
 }
 @test "doctor passes on a sane host" {
-  run "$DEVBOOST_ROOT/bin/devboost" doctor
+  # doctor now checks for age; stub age is installed via stubs_setup.
+  run bash -c "
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_MODULES_DIR='${DEVBOOST_MODULES_DIR}'
+    export OS_RELEASE_FILE='${OS_RELEASE_FILE}'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    '${DEVBOOST_ROOT}/bin/devboost' doctor
+  " 2>&1
   [ "$status" -eq 0 ]
 }
 @test "install full runs without crashing (echo modules)" {

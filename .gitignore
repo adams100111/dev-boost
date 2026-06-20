@@ -6,8 +6,11 @@
 
 # Secrets — never commit (decrypted at bootstrap from the age file on USB)
 secrets.age
+*.age
 *.env
 .env
+age-key.txt
+.git-credentials
 id_ed25519*
 id_rsa*
 

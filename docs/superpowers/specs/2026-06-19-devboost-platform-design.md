@@ -9,10 +9,18 @@
 ## 1. Goal
 
 From a **fresh machine**, with **zero interaction**, reach a fully-configured
-developer workstation **in minutes** — able to build **Laravel, .NET, Python, and
-React Native** apps, with **Obsidian** installed, synced to a GitHub repo, and its
-notes directory wired into the OS, plus per-stack tooling and best-practice
-configs.
+developer workstation **in minutes** — able to build, **out of the box**:
+**Laravel** (ddev), **.NET + Aspire**, **Python** (uv), **Next.js / React** (web),
+and **React Native + Expo** (Android) apps — with editors (VS Code + `fresh`), GUI
+apps, **Obsidian** installed, synced to a GitHub repo and its notes directory wired
+into the OS, fully-configured terminal/shell/desktop (ghostty + starship + tmux +
+GNOME), plus per-stack tooling and best-practice configs.
+
+**GPU is auto-detected** (`lspci`): the matching driver + VA-API path (Intel / AMD /
+NVIDIA) is applied automatically, with no profile flag — see §6.1 / §10c. The only
+possibly-interactive moment in the whole flow is a **one-time Secure-Boot MOK
+enrollment screen on NVIDIA** when Secure Boot is enabled (firmware-level; avoidable
+by disabling Secure Boot in Kickstart).
 
 Two entry points:
 
@@ -179,8 +187,13 @@ full         = ["base","cli","shell","gnome","multimedia","editors","laravel","d
 optional-editors = ["neovim","jetbrains-toolbox"]
 oh-my-posh       = ["oh-my-posh"]             # opt-in alternative prompt; also installs the Claude Code statusline
 ai               = ["opencode","lm-studio"]   # secondary; claude-code is primary & lives in 'cli'
-hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","nvidia-vaapi-driver","secureboot-mok","nvidia-resign-service"]
+
+# GPU driver bundles — AUTO-SELECTED by a `gpu-detect` module (lspci) inside `full`,
+# not manual flags. The matching bundle below is appended automatically; they remain
+# nameable for override/debugging.
+hardware-nvidia  = ["rpmfusion","nvidia-akmod","cuda","libva-nvidia-driver","secureboot-mok","nvidia-resign-service","nvidia-container-toolkit"]  # libva-nvidia-driver renamed from nvidia-vaapi-driver
 hardware-amd     = ["rpmfusion","mesa-va-drivers-freeworld","mesa-vdpau-drivers-freeworld"]
+hardware-intel   = ["intel-media-driver"]     # iGPU VA-API (recent gens; older: libva-intel-driver)
 ```
 
 Run examples:
@@ -205,8 +218,32 @@ Run examples:
 - **JetBrainsMono / Meslo Nerd Font Mono** (+ the Ptyxis `Mono` font gotcha
   documented).
 - **NVIDIA + CUDA + Secure-Boot MOK signing + kernel-update resign service** →
-  ported into the opt-in `hardware-nvidia` profile (machine-specific, off by
-  default).
+  ported into the auto-detected `hardware-nvidia` path. The reference scripts
+  (`../setup-scripts/fedora/nvidia/`) encode hard-won, non-obvious fixes the
+  `nvidia-akmod`/`secureboot-mok`/`nvidia-resign-service` modules MUST carry verbatim:
+  - **Install:** `akmod-nvidia xorg-x11-drv-nvidia-cuda` + `libva-nvidia-driver`
+    (⚠️ **renamed** from `nvidia-vaapi-driver`) + `libva-utils vulkan-tools`, then
+    `akmods --force`; verify `nvidia.ko` exists for the *new* kernel.
+  - **MOK state machine (idempotent, verify-guarded):** check `mokutil --sb-state`;
+    if SB off → skip signing. Else if akmods key **already enrolled** → no-op; if
+    **already queued** (`--list-new`) → reboot only; else `mokutil --import
+    /etc/pki/akmods/certs/public_key.der` (generate CA via `kmodgenca -a` only if
+    genuinely absent). Uses Fedora's **own akmods signing infra** — no hand-rolled CA.
+    The one-time blue MOK-Manager enrollment at reboot is the sole interactive step.
+  - **The CRC64→CRC32 fix (critical, non-obvious):** akmod modules are signed
+    correctly but xz-compressed with **CRC64**, which the kernel decompressor cannot
+    read → `modprobe: Invalid argument`. Fix: `unxz` then `xz --check=crc32`
+    (signature is preserved across the round-trip). Blacklist nouveau durably
+    (`modprobe.d` + grubby `rd.driver.blacklist=nouveau nvidia-drm.modeset=1`),
+    `depmod -a` + regenerate initramfs (`dracut --force`).
+  - **Durability — `nvidia-resign.service`:** a boot-time oneshot
+    (`/usr/local/sbin/sign-nvidia-modules`, `Before=display-manager.service`) that
+    re-signs + CRC32-recompresses the akmod modules for **each new kernel** before the
+    GUI starts — so kernel updates never silently break the GPU. Idempotent no-op once
+    correct.
+  - **GPU-in-containers:** `nvidia-container-toolkit` + `nvidia-ctk runtime configure`.
+  - **`doctor --gpu` diagnostic:** port `diagnose.sh` (modprobe test, nouveau-blacklist
+    + initramfs check, signature check, dmesg taint/lockdown/`pkcs#7` scan).
 
 ### 6.2 New 2026 additions
 - **Terminal:** Ghostty as primary (shipped config: JetBrainsMono Nerd Font Mono,
@@ -605,9 +642,20 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   - **Caffeine** `caffeine@patapon.info` — inhibit sleep/blank during long builds, runs, presentations.
   - **GSConnect** `gsconnect@andyholmes.github.io` — Android integration (notifications, file transfer, SMS, shared clipboard).
   - **Dash to Dock** `dash-to-dock@micxgx.gmail.com` — always-visible, configurable dock (promoted to default — primary launcher workflow).
+  - **Emoji Copy** `emoji-copy@felipeftn` — panel emoji picker → clipboard (⚠️ **UUID/author unverified — confirm at install time**; older alt: Emoji Selector `emoji-selector@maestroschan.fr`). Added from the Fedora-44 top-10 cross-check.
 
   *Aesthetics/productivity (opt-in sub-bundle):*
   - **Blur My Shell** `blur-my-shell@aunetx` · **Just Perfection** `just-perfection-desktop@just-perfection` · **V-Shell** `vertical-workspaces@G-dH.github.com` · **Astra Monitor** `monitor@astraext.github.io` (modern system monitor; or **Vitals** `Vitals@CoreCoding.com`) · **Coverflow Alt-Tab** `CoverflowAltTab@palatis.blogspot.com`.
+
+  **`gnome-theme` (opt-in aesthetic bundle — NOT in `full`; reproducible theming).**
+  Full GTK/shell theming done the *declarative, pinned* way — **not** the manual
+  gnome-look.org download→extract→drag-into-`~/.themes` flow (can't run unattended,
+  isn't version-pinned; rejected as a method). Ships:
+  - **User Themes** extension `user-theme@gnome-shell-extensions.gcampax.github.com` — enables shell theming.
+  - A **pinned, script-installed theme** (vinceliuice family — Orchis/Colloid): `git clone` at a pinned tag → `./install.sh -l -c dark -t <accent>` (`-l` is **mandatory** for libadwaita/modern apps on GNOME 42+; uninstall `./install.sh -r`).
+  - A **packaged icon theme** — prefer dnf/COPR (`papirus-icon-theme`) over manual; or pinned Tela via its `install.sh`.
+  - **Bibata** cursor + **Inter** UI font (`rsms-inter-fonts`) — applied via `gsettings`; the **monospace font stays the Nerd Font** (JetBrainsMono/Meslo).
+  - All selections **pinned + chezmoi/`gsettings`-applied** so a rebuild reproduces the exact look. Theme/icon/cursor names verified at install time.
 - **`system`/`btrfs-assistant`** — GUI complement to snapper (already present on the reference machine).
 - **`system`/`snapper-dnf-hook`** — first-party DNF5↔Snapper transaction hook (`python3-dnf-plugin-snapper`) so every CLI **and** GUI package op auto-snapshots. Pinned/auditable — **not** the guides' opaque curl-piped installer.
 - **`editors`/`fresh`** — modern Rust terminal text-editor/IDE
@@ -639,7 +687,13 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
   `setup-scripts`, §6.1) is chezmoi-managed so it restores with the dotfiles.
 - **`ai`** profile (opt-in) — OpenCode and LM Studio (local/offline LLM) as
   *secondary* tools; Claude Code is the default and lives in `cli`.
-- **`hardware-amd`** profile (opt-in) — mirror of `hardware-nvidia` for AMD GPUs (RPM Fusion Mesa freeworld VA/VDPAU).
+- **`gpu-detect`** (in `full`) — reads `lspci` for the GPU vendor and **auto-appends**
+  the matching `hardware-intel` / `hardware-amd` / `hardware-nvidia` bundle, so the
+  right driver+VA-API path is installed with **no profile flag**. Intel/AMD are fully
+  unattended; NVIDIA is unattended except the one-time Secure-Boot MOK screen (§6.1),
+  which is skipped entirely when Secure Boot is off. Multi-GPU/Optimus laptops resolve
+  to the discrete vendor plus the iGPU VA-API driver.
+- **`hardware-amd`** — mirror of `hardware-nvidia` for AMD GPUs (RPM Fusion Mesa freeworld VA/VDPAU); auto-selected by `gpu-detect`.
 
 ### Kickstart BTRFS layout (foundation for snapshots — §9)
 The snapshot/rollback story depends on a subvolume layout the original spec omitted. Kickstart provisions: `root → /`, `home → /home` (both snapper-managed); **`var/lib/gdm` writable subvolume (mandatory — without it, booting a read-only snapshot fails at login)**; non-snapshotted high-churn subvols `opt`, `var/cache`, `var/log`, `var/spool`, `var/tmp`, `var/lib/containers`, `var/lib/flatpak`, `var/lib/libvirt`. `/boot` stays **inside root** (atomic kernel+initramfs snapshots); **no swap partition** (zram only); add **`compress=zstd:1`** to all btrfs fstab entries (custom layouts lack it by default).
@@ -651,6 +705,8 @@ RPM Fusion + `dnf-tune` run **before** the first big upgrade · reboot after GPU
 - **auto-cpufreq** → conflicts with TLP *and* tuned-ppd; keep **tuned-ppd**.
 - **Timeshift / Pika Backup** → keep **snapper + restic** (native btrfs + scriptable).
 - **Etcher / Rufus / Fedora Media Writer** → keep **Ventoy + Kickstart**.
+- **Heavy GNOME eye-candy** (Desktop Cube, Compiz Magic-Lamp / Windows-Effect, Dash2Dock-animated) → rejected as defaults: GPU/CPU cost conflicts with the *fast-on-older-hardware* priority (reference machine is a 2016 i5). Add manually if wanted; never shipped.
+- **Manual gnome-look.org theming** (download/extract into `~/.themes` / `~/.icons`) → rejected as a *method*: not unattended, not version-pinned. Same outcomes achieved reproducibly via the opt-in `gnome-theme` bundle (packaged or tagged-script themes, §10c).
 
 ## 11. Implementation phasing (for the plan)
 
