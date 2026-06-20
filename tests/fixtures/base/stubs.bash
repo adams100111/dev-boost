@@ -27,6 +27,7 @@
 #   base_install_fc_list          — install fc-list stub (Spec 3: cli-and-shell)
 #   base_install_fc_cache         — install fc-cache stub (Spec 3: cli-and-shell)
 #   base_install_curl             — install curl stub (Spec 3: cli-and-shell, nerd-fonts download)
+#   base_install_unzip            — install unzip stub (Spec 3: cli-and-shell, nerd-fonts extraction)
 #
 # State knobs (set before calling base_setup or the relevant install helper):
 #   STUB_RPM_INSTALLED        — space-separated list of packages rpm reports as installed
@@ -63,6 +64,7 @@
 #                               e.g. STUB_NPM_GLOBALS="claude" creates a passthrough binary in the stub dir
 #   STUB_CARGO_LOG            — path to the cargo invocation log (default: $BATS_TEST_TMPDIR/cargo-calls.log)
 #   STUB_CURL_LOG             — path to the curl invocation log (default: $BATS_TEST_TMPDIR/curl-calls.log)
+#   STUB_UNZIP_LOG            — path to the unzip invocation log (default: $BATS_TEST_TMPDIR/unzip-calls.log)
 #   STUB_FONTS_INSTALLED      — newline-separated (or space-separated) font names fc-list emits
 #                               e.g. STUB_FONTS_INSTALLED="JetBrainsMono Nerd Font:style=Regular"
 #                               Leave empty/unset to simulate no fonts installed.
@@ -118,6 +120,7 @@ base_setup() {
   export STUB_SUDO_LOG="${STUB_SUDO_LOG:-${BATS_TEST_TMPDIR}/sudo-calls.log}"
   # Spec 3 log defaults.
   export STUB_CURL_LOG="${STUB_CURL_LOG:-${BATS_TEST_TMPDIR}/curl-calls.log}"
+  export STUB_UNZIP_LOG="${STUB_UNZIP_LOG:-${BATS_TEST_TMPDIR}/unzip-calls.log}"
   export STUB_NPM_LOG="${STUB_NPM_LOG:-${BATS_TEST_TMPDIR}/npm-calls.log}"
   export STUB_CARGO_LOG="${STUB_CARGO_LOG:-${BATS_TEST_TMPDIR}/cargo-calls.log}"
   export STUB_FC_LIST_LOG="${STUB_FC_LIST_LOG:-${BATS_TEST_TMPDIR}/fc-list-calls.log}"
@@ -139,6 +142,7 @@ base_setup() {
   : > "${STUB_SUDO_LOG}"
   # Spec 3 log initialisation.
   : > "${STUB_CURL_LOG}"
+  : > "${STUB_UNZIP_LOG}"
   : > "${STUB_NPM_LOG}"
   : > "${STUB_CARGO_LOG}"
   : > "${STUB_FC_LIST_LOG}"
@@ -175,6 +179,7 @@ base_setup() {
   base_install_fc_list
   base_install_fc_cache
   base_install_curl
+  base_install_unzip
 }
 
 # ---------------------------------------------------------------------------
@@ -691,6 +696,66 @@ printf 'fc-cache %s\n' "$*" >> "${log_file}"
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/fc-cache"
+}
+
+# base_install_unzip — write a fake `unzip` binary to the stub bin dir.
+#
+# Behaviour (Spec 3: nerd-fonts extraction):
+#   unzip -o -j <zip> '*.ttf' -d <dir>  → writes a placeholder <stem>.ttf file into <dir>;
+#                                          logs the invocation to STUB_UNZIP_LOG
+#   (any other form)                     → exits 0; logs invocation
+#
+# This simulates font archive extraction so tests can assert that a real .ttf
+# file results from the install (catching the "raw ZIP written as .ttf" bug).
+#
+# State knobs:
+#   STUB_UNZIP_LOG   — path to the unzip invocation log (default: $BATS_TEST_TMPDIR/unzip-calls.log)
+base_install_unzip() {
+  cat > "${_base_bin_dir}/unzip" <<'STUB'
+#!/usr/bin/env bash
+# Stub: unzip — fake archive extractor for bats tests (simulates ttf extraction).
+log_file="${STUB_UNZIP_LOG:-/tmp/stub-unzip-calls.log}"
+printf 'unzip %s\n' "$*" >> "${log_file}"
+
+# Parse -d <dir> from args to find the output directory.
+# Also detect a .zip source file so we can derive a placeholder name.
+dest_dir=""
+zip_file=""
+args=("$@")
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+  arg="${args[$i]}"
+  case "${arg}" in
+    -d)
+      (( i++ ))
+      dest_dir="${args[$i]}"
+      ;;
+    -d*)
+      dest_dir="${arg#-d}"
+      ;;
+    *.zip)
+      zip_file="${arg}"
+      ;;
+  esac
+  (( i++ ))
+done
+
+# If we have a destination directory, write a placeholder .ttf into it so the
+# test can assert a real font file resulted from extraction.
+if [[ -n "${dest_dir}" ]]; then
+  mkdir -p "${dest_dir}"
+  # Derive a stem from the zip filename (e.g. JetBrainsMono.zip → JetBrainsMono.ttf).
+  if [[ -n "${zip_file}" ]]; then
+    stem="$(basename "${zip_file}" .zip)"
+  else
+    stem="placeholder"
+  fi
+  : > "${dest_dir}/${stem}NerdFont-Regular.ttf"
+fi
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/unzip"
 }
 
 # base_install_curl — write a fake `curl` binary to the stub bin dir.

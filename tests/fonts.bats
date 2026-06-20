@@ -32,6 +32,7 @@ _run_install_sh() {
     export STUB_RPM_LOG='${STUB_RPM_LOG}'
     export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
     export STUB_CURL_LOG='${STUB_CURL_LOG}'
+    export STUB_UNZIP_LOG='${STUB_UNZIP_LOG}'
     export STUB_FC_LIST_LOG='${STUB_FC_LIST_LOG}'
     export STUB_FC_CACHE_LOG='${STUB_FC_CACHE_LOG}'
     export STUB_FONTS_INSTALLED='${STUB_FONTS_INSTALLED:-}'
@@ -111,6 +112,29 @@ _run_install_sh() {
   local found
   found="$(find "${HOME}/.local/share/fonts" -name '*Meslo*' 2>/dev/null | head -1)"
   [ -n "${found}" ]
+}
+
+@test "nerd-fonts: install.sh invokes unzip to extract fonts (not raw zip written as ttf)" {
+  # Regression guard for the critical bug: install.sh must call unzip, not
+  # just write the raw ZIP bytes to a .ttf path.  The unzip stub logs every
+  # invocation to STUB_UNZIP_LOG; if unzip is never called the log stays empty.
+  unset STUB_FONTS_INSTALLED
+  : > "${STUB_UNZIP_LOG}"
+  run _run_install_sh nerd-fonts
+  [ "$status" -eq 0 ]
+  grep -q "unzip" "${STUB_UNZIP_LOG}"
+}
+
+@test "nerd-fonts: install.sh produces real .ttf files in font dir (not bare zips)" {
+  # Regression guard: at least one *.ttf file must exist in ~/.local/share/fonts
+  # after install.  With the bug present (raw ZIP → .ttf rename), the unzip stub
+  # would never run and no .ttf would be written by it.
+  unset STUB_FONTS_INSTALLED
+  run _run_install_sh nerd-fonts
+  [ "$status" -eq 0 ]
+  local ttf_count
+  ttf_count="$(find "${HOME}/.local/share/fonts" -name '*.ttf' 2>/dev/null | wc -l)"
+  [ "${ttf_count}" -gt 0 ]
 }
 
 @test "nerd-fonts: fc-cache -f is run after fonts are installed" {
