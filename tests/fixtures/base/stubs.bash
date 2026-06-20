@@ -1219,6 +1219,11 @@ case "${vendor}" in
     printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
     printf '01:00.0 3D controller: NVIDIA Corporation GA106M [GeForce RTX 3060 Mobile]\n'
     ;;
+  intel+unknown)
+    # Partial-hybrid: Intel known GPU + an unrecognized discrete GPU.
+    printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
+    printf '04:00.0 3D controller: XYZ Graphics Corp Unknown GPU\n'
+    ;;
   unknown)
     # Unrecognized vendor — a real controller line with no known vendor name.
     printf '04:00.0 VGA compatible controller: XYZ Graphics Corp Unknown GPU\n'

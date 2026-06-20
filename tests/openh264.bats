@@ -58,7 +58,7 @@ _run_verify_oh264() {
 @test "openh264: install installs openh264 package" {
   run _run_module_oh264
   [ "$status" -eq 0 ]
-  grep -q "openh264" "${STUB_DNF_LOG}"
+  grep -qE 'install.* openh264( |$)' "${STUB_DNF_LOG}"
 }
 
 @test "openh264: install installs gstreamer1-plugin-openh264 package" {

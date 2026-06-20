@@ -124,6 +124,20 @@ _run_verify_va() {
 }
 
 # ===========================================================================
+# Partial-hybrid: known Intel + unrecognized discrete GPU (FR-009)
+# Expected: Intel driver IS installed; warning names the unknown vendor; no die.
+# ===========================================================================
+
+@test "va-hwaccel: partial-hybrid intel+unknown — installs Intel driver AND warns on unknown vendor" {
+  export STUB_GPU_VENDOR="intel+unknown"
+  export STUB_VAINFO_OK="1"
+  run _run_module_va
+  [ "$status" -eq 0 ]
+  grep -q "intel-media-driver" "${STUB_DNF_LOG}"
+  [[ "$output" == *"XYZ"* ]] || [[ "$output" == *"unrecognized"* ]] || [[ "$output" == *"Unknown GPU"* ]]
+}
+
+# ===========================================================================
 # Unrecognized vendor — must fail naming the vendor (FR-009)
 # ===========================================================================
 

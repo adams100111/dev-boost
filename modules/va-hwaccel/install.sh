@@ -43,10 +43,17 @@ while IFS= read -r line; do
 done <<< "${_gpu_lines}"
 
 # ---------------------------------------------------------------------------
-# Step 3: guard — unrecognized vendor means we can't install a driver safely.
+# Step 3: guard — unrecognized vendor(s) must always be reported (FR-009).
+# If NO known vendor matched at all → hard failure (nothing to install).
+# If at least one known vendor matched → warn but continue installing the
+# matched driver(s) so the machine still gets working acceleration.
 # ---------------------------------------------------------------------------
-if [[ -n "${_unrecognized_vendors// /}" && "${_has_intel}" -eq 0 && "${_has_amd}" -eq 0 && "${_has_nvidia}" -eq 0 ]]; then
-  die "va-hwaccel: unrecognized GPU vendor(s):${_unrecognized_vendors} — cannot install VA-API driver automatically"
+if [[ -n "${_unrecognized_vendors// /}" ]]; then
+  if [[ "${_has_intel}" -eq 0 && "${_has_amd}" -eq 0 && "${_has_nvidia}" -eq 0 ]]; then
+    die "va-hwaccel: unrecognized GPU vendor(s):${_unrecognized_vendors} — cannot install VA-API driver automatically"
+  else
+    log_warn "va-hwaccel: unrecognized GPU vendor(s) ignored (no driver available):${_unrecognized_vendors}"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
