@@ -68,6 +68,9 @@
 #   STUB_FC_CACHE_LOG         — path to the fc-cache invocation log
 #   STUB_COPR_ENABLED         — space-separated list of COPR repos already enabled
 #                               e.g. STUB_COPR_ENABLED="scottames/ghostty" — dnf copr enable is a no-op for these
+#   STUB_ORDER_LOG            — shared chronological call-log that BOTH mise and npm stubs append to.
+#                               Each line is tagged: "mise:<args>" or "npm:<args>".
+#                               Use to assert cross-tool invocation ordering in a single file.
 #
 # All stubs write no real network traffic or system changes; all temp files live under
 # BATS_TEST_TMPDIR / scratch dirs and are cleaned up by bats or by base_teardown.
@@ -116,6 +119,8 @@ base_setup() {
   export STUB_CARGO_LOG="${STUB_CARGO_LOG:-${BATS_TEST_TMPDIR}/cargo-calls.log}"
   export STUB_FC_LIST_LOG="${STUB_FC_LIST_LOG:-${BATS_TEST_TMPDIR}/fc-list-calls.log}"
   export STUB_FC_CACHE_LOG="${STUB_FC_CACHE_LOG:-${BATS_TEST_TMPDIR}/fc-cache-calls.log}"
+  # Shared cross-tool chronological ordering log (mise + npm both append here).
+  export STUB_ORDER_LOG="${STUB_ORDER_LOG:-${BATS_TEST_TMPDIR}/order-calls.log}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -134,6 +139,7 @@ base_setup() {
   : > "${STUB_CARGO_LOG}"
   : > "${STUB_FC_LIST_LOG}"
   : > "${STUB_FC_CACHE_LOG}"
+  : > "${STUB_ORDER_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -422,6 +428,10 @@ base_install_mise() {
 # Stub: mise — fake runtime manager for bats tests.
 log_file="${STUB_MISE_LOG:-/tmp/stub-mise-calls.log}"
 printf 'mise %s\n' "$*" >> "${log_file}"
+# Also append to the shared ordering log (backward-compatible: no-op if unset).
+if [[ -n "${STUB_ORDER_LOG:-}" ]]; then
+  printf 'mise:%s\n' "$*" >> "${STUB_ORDER_LOG}"
+fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/mise"
@@ -584,6 +594,10 @@ base_install_npm() {
 # Stub: npm — fake Node package manager for bats tests.
 log_file="${STUB_NPM_LOG:-/tmp/stub-npm-calls.log}"
 printf 'npm %s\n' "$*" >> "${log_file}"
+# Also append to the shared ordering log (backward-compatible: no-op if unset).
+if [[ -n "${STUB_ORDER_LOG:-}" ]]; then
+  printf 'npm:%s\n' "$*" >> "${STUB_ORDER_LOG}"
+fi
 
 # Simulate placing a global binary on PATH for `npm install -g <pkg>`.
 if [[ "$1" == "install" && "$2" == "-g" && -n "${3:-}" ]]; then

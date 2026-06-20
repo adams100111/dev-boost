@@ -4,6 +4,6 @@ requires = []
 verify   = "command -v lazydocker"
 
 [install]
-fedora = "sudo dnf install -y lazydocker"
+fedora = "sudo dnf copr enable -y atim/lazygit && sudo dnf install -y lazydocker"
 debian = "sudo apt-get install -y lazydocker"
 macos  = "brew install lazydocker"

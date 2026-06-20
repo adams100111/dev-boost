@@ -35,6 +35,7 @@ _run_install_sh() {
     export STUB_GIT_LOG='${STUB_GIT_LOG}'
     export STUB_NPM_LOG='${STUB_NPM_LOG}'
     export STUB_MISE_LOG='${STUB_MISE_LOG}'
+    export STUB_ORDER_LOG='${STUB_ORDER_LOG}'
     export STUB_NPM_GLOBALS='${STUB_NPM_GLOBALS:-}'
     export STUB_RPM_INSTALLED='${STUB_RPM_INSTALLED:-}'
     bash '${DEVBOOST_ROOT}/modules/${module}/install.sh'
@@ -201,9 +202,10 @@ _run_install_sh() {
   [ -f "${DEVBOOST_ROOT}/modules/lazygit.toml" ]
 }
 
-@test "lazygit: fedora install command contains 'lazygit'" {
+@test "lazygit: fedora install command enables atim/lazygit COPR then installs lazygit" {
   local cmd
   cmd="$(_module_install_cmd lazygit fedora fedora)"
+  [[ "${cmd}" == *"copr enable"*"atim/lazygit"* ]]
   [[ "${cmd}" == *"lazygit"* ]]
 }
 
@@ -218,9 +220,10 @@ _run_install_sh() {
   [ -f "${DEVBOOST_ROOT}/modules/lazydocker.toml" ]
 }
 
-@test "lazydocker: fedora install command contains 'lazydocker'" {
+@test "lazydocker: fedora install command enables atim/lazygit COPR then installs lazydocker" {
   local cmd
   cmd="$(_module_install_cmd lazydocker fedora fedora)"
+  [[ "${cmd}" == *"copr enable"*"atim/lazygit"* ]]
   [[ "${cmd}" == *"lazydocker"* ]]
 }
 
@@ -511,23 +514,78 @@ _run_install_sh() {
   [[ "${vcmd}" == *"command -v claude"* ]]
 }
 
-@test "claude-code: install.sh calls mise to ensure node BEFORE npm install" {
-  # Use scoped form for npm globals knob
+@test "claude-code: install.sh provisions node via mise BEFORE npm when node absent" {
+  # Build a PATH that excludes any system node binary so that command -v node
+  # fails inside the install.sh subshell, triggering the mise guard branch.
+  # We strip every PATH component that contains a 'node' binary.
+  local node_free_path=""
+  local IFS_orig="${IFS}"
+  IFS=":"
+  for dir in ${PATH}; do
+    IFS="${IFS_orig}"
+    # Skip directories that provide a 'node' binary.
+    if [[ -x "${dir}/node" ]]; then
+      continue
+    fi
+    node_free_path="${node_free_path:+${node_free_path}:}${dir}"
+    IFS=":"
+  done
+  IFS="${IFS_orig}"
+  # Also ensure no stub node is present in the stub bin dir.
+  rm -f "$(base_stub_dir)/node"
   export STUB_NPM_GLOBALS="@anthropic-ai/claude-code:claude"
   : > "${STUB_MISE_LOG}"
   : > "${STUB_NPM_LOG}"
+  : > "${STUB_ORDER_LOG}"
+  # Run install.sh with the node-free PATH.
+  local output
+  output="$(bash -c "
+    export HOME='${HOME}'
+    export PATH='${node_free_path}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export OS_DISTRO='${OS_DISTRO:-fedora}'
+    export OS_FAMILY='${OS_FAMILY:-fedora}'
+    export STUB_DNF_LOG='${STUB_DNF_LOG}'
+    export STUB_RPM_LOG='${STUB_RPM_LOG}'
+    export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
+    export STUB_GIT_LOG='${STUB_GIT_LOG}'
+    export STUB_NPM_LOG='${STUB_NPM_LOG}'
+    export STUB_MISE_LOG='${STUB_MISE_LOG}'
+    export STUB_ORDER_LOG='${STUB_ORDER_LOG}'
+    export STUB_NPM_GLOBALS='${STUB_NPM_GLOBALS:-}'
+    export STUB_RPM_INSTALLED='${STUB_RPM_INSTALLED:-}'
+    bash '${DEVBOOST_ROOT}/modules/claude-code/install.sh'
+  " 2>&1)"
+  local rc=$?
+  [ "${rc}" -eq 0 ]
+  # mise must have been called for node provisioning (node was absent)
+  grep -q "node" "${STUB_MISE_LOG}"
+  # npm must have been called
+  grep -q "install" "${STUB_NPM_LOG}"
+  # Prove chronological order via the single shared call-log:
+  # the mise:use … node line must appear before the npm:install line.
+  local mise_lineno npm_lineno
+  mise_lineno="$(grep -n "^mise:.*node" "${STUB_ORDER_LOG}" | head -1 | cut -d: -f1)"
+  npm_lineno="$(grep -n "^npm:install" "${STUB_ORDER_LOG}" | head -1 | cut -d: -f1)"
+  [ -n "${mise_lineno}" ]
+  [ -n "${npm_lineno}" ]
+  [ "${mise_lineno}" -lt "${npm_lineno}" ]
+}
+
+@test "claude-code: install.sh does NOT call mise when node already exists" {
+  # Ensure a node stub is on PATH so command -v node succeeds.
+  printf '#!/usr/bin/env bash\nprintf "v20.0.0\n"\nexit 0\n' > "$(base_stub_dir)/node"
+  chmod +x "$(base_stub_dir)/node"
+  export STUB_NPM_GLOBALS="@anthropic-ai/claude-code:claude"
+  : > "${STUB_MISE_LOG}"
+  : > "${STUB_NPM_LOG}"
+  : > "${STUB_ORDER_LOG}"
   run _run_install_sh claude-code
   [ "$status" -eq 0 ]
-  # Both mise and npm should have been called
-  grep -q "mise" "${STUB_MISE_LOG}"
-  grep -q "npm" "${STUB_NPM_LOG}"
-  # mise call must appear BEFORE npm call in the combined call-log (chronological order)
-  local mise_line npm_line
-  mise_line="$(grep -n "node" "${STUB_MISE_LOG}" | head -1 | cut -d: -f1)"
-  npm_line="$(grep -n "install" "${STUB_NPM_LOG}" | head -1 | cut -d: -f1)"
-  # Both logs must have entries
-  [ -n "${mise_line}" ]
-  [ -n "${npm_line}" ]
+  # mise must NOT have been called for node provisioning
+  ! grep -q "node" "${STUB_MISE_LOG}"
+  # npm install must still have been called
+  grep -q "@anthropic-ai/claude-code" "${STUB_NPM_LOG}"
 }
 
 @test "claude-code: install.sh attempts npm install -g @anthropic-ai/claude-code" {
