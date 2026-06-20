@@ -43,6 +43,16 @@ _run_dotfiles_verify() {
   " 2>&1
 }
 
+# Helper: evaluate the bash-config verify expression (read from module.toml) in a subshell.
+# Reads the verify= line, strips the outer TOML quotes, then passes to bash -c via env.
+_run_bash_config_verify() {
+  local vcmd
+  vcmd="$(grep '^verify' "${DEVBOOST_ROOT}/modules/bash-config/module.toml" \
+          | sed 's/^verify[[:space:]]*=[[:space:]]*"\(.*\)"$/\1/' \
+          | sed 's/\\"/"/g')"
+  HOME="${HOME}" bash -c "${vcmd}" 2>&1
+}
+
 # ===========================================================================
 # T013 — chezmoi source tree shape
 # ===========================================================================
@@ -189,6 +199,22 @@ _run_dotfiles_verify() {
 }
 
 # ===========================================================================
+# T015 — bash-config verify RED/GREEN
+# ===========================================================================
+
+@test "bash-config: verify is RED in pristine scratch HOME (before dotfiles apply)" {
+  # No install has run — scratch HOME is empty; verify must fail.
+  run _run_bash_config_verify
+  [ "$status" -ne 0 ]
+}
+
+@test "bash-config: verify is GREEN after dotfiles apply" {
+  _run_dotfiles_install >/dev/null 2>&1
+  run _run_bash_config_verify
+  [ "$status" -eq 0 ]
+}
+
+# ===========================================================================
 # T014 — chezmoi apply (stubbed) writes managed files
 # ===========================================================================
 
@@ -261,6 +287,14 @@ _run_dotfiles_verify() {
   _run_dotfiles_install >/dev/null 2>&1
   local count
   count="$(grep -c 'direnv hook bash' "${HOME}/.bashrc" 2>/dev/null || printf '0')"
+  [ "${count}" -eq 1 ]
+}
+
+@test "dotfiles: re-apply — fzf init line appears EXACTLY ONCE in ~/.bashrc" {
+  _run_dotfiles_install >/dev/null 2>&1
+  _run_dotfiles_install >/dev/null 2>&1
+  local count
+  count="$(grep -c 'fzf' "${HOME}/.bashrc" 2>/dev/null || printf '0')"
   [ "${count}" -eq 1 ]
 }
 
