@@ -46,6 +46,8 @@
 #   STUB_FLATPAK_LOG          — path to the flatpak invocation log
 #   STUB_FLATPAK_REMOTES      — space-separated list of already-present flatpak remotes
 #                               e.g. STUB_FLATPAK_REMOTES="flathub" makes remote-add a no-op
+#   STUB_FLATPAK_INSTALLED    — space-separated list of flatpak app IDs that `flatpak list`
+#                               reports as installed (e.g. "com.mattjakeman.ExtensionManager")
 #   STUB_FTP_ENABLED          — if "1", fedora-third-party query reports enabled
 #   STUB_FTP_LOG              — path to the fedora-third-party invocation log
 #   STUB_SYSTEMCTL_LOG        — path to the systemctl invocation log
@@ -355,6 +357,13 @@ printf 'flatpak %s\n' "$*" >> "${log_file}"
 if [[ "$1" == "remotes" ]]; then
   for remote in ${STUB_FLATPAK_REMOTES:-}; do
     printf '%s\n' "${remote}"
+  done
+  exit 0
+fi
+
+if [[ "$1" == "list" ]]; then
+  for app in ${STUB_FLATPAK_INSTALLED:-}; do
+    printf '%s\n' "${app}"
   done
   exit 0
 fi
