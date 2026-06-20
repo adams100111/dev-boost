@@ -1,5 +1,6 @@
 load test_helper
 load fixtures/base/stubs
+load fixtures/base/engine_helpers
 
 # DEVBOOST_ROOT is set by test_helper; expose it for subshells.
 
@@ -14,80 +15,6 @@ setup() {
 
 teardown() {
   base_teardown
-}
-
-# ---------------------------------------------------------------------------
-# Helper: run the engine install loop against a module using stub env.
-# Returns output + status exactly as `run` would.
-# ---------------------------------------------------------------------------
-_engine_install() {
-  local module_name="$1"
-  local distro="${2:-fedora}"
-  local family="${3:-fedora}"
-  bash -c "
-    export HOME='${HOME}'
-    export PATH='${PATH}'
-    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
-    export DEVBOOST_MODULES_DIR='${DEVBOOST_MODULES_DIR}'
-    export OS_DISTRO='${distro}'
-    export OS_FAMILY='${family}'
-    export STUB_DNF_LOG='${STUB_DNF_LOG}'
-    export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
-    source '${DEVBOOST_ROOT}/lib/log.sh'
-    source '${DEVBOOST_ROOT}/lib/toml.sh'
-    source '${DEVBOOST_ROOT}/lib/os.sh'
-    source '${DEVBOOST_ROOT}/lib/module.sh'
-    source '${DEVBOOST_ROOT}/lib/depsort.sh'
-    source '${DEVBOOST_ROOT}/lib/install.sh'
-    summary_reset
-    run_install -- '${module_name}'
-  " 2>&1
-}
-
-# ---------------------------------------------------------------------------
-# Helper: evaluate a verify command in a subshell with stub env.
-# ---------------------------------------------------------------------------
-_run_verify() {
-  local vcmd="$1"
-  bash -c "
-    export HOME='${HOME}'
-    export PATH='${PATH}'
-    ${vcmd}
-  " 2>&1
-}
-
-# ---------------------------------------------------------------------------
-# Helper: resolve the install command from a module's TOML for a given distro.
-# ---------------------------------------------------------------------------
-_module_install_cmd() {
-  local module_name="$1" distro="${2:-fedora}" family="${3:-fedora}"
-  bash -c "
-    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
-    export DEVBOOST_MODULES_DIR='${DEVBOOST_MODULES_DIR}'
-    export OS_DISTRO='${distro}'
-    export OS_FAMILY='${family}'
-    source '${DEVBOOST_ROOT}/lib/log.sh'
-    source '${DEVBOOST_ROOT}/lib/toml.sh'
-    source '${DEVBOOST_ROOT}/lib/os.sh'
-    source '${DEVBOOST_ROOT}/lib/module.sh'
-    module_install_cmd '${module_name}'
-  " 2>&1
-}
-
-# ---------------------------------------------------------------------------
-# Helper: resolve the verify command from a module's TOML.
-# ---------------------------------------------------------------------------
-_module_verify_cmd() {
-  local module_name="$1"
-  bash -c "
-    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
-    export DEVBOOST_MODULES_DIR='${DEVBOOST_MODULES_DIR}'
-    source '${DEVBOOST_ROOT}/lib/log.sh'
-    source '${DEVBOOST_ROOT}/lib/toml.sh'
-    source '${DEVBOOST_ROOT}/lib/os.sh'
-    source '${DEVBOOST_ROOT}/lib/module.sh'
-    module_verify_cmd '${module_name}'
-  " 2>&1
 }
 
 # ===========================================================================
@@ -155,6 +82,15 @@ _module_verify_cmd() {
   [ ! -s "${STUB_DNF_LOG}" ]
 }
 
+@test "ripgrep: engine calls dnf when rg is absent (install step reached)" {
+  # Use --force to bypass the verify guard regardless of whether rg is present
+  # on the host.  This makes the test host-independent.
+  rm -f "$(base_stub_dir)/rg"
+  : > "${STUB_DNF_LOG}"
+  DEVBOOST_INSTALL_FLAGS="--force" _engine_install ripgrep fedora fedora || true
+  grep -q "ripgrep" "${STUB_DNF_LOG}"
+}
+
 @test "ripgrep: unsupported-OS — engine reports unsupported when module has no key for OS" {
   # Run against a non-fedora, non-debian, non-macos OS that has no key.
   # We force OS_DISTRO/OS_FAMILY to something unknown while the ripgrep module
@@ -214,6 +150,15 @@ _module_verify_cmd() {
   [ ! -s "${STUB_DNF_LOG}" ]
 }
 
+@test "fd: engine calls dnf when fd is absent (install step reached)" {
+  # Use --force to bypass the verify guard regardless of whether fd is present
+  # on the host.  This makes the test host-independent.
+  rm -f "$(base_stub_dir)/fd"
+  : > "${STUB_DNF_LOG}"
+  DEVBOOST_INSTALL_FLAGS="--force" _engine_install fd fedora fedora || true
+  grep -q "fd-find" "${STUB_DNF_LOG}"
+}
+
 # ===========================================================================
 # T011 — git: verify + install
 # ===========================================================================
@@ -262,16 +207,13 @@ _module_verify_cmd() {
   [[ "${vcmd}" == *"command -v tmux"* ]]
 }
 
-@test "tmux: engine calls dnf when verify fails (install step reached)" {
-  # fd binary is not installed on this host, so use fd as the absent-binary
-  # proxy to confirm the engine reaches the install step (calls dnf).
-  # Ensure no fd stub exists so command -v fd fails.
-  rm -f "$(base_stub_dir)/fd"
+@test "tmux: engine calls dnf when tmux is absent (install step reached)" {
+  # Use --force to bypass the verify guard regardless of whether tmux is present
+  # on the host.  This makes the test host-independent.
+  rm -f "$(base_stub_dir)/tmux"
   : > "${STUB_DNF_LOG}"
-  # Run engine (may exit non-zero because verify fails after fake dnf — that's expected in stub env).
-  _engine_install fd fedora fedora || true
-  # The dnf log must contain the fd-find install invocation.
-  grep -q "fd-find" "${STUB_DNF_LOG}"
+  DEVBOOST_INSTALL_FLAGS="--force" _engine_install tmux fedora fedora || true
+  grep -q "tmux" "${STUB_DNF_LOG}"
 }
 
 # ===========================================================================
