@@ -1,0 +1,9 @@
+name     = "fzf"
+category = "base"
+requires = []
+verify   = "command -v fzf"
+
+[install]
+fedora = "sudo dnf install -y fzf"
+debian = "sudo apt-get install -y fzf"
+macos  = "brew install fzf"

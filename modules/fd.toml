@@ -1,0 +1,9 @@
+name     = "fd"
+category = "base"
+requires = []
+verify   = "command -v fd"
+
+[install]
+fedora = "sudo dnf install -y fd-find"
+debian = "sudo apt-get install -y fd-find"
+macos  = "brew install fd"

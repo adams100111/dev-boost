@@ -1,0 +1,9 @@
+name     = "jq"
+category = "base"
+requires = []
+verify   = "command -v jq"
+
+[install]
+fedora = "sudo dnf install -y jq"
+debian = "sudo apt-get install -y jq"
+macos  = "brew install jq"
