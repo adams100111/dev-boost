@@ -1,0 +1,8 @@
+name        = "ffmpeg-full"
+category    = "multimedia"
+description = "Replace ffmpeg-free with full ffmpeg from RPM Fusion (all codecs enabled)"
+requires    = ["rpmfusion"]
+verify      = "rpm -q ffmpeg >/dev/null 2>&1 && ! rpm -q ffmpeg-free >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/ffmpeg-full/install.sh\""

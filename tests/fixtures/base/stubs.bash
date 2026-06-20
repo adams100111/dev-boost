@@ -38,6 +38,10 @@
 #   base_gnome_present_on         — enable gnome-shell on PATH (STUB_GNOME_PRESENT=1)
 #   base_gnome_present_off        — remove gnome-shell from PATH (STUB_GNOME_PRESENT=0)
 #
+# Spec 5 (multimedia-codecs) stubs and helpers:
+#   base_install_lspci            — install lspci stub (STUB_GPU_VENDOR knob)
+#   base_install_vainfo           — install vainfo stub (STUB_VAINFO_OK knob)
+#
 # State knobs (set before calling base_setup or the relevant install helper):
 #   STUB_RPM_INSTALLED        — space-separated list of packages rpm reports as installed
 #                               e.g. STUB_RPM_INSTALLED="rpmfusion-free-release pkg2"
@@ -102,6 +106,20 @@
 #   STUB_GNOME_PRESENT        — if "1" (default), gnome-shell stub is on PATH;
 #                               if "0", gnome-shell is absent from PATH
 #
+# Spec 5 (multimedia-codecs) stubs:
+#   base_install_lspci        — install lspci stub (GPU vendor knob)
+#   base_install_vainfo       — install vainfo stub (VA-API driver presence knob)
+#
+# Spec 5 (multimedia-codecs) additional knobs:
+#   STUB_GPU_VENDOR     — vendor(s) lspci reports: intel / amd / nvidia / intel+nvidia / unknown
+#                         (default: intel). intel+nvidia emits two controller lines (hybrid).
+#   STUB_VAINFO_OK      — if "1" (default), vainfo exits 0 + prints a driver line;
+#                         if "0", vainfo exits 1 with no driver line (simulate VA-API failure).
+#   STUB_LSPCI_LOG      — path to the lspci invocation log (default: $BATS_TEST_TMPDIR/lspci-calls.log)
+#   STUB_VAINFO_LOG     — path to the vainfo invocation log (default: $BATS_TEST_TMPDIR/vainfo-calls.log)
+#   STUB_REPO_ENABLED   — space-separated repo names already enabled; `dnf config-manager setopt
+#                         <repo>.enabled=1` is a no-op for these (idempotent).
+#
 # All stubs write no real network traffic or system changes; all temp files live under
 # BATS_TEST_TMPDIR / scratch dirs and are cleaned up by bats or by base_teardown.
 
@@ -161,6 +179,15 @@ base_setup() {
   export STUB_GSETTINGS_STATE_FILE="${STUB_GSETTINGS_STATE_FILE:-${BATS_TEST_TMPDIR}/gsettings-state.kv}"
   # STUB_GNOME_PRESENT defaults to 1 (gnome-shell present on PATH).
   export STUB_GNOME_PRESENT="${STUB_GNOME_PRESENT:-1}"
+  # Spec 5 (multimedia-codecs) log defaults.
+  export STUB_LSPCI_LOG="${STUB_LSPCI_LOG:-${BATS_TEST_TMPDIR}/lspci-calls.log}"
+  export STUB_VAINFO_LOG="${STUB_VAINFO_LOG:-${BATS_TEST_TMPDIR}/vainfo-calls.log}"
+  # STUB_GPU_VENDOR: gpu vendor(s) lspci emits (intel/amd/nvidia/intel+nvidia/unknown); default intel.
+  export STUB_GPU_VENDOR="${STUB_GPU_VENDOR:-intel}"
+  # STUB_VAINFO_OK: when 1 vainfo exits 0 + prints a driver line; when 0 exits non-zero; default 1.
+  export STUB_VAINFO_OK="${STUB_VAINFO_OK:-1}"
+  # STUB_REPO_ENABLED: space-separated repos already enabled (dnf config-manager setopt is a no-op for these).
+  export STUB_REPO_ENABLED="${STUB_REPO_ENABLED:-}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -188,6 +215,9 @@ base_setup() {
   : > "${STUB_DCONF_LOG}"
   : > "${STUB_DCONF_STATE_FILE}"
   : > "${STUB_GSETTINGS_STATE_FILE}"
+  # Spec 5 (multimedia-codecs) log initialisation.
+  : > "${STUB_LSPCI_LOG}"
+  : > "${STUB_VAINFO_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -226,6 +256,9 @@ base_setup() {
   base_install_gnome_shell
   base_install_dconf
   base_install_gsettings
+  # Spec 5 (multimedia-codecs) stubs.
+  base_install_lspci
+  base_install_vainfo
 }
 
 # ---------------------------------------------------------------------------
@@ -248,14 +281,20 @@ base_root_dir()  { printf '%s\n' "${_base_root_dir}"; }
 # base_install_dnf — write a fake `dnf` binary to the stub bin dir.
 #
 # Behaviour:
-#   dnf install -y <pkg...>    → exits 0; logs the invocation
-#   dnf upgrade --refresh -y   → exits 0; logs the invocation
-#   (any other form)           → exits 0; logs the invocation
+#   dnf install -y <pkg...>              → exits 0; logs the invocation
+#   dnf upgrade --refresh -y             → exits 0; logs the invocation
+#   dnf swap <old> <new> [opts]          → records swap to log; exits 0
+#   dnf config-manager setopt <k>=<v>   → records to log; no-op if STUB_REPO_ENABLED matches
+#   (any other form)                     → exits 0; logs the invocation
+#
+# Spec 5 knobs:
+#   STUB_REPO_ENABLED — space-separated list of repo names already enabled; makes
+#                       `dnf config-manager setopt <repo>.enabled=1` a no-op (idempotent).
 # ---------------------------------------------------------------------------
 base_install_dnf() {
   cat > "${_base_bin_dir}/dnf" <<'STUB'
 #!/usr/bin/env bash
-# Stub: dnf — fake package manager for bats tests (handles install, upgrade, copr).
+# Stub: dnf — fake package manager for bats tests (handles install, upgrade, copr, swap, config-manager).
 log_file="${STUB_DNF_LOG:-/tmp/stub-dnf-calls.log}"
 printf 'dnf %s\n' "$*" >> "${log_file}"
 
@@ -281,6 +320,26 @@ if [[ "$1" == "copr" && "$2" == "enable" ]]; then
   for r in ${enabled}; do
     if [[ "${r}" == "${copr_repo}" ]]; then
       printf 'Repository %s is already enabled.\n' "${copr_repo}"
+      exit 0
+    fi
+  done
+  exit 0
+fi
+
+# Handle `dnf swap <old> <new> [opts]`: record the swap; exits 0 (idempotent).
+if [[ "$1" == "swap" ]]; then
+  exit 0
+fi
+
+# Handle `dnf config-manager setopt <repo>.enabled=1`: record; no-op if already enabled.
+if [[ "$1" == "config-manager" && "$2" == "setopt" && -n "${3:-}" ]]; then
+  # Extract the repo name from the key (e.g. "fedora-cisco-openh264.enabled=1" → "fedora-cisco-openh264").
+  key="${3%%=*}"
+  repo_name="${key%%.enabled}"
+  enabled="${STUB_REPO_ENABLED:-}"
+  for r in ${enabled}; do
+    if [[ "${r}" == "${repo_name}" ]]; then
+      printf 'Repo %s already enabled.\n' "${repo_name}"
       exit 0
     fi
   done
@@ -1119,4 +1178,89 @@ base_gnome_present_on() {
 base_gnome_present_off() {
   export STUB_GNOME_PRESENT=0
   base_install_gnome_shell
+}
+
+# ===========================================================================
+# Spec 5 (multimedia-codecs) stubs
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# base_install_lspci — write a fake `lspci` binary to the stub bin dir.
+#
+# Behaviour (controlled by STUB_GPU_VENDOR):
+#   intel        → one VGA controller line identifying Intel
+#   amd          → one VGA controller line identifying AMD/ATI
+#   nvidia       → one VGA controller line identifying NVIDIA
+#   intel+nvidia → two controller lines (hybrid): Intel VGA + NVIDIA 3D controller
+#   unknown      → one VGA controller line with an unrecognized vendor string
+#   (default: intel)
+# Logs every invocation to STUB_LSPCI_LOG.
+# ---------------------------------------------------------------------------
+base_install_lspci() {
+  cat > "${_base_bin_dir}/lspci" <<'STUB'
+#!/usr/bin/env bash
+# Stub: lspci — emits GPU controller lines per STUB_GPU_VENDOR for bats tests (Spec 5).
+log_file="${STUB_LSPCI_LOG:-/tmp/stub-lspci-calls.log}"
+printf 'lspci %s\n' "$*" >> "${log_file}"
+
+vendor="${STUB_GPU_VENDOR:-intel}"
+case "${vendor}" in
+  intel)
+    printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
+    ;;
+  amd)
+    printf '08:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Radeon RX 6700\n'
+    ;;
+  nvidia)
+    printf '01:00.0 VGA compatible controller: NVIDIA Corporation GA106 [GeForce RTX 3060]\n'
+    ;;
+  intel+nvidia)
+    # Hybrid/Optimus: Intel integrated + NVIDIA discrete.
+    printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
+    printf '01:00.0 3D controller: NVIDIA Corporation GA106M [GeForce RTX 3060 Mobile]\n'
+    ;;
+  intel+unknown)
+    # Partial-hybrid: Intel known GPU + an unrecognized discrete GPU.
+    printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
+    printf '04:00.0 3D controller: XYZ Graphics Corp Unknown GPU\n'
+    ;;
+  unknown)
+    # Unrecognized vendor — a real controller line with no known vendor name.
+    printf '04:00.0 VGA compatible controller: XYZ Graphics Corp Unknown GPU\n'
+    ;;
+  *)
+    printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n'
+    ;;
+esac
+
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/lspci"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_vainfo — write a fake `vainfo` binary to the stub bin dir.
+#
+# Behaviour (controlled by STUB_VAINFO_OK, default 1):
+#   1 → exits 0; prints a VA-API driver line (simulate working VA-API).
+#   0 → exits 1; prints no driver line (simulate VA-API failure/no driver).
+# Logs every invocation to STUB_VAINFO_LOG.
+# ---------------------------------------------------------------------------
+base_install_vainfo() {
+  cat > "${_base_bin_dir}/vainfo" <<'STUB'
+#!/usr/bin/env bash
+# Stub: vainfo — reports VA-API driver presence per STUB_VAINFO_OK for bats tests (Spec 5).
+log_file="${STUB_VAINFO_LOG:-/tmp/stub-vainfo-calls.log}"
+printf 'vainfo %s\n' "$*" >> "${log_file}"
+
+if [[ "${STUB_VAINFO_OK:-1}" == "1" ]]; then
+  printf 'vainfo: VA-API version: 1.20 (libva 2.20.0)\n'
+  printf 'vainfo: Driver version: Intel iHD driver for Intel(R) Gen Graphics - 24.1.0\n'
+  exit 0
+else
+  printf 'vainfo: error: cannot open display\n' >&2
+  exit 1
+fi
+STUB
+  chmod +x "${_base_bin_dir}/vainfo"
 }

@@ -1,0 +1,8 @@
+name        = "codecs"
+category    = "multimedia"
+description = "Install the @multimedia codec group from RPM Fusion (GStreamer freeworld + extras)"
+requires    = ["rpmfusion"]
+verify      = "rpm -q gstreamer1-plugins-bad-freeworld >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/codecs/install.sh\""

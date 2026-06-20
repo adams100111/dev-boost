@@ -1,0 +1,8 @@
+name        = "va-hwaccel"
+category    = "multimedia"
+description = "GPU-aware VA-API hardware acceleration: detect GPU vendor and install matching driver (Intel/AMD/NVIDIA)"
+requires    = ["rpmfusion"]
+verify      = "vainfo >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/va-hwaccel/install.sh\""

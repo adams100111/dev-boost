@@ -435,3 +435,123 @@ _EXPECTED_GNOME_MEMBERS=(
   actual_count="$(printf '%s\n' "$output" | grep -c .)"
   [ "$actual_count" -gt 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# T003 — profile_expand multimedia (TOML-only membership + count)
+# Full depsort test deferred to T010 (polish).
+# ---------------------------------------------------------------------------
+
+_EXPECTED_MULTIMEDIA_COUNT=4
+_EXPECTED_MULTIMEDIA_MEMBERS=(
+  ffmpeg-full codecs va-hwaccel openh264
+)
+
+@test "profiles.toml: multimedia profile is defined (profile_names includes multimedia)" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_names | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"multimedia"* ]]
+}
+
+@test "profiles.toml: profile_expand multimedia yields exactly ${_EXPECTED_MULTIMEDIA_COUNT} modules" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand multimedia | wc -l | tr -d " "
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" -eq "${_EXPECTED_MULTIMEDIA_COUNT}" ]
+}
+
+@test "profiles.toml: profile_expand multimedia contains all required members" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand multimedia | sort | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  for module in "${_EXPECTED_MULTIMEDIA_MEMBERS[@]}"; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING module: ${module}"; return 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
+# T010 — full depsort resolution: multimedia against real modules/
+# ---------------------------------------------------------------------------
+
+@test "devboost list --profile multimedia: resolves without cycle, exit 0" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cycle"* ]]
+}
+
+@test "devboost list --profile multimedia: all 4 multimedia modules present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  for module in ffmpeg-full codecs va-hwaccel openh264; do
+    [[ "$output" == *"${module}"* ]] \
+      || { echo "MISSING from list output: ${module}"; return 1; }
+  done
+}
+
+@test "devboost list --profile multimedia: transitive rpmfusion present" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rpmfusion"* ]] \
+    || { echo "transitive rpmfusion missing from list output"; return 1; }
+}
+
+@test "devboost list --profile multimedia: rpmfusion ordered before ffmpeg-full" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  local rpmfusion_line ffmpeg_line
+  rpmfusion_line="$(printf '%s\n' "$output" | grep -n '^rpmfusion$'  | cut -d: -f1)"
+  ffmpeg_line="$(printf '%s\n'    "$output" | grep -n '^ffmpeg-full$' | cut -d: -f1)"
+  [ -n "$rpmfusion_line" ] || { echo "rpmfusion not found in output";  return 1; }
+  [ -n "$ffmpeg_line" ]    || { echo "ffmpeg-full not found in output"; return 1; }
+  [ "$rpmfusion_line" -lt "$ffmpeg_line" ] \
+    || { echo "rpmfusion (line $rpmfusion_line) must appear before ffmpeg-full (line $ffmpeg_line)"; return 1; }
+}
+
+@test "devboost list --profile multimedia: rpmfusion ordered before codecs" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  local rpmfusion_line codecs_line
+  rpmfusion_line="$(printf '%s\n' "$output" | grep -n '^rpmfusion$' | cut -d: -f1)"
+  codecs_line="$(printf '%s\n'    "$output" | grep -n '^codecs$'    | cut -d: -f1)"
+  [ -n "$rpmfusion_line" ] || { echo "rpmfusion not found in output"; return 1; }
+  [ -n "$codecs_line" ]    || { echo "codecs not found in output";    return 1; }
+  [ "$rpmfusion_line" -lt "$codecs_line" ] \
+    || { echo "rpmfusion (line $rpmfusion_line) must appear before codecs (line $codecs_line)"; return 1; }
+}
+
+@test "devboost list --profile multimedia: rpmfusion ordered before va-hwaccel" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile multimedia
+  [ "$status" -eq 0 ]
+  local rpmfusion_line vahwaccel_line
+  rpmfusion_line="$(printf '%s\n' "$output" | grep -n '^rpmfusion$'  | cut -d: -f1)"
+  vahwaccel_line="$(printf '%s\n' "$output" | grep -n '^va-hwaccel$' | cut -d: -f1)"
+  [ -n "$rpmfusion_line" ]  || { echo "rpmfusion not found in output";  return 1; }
+  [ -n "$vahwaccel_line" ]  || { echo "va-hwaccel not found in output"; return 1; }
+  [ "$rpmfusion_line" -lt "$vahwaccel_line" ] \
+    || { echo "rpmfusion (line $rpmfusion_line) must appear before va-hwaccel (line $vahwaccel_line)"; return 1; }
+}
