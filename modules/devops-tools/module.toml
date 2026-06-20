@@ -1,0 +1,9 @@
+name        = "devops-tools"
+category    = "dev-stacks"
+description = "DevOps CLIs via mise (OpenTofu + kubectl + Helm + k9s, aqua-backed, pinned)"
+requires    = ["mise"]
+profiles    = ["devops"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/devops-tools/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/devops-tools/install.sh\""

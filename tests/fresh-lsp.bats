@@ -188,3 +188,73 @@ _run_verify_lsp() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"unsupported"* ]]
 }
+
+# ===========================================================================
+# T003 — fresh_lsp_wire: direct unit tests of the merge-only primitive.
+# (Used by stacks whose server binary is NOT mise-managed, e.g. dotnet's
+# csharp-ls, and internally by fresh_lsp_provision after path resolution.)
+# ===========================================================================
+
+# Invoke fresh_lsp_wire directly (no mise) against the scratch HOME config.
+_run_wire() {
+  bash -c "
+    export HOME='${HOME}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    source '${DEVBOOST_ROOT}/lib/log.sh'
+    source '${DEVBOOST_ROOT}/lib/fresh.sh'
+    fresh_lsp_wire \"\$@\"
+  " _ "$@" 2>&1
+}
+
+_seed_config() {
+  mkdir -p "$(dirname "${FRESH_CONFIG}")"
+  printf '%s\n' "$1" > "${FRESH_CONFIG}"
+}
+
+@test "fresh_lsp_wire: merges an absolute command + args, enabled:true" {
+  _seed_config '{ "version":1, "lsp":{} }'
+  run _run_wire csharp "/opt/tools/csharp-ls" --stdio
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.lsp.csharp.command' "${FRESH_CONFIG}")" = "/opt/tools/csharp-ls" ]
+  [ "$(jq -r '.lsp.csharp.enabled' "${FRESH_CONFIG}")" = "true" ]
+  [ "$(jq -r '.lsp.csharp.args | join(" ")' "${FRESH_CONFIG}")" = "--stdio" ]
+}
+
+@test "fresh_lsp_wire: no args yields an empty args array" {
+  _seed_config '{ "lsp":{} }'
+  run _run_wire csharp "/opt/tools/csharp-ls"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.lsp.csharp.args | length' "${FRESH_CONFIG}")" = "0" ]
+}
+
+@test "fresh_lsp_wire: idempotent — re-running yields an identical file" {
+  _seed_config '{ "version":1, "lsp":{} }'
+  _run_wire csharp "/opt/tools/csharp-ls" --stdio >/dev/null
+  local first; first="$(cat "${FRESH_CONFIG}")"
+  _run_wire csharp "/opt/tools/csharp-ls" --stdio >/dev/null
+  [ "$(cat "${FRESH_CONFIG}")" = "${first}" ]
+}
+
+@test "fresh_lsp_wire: preserves all other keys (theme + other lsp.*)" {
+  _seed_config '{ "theme":"keep", "editor":{"tab_size":2}, "lsp":{"python":{"command":"/x/py","args":[],"enabled":true}} }'
+  run _run_wire csharp "/opt/tools/csharp-ls"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.theme' "${FRESH_CONFIG}")" = "keep" ]
+  [ "$(jq -r '.editor.tab_size' "${FRESH_CONFIG}")" = "2" ]
+  [ "$(jq -r '.lsp.python.command' "${FRESH_CONFIG}")" = "/x/py" ]
+  [ "$(jq -r '.lsp.csharp.enabled' "${FRESH_CONFIG}")" = "true" ]
+}
+
+@test "fresh_lsp_wire: dies when config.json is absent" {
+  [ ! -f "${FRESH_CONFIG}" ]
+  run _run_wire csharp "/opt/tools/csharp-ls"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"config"* ]]
+}
+
+@test "fresh_lsp_wire: dies on an empty command path" {
+  _seed_config '{ "lsp":{} }'
+  run _run_wire csharp ""
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"csharp"* ]]
+}

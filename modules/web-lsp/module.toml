@@ -1,0 +1,9 @@
+name        = "web-lsp"
+category    = "dev-stacks"
+description = "Web stack fresh language intelligence (TS/ESLint/Tailwind LSP + prettier formatter, mise-pinned)"
+requires    = ["fresh", "mise", "web-runtimes"]
+profiles    = ["web"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/web-lsp/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/web-lsp/install.sh\""

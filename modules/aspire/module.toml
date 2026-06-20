@@ -1,0 +1,9 @@
+name        = "aspire"
+category    = "dev-stacks"
+description = "Aspire CLI (standalone global dotnet tool; idempotent — skips when aspire is present)"
+requires    = ["dotnet-sdk"]
+profiles    = ["dotnet"]
+verify      = "command -v aspire"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/aspire/install.sh\""

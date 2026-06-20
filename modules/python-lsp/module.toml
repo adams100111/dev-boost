@@ -1,0 +1,9 @@
+name        = "python-lsp"
+category    = "dev-stacks"
+description = "Provision fresh's Python language intelligence (basedpyright + ruff, mise-sourced, pinned; idempotent jq-merge)"
+requires    = ["fresh", "mise", "uv"]
+profiles    = ["python"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/python-lsp/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/python-lsp/install.sh\""

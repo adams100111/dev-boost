@@ -1,0 +1,9 @@
+name        = "web-runtimes"
+category    = "dev-stacks"
+description = "Web JS/TS runtimes via mise (Node 22 LTS + pnpm + bun, pinned)"
+requires    = ["mise"]
+profiles    = ["web"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/web-runtimes/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/web-runtimes/install.sh\""

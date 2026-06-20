@@ -1,0 +1,8 @@
+{
+  "editor": {
+    "tab_size": 2
+  },
+  "format": {
+    "command": "prettier"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "editor": {
+    "tab_size": 4,
+    "format_on_save": true
+  },
+  "formatters": {
+    "php": {
+      "command": "ddev",
+      "args": ["exec", "vendor/bin/pint"]
+    }
+  }
+}

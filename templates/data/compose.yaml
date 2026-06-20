@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:18
+    environment: { POSTGRES_PASSWORD: devboost }
+    volumes: [pgdata:/var/lib/postgresql/18/docker]
+    ports: ["5432:5432"]
+  valkey:
+    image: valkey/valkey:8.1
+    command: ["valkey-server","--save","60","1","--appendonly","yes"]
+    volumes: [valkeydata:/data]
+    ports: ["6379:6379"]
+  dbgate:
+    image: dbgate/dbgate:7.2.0
+    volumes: [dbgatedata:/root/.dbgate]
+    ports: ["3000:3000"]
+volumes: { pgdata: {}, valkeydata: {}, dbgatedata: {} }

@@ -1,0 +1,9 @@
+name        = "uv"
+category    = "dev-stacks"
+description = "uv — fast Python package/project manager (pinned astral installer; idempotent)"
+requires    = []
+profiles    = ["python"]
+verify      = "command -v uv"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/uv/install.sh\""

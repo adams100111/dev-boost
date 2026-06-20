@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "theme": "catppuccin-mocha",
+  "editor": {
+    "tab_size": 2,
+    "format_on_save": true
+  }
+}
