@@ -1,0 +1,21 @@
+# ~/.config/atuin/config.toml — dev-boost managed Atuin shell history configuration.
+# # devboost — managed by chezmoi; edit via dotfiles/dot_config/atuin/config.toml in the dev-boost repo.
+
+[settings]
+# Search mode: fuzzy is more ergonomic for most workflows.
+search_mode = "fuzzy"
+
+# Filter history to the current shell session by default.
+filter_mode = "global"
+
+# Display a count of results in the search UI.
+show_preview = true
+
+# Sync key (do NOT add; secrets are never in managed config files per FR-014).
+# To enable sync, set ATUIN_KEY env var or run `atuin login` separately.
+
+# Style
+style = "compact"
+
+# Avoid re-sorting by frequency (keep chronological in interactive mode).
+search_mode_shell_up_key_binding = "fuzzy"

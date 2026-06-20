@@ -1,0 +1,9 @@
+name        = "bash-config"
+category    = "shell"
+description = "Meta-module: verifies bash rc is fully wired (init lines present, single copy) after dotfiles apply"
+requires    = ["dotfiles"]
+profiles    = ["shell"]
+verify      = "grep -q 'starship init bash' \"${HOME}/.bashrc\" && grep -q 'devboost' \"${HOME}/.bashrc\""
+
+[install]
+fedora = "true"
