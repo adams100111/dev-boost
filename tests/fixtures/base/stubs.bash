@@ -1751,3 +1751,34 @@ exit 0
 STUB
   chmod +x "${_base_bin_dir}/ventoy"
 }
+
+# ---------------------------------------------------------------------------
+# base_install_security_stubs (Spec 13) — fake `gpg` + `pass`. NOT installed by base_setup.
+#   gpg --list-secret-keys → exit 0 (+ output) iff STUB_GPG_KEYS=1, else exit 1 (no key).
+#   gpg --quick-generate-key/other → log STUB_GPG_LOG, exit 0.
+#   pass init <id> → write ${PASSWORD_STORE_DIR:-~/.password-store}/.gpg-id; other → log STUB_PASS_LOG.
+# ---------------------------------------------------------------------------
+base_install_security_stubs() {
+  cat > "${_base_bin_dir}/gpg" <<'STUB'
+#!/usr/bin/env bash
+printf 'gpg %s\n' "$*" >> "${STUB_GPG_LOG:-/tmp/stub-gpg-calls.log}"
+for a in "$@"; do
+  if [[ "$a" == "--list-secret-keys" ]]; then
+    [[ "${STUB_GPG_KEYS:-}" == "1" ]] && { printf 'sec ed25519 devboost\n'; exit 0; }
+    exit 1
+  fi
+done
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/gpg"
+  cat > "${_base_bin_dir}/pass" <<'STUB'
+#!/usr/bin/env bash
+printf 'pass %s\n' "$*" >> "${STUB_PASS_LOG:-/tmp/stub-pass-calls.log}"
+if [[ "$1" == "init" ]]; then
+  store="${PASSWORD_STORE_DIR:-${HOME}/.password-store}"
+  mkdir -p "${store}"; printf '%s\n' "${2:-devboost}" > "${store}/.gpg-id"
+fi
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/pass"
+}

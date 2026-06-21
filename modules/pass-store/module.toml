@@ -1,0 +1,9 @@
+name        = "pass-store"
+category    = "security"
+description = "Provision a GPG key (unattended) + initialize the pass store (optionally clone $DEVBOOST_PASS_REPO)"
+requires    = ["pass", "secrets"]
+profiles    = ["security-cli"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/pass-store/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/pass-store/install.sh\""

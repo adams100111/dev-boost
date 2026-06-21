@@ -50,6 +50,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `optional-editors` | jetbrains-toolbox, neovim |
 | `python` | python-lsp, uv |
 | `react-native` | android-sdk, expo, web-runtimes |
+| `security-cli` | pass, pass-store |
 | `shell` | bash-config, dotfiles, ghostty, nerd-fonts, starship |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, thermald |
 | `web` | web-lsp, web-runtimes |

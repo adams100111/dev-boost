@@ -1,0 +1,9 @@
+name        = "pass"
+category    = "security"
+description = "pass — the standard unix password store (GPG + git backed CLI)"
+requires    = []
+profiles    = ["security-cli"]
+verify      = "command -v pass"
+
+[install]
+fedora = "dnf install -y pass"
