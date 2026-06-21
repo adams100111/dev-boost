@@ -1,0 +1,9 @@
+name        = "snapper-dnf-hook"
+category    = "system"
+description = "DNF plugin that auto-snapshots before/after transactions"
+requires    = ["snapper"]
+profiles    = ["system"]
+verify      = "rpm -q python3-dnf-plugin-snapper >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/snapper-dnf-hook/install.sh\""

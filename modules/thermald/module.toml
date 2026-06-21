@@ -1,0 +1,9 @@
+name        = "thermald"
+category    = "system"
+description = "Intel thermal management daemon; enable the service"
+requires    = []
+profiles    = ["system"]
+verify      = "systemctl is-enabled thermald >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/thermald/install.sh\""

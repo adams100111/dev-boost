@@ -79,3 +79,71 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -f "${BATS_TEST_TMPDIR}/mods/demo/module.toml" ]
 }
+
+# ---------------------------------------------------------------------------
+# Spec 10 (system-resilience): `doctor --gpu` dispatches to gpu_doctor.
+# Install lspci/modprobe/dmesg stubs + a scratch modprobe.d on PATH so the
+# branch runs hermetically. Plain `doctor` (above) must remain unchanged.
+# ---------------------------------------------------------------------------
+_gpu_stub_bin() {
+  local b="${BATS_TEST_TMPDIR}/gpu-bin"
+  mkdir -p "${b}"
+  cat > "${b}/lspci" <<'S'
+#!/usr/bin/env bash
+printf '01:00.0 VGA compatible controller: NVIDIA Corporation GA106 [GeForce RTX 3060]\n'
+S
+  cat > "${b}/modprobe" <<'S'
+#!/usr/bin/env bash
+[[ "${STUB_MODPROBE_FAIL:-}" == "1" ]] && exit 1
+exit 0
+S
+  cat > "${b}/dmesg" <<'S'
+#!/usr/bin/env bash
+printf '%s\n' "${STUB_DMESG:-booting normally}"
+S
+  chmod +x "${b}/lspci" "${b}/modprobe" "${b}/dmesg"
+  printf '%s\n' "${b}"
+}
+
+@test "doctor --gpu dispatches to gpu_doctor (healthy → 0)" {
+  local gb; gb="$(_gpu_stub_bin)"
+  mkdir -p "${BATS_TEST_TMPDIR}/modprobe.d"
+  : > "${BATS_TEST_TMPDIR}/modprobe.d/blacklist-nouveau.conf"
+  run bash -c "
+    export PATH='${gb}:${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_MODPROBE_DIR='${BATS_TEST_TMPDIR}/modprobe.d'
+    export STUB_DMESG='booting normally'
+    '${DEVBOOST_ROOT}/bin/devboost' doctor --gpu
+  " 2>&1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"NVIDIA stack healthy"* ]]
+}
+
+@test "doctor --gpu reports failure when nouveau not blacklisted (non-zero)" {
+  local gb; gb="$(_gpu_stub_bin)"
+  run bash -c "
+    export PATH='${gb}:${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_MODPROBE_DIR='${BATS_TEST_TMPDIR}/empty-modprobe.d'
+    export STUB_DMESG='booting normally'
+    '${DEVBOOST_ROOT}/bin/devboost' doctor --gpu
+  " 2>&1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *nouveau* ]]
+}
+
+@test "plain doctor (no --gpu) is unchanged and still passes" {
+  run bash -c "
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export DEVBOOST_MODULES_DIR='${DEVBOOST_MODULES_DIR}'
+    export OS_RELEASE_FILE='${OS_RELEASE_FILE}'
+    export DEVBOOST_SECRETS='${DEVBOOST_SECRETS}'
+    export DEVBOOST_SECRETS_KEY='${DEVBOOST_SECRETS_KEY}'
+    export DEVBOOST_BOOTSTRAP_DIR='${DEVBOOST_BOOTSTRAP_DIR}'
+    '${DEVBOOST_ROOT}/bin/devboost' doctor
+  " 2>&1
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"NVIDIA stack"* ]]
+}

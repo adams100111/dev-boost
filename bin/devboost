@@ -27,7 +27,7 @@ Commands:
   install [--profile a,b] [--force] [--strict]   install modules (default: full)
   verify  [--profile a,b]                         check what's installed
   list    [--profile a,b]                         show resolved module order
-  doctor                                          environment preflight
+  doctor  [--gpu]                                 environment preflight (--gpu: NVIDIA stack)
   add <name> [--folder]                           scaffold a new module
   export                                          snapshot actual installed state
   diff    [--profile a,b]                         declared vs actual drift (exit!=0 on drift)
@@ -82,6 +82,16 @@ cmd_verify() {
 }
 
 cmd_doctor() {
+  # --gpu: NVIDIA-stack diagnostics (lib/gpu.sh gpu_doctor). Plain doctor (no
+  # --gpu) behaviour is unchanged. Source gpu.sh lazily inside this branch.
+  for a in "$@"; do
+    if [[ "$a" == "--gpu" ]]; then
+      source "${DEVBOOST_ROOT}/lib/gpu.sh"
+      gpu_doctor
+      return "$?"
+    fi
+  done
+
   local ok=0
   command -v python3 >/dev/null || { log_error "python3 missing"; ok=1; }
   command -v jq      >/dev/null || { log_error "jq missing"; ok=1; }

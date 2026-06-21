@@ -1,0 +1,9 @@
+name        = "cuda"
+category    = "hardware"
+description = "NVIDIA CUDA userspace (xorg-x11-drv-nvidia-cuda)"
+requires    = ["nvidia-akmod"]
+profiles    = ["hardware-nvidia"]
+verify      = "rpm -q xorg-x11-drv-nvidia-cuda >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/cuda/install.sh\""

@@ -1,0 +1,9 @@
+name        = "earlyoom"
+category    = "system"
+description = "Early userspace OOM killer tuned to protect dev daemons, prefer GUI apps"
+requires    = []
+profiles    = ["system"]
+verify      = "f=\"${DEVBOOST_EARLYOOM_CONF:-/etc/default/earlyoom}\"; grep -q -- '--avoid' \"$f\" 2>/dev/null && grep -q -- '--prefer' \"$f\" 2>/dev/null"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/earlyoom/install.sh\""

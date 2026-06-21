@@ -1,0 +1,9 @@
+name        = "btrfsmaintenance"
+category    = "system"
+description = "Scheduled Btrfs scrub/balance/trim maintenance timers"
+requires    = []
+profiles    = ["system"]
+verify      = "rpm -q btrfsmaintenance >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/btrfsmaintenance/install.sh\""

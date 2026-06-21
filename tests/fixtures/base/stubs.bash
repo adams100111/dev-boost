@@ -211,6 +211,8 @@ base_setup() {
   export STUB_LOGINCTL_LOG="${STUB_LOGINCTL_LOG:-${BATS_TEST_TMPDIR}/loginctl-calls.log}"
   # Spec 9 (lifecycle-and-dev-hygiene) log default.
   export STUB_DOCKER_LOG="${STUB_DOCKER_LOG:-${BATS_TEST_TMPDIR}/docker-calls.log}"
+  # Spec 10 (system-resilience) kernel/NVIDIA log default.
+  export STUB_KERNEL_LOG="${STUB_KERNEL_LOG:-${BATS_TEST_TMPDIR}/kernel-calls.log}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -253,6 +255,8 @@ base_setup() {
   : > "${STUB_LOGINCTL_LOG}"
   # Spec 9 (lifecycle-and-dev-hygiene) log initialisation.
   : > "${STUB_DOCKER_LOG}"
+  # Spec 10 (system-resilience) log initialisation.
+  : > "${STUB_KERNEL_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -1677,3 +1681,51 @@ STUB
 }
 # base_remove_docker — remove the docker stub (simulate docker absent).
 base_remove_docker() { rm -f "${_base_bin_dir}/docker"; }
+
+# ---------------------------------------------------------------------------
+# base_install_kernel_stubs (Spec 10) — fake NVIDIA/kernel/MOK tooling. NOT installed by
+# base_setup (call explicitly) so existing tests are unaffected. All log to STUB_KERNEL_LOG.
+#   mokutil --sb-state→STUB_SB_STATE(default disabled); --list-new→exit0 iff STUB_MOK_QUEUED=1;
+#   --test-key/--list-enrolled→enrolled iff STUB_MOK_ENROLLED=1; --import→log.
+#   modprobe→fail iff STUB_MODPROBE_FAIL=1; dmesg→STUB_DMESG; akmods/kmodgenca/grubby/dracut/
+#   depmod/nvidia-ctk/unxz/xz→log+exit0.
+# ---------------------------------------------------------------------------
+base_install_kernel_stubs() {
+  local b="${_base_bin_dir}" t
+  for t in akmods kmodgenca grubby dracut depmod nvidia-ctk unxz xz; do
+    cat > "${b}/${t}" <<STUB
+#!/usr/bin/env bash
+printf '${t} %s\n' "\$*" >> "\${STUB_KERNEL_LOG:-/tmp/stub-kernel-calls.log}"
+exit 0
+STUB
+    chmod +x "${b}/${t}"
+  done
+  cat > "${b}/mokutil" <<'STUB'
+#!/usr/bin/env bash
+printf 'mokutil %s\n' "$*" >> "${STUB_KERNEL_LOG:-/tmp/stub-kernel-calls.log}"
+case "$1" in
+  --sb-state) printf 'SecureBoot %s\n' "${STUB_SB_STATE:-disabled}";;
+  --list-new) [[ "${STUB_MOK_QUEUED:-}" == "1" ]] && { printf 'MokNew present\n'; exit 0; }; exit 1;;
+  --test-key|--list-enrolled) [[ "${STUB_MOK_ENROLLED:-}" == "1" ]] && { printf 'is already enrolled\n'; exit 0; }; exit 1;;
+  *) exit 0;;
+esac
+STUB
+  chmod +x "${b}/mokutil"
+  cat > "${b}/modprobe" <<'STUB'
+#!/usr/bin/env bash
+printf 'modprobe %s\n' "$*" >> "${STUB_KERNEL_LOG:-/tmp/stub-kernel-calls.log}"
+[[ "${STUB_MODPROBE_FAIL:-}" == "1" ]] && { printf 'modprobe: ERROR: could not insert\n' >&2; exit 1; }
+exit 0
+STUB
+  chmod +x "${b}/modprobe"
+  cat > "${b}/dmesg" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "${STUB_DMESG:-}"
+exit 0
+STUB
+  chmod +x "${b}/dmesg"
+}
+base_remove_kernel_stubs() {
+  local t; for t in akmods kmodgenca grubby dracut depmod nvidia-ctk unxz xz mokutil modprobe dmesg; do
+    rm -f "${_base_bin_dir}/${t}"; done
+}
