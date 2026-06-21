@@ -209,6 +209,8 @@ base_setup() {
   # Spec 8 (apps-and-obsidian) log defaults.
   export STUB_SSH_KEYGEN_LOG="${STUB_SSH_KEYGEN_LOG:-${BATS_TEST_TMPDIR}/ssh-keygen-calls.log}"
   export STUB_LOGINCTL_LOG="${STUB_LOGINCTL_LOG:-${BATS_TEST_TMPDIR}/loginctl-calls.log}"
+  # Spec 9 (lifecycle-and-dev-hygiene) log default.
+  export STUB_DOCKER_LOG="${STUB_DOCKER_LOG:-${BATS_TEST_TMPDIR}/docker-calls.log}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -249,6 +251,8 @@ base_setup() {
   # Spec 8 (apps-and-obsidian) log initialisation.
   : > "${STUB_SSH_KEYGEN_LOG}"
   : > "${STUB_LOGINCTL_LOG}"
+  # Spec 9 (lifecycle-and-dev-hygiene) log initialisation.
+  : > "${STUB_DOCKER_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -662,6 +666,11 @@ if [[ "$1" == "which" && -n "${2:-}" ]]; then
   printf '%s/.local/share/mise/shims/%s\n' "${HOME}" "${bin}"
   exit 0
 fi
+# Spec 9 (lifecycle export): `mise ls` → emit STUB_MISE_LS (one tool per line; default empty).
+if [[ "$1" == "ls" ]]; then
+  printf '%s\n' "${STUB_MISE_LS:-}"
+  exit 0
+fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/mise"
@@ -790,6 +799,16 @@ if [[ "${STUB_GIT_CLONE_CREATES_DIR:-}" == "1" && "$1" == "clone" ]]; then
   dir="${@: -1}"
   [[ -n "${dir}" && "${dir}" != http* && "${dir}" != git@* ]] && mkdir -p "${dir}/.git"
 fi
+# Spec 9 (self-update): any `git … pull …` → fail iff STUB_GIT_PULL_FAIL=1, else succeed.
+for _ga in "$@"; do
+  if [[ "${_ga}" == "pull" ]]; then
+    if [[ "${STUB_GIT_PULL_FAIL:-}" == "1" ]]; then
+      printf 'git pull: fatal: could not update\n' >&2
+      exit 1
+    fi
+    exit 0
+  fi
+done
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/git"
@@ -1633,3 +1652,28 @@ exit 0
 STUB
   chmod +x "${_base_bin_dir}/loginctl"
 }
+
+# ---------------------------------------------------------------------------
+# base_install_docker (Spec 9) — fake `docker` for dev-hygiene tests. NOT installed
+# by base_setup (call explicitly) so existing tests are unaffected.
+#   docker ps …       → emit STUB_DOCKER_PS verbatim (TSV: id<TAB>persistent<TAB>creatorPID)
+#   docker stats …    → emit STUB_DOCKER_STATS verbatim
+#   docker inspect …  → emit STUB_DOCKER_INSPECT verbatim
+#   docker rm|stop|container prune|…  → log + exit 0
+# ---------------------------------------------------------------------------
+base_install_docker() {
+  cat > "${_base_bin_dir}/docker" <<'STUB'
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "${STUB_DOCKER_LOG:-/tmp/stub-docker-calls.log}"
+case "$1" in
+  ps)      printf '%s\n' "${STUB_DOCKER_PS:-}" ;;
+  stats)   printf '%s\n' "${STUB_DOCKER_STATS:-}" ;;
+  inspect) printf '%s\n' "${STUB_DOCKER_INSPECT:-}" ;;
+  *)       : ;;
+esac
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/docker"
+}
+# base_remove_docker — remove the docker stub (simulate docker absent).
+base_remove_docker() { rm -f "${_base_bin_dir}/docker"; }

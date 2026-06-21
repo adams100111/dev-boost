@@ -1,0 +1,9 @@
+name        = "aspire-gc"
+category    = "dev-hygiene"
+description = "Hourly systemd --user timer running `devboost dev gc` (precise orphan/duplicate Aspire AppHost reclaim)"
+requires    = ["docker"]
+profiles    = ["dev-hygiene"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/aspire-gc/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/aspire-gc/install.sh\""

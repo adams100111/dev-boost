@@ -1,0 +1,9 @@
+name        = "__NAME__"
+category    = "uncategorized"
+description = "TODO: describe __NAME__"
+requires    = []
+profiles    = []
+verify      = "command -v __NAME__"
+
+[install]
+fedora = "TODO: install command for __NAME__ (or replace with: bash \"$DEVBOOST_ROOT/modules/__NAME__/install.sh\")"
