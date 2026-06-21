@@ -1,0 +1,9 @@
+name        = "smartmontools"
+category    = "system"
+description = "Disk S.M.A.R.T. monitoring; enable the smartd service"
+requires    = []
+profiles    = ["system"]
+verify      = "systemctl is-enabled smartd >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/smartmontools/install.sh\""

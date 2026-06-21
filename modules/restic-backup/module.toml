@@ -1,0 +1,9 @@
+name        = "restic-backup"
+category    = "system"
+description = "restic backup tool with a scheduled (sample) backup service + timer"
+requires    = []
+profiles    = ["system"]
+verify      = "d=\"${DEVBOOST_RESTIC_UNIT_DIR:-$HOME/.config/systemd/user}\"; [ -f \"$d/restic-backup.service\" ] && [ -f \"$d/restic-backup.timer\" ]"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/restic-backup/install.sh\""

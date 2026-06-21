@@ -1,0 +1,9 @@
+name        = "nvidia-resign-service"
+category    = "hardware"
+description = "Boot-time service that re-signs + CRC32-recompresses akmod NVIDIA modules after kernel updates"
+requires    = ["nvidia-akmod"]
+profiles    = ["hardware-nvidia"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/nvidia-resign-service/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/nvidia-resign-service/install.sh\""

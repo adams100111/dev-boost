@@ -1,0 +1,9 @@
+name        = "dnf-automatic-security"
+category    = "system"
+description = "Automatic security-only package updates via dnf-automatic.timer"
+requires    = []
+profiles    = ["system"]
+verify      = "grep -q 'upgrade_type = security' \"${DEVBOOST_DNF_AUTOMATIC_CONF:-/etc/dnf/automatic.conf}\" 2>/dev/null"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/dnf-automatic-security/install.sh\""

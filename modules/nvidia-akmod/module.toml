@@ -1,0 +1,9 @@
+name        = "nvidia-akmod"
+category    = "hardware"
+description = "NVIDIA akmod driver + CUDA/VA-API; nouveau blacklist; CRC64→CRC32 ko fix; dracut regen"
+requires    = ["rpmfusion"]
+profiles    = ["hardware-nvidia"]
+verify      = "bash \"$DEVBOOST_ROOT/modules/nvidia-akmod/verify.sh\""
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/nvidia-akmod/install.sh\""

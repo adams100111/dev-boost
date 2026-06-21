@@ -1,0 +1,9 @@
+name        = "power-profiles-daemon"
+category    = "system"
+description = "System power profile management daemon; enable the service"
+requires    = []
+profiles    = ["system"]
+verify      = "systemctl is-enabled power-profiles-daemon >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/power-profiles-daemon/install.sh\""

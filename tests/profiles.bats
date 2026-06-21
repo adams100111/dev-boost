@@ -893,3 +893,53 @@ _assert_order() {
   for m in aspire-gc docker; do [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }; done
   _assert_order "$output" docker aspire-gc
 }
+
+# ---------------------------------------------------------------------------
+# Spec 10 — system / hardware-nvidia / optional-editors membership (TOML-only).
+# ---------------------------------------------------------------------------
+@test "profiles.toml: system profile has snapshot+maintenance+earlyoom+gpu-detect" {
+  run _expand_stack system
+  [ "$status" -eq 0 ]
+  for m in snapper grub-btrfs earlyoom dnf-automatic-security gpu-detect; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "profiles.toml: hardware-nvidia chain members present" {
+  run _expand_stack hardware-nvidia
+  [ "$status" -eq 0 ]
+  for m in nvidia-akmod secureboot-mok nvidia-resign-service nvidia-container-toolkit; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+}
+@test "profiles.toml: optional-editors = neovim + jetbrains-toolbox" {
+  run _expand_stack optional-editors
+  [ "$status" -eq 0 ]; [[ "$output" == *"neovim"* && "$output" == *"jetbrains-toolbox"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Spec 10 — full depsort resolution: system / hardware-nvidia / optional-editors.
+# ---------------------------------------------------------------------------
+@test "devboost list --profile system: resolves, members + transitive rpmfusion present" {
+  run _list_profile system
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in snapper snapper-dnf-hook grub-btrfs earlyoom gpu-detect rpmfusion; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+  _assert_order "$output" snapper snapper-dnf-hook
+  _assert_order "$output" snapper grub-btrfs
+}
+@test "devboost list --profile hardware-nvidia: rpmfusion→nvidia-akmod→dependents" {
+  run _list_profile hardware-nvidia
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in nvidia-akmod cuda libva-nvidia-driver secureboot-mok nvidia-resign-service nvidia-container-toolkit rpmfusion; do
+    [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }
+  done
+  _assert_order "$output" rpmfusion nvidia-akmod
+  _assert_order "$output" nvidia-akmod secureboot-mok
+  _assert_order "$output" nvidia-akmod nvidia-resign-service
+}
+@test "devboost list --profile optional-editors: resolves neovim + jetbrains-toolbox" {
+  run _list_profile optional-editors
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  [[ "$output" == *"neovim"* && "$output" == *"jetbrains-toolbox"* ]]
+}

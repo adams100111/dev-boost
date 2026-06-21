@@ -1,0 +1,9 @@
+name        = "btrfs-assistant"
+category    = "system"
+description = "GUI for managing Btrfs subvolumes and snapper snapshots"
+requires    = []
+profiles    = ["system"]
+verify      = "rpm -q btrfs-assistant >/dev/null 2>&1"
+
+[install]
+fedora = "bash \"$DEVBOOST_ROOT/modules/btrfs-assistant/install.sh\""
