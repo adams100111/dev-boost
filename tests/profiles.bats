@@ -943,3 +943,8 @@ _assert_order() {
   [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
   [[ "$output" == *"neovim"* && "$output" == *"jetbrains-toolbox"* ]]
 }
+
+@test "profiles.toml: security-cli = pass + pass-store (opt-in, not full)" {
+  run _expand_stack security-cli
+  [ "$status" -eq 0 ]; [[ "$output" == *"pass"* && "$output" == *"pass-store"* ]]
+}
