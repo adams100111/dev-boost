@@ -19,9 +19,9 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/009-lifecycle-and-dev-hygiene/plan.md`
-(spec `specs/009-lifecycle-and-dev-hygiene/spec.md`). Specs 1–8 (secrets-and-auth, base-profile,
-cli-and-shell, gnome-desktop, multimedia-codecs, editors, dev-stacks, apps-and-obsidian) merged to main (935 tests). For
+Active feature plan: `specs/010-system-resilience/plan.md`
+(spec `specs/010-system-resilience/spec.md`). Specs 1–9 merged to main (961 tests). For
 technologies, project structure, shell commands, and other context, read that plan and the design
-doc / constitution. Spec 9 is engine-feature work (day-2 CLI verbs + dev hygiene), built test-first.
+doc / constitution. Spec 10 = system resilience profile + GPU auto-detect + NVIDIA chain (akmod/MOK/
+CRC32/resign) + doctor --gpu; design §6.3/§10 is the oracle; built test-first, all system calls stubbed.
 <!-- SPECKIT END -->
