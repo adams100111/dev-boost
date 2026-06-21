@@ -19,9 +19,9 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/010-system-resilience/plan.md`
-(spec `specs/010-system-resilience/spec.md`). Specs 1–9 merged to main (961 tests). For
+Active feature plan: `specs/011-ventoy-kickstart-usb/plan.md`
+(spec `specs/011-ventoy-kickstart-usb/spec.md`). Specs 1–10 merged to main (1080 tests). For
 technologies, project structure, shell commands, and other context, read that plan and the design
-doc / constitution. Spec 10 = system resilience profile + GPU auto-detect + NVIDIA chain (akmod/MOK/
-CRC32/resign) + doctor --gpu; design §6.3/§10 is the oracle; built test-first, all system calls stubbed.
+doc / constitution. Spec 11 = the shippable Ventoy USB (make-usb.sh + ventoy.json + ks.cfg §10c BTRFS
+layout + devboost-firstboot.service); design §9/§10c oracle; artifacts only, validated hermetically.
 <!-- SPECKIT END -->
