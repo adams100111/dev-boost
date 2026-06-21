@@ -1,0 +1,15 @@
+[Unit]
+Description=dev-boost first-boot bootstrap (install.sh --profile full)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/run/media/Bootstrap/dev-boost/install.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Runs the full provisioning once on the first networked boot, then disables itself
+# so subsequent boots are normal. Secrets are the age-encrypted bundle injected onto the USB.
+ExecStart=/bin/bash -lc '/opt/dev-boost/install.sh --profile full --secrets /opt/dev-boost/secrets.age >> /var/log/devboost-firstboot.log 2>&1; systemctl disable devboost-firstboot.service'
+
+[Install]
+WantedBy=multi-user.target

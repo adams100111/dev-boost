@@ -1729,3 +1729,25 @@ base_remove_kernel_stubs() {
   local t; for t in akmods kmodgenca grubby dracut depmod nvidia-ctk unxz xz mokutil modprobe dmesg; do
     rm -f "${_base_bin_dir}/${t}"; done
 }
+
+# ---------------------------------------------------------------------------
+# base_install_usb_stubs (Spec 11) — fake `lsblk` + `ventoy` for the USB builder tests.
+# NOT installed by base_setup (call explicitly).
+#   lsblk -dno NAME,TYPE,RM,MOUNTPOINT <dev> → "<name> <STUB_LSBLK_TYPE> <STUB_LSBLK_RM> <STUB_LSBLK_MOUNT>"
+#     defaults: type=disk, RM=1 (removable), no mountpoint. ventoy → logs to STUB_VENTOY_LOG.
+# ---------------------------------------------------------------------------
+base_install_usb_stubs() {
+  cat > "${_base_bin_dir}/lsblk" <<'STUB'
+#!/usr/bin/env bash
+dev="${@: -1}"; name="$(basename "${dev}")"
+printf '%s %s %s %s\n' "${name}" "${STUB_LSBLK_TYPE:-disk}" "${STUB_LSBLK_RM:-1}" "${STUB_LSBLK_MOUNT:-}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/lsblk"
+  cat > "${_base_bin_dir}/ventoy" <<'STUB'
+#!/usr/bin/env bash
+printf 'ventoy %s\n' "$*" >> "${STUB_VENTOY_LOG:-/tmp/stub-ventoy-calls.log}"
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/ventoy"
+}
