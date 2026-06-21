@@ -110,4 +110,14 @@ Add it to a profile in `profiles.toml`, commit. See [docs/adding-a-module.md](do
 
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
-[obsidian-sync](docs/obsidian-sync.md) · [ventoy](docs/ventoy.md) · [roadmap](docs/roadmap.md)
+[obsidian-sync](docs/obsidian-sync.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
+
+## Validate before shipping (in a throwaway Fedora VM)
+
+```sh
+scripts/vm-test.sh engine --iso Fedora-Live.iso        # engine-only: install Fedora, run ./install.sh
+scripts/vm-test.sh usb --kickstart Fedora-netinst.iso  # full USB (device-less zero-touch via ventoy/ks.cfg)
+scripts/vm-test.sh usb --device /dev/sdX               # full USB (boot the real Ventoy stick, passthrough)
+scripts/make-secrets.sh --out /tmp/sec                 # build the age-encrypted secrets bundle (PAT never logged)
+```
+Full runbook (prereqs, snapshots, what to verify): [docs/vm-testing.md](docs/vm-testing.md).
