@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 DEVBOOST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export DEVBOOST_ROOT
-for l in log os toml module depsort profile install; do source "$DEVBOOST_ROOT/lib/$l.sh"; done
+for l in log os toml module depsort profile install lifecycle devhygiene; do source "$DEVBOOST_ROOT/lib/$l.sh"; done
 os_detect
 
 _parse_profile() {
@@ -28,6 +28,12 @@ Commands:
   verify  [--profile a,b]                         check what's installed
   list    [--profile a,b]                         show resolved module order
   doctor                                          environment preflight
+  add <name> [--folder]                           scaffold a new module
+  export                                          snapshot actual installed state
+  diff    [--profile a,b]                         declared vs actual drift (exit!=0 on drift)
+  update  [--profile a,b]                         propose pinned bumps + devboost.lock (no commit)
+  self-update                                     git pull dev-boost + re-validate
+  dev <status|gc|down>                            dev-environment resource hygiene
   help                                            this message
 EOF
 }
@@ -44,6 +50,23 @@ cmd_install() {
   toks="$(_parse_profile "$@")"
   # shellcheck disable=SC2086
   run_install $force $strict -- $(profile_expand $toks)
+  # Regenerate the reproducibility lock from the resolved state (never commits).
+  lc_lock_write || true
+}
+
+cmd_add()         { lc_add "$@"; }
+cmd_export()      { lc_export; }
+cmd_diff()        { local toks; toks="$(_parse_profile "$@")"; lc_diff $toks; }
+cmd_update()      { local toks; toks="$(_parse_profile "$@")"; lc_update $toks; }
+cmd_self_update() { lc_self_update; }
+cmd_dev() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    status) dh_status;;
+    gc)     dh_gc;;
+    down)   dh_down;;
+    *) echo "Usage: devboost dev <status|gc|down>" >&2; return 1;;
+  esac
 }
 
 cmd_verify() {
@@ -101,6 +124,12 @@ main() {
     verify)  cmd_verify "$@";;
     list)    cmd_list "$@";;
     doctor)  cmd_doctor "$@";;
+    add)         cmd_add "$@";;
+    export)      cmd_export "$@";;
+    diff)        cmd_diff "$@";;
+    update)      cmd_update "$@";;
+    self-update) cmd_self_update "$@";;
+    dev)         cmd_dev "$@";;
     help|-h|--help) usage;;
     *) usage; exit 1;;
   esac

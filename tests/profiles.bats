@@ -878,3 +878,18 @@ _assert_order() {
   _assert_order "$output" secrets obsidian-sync
   _assert_order "$output" ssh-setup obsidian-sync
 }
+
+# ---------------------------------------------------------------------------
+# Spec 9 — dev-hygiene profile membership (TOML-only). Depsort = Polish.
+# ---------------------------------------------------------------------------
+@test "profiles.toml: dev-hygiene profile = aspire-gc" {
+  run _expand_stack dev-hygiene
+  [ "$status" -eq 0 ]; [[ "$output" == *"aspire-gc"* ]]
+}
+
+@test "devboost list --profile dev-hygiene: resolves, docker before aspire-gc" {
+  run _list_profile dev-hygiene
+  [ "$status" -eq 0 ]; [[ "$output" != *"cycle"* ]]
+  for m in aspire-gc docker; do [[ "$output" == *"$m"* ]] || { echo "MISSING $m"; return 1; }; done
+  _assert_order "$output" docker aspire-gc
+}
