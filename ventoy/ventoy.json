@@ -1,0 +1,12 @@
+{
+  "control": [
+    { "VTOY_MENU_TIMEOUT": "10" },
+    { "VTOY_DEFAULT_IMAGE": "/ISO/Fedora-44.iso" }
+  ],
+  "auto_install": [
+    { "image": "/ISO/Fedora-44.iso", "template": "/Bootstrap/ks.cfg" }
+  ],
+  "injection": [
+    { "image": "/ISO/Fedora-44.iso", "archive": "/Bootstrap/devboost.tar.gz" }
+  ]
+}
