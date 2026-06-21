@@ -20,3 +20,9 @@ Then copy ISOs into `ISO/`, and `secrets.age` + `devboost.tar.gz` into `Bootstra
 
 ## Safety
 `make-usb.sh` only accepts a whole, removable, unmounted disk and requires explicit confirmation.
+
+## Test it first (no hardware)
+Validate both boot paths in a throwaway VM before touching a real stick — see
+[vm-testing.md](vm-testing.md): `scripts/vm-test.sh usb --device /dev/sdX` (boot the real USB) or
+`scripts/vm-test.sh usb --kickstart <netinst.iso>` (device-less zero-touch). Build the encrypted
+secrets bundle with `scripts/make-secrets.sh`.

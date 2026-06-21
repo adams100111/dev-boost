@@ -21,3 +21,7 @@ never persistent infra). The `aspire-gc` timer runs `dev gc` hourly.
 ## Disk / data
 `restic-backup` (real backups — snapshots are not backups). Air-gapped installers under the USB
 `Installers/`. See also the USB-side [ventoy/Docs/recovery-runbook.md](../ventoy/Docs/recovery-runbook.md).
+
+## Dry-run a rebuild (no hardware)
+Rehearse the whole flow in a VM first: [vm-testing.md](vm-testing.md) —
+`scripts/vm-test.sh engine --iso Fedora-Live.iso` (engine) or `scripts/vm-test.sh usb …` (full USB).
