@@ -751,6 +751,7 @@ if [[ "$1" == "apply" ]]; then
   mkdir -p "${apply_dest}/.config/atuin"
   mkdir -p "${apply_dest}/.config/bat"
   mkdir -p "${apply_dest}/.config/ripgrep"
+  mkdir -p "${apply_dest}/.config/lazygit"
   mkdir -p "${apply_dest}/.tmux/plugins"
 
   # ~/.bashrc — contains dev-boost sentinel + representative init lines (single copy).
@@ -827,6 +828,25 @@ BATCFG
 --colors=path:fg:green
 --colors=match:fg:red
 RIPGREPCFG
+  fi
+
+  # ~/.config/lazygit/config.yml — placeholder lazygit config.
+  lazygit_cfg="${apply_dest}/.config/lazygit/config.yml"
+  if [[ ! -f "${lazygit_cfg}" ]]; then
+    cat > "${lazygit_cfg}" <<'LAZYGITCFG'
+# ~/.config/lazygit/config.yml — dev-boost managed lazygit configuration.
+# devboost — managed by chezmoi; edit dotfiles/dot_config/lazygit/config.yml in the dev-boost repo.
+gui:
+  nerdFontsVersion: "3"
+  border: "rounded"
+git:
+  paging:
+    colorArg: always
+    pager: delta --dark --paging=never
+  autoFetch: true
+update:
+  method: never
+LAZYGITCFG
   fi
 
   exit 0

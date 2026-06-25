@@ -371,3 +371,17 @@ _run_bash_config_verify() {
   _run_dotfiles_install
   [ -f "${HOME}/.config/ripgrep/ripgreprc" ]
 }
+
+@test "dotfiles: chezmoi source dot_config/lazygit/config.yml exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml" ]
+}
+
+@test "dotfiles: lazygit config wires delta paging + nerdfonts 3" {
+  grep -q 'pager: delta' "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml"
+  grep -q 'nerdFontsVersion: "3"' "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml"
+}
+
+@test "dotfiles: apply writes ~/.config/lazygit/config.yml into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/lazygit/config.yml" ]
+}
