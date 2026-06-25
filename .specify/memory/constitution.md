@@ -1,20 +1,33 @@
 <!--
 SYNC IMPACT REPORT
-Version change: (template/unversioned) → 1.0.0
-Bump rationale: First ratification — initial set of governing principles for dev-boost.
-Principles defined:
-  I.   Engine + Data Separation
+Version change: 1.0.0 → 2.0.0
+Bump rationale: MAJOR — reverses the "engine is pure Bash; no other interpreters"
+  constraint. The engine MAY now be implemented either as pure Bash OR as a
+  strictly-typed Python engine shipped as a frozen single-file per-arch binary
+  (no runtime interpreter dependency on the target). Driven by the portable
+  two-tier installer (terminal/devtools), which is a typed-Python + Typer engine;
+  the cold-start/VPS promise is preserved by the frozen binary, not a runtime
+  Python dependency. Principle I restated in language-neutral terms.
+Principles (unchanged in intent; I reworded):
+  I.   Engine + Data Separation (engine language-neutral: Bash or typed-Python)
   II.  Idempotent & Verify-Guarded
   III. Reproducible — Repo is Source of Truth
   IV.  Unattended by Default
   V.   Test-First (TDD, NON-NEGOTIABLE)
   VI.  Cross-OS via Data (Fedora is the reference)
-Added sections: Technology & Security Constraints; Development Workflow & Quality Gates; Governance.
-Removed sections: none.
+Modified sections:
+  • Core Principle I — "small, legible engine" now explicitly may be Bash or
+    typed-Python; capability still lives only in declarative TOML data.
+  • Technology & Security Constraints — dual engine path; a typed-Python engine
+    MUST be strictly typed (mypy --strict), parse TOML via stdlib tomllib, and
+    ship as a frozen single-file binary so the target needs no Python runtime.
+  • Development Workflow & Quality Gates — both suites (`bats tests/` for the Bash
+    engine AND the Python engine's pytest suite) MUST be green before merge.
+Added/Removed sections: none.
 Templates reviewed for consistency:
-  ✅ .specify/templates/plan-template.md   — Constitution Check gate accommodates these principles (no edit needed)
+  ✅ .specify/templates/plan-template.md   — Constitution Check gate still accommodates these principles (no edit needed)
   ✅ .specify/templates/spec-template.md   — no new mandatory sections required (no edit needed)
-  ✅ .specify/templates/tasks-template.md  — TDD/test-first task ordering already supported (no edit needed)
+  ✅ .specify/templates/tasks-template.md  — TDD/test-first task ordering still applies to both engines (no edit needed)
 Deferred TODOs: none.
 -->
 
@@ -24,13 +37,16 @@ Deferred TODOs: none.
 
 ### I. Engine + Data Separation
 
-The platform is a small, legible engine plus declarative data. The engine MUST NOT
-change when a tool, stack, or operating system is added — those are added as data
-(a module manifest, a profile entry, or an install key). Every installable thing
-MUST be a self-contained module declaring `verify`, at least one `[install]` key,
-and its `requires`. Adding a tool MUST be one file; adding an OS MUST be one key.
-Rationale: extensibility and long-term maintainability come from never editing
-control flow to add capability — the highest-frequency change must be the cheapest.
+The platform is a small, legible engine plus declarative data. The engine MAY be
+implemented in pure Bash OR as a strictly-typed Python engine (see Technology &
+Security Constraints); the engine language is an implementation detail. Whatever the
+language, the engine MUST NOT change when a tool, stack, or operating system is added
+— those are added as data (a module manifest, a profile entry, or an install key).
+Every installable thing MUST be a self-contained module declaring `verify`, at least
+one `[install]` key, and its `requires`. Adding a tool MUST be one file; adding an OS
+MUST be one key. Rationale: extensibility and long-term maintainability come from
+never editing control flow to add capability — the highest-frequency change must be
+the cheapest, regardless of the engine's language.
 
 ### II. Idempotent & Verify-Guarded
 
@@ -77,10 +93,16 @@ branching logic in the core.
 
 ## Technology & Security Constraints
 
-- The engine is **pure Bash**; the only external runtime dependencies are the
-  system `python3` (for stdlib `tomllib` TOML parsing; floor ≥3.11) and `jq`.
-  No other interpreters or config-management frameworks (no Ansible/Salt).
-- TOML is parsed only via `python3` `tomllib` — never a hand-rolled parser.
+- The engine MAY be implemented in one of two sanctioned forms; no other
+  interpreters or config-management frameworks are permitted (no Ansible/Salt):
+  - **Pure Bash** — external runtime dependencies limited to the system `python3`
+    (for stdlib `tomllib` TOML parsing; floor ≥3.11) and `jq`.
+  - **Strictly-typed Python** (e.g. Typer CLI) — MUST type-check clean under
+    `mypy --strict`, MUST parse TOML via stdlib `tomllib`, and MUST be shipped to
+    targets as a **frozen single-file per-arch binary** so the target needs NO
+    Python runtime installed (preserving the cold-start / minimal-VPS promise).
+    Pure-Python source MUST NOT be the on-target runtime.
+- TOML is parsed only via stdlib `tomllib` — never a hand-rolled parser.
 - Module `install`/`verify` strings run via `bash -c` under a local-manifest trust
   model; secrets are decrypted at bootstrap from an `age`-encrypted file and MUST
   remain gitignored. Untracked binaries and `.env`/key files MUST stay gitignored.
@@ -94,7 +116,9 @@ branching logic in the core.
   plan, producing working, testable software on its own.
 - Implementation runs test-first with a per-task review (spec + quality) and a
   broad whole-branch review before merge.
-- The full test suite (`bats tests/`) MUST be green before any merge to `main`.
+- Every engine's full test suite MUST be green before any merge to `main`: the
+  Bash engine's `bats tests/` AND (where present) the typed-Python engine's
+  `pytest` suite, the latter additionally type-checking clean under `mypy --strict`.
 - Reusable knowledge and decisions live in the spec/docs, not only in
   conversation — durable artifacts over ephemeral context.
 
@@ -107,4 +131,4 @@ expanded principles/sections, PATCH for clarifications. Plans and reviews MUST
 verify compliance with these principles; deviations MUST be justified in writing or
 the work is not done. The design spec and `docs/` carry runtime development guidance.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-19
+**Version**: 2.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-25
