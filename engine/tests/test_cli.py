@@ -51,3 +51,14 @@ def test_unknown_profile_clean_error(repo: Path) -> None:
     assert "error:" in result.output
     # no raw traceback leaked
     assert "Traceback" not in result.output
+
+
+def test_default_root_honors_devboost_root_env(monkeypatch, tmp_path) -> None:
+    import importlib
+    monkeypatch.setenv("DEVBOOST_ROOT", str(tmp_path))
+    import devboost.cli as climod
+    importlib.reload(climod)
+    assert climod._DEFAULT_ROOT == tmp_path
+    monkeypatch.delenv("DEVBOOST_ROOT")
+    importlib.reload(climod)
+    assert climod._DEFAULT_ROOT.name == "dev-boost" or climod._DEFAULT_ROOT.exists()
