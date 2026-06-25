@@ -35,6 +35,13 @@ _run_install_sh() {
     export STUB_GIT_LOG='${STUB_GIT_LOG}'
     export STUB_RPM_INSTALLED='${STUB_RPM_INSTALLED:-}'
     export STUB_COPR_ENABLED='${STUB_COPR_ENABLED:-}'
+    export STUB_APT_LOG='${STUB_APT_LOG:-}'
+    export STUB_DPKG_ARCH='${STUB_DPKG_ARCH:-amd64}'
+    export STUB_GHOSTTY_UBUNTU='${STUB_GHOSTTY_UBUNTU:-}'
+    export STUB_GHOSTTY_ARCH='${STUB_GHOSTTY_ARCH:-amd64}'
+    export STUB_GHOSTTY_CODENAME='${STUB_GHOSTTY_CODENAME:-24.04}'
+    export STUB_CURL_LOG='${STUB_CURL_LOG:-}'
+    export OS_RELEASE_FILE='${OS_RELEASE_FILE:-/etc/os-release}'
     bash '${DEVBOOST_ROOT}/modules/${module}/install.sh'
   " 2>&1
 }
@@ -224,7 +231,7 @@ _run_install_sh() {
 }
 
 @test "ghostty: unsupported OS — engine reports failure (not a skip)" {
-  # ghostty is Fedora/COPR-only; other OS should fail, not silently succeed.
+  # ghostty supports fedora + debian; other OS families (e.g. arch) should fail.
   # Use --force to bypass the idempotency guard so we reach the icmd check
   # even when ghostty binary happens to be on the host PATH.
   rm -f "$(base_stub_dir)/ghostty"
@@ -238,4 +245,139 @@ _run_install_sh() {
   [ "$status" -eq 0 ]
   ! grep -qi "ptyxis" "${STUB_DNF_LOG}" \
     || ! grep -qi "remove\|erase\|autoremove" <(grep -i "ptyxis" "${STUB_DNF_LOG}" 2>/dev/null || true)
+}
+
+@test "ghostty: debian install key resolves install.sh" {
+  local cmd
+  cmd="$(_module_install_cmd ghostty ubuntu debian)"
+  [[ "${cmd}" == *"modules/ghostty/install.sh"* ]]
+}
+
+@test "ghostty: debian install.sh downloads and installs matching .deb (real success)" {
+  # Write a fake os-release with Ubuntu codename so the asset URL matches.
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=24.04\n' > "${fake_os_release}"
+  local _stub_dir; _stub_dir="$(base_stub_dir)"
+  rm -f "${_stub_dir}/ghostty"
+  : > "${STUB_APT_LOG}"
+  # Override `command` so that `command -v ghostty` uses the stub dir (not host PATH).
+  # Before apt-get installs ghostty into the stub dir, the check returns false.
+  # After the apt-get stub creates ${_stub_dir}/ghostty, the check returns true.
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghostty" ]]; then
+      local _sd; _sd="${STUB_GHOSTTY_STUB_DIR:-}"
+      [[ -n "${_sd}" && -f "${_sd}/ghostty" ]] && printf '%s/ghostty\n' "${_sd}" && return 0
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+  export STUB_GHOSTTY_STUB_DIR="${_stub_dir}"
+  local _out _status
+  _out="$(bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export OS_DISTRO='ubuntu'
+    export OS_FAMILY='debian'
+    export OS_RELEASE_FILE='${fake_os_release}'
+    export STUB_DNF_LOG='${STUB_DNF_LOG}'
+    export STUB_RPM_LOG='${STUB_RPM_LOG}'
+    export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
+    export STUB_GIT_LOG='${STUB_GIT_LOG}'
+    export STUB_RPM_INSTALLED=''
+    export STUB_COPR_ENABLED=''
+    export STUB_APT_LOG='${STUB_APT_LOG}'
+    export STUB_DPKG_ARCH='amd64'
+    export STUB_GHOSTTY_UBUNTU='1'
+    export STUB_GHOSTTY_ARCH='amd64'
+    export STUB_GHOSTTY_CODENAME='24.04'
+    export STUB_CURL_LOG='${STUB_CURL_LOG}'
+    export STUB_GHOSTTY_STUB_DIR='${_stub_dir}'
+    bash '${DEVBOOST_ROOT}/modules/ghostty/install.sh'
+  " 2>&1)"
+  _status=$?
+  # Unset the command override so remaining tests are unaffected.
+  unset -f command
+  unset STUB_GHOSTTY_STUB_DIR
+  # The apt-get stub creates a ghostty binary in the stub dir — verify really passes.
+  [ "${_status}" -eq 0 ]
+  # apt-get was called with a .deb argument.
+  grep -q "apt-get install" "${STUB_APT_LOG}"
+  grep -q "\.deb" "${STUB_APT_LOG}"
+  # The ghostty binary is now present (placed by the apt-get stub).
+  [ -f "${_stub_dir}/ghostty" ]
+}
+
+@test "ghostty: debian install.sh — idempotent skip when ghostty already present" {
+  # When ghostty binary is already on PATH, install.sh must skip without calling apt-get.
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=24.04\n' > "${fake_os_release}"
+  # Ensure ghostty is present in the stub dir.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$(base_stub_dir)/ghostty"
+  chmod +x "$(base_stub_dir)/ghostty"
+  export OS_FAMILY=debian
+  export OS_DISTRO=ubuntu
+  export OS_RELEASE_FILE="${fake_os_release}"
+  export STUB_GHOSTTY_UBUNTU=1
+  : > "${STUB_APT_LOG}"
+  run _run_install_sh ghostty
+  [ "$status" -eq 0 ]
+  # apt-get must NOT be invoked — ghostty was already present.
+  [ ! -s "${STUB_APT_LOG}" ]
+}
+
+@test "ghostty: debian install.sh — non-blocking when no .deb matches arch/codename" {
+  # When the API returns no asset for the current arch/codename, install.sh warns and exits 0.
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=someunknown\n' > "${fake_os_release}"
+  rm -f "$(base_stub_dir)/ghostty"
+  export OS_FAMILY=debian
+  export OS_DISTRO=ubuntu
+  export OS_RELEASE_FILE="${fake_os_release}"
+  # STUB_GHOSTTY_UBUNTU=1 but codename is "someunknown" — no asset match.
+  export STUB_GHOSTTY_UBUNTU=1
+  export STUB_GHOSTTY_ARCH=amd64
+  export STUB_GHOSTTY_CODENAME=24.04  # stub emits 24.04 asset; script looks for "someunknown"
+  : > "${STUB_APT_LOG}"
+  run _run_install_sh ghostty
+  # Non-blocking: must exit 0.
+  [ "$status" -eq 0 ]
+  # apt-get must NOT be invoked.
+  [ ! -s "${STUB_APT_LOG}" ]
+}
+
+@test "ghostty: debian engine — full engine installs and verify passes" {
+  # Full engine integration: OS_FAMILY=debian, ghostty absent → install → verify passes.
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=24.04\n' > "${fake_os_release}"
+  local _stub_dir; _stub_dir="$(base_stub_dir)"
+  rm -f "${_stub_dir}/ghostty"
+  export STUB_GHOSTTY_UBUNTU=1
+  export STUB_GHOSTTY_ARCH=amd64
+  export STUB_GHOSTTY_CODENAME=24.04
+  export OS_RELEASE_FILE="${fake_os_release}"
+  # Shadow `command -v ghostty` so it resolves against the stub dir (not the host's
+  # /usr/bin/ghostty). Before apt-get installs ghostty the check returns false, so
+  # neither the engine's verify-skip nor install.sh's internal skip fires; after the
+  # apt-get stub creates ${_stub_dir}/ghostty the check (and engine verify) pass.
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghostty" ]]; then
+      local _sd; _sd="${STUB_GHOSTTY_STUB_DIR:-}"
+      [[ -n "${_sd}" && -f "${_sd}/ghostty" ]] && printf '%s/ghostty\n' "${_sd}" && return 0
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+  export STUB_GHOSTTY_STUB_DIR="${_stub_dir}"
+  run _engine_install ghostty ubuntu debian
+  unset -f command
+  unset STUB_GHOSTTY_STUB_DIR
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ghostty"* ]]
+  # run_install swallows per-module failures in non-strict mode, so status -eq 0 is
+  # hollow on its own. Assert the apt-get stub actually created the ghostty binary in
+  # the stub dir — proving the debian .deb path ran AND the verify passed (mirrors test 27).
+  [ -f "${_stub_dir}/ghostty" ]
 }

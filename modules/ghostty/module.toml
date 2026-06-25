@@ -1,6 +1,6 @@
 name        = "ghostty"
 category    = "shell"
-description = "Install Ghostty terminal via scottames/ghostty COPR (Fedora only); Ptyxis left as fallback"
+description = "Install Ghostty terminal (Fedora: scottames/ghostty COPR; Ubuntu: mkasberg/ghostty-ubuntu .deb); Ptyxis left as fallback"
 requires    = []
 profiles    = ["shell"]
 gui         = true
@@ -8,3 +8,4 @@ verify      = "command -v ghostty"
 
 [install]
 fedora = "bash \"$DEVBOOST_ROOT/modules/ghostty/install.sh\""
+debian = "bash \"$DEVBOOST_ROOT/modules/ghostty/install.sh\""
