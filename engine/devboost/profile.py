@@ -2,6 +2,7 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from devboost.graph import DependencyCycle
 from devboost.manifest import Module
 
 
@@ -18,15 +19,21 @@ def expand(
 ) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
+    in_progress: set[str] = set()
 
     def add_module(name: str) -> None:
         if name not in modules:
             raise KeyError(f"unknown module: {name}")
+        if name in seen:
+            return
+        if name in in_progress:
+            raise DependencyCycle(f"requires cycle at module: {name}")
+        in_progress.add(name)
         for dep in modules[name].requires:
             add_module(dep)
-        if name not in seen:
-            seen.add(name)
-            out.append(name)
+        in_progress.discard(name)
+        seen.add(name)
+        out.append(name)
 
     def add_token(token: str) -> None:
         if token in profiles:
