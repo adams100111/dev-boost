@@ -18,7 +18,6 @@ def test_terminal_excludes_secrets() -> None:
     assert "chezmoi" in resolved and "dotfiles" in resolved
 
 
-@pytest.mark.xfail(reason="docker debian key added in Task 6", strict=False)
 def test_devtools_includes_docker_via_ddev() -> None:
     profs, mods = _profiles_and_modules()
     resolved = expand(["devtools"], profs, mods)
