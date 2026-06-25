@@ -749,6 +749,10 @@ if [[ "$1" == "apply" ]]; then
   mkdir -p "${apply_dest}/.config/starship"
   mkdir -p "${apply_dest}/.config/ghostty"
   mkdir -p "${apply_dest}/.config/atuin"
+  mkdir -p "${apply_dest}/.config/bat"
+  mkdir -p "${apply_dest}/.config/ripgrep"
+  mkdir -p "${apply_dest}/.config/lazygit"
+  mkdir -p "${apply_dest}/.config/git"
   mkdir -p "${apply_dest}/.tmux/plugins"
 
   # ~/.bashrc — contains dev-boost sentinel + representative init lines (single copy).
@@ -787,6 +791,86 @@ BASHRC
   atuin_cfg="${apply_dest}/.config/atuin/config.toml"
   if [[ ! -f "${atuin_cfg}" ]]; then
     printf '# devboost managed atuin config\n[settings]\nsearch_mode = "fuzzy"\n' > "${atuin_cfg}"
+  fi
+
+  # ~/.config/bat/config — placeholder bat config.
+  bat_cfg="${apply_dest}/.config/bat/config"
+  if [[ ! -f "${bat_cfg}" ]]; then
+    cat > "${bat_cfg}" <<'BATCFG'
+# ~/.config/bat/config — dev-boost managed bat configuration.
+# devboost — managed by chezmoi; edit dotfiles/dot_config/bat/config in the dev-boost repo.
+--theme="Catppuccin Mocha"
+--style="full"
+--italic-text=always
+--pager="less -RFX"
+--tabs=2
+BATCFG
+  fi
+
+  # ~/.config/ripgrep/ripgreprc — placeholder ripgrep config.
+  ripgrep_cfg="${apply_dest}/.config/ripgrep/ripgreprc"
+  if [[ ! -f "${ripgrep_cfg}" ]]; then
+    cat > "${ripgrep_cfg}" <<'RIPGREPCFG'
+# ~/.config/ripgrep/ripgreprc - dev-boost managed ripgrep configuration.
+# devboost - managed by chezmoi; edit dotfiles/dot_config/ripgrep/ripgreprc in the dev-boost repo.
+--smart-case
+--hidden
+--glob=!.git/
+--glob=!node_modules/
+--glob=!dist/
+--glob=!build/
+--glob=!target/
+--glob=!*.lock
+--glob=!*.min.js
+--glob=!*.map
+--max-columns=300
+--max-columns-preview
+--colors=line:fg:yellow
+--colors=path:fg:green
+--colors=match:fg:red
+RIPGREPCFG
+  fi
+
+  # ~/.config/lazygit/config.yml — placeholder lazygit config.
+  lazygit_cfg="${apply_dest}/.config/lazygit/config.yml"
+  if [[ ! -f "${lazygit_cfg}" ]]; then
+    cat > "${lazygit_cfg}" <<'LAZYGITCFG'
+# ~/.config/lazygit/config.yml — dev-boost managed lazygit configuration.
+# devboost — managed by chezmoi; edit dotfiles/dot_config/lazygit/config.yml in the dev-boost repo.
+gui:
+  nerdFontsVersion: "3"
+  border: "rounded"
+git:
+  paging:
+    colorArg: always
+    pager: delta --dark --paging=never
+  autoFetch: true
+update:
+  method: never
+LAZYGITCFG
+  fi
+
+  # ~/.config/git/config — placeholder git config.
+  git_cfg="${apply_dest}/.config/git/config"
+  if [[ ! -f "${git_cfg}" ]]; then
+    cat > "${git_cfg}" <<'GITCFG'
+# ~/.config/git/config — dev-boost managed git config (XDG; merged with ~/.gitconfig).
+# devboost — managed by chezmoi; edit dotfiles/dot_config/git/config in the dev-boost repo.
+# Identity + credentials are owned by the secrets module in ~/.gitconfig — never set them here.
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = false
+	syntax-theme = Catppuccin Mocha
+[merge]
+	conflictstyle = zdiff3
+[diff]
+	colorMoved = default
+GITCFG
   fi
 
   exit 0

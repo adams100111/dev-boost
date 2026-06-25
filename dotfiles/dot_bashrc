@@ -21,6 +21,11 @@ shopt -s globstar
 [[ -d "${HOME}/.local/bin" ]] && export PATH="${HOME}/.local/bin:${PATH}"
 
 # ---------------------------------------------------------------------------
+# ripgrep — load the managed config (rg reads config only from this env var)
+# ---------------------------------------------------------------------------
+export RIPGREP_CONFIG_PATH="${HOME}/.config/ripgrep/ripgreprc"
+
+# ---------------------------------------------------------------------------
 # Shell tool initialisers — managed by dev-boost (single copy; no duplication)
 # ---------------------------------------------------------------------------
 

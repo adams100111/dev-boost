@@ -335,3 +335,89 @@ _run_bash_config_verify() {
   [[ "$output" != *"ghp_"* ]]
   [[ "$output" != *"ANTHROPIC_API_KEY"* ]]
 }
+
+# ===========================================================================
+# T013 — bat config (Catppuccin Mocha)
+# ===========================================================================
+
+@test "dotfiles: chezmoi source dot_config/bat/config exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config" ]
+}
+
+@test "dotfiles: bat config has devboost sentinel + style=full" {
+  grep -q 'devboost' "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config"
+  grep -q -- '--style="full"' "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config"
+}
+
+@test "dotfiles: apply writes ~/.config/bat/config into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/bat/config" ]
+}
+
+@test "dotfiles: chezmoi source dot_config/ripgrep/ripgreprc exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc" ]
+}
+
+@test "dotfiles: ripgreprc ignores node_modules and lockfiles" {
+  grep -q -- '--glob=!node_modules/' "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc"
+  grep -qF -- '--glob=!*.lock' "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc"
+}
+
+@test "dotfiles: dot_bashrc exports RIPGREP_CONFIG_PATH" {
+  grep -q 'export RIPGREP_CONFIG_PATH=' "${DEVBOOST_ROOT}/dotfiles/dot_bashrc"
+}
+
+@test "dotfiles: apply writes ~/.config/ripgrep/ripgreprc into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/ripgrep/ripgreprc" ]
+}
+
+@test "dotfiles: chezmoi source dot_config/lazygit/config.yml exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml" ]
+}
+
+@test "dotfiles: lazygit config wires delta paging + nerdfonts 3" {
+  grep -q 'pager: delta' "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml"
+  grep -q 'nerdFontsVersion: "3"' "${DEVBOOST_ROOT}/dotfiles/dot_config/lazygit/config.yml"
+}
+
+@test "dotfiles: apply writes ~/.config/lazygit/config.yml into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/lazygit/config.yml" ]
+}
+
+@test "dotfiles: chezmoi source dot_config/git/config exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config" ]
+}
+
+@test "dotfiles: git config sets delta as pager and NO identity/credentials" {
+  grep -q 'pager = delta' "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config"
+  # must NOT manage identity/credentials (those belong to the secrets module / ~/.gitconfig)
+  ! grep -qiE '^\s*(email|name|helper)\s*=' "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config"
+}
+
+@test "dotfiles: apply writes ~/.config/git/config into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/git/config" ]
+}
+
+@test "dotfiles: atuin config enriches up-key (directory) + enter_accept" {
+  grep -q 'filter_mode_shell_up_key_binding = "directory"' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+  grep -q 'enter_accept = true' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+}
+
+@test "dotfiles: atuin config has a history_filter for secret scrubbing" {
+  grep -q 'history_filter' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+}
+
+@test "dotfiles: atuin history_filter is TOP-LEVEL (before [settings] header)" {
+  # In TOML, keys after a table header belong to that table. history_filter must be
+  # a root-table (top-level) array, so it MUST appear before the [settings] line.
+  local cfg="${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+  local hf_line settings_line
+  hf_line="$(grep -n '^history_filter' "${cfg}" | head -n1 | cut -d: -f1)"
+  settings_line="$(grep -n '^\[settings\]' "${cfg}" | head -n1 | cut -d: -f1)"
+  [ -n "${hf_line}" ]
+  [ -n "${settings_line}" ]
+  [ "${hf_line}" -lt "${settings_line}" ]
+}

@@ -1,6 +1,17 @@
 # ~/.config/atuin/config.toml — dev-boost managed Atuin shell history configuration.
 # # devboost — managed by chezmoi; edit via dotfiles/dot_config/atuin/config.toml in the dev-boost repo.
 
+# Scrub obvious secrets from recorded history (on top of atuin's default secrets_filter).
+# history_filter is a TOP-LEVEL array per atuin schema — it MUST appear BEFORE [settings],
+# otherwise TOML scopes it as settings.history_filter and atuin won't read it as intended.
+# NOTE: these are regex literals — not actual secrets; no real credentials here (FR-014).
+history_filter = [
+  "(?i)password",
+  "(?i)secret",
+  "(?i)token",
+  "--key[= ]",
+]
+
 [settings]
 # Search mode: fuzzy is more ergonomic for most workflows.
 search_mode = "fuzzy"
@@ -19,3 +30,9 @@ style = "compact"
 
 # Avoid re-sorting by frequency (keep chronological in interactive mode).
 search_mode_shell_up_key_binding = "fuzzy"
+
+# Pressing Up in the shell filters to commands run in the current directory.
+filter_mode_shell_up_key_binding = "directory"
+
+# Enter executes the selected command immediately; Tab puts it in the prompt to edit.
+enter_accept = true

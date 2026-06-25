@@ -1,0 +1,12 @@
+# ~/.config/lazygit/config.yml — dev-boost managed lazygit configuration.
+# devboost — managed by chezmoi; edit dotfiles/dot_config/lazygit/config.yml in the dev-boost repo.
+gui:
+  nerdFontsVersion: "3"
+  border: "rounded"
+git:
+  paging:
+    colorArg: always
+    pager: delta --dark --paging=never
+  autoFetch: true
+update:
+  method: never

@@ -101,6 +101,33 @@ fedora = "dnf install -y ripgrep"   # per-OS keys; non-Fedora without a key ⇒ 
 ```
 Add it to a profile in `profiles.toml`, commit. See [docs/adding-a-module.md](docs/adding-a-module.md).
 
+## Bundled tool configs
+
+dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by the
+`dotfiles` module — single-copy and idempotent (no secrets):
+
+| Tool | Config |
+|------|--------|
+| starship | minimal prompt (`dot_config/starship.toml`) |
+| ghostty | terminal theme + font (`dot_config/ghostty/config`) |
+| tmux | mouse, true-color, vi copy (`dot_tmux.conf`) |
+| atuin | fuzzy history, directory up-key, enter-accept, secret-scrub |
+| bat | `--style=full`, Catppuccin theme |
+| ripgrep | glob-ignores (node_modules/dist/build/lockfiles); via `RIPGREP_CONFIG_PATH` |
+| lazygit | delta paging, Nerd Fonts v3 |
+| git/delta | delta as pager (XDG `~/.config/git/config`; identity stays in `~/.gitconfig`) |
+
+### Portable tiers (typed engine)
+
+- `devboost terminal` — CLI/shell tools + dotfiles. Runs on any OS incl. a headless
+  Ubuntu/Fedora VPS (auto-skips GUI-only pieces). Verify-guarded: re-running installs
+  only what's missing; `--dry-run` previews.
+- `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
+
+Both resolve the same declarative TOML modules/profiles as the bash engine, with a
+distro-package-first, pinned-upstream-fallback install ladder. (A `curl … | bash`
+bootstrap is planned.)
+
 ## Requirements & supported OS
 
 - **Reference OS:** Fedora Workstation 44 (modules ship `[install].fedora` keys).
