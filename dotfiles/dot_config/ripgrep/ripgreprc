@@ -1,0 +1,17 @@
+# ~/.config/ripgrep/ripgreprc - dev-boost managed ripgrep configuration.
+# devboost - managed by chezmoi; edit dotfiles/dot_config/ripgrep/ripgreprc in the dev-boost repo.
+--smart-case
+--hidden
+--glob=!.git/
+--glob=!node_modules/
+--glob=!dist/
+--glob=!build/
+--glob=!target/
+--glob=!*.lock
+--glob=!*.min.js
+--glob=!*.map
+--max-columns=300
+--max-columns-preview
+--colors=line:fg:yellow
+--colors=path:fg:green
+--colors=match:fg:red

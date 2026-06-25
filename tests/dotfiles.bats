@@ -353,3 +353,21 @@ _run_bash_config_verify() {
   _run_dotfiles_install
   [ -f "${HOME}/.config/bat/config" ]
 }
+
+@test "dotfiles: chezmoi source dot_config/ripgrep/ripgreprc exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc" ]
+}
+
+@test "dotfiles: ripgreprc ignores node_modules and lockfiles" {
+  grep -q -- '--glob=!node_modules/' "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc"
+  grep -qF -- '--glob=!*.lock' "${DEVBOOST_ROOT}/dotfiles/dot_config/ripgrep/ripgreprc"
+}
+
+@test "dotfiles: dot_bashrc exports RIPGREP_CONFIG_PATH" {
+  grep -q 'export RIPGREP_CONFIG_PATH=' "${DEVBOOST_ROOT}/dotfiles/dot_bashrc"
+}
+
+@test "dotfiles: apply writes ~/.config/ripgrep/ripgreprc into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/ripgrep/ripgreprc" ]
+}
