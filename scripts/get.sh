@@ -70,6 +70,7 @@ gs_main() {
 
   gs_err "installed to ${GS_PREFIX}; running: devboost install ${profiles[*]}"
   export DEVBOOST_ROOT="${GS_PREFIX}"
+  rm -rf "$tmp"
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }
 
