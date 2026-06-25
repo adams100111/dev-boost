@@ -7,3 +7,6 @@ verify      = "command -v starship"
 
 [install]
 default = "bash \"$DEVBOOST_ROOT/modules/starship/install.sh\""
+
+[fallback]
+mise = "aqua:starship/starship"

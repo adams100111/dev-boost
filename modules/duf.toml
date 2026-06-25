@@ -7,3 +7,6 @@ verify   = "command -v duf"
 fedora = "sudo dnf install -y duf"
 debian = "sudo apt-get install -y duf"
 macos  = "brew install duf"
+
+[fallback]
+mise = "aqua:muesli/duf"

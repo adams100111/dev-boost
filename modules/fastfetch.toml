@@ -7,3 +7,6 @@ verify   = "command -v fastfetch"
 fedora = "sudo dnf install -y fastfetch"
 debian = "sudo apt-get install -y fastfetch"
 macos  = "brew install fastfetch"
+
+[fallback]
+mise = "aqua:fastfetch-cli/fastfetch"

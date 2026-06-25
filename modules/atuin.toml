@@ -7,3 +7,6 @@ verify   = "command -v atuin"
 fedora = "sudo dnf install -y atuin"
 debian = "sudo apt-get install -y atuin"
 macos  = "brew install atuin"
+
+[fallback]
+mise = "aqua:atuinsh/atuin"

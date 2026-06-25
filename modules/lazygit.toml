@@ -7,3 +7,6 @@ verify   = "command -v lazygit"
 fedora = "sudo dnf copr enable -y atim/lazygit && sudo dnf install -y lazygit"
 debian = "sudo apt-get install -y lazygit"
 macos  = "brew install lazygit"
+
+[fallback]
+mise = "aqua:jesseduffield/lazygit"
