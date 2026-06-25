@@ -400,3 +400,24 @@ _run_bash_config_verify() {
   _run_dotfiles_install
   [ -f "${HOME}/.config/git/config" ]
 }
+
+@test "dotfiles: atuin config enriches up-key (directory) + enter_accept" {
+  grep -q 'filter_mode_shell_up_key_binding = "directory"' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+  grep -q 'enter_accept = true' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+}
+
+@test "dotfiles: atuin config has a history_filter for secret scrubbing" {
+  grep -q 'history_filter' "${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+}
+
+@test "dotfiles: atuin history_filter is TOP-LEVEL (before [settings] header)" {
+  # In TOML, keys after a table header belong to that table. history_filter must be
+  # a root-table (top-level) array, so it MUST appear before the [settings] line.
+  local cfg="${DEVBOOST_ROOT}/dotfiles/dot_config/atuin/config.toml"
+  local hf_line settings_line
+  hf_line="$(grep -n '^history_filter' "${cfg}" | head -n1 | cut -d: -f1)"
+  settings_line="$(grep -n '^\[settings\]' "${cfg}" | head -n1 | cut -d: -f1)"
+  [ -n "${hf_line}" ]
+  [ -n "${settings_line}" ]
+  [ "${hf_line}" -lt "${settings_line}" ]
+}
