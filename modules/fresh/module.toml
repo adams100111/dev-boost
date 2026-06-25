@@ -6,4 +6,4 @@ profiles    = ["editors"]
 verify      = "command -v fresh"
 
 [install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/fresh/install.sh\""
+default = "bash \"$DEVBOOST_ROOT/modules/fresh/install.sh\""

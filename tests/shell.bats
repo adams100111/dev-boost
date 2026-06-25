@@ -115,9 +115,18 @@ _run_install_sh() {
   grep -q "dnf" "${STUB_DNF_LOG}"
 }
 
-@test "starship: unsupported OS — engine logs failure" {
-  run _engine_install starship arch arch
-  [[ "$output" == *"unsupported"* ]]
+@test "starship: default install key — engine resolves install on non-fedora OS" {
+  # --force bypasses the idempotency guard so the engine actually RESOLVES and runs
+  # the portable `default` install command on debian (proving it is not unsupported).
+  # On debian the install.sh else-branch runs the official starship.rs script via the
+  # stubbed curl|sh; seed a starship binary so the post-install verify passes, so the
+  # engine reports success rather than a verify failure.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$(base_stub_dir)/starship"
+  chmod +x "$(base_stub_dir)/starship"
+  DEVBOOST_INSTALL_FLAGS="--force" run _engine_install starship ubuntu debian
+  [ "$status" -eq 0 ]
+  # With the default key, the engine must not report unsupported on debian.
+  [[ "$output" != *"unsupported"* ]]
 }
 
 # ===========================================================================
