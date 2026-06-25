@@ -335,3 +335,21 @@ _run_bash_config_verify() {
   [[ "$output" != *"ghp_"* ]]
   [[ "$output" != *"ANTHROPIC_API_KEY"* ]]
 }
+
+# ===========================================================================
+# T013 — bat config (Catppuccin Mocha)
+# ===========================================================================
+
+@test "dotfiles: chezmoi source dot_config/bat/config exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config" ]
+}
+
+@test "dotfiles: bat config has devboost sentinel + style=full" {
+  grep -q 'devboost' "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config"
+  grep -q -- '--style="full"' "${DEVBOOST_ROOT}/dotfiles/dot_config/bat/config"
+}
+
+@test "dotfiles: apply writes ~/.config/bat/config into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/bat/config" ]
+}

@@ -1,0 +1,7 @@
+# ~/.config/bat/config — dev-boost managed bat configuration.
+# devboost — managed by chezmoi; edit dotfiles/dot_config/bat/config in the dev-boost repo.
+--theme="Catppuccin Mocha"
+--style="full"
+--italic-text=always
+--pager="less -RFX"
+--tabs=2
