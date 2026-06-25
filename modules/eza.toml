@@ -7,3 +7,6 @@ verify   = "command -v eza"
 fedora = "sudo dnf install -y eza"
 debian = "sudo apt-get install -y eza"
 macos  = "brew install eza"
+
+[fallback]
+mise = "aqua:eza-community/eza"
