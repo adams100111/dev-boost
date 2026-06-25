@@ -385,3 +385,18 @@ _run_bash_config_verify() {
   _run_dotfiles_install
   [ -f "${HOME}/.config/lazygit/config.yml" ]
 }
+
+@test "dotfiles: chezmoi source dot_config/git/config exists in repo" {
+  [ -f "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config" ]
+}
+
+@test "dotfiles: git config sets delta as pager and NO identity/credentials" {
+  grep -q 'pager = delta' "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config"
+  # must NOT manage identity/credentials (those belong to the secrets module / ~/.gitconfig)
+  ! grep -qiE '^\s*(email|name|helper)\s*=' "${DEVBOOST_ROOT}/dotfiles/dot_config/git/config"
+}
+
+@test "dotfiles: apply writes ~/.config/git/config into scratch HOME" {
+  _run_dotfiles_install
+  [ -f "${HOME}/.config/git/config" ]
+}

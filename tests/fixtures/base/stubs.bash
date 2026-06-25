@@ -752,6 +752,7 @@ if [[ "$1" == "apply" ]]; then
   mkdir -p "${apply_dest}/.config/bat"
   mkdir -p "${apply_dest}/.config/ripgrep"
   mkdir -p "${apply_dest}/.config/lazygit"
+  mkdir -p "${apply_dest}/.config/git"
   mkdir -p "${apply_dest}/.tmux/plugins"
 
   # ~/.bashrc — contains dev-boost sentinel + representative init lines (single copy).
@@ -847,6 +848,29 @@ git:
 update:
   method: never
 LAZYGITCFG
+  fi
+
+  # ~/.config/git/config — placeholder git config.
+  git_cfg="${apply_dest}/.config/git/config"
+  if [[ ! -f "${git_cfg}" ]]; then
+    cat > "${git_cfg}" <<'GITCFG'
+# ~/.config/git/config — dev-boost managed git config (XDG; merged with ~/.gitconfig).
+# devboost — managed by chezmoi; edit dotfiles/dot_config/git/config in the dev-boost repo.
+# Identity + credentials are owned by the secrets module in ~/.gitconfig — never set them here.
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = false
+	syntax-theme = Catppuccin Mocha
+[merge]
+	conflictstyle = zdiff3
+[diff]
+	colorMoved = default
+GITCFG
   fi
 
   exit 0
