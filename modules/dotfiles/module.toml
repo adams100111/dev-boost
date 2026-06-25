@@ -1,9 +1,9 @@
 name        = "dotfiles"
 category    = "shell"
 description = "Apply dev-boost curated dotfiles via chezmoi (bashrc + starship + ghostty + atuin + tmux)"
-requires    = ["starship", "atuin", "zoxide", "direnv"]
+requires    = ["chezmoi", "starship", "atuin", "zoxide", "direnv"]
 profiles    = ["shell"]
 verify      = "[ -f \"${HOME}/.config/starship.toml\" ] && grep -q 'devboost' \"${HOME}/.bashrc\""
 
 [install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/dotfiles/install.sh\""
+default = "bash \"$DEVBOOST_ROOT/modules/dotfiles/install.sh\""

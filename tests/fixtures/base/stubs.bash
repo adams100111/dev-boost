@@ -213,6 +213,12 @@ base_setup() {
   export STUB_DOCKER_LOG="${STUB_DOCKER_LOG:-${BATS_TEST_TMPDIR}/docker-calls.log}"
   # Spec 10 (system-resilience) kernel/NVIDIA log default.
   export STUB_KERNEL_LOG="${STUB_KERNEL_LOG:-${BATS_TEST_TMPDIR}/kernel-calls.log}"
+  # Ubuntu/Debian (ghostty debian path) stubs.
+  export STUB_APT_LOG="${STUB_APT_LOG:-${BATS_TEST_TMPDIR}/apt-calls.log}"
+  export STUB_DPKG_ARCH="${STUB_DPKG_ARCH:-amd64}"
+  export STUB_GHOSTTY_UBUNTU="${STUB_GHOSTTY_UBUNTU:-}"
+  export STUB_GHOSTTY_ARCH="${STUB_GHOSTTY_ARCH:-amd64}"
+  export STUB_GHOSTTY_CODENAME="${STUB_GHOSTTY_CODENAME:-24.04}"
 
   # Initialise all log files as empty.
   : > "${STUB_DNF_LOG}"
@@ -257,6 +263,8 @@ base_setup() {
   : > "${STUB_DOCKER_LOG}"
   # Spec 10 (system-resilience) log initialisation.
   : > "${STUB_KERNEL_LOG}"
+  # Ubuntu/Debian (ghostty debian path) log initialisation.
+  : > "${STUB_APT_LOG}"
 
   # Set up optional fake ~/.nvm / ~/.sdkman for migration tests.
   if [[ -n "${STUB_NVM_VERSION:-}" ]]; then
@@ -308,6 +316,11 @@ base_setup() {
   # Spec 8 (apps-and-obsidian) stubs.
   base_install_ssh_keygen
   base_install_loginctl
+  # Ubuntu/Debian stubs (ghostty debian path). Safe no-op on non-debian suites:
+  # dpkg/apt-get only act when invoked (exit 0 otherwise), so they are harmless to
+  # the Fedora-targeted tests that never call them.
+  base_install_dpkg
+  base_install_apt_get
 }
 
 # ---------------------------------------------------------------------------
@@ -1071,6 +1084,17 @@ if [[ "${_fresh_url}" == *api.github.com* ]]; then
     POST:/repos/*/keys) _gh_body='{"id":2,"read_only":false,"verified":true}'; _gh_status="${STUB_CURL_STATUS:-201}" ;;
     GET:/user/keys)     _gh_body="${STUB_GH_USER_KEYS:-[]}" ;;
     POST:/user/keys)    _gh_body='{"id":1}'; _gh_status="${STUB_CURL_STATUS:-201}" ;;
+    # ghostty-ubuntu: return a fake releases/latest JSON with per-arch .deb assets
+    # when STUB_GHOSTTY_UBUNTU=1; otherwise return empty assets (non-blocking no-match path).
+    GET:/repos/mkasberg/ghostty-ubuntu/releases/latest)
+      if [[ "${STUB_GHOSTTY_UBUNTU:-}" == "1" ]]; then
+        _stub_arch="${STUB_GHOSTTY_ARCH:-amd64}"
+        _stub_codename="${STUB_GHOSTTY_CODENAME:-24.04}"
+        _gh_body="{\"tag_name\":\"1.3.1-0-ppa2\",\"assets\":[{\"browser_download_url\":\"https://github.com/mkasberg/ghostty-ubuntu/releases/download/1.3.1-0-ppa2/ghostty_1.3.1-0.ppa2_${_stub_arch}_${_stub_codename}.deb\"}]}"
+      else
+        _gh_body='{"tag_name":"1.3.1-0-ppa2","assets":[]}'
+      fi
+      ;;
   esac
   printf '%s\n%s' "${_gh_body}" "${_gh_status}"
   exit 0
@@ -1105,6 +1129,62 @@ fi
 exit 0
 STUB
   chmod +x "${_base_bin_dir}/curl"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_dpkg — write a fake `dpkg` binary to the stub bin dir.
+#
+# Behaviour:
+#   dpkg --print-architecture  → prints STUB_DPKG_ARCH (default: "amd64")
+#   (any other form)           → exits 0
+#
+# State knobs:
+#   STUB_DPKG_ARCH  — architecture string to report (default: "amd64")
+# ---------------------------------------------------------------------------
+base_install_dpkg() {
+  cat > "${_base_bin_dir}/dpkg" <<'STUB'
+#!/usr/bin/env bash
+# Stub: dpkg — fake Debian package manager for bats tests.
+if [[ "$1" == "--print-architecture" ]]; then
+  printf '%s\n' "${STUB_DPKG_ARCH:-amd64}"
+  exit 0
+fi
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/dpkg"
+}
+
+# ---------------------------------------------------------------------------
+# base_install_apt_get — write a fake `apt-get` binary to the stub bin dir.
+#
+# Behaviour:
+#   apt-get install -y <pkg>  → exits 0; logs invocation; if <pkg> ends in .deb,
+#                               creates a `ghostty` stub binary in the stub dir
+#                               so the verify command `command -v ghostty` passes.
+#   (any other form)          → exits 0
+#
+# State knobs:
+#   STUB_APT_LOG  — path to the apt-get invocation log (default: $BATS_TEST_TMPDIR/apt-calls.log)
+# ---------------------------------------------------------------------------
+base_install_apt_get() {
+  cat > "${_base_bin_dir}/apt-get" <<'STUB'
+#!/usr/bin/env bash
+# Stub: apt-get — fake APT package manager for bats tests.
+log_file="${STUB_APT_LOG:-/tmp/stub-apt-calls.log}"
+printf 'apt-get %s\n' "$*" >> "${log_file}"
+if [[ "$1" == "install" ]]; then
+  # When installing a .deb file, create a ghostty stub so verify passes.
+  for arg in "$@"; do
+    if [[ "${arg}" == *.deb ]]; then
+      stub_dir="$(dirname "$(command -v apt-get)")"
+      printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_dir}/ghostty"
+      chmod +x "${stub_dir}/ghostty"
+    fi
+  done
+fi
+exit 0
+STUB
+  chmod +x "${_base_bin_dir}/apt-get"
 }
 
 # ---------------------------------------------------------------------------

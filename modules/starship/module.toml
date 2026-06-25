@@ -6,4 +6,7 @@ profiles    = ["shell"]
 verify      = "command -v starship"
 
 [install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/starship/install.sh\""
+default = "bash \"$DEVBOOST_ROOT/modules/starship/install.sh\""
+
+[fallback]
+mise = "aqua:starship/starship"

@@ -129,8 +129,13 @@ _run_engine_fresh() {
   [ "$status" -eq 0 ]
 }
 
-@test "fresh: unsupported-OS — engine reports failure on non-fedora" {
+@test "fresh: default install key — engine resolves install on non-fedora OS" {
+  # On debian the rpm channel fails and the install falls through to the portable
+  # cargo channel; STUB_FRESH_INSTALL_VIA=cargo makes that channel place the binary,
+  # so the engine SUCCEEDS resolving and running the `default` install (not unsupported).
+  export STUB_FRESH_INSTALL_VIA="cargo"
   run _run_engine_fresh ubuntu debian
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unsupported"* ]]
+  [ "$status" -eq 0 ]
+  # With the default key, the engine must not report unsupported on debian.
+  [[ "$output" != *"unsupported"* ]]
 }

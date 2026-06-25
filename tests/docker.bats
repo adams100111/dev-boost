@@ -297,3 +297,131 @@ _engine_run_docker() {
   # dnf should not have been called for docker-ce
   ! grep -q "docker-ce" "${STUB_DNF_LOG}"
 }
+
+# ===========================================================================
+# Debian/Ubuntu path — apt-repo install
+# ===========================================================================
+
+# Helper: run docker install.sh in debian mode with a scratch docker.list path
+# so the idempotency guard and tee are fully exercisable without root.
+_run_docker_install_debian() {
+  local fake_os_release="${1}"
+  local docker_list="${2}"
+  local docker_keyrings="${3}"
+  bash -c "
+    export HOME='${HOME}'
+    export PATH='${PATH}'
+    export USER='${USER:-testuser}'
+    export DEVBOOST_ROOT='${DEVBOOST_ROOT}'
+    export OS_DISTRO='ubuntu'
+    export OS_FAMILY='debian'
+    export OS_RELEASE_FILE='${fake_os_release}'
+    export DOCKER_APT_SOURCES_FILE='${docker_list}'
+    export DOCKER_APT_KEYRINGS_DIR='${docker_keyrings}'
+    export STUB_APT_LOG='${STUB_APT_LOG}'
+    export STUB_CURL_LOG='${STUB_CURL_LOG}'
+    export STUB_SUDO_LOG='${STUB_SUDO_LOG}'
+    export STUB_SYSTEMCTL_LOG='${STUB_SYSTEMCTL_LOG}'
+    export STUB_USERMOD_LOG='${STUB_USERMOD_LOG}'
+    export STUB_GETENT_LOG='${STUB_GETENT_LOG}'
+    export STUB_SYSTEMCTL_ENABLED='${STUB_SYSTEMCTL_ENABLED:-}'
+    export STUB_GETENT_DOCKER_USERS='${STUB_GETENT_DOCKER_USERS:-}'
+    export STUB_DPKG_ARCH='amd64'
+    bash '${DEVBOOST_ROOT}/modules/docker/install.sh'
+  " 2>&1
+}
+
+@test "docker: debian — module.toml declares a debian install key" {
+  grep -q '^debian' "${DEVBOOST_ROOT}/modules/docker/module.toml"
+}
+
+@test "docker: debian — apt-get install of docker-ce is invoked" {
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=noble\n' > "${fake_os_release}"
+  local docker_list="${BATS_TEST_TMPDIR}/docker.list"
+  local docker_keyrings="${BATS_TEST_TMPDIR}/keyrings"
+  mkdir -p "${docker_keyrings}"
+  : > "${STUB_APT_LOG}"
+
+  run _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}"
+  [ "$status" -eq 0 ]
+
+  # Real assertion: apt-get must have been called with docker-ce
+  grep -q "docker-ce" "${STUB_APT_LOG}"
+  grep -q "docker-compose-plugin" "${STUB_APT_LOG}"
+}
+
+@test "docker: debian — docker.list repo file is written on first install" {
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=noble\n' > "${fake_os_release}"
+  local docker_list="${BATS_TEST_TMPDIR}/docker.list"
+  local docker_keyrings="${BATS_TEST_TMPDIR}/keyrings"
+  mkdir -p "${docker_keyrings}"
+  : > "${STUB_APT_LOG}"
+
+  run _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}"
+  [ "$status" -eq 0 ]
+
+  # The docker.list file must have been created by tee.
+  [ -f "${docker_list}" ]
+  # It must contain docker's apt repo URL.
+  grep -q "download.docker.com/linux/ubuntu" "${docker_list}"
+}
+
+@test "docker: debian — repo add is idempotent (no apt-get update on second run)" {
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=noble\n' > "${fake_os_release}"
+  local docker_list="${BATS_TEST_TMPDIR}/docker.list"
+  local docker_keyrings="${BATS_TEST_TMPDIR}/keyrings"
+  mkdir -p "${docker_keyrings}"
+
+  # First install creates the docker.list file.
+  _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}" >/dev/null 2>&1
+
+  # Verify docker.list was created.
+  [ -f "${docker_list}" ]
+
+  # Clear the apt log for the second run.
+  : > "${STUB_APT_LOG}"
+
+  # Second install — docker.list already exists, so the repo-add block must be skipped.
+  run _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}"
+  [ "$status" -eq 0 ]
+
+  # On the second run, apt-get update (for the repo setup) must NOT appear;
+  # only the final apt-get install of docker-ce should appear.
+  # Count the apt-get update invocations: must be 0 on the second pass.
+  local update_count
+  update_count="$(grep -c "apt-get update" "${STUB_APT_LOG}" || true)"
+  [ "${update_count}" -eq 0 ]
+
+  # But docker-ce install must still be called (packages may need upgrading).
+  grep -q "docker-ce" "${STUB_APT_LOG}"
+}
+
+@test "docker: debian — systemctl enable --now docker is called" {
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=noble\n' > "${fake_os_release}"
+  local docker_list="${BATS_TEST_TMPDIR}/docker.list"
+  local docker_keyrings="${BATS_TEST_TMPDIR}/keyrings"
+  mkdir -p "${docker_keyrings}"
+
+  run _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}"
+  [ "$status" -eq 0 ]
+
+  grep -q "systemctl enable --now docker" "${STUB_SYSTEMCTL_LOG}"
+}
+
+@test "docker: debian — usermod -aG docker called when user not in group" {
+  local fake_os_release="${BATS_TEST_TMPDIR}/os-release-ubuntu"
+  printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\nVERSION_CODENAME=noble\n' > "${fake_os_release}"
+  local docker_list="${BATS_TEST_TMPDIR}/docker.list"
+  local docker_keyrings="${BATS_TEST_TMPDIR}/keyrings"
+  mkdir -p "${docker_keyrings}"
+  export STUB_GETENT_DOCKER_USERS=""
+
+  run _run_docker_install_debian "${fake_os_release}" "${docker_list}" "${docker_keyrings}"
+  [ "$status" -eq 0 ]
+
+  grep -q "usermod -aG docker" "${STUB_USERMOD_LOG}"
+}

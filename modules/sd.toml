@@ -7,3 +7,6 @@ verify   = "command -v sd"
 fedora = "sudo dnf install -y sd"
 debian = "sudo apt-get install -y sd"
 macos  = "brew install sd"
+
+[fallback]
+mise = "aqua:chmln/sd"

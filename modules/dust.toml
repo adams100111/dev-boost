@@ -7,3 +7,6 @@ verify   = "command -v dust"
 fedora = "sudo dnf install -y rust-dust"
 debian = "sudo apt-get install -y dust"
 macos  = "brew install dust"
+
+[fallback]
+mise = "aqua:bootandy/dust"

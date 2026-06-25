@@ -13,11 +13,18 @@ source "${DEVBOOST_ROOT}/lib/log.sh"
 source "${DEVBOOST_ROOT}/lib/pkg.sh"
 
 # ---------------------------------------------------------------------------
-# Step 1: install starship via dnf (primary path on Fedora).
-# The official installer (curl sh.starship.rs | sh) is the fallback but
-# requires network access; dnf is preferred for reproducibility.
+# Step 1: install starship binary.
+# Fedora fast-path: dnf (preferred for reproducibility).
+# All other OS: official starship.rs installer into ~/.local/bin.
 # ---------------------------------------------------------------------------
-log_info "starship: installing via dnf"
-sudo dnf install -y starship
-
+log_info "starship: installing binary"
+if command -v starship >/dev/null 2>&1; then
+  log_skip "starship: already installed"
+elif [[ "${OS_FAMILY}" == "fedora" ]]; then
+  sudo dnf install -y starship
+else
+  # Official installer; OS-agnostic; -y non-interactive; into ~/.local/bin.
+  mkdir -p "${HOME}/.local/bin"
+  curl -sS https://starship.rs/install.sh | sh -s -- -y -b "${HOME}/.local/bin"
+fi
 log_ok "starship: binary installed"

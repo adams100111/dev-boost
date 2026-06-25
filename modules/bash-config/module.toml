@@ -6,4 +6,4 @@ profiles    = ["shell"]
 verify      = "grep -q 'starship init bash' \"${HOME}/.bashrc\" && grep -q 'devboost' \"${HOME}/.bashrc\""
 
 [install]
-fedora = "true"
+default = "true"

@@ -23,3 +23,16 @@ def test_expand_dedupes_and_accepts_bare_module(modules_dir: Path) -> None:
     mods = load_modules(modules_dir)
     result = expand(["fzf", "eza"], {}, mods)
     assert result == ["fzf", "eza"]
+
+
+def test_expand_raises_on_requires_cycle() -> None:
+    from devboost.graph import DependencyCycle
+    from devboost.manifest import Module
+
+    def _m(name: str, requires: tuple[str, ...]) -> Module:
+        return Module(name, "cli", "true", requires, {"fedora": "x"}, {}, False)
+
+    mods = {"a": _m("a", ("b",)), "b": _m("b", ("a",))}
+    import pytest
+    with pytest.raises(DependencyCycle):
+        expand(["a"], {}, mods)
