@@ -1,9 +1,9 @@
 name        = "chezmoi"
 category    = "base"
-description = "Install chezmoi dotfile manager; init and clone dotfiles repo (non-blocking)"
-requires    = ["secrets"]
+description = "Install the chezmoi binary (portable, binary-only; remote clone lives in chezmoi-repo)"
+requires    = []
 profiles    = ["base"]
-verify      = "command -v chezmoi >/dev/null 2>&1 && [ -d \"$HOME/.local/share/chezmoi\" ]"
+verify      = "command -v chezmoi"
 
 [install]
 default = "bash \"$DEVBOOST_ROOT/modules/chezmoi/install.sh\""
