@@ -1,7 +1,7 @@
 [profiles]
 base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
-        "build-tools","mise","chezmoi","docker"]
+        "build-tools","mise","chezmoi","chezmoi-repo","docker"]
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
 shell = ["starship","bash-config","ghostty","nerd-fonts","dotfiles"]

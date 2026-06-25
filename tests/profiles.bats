@@ -10,13 +10,13 @@ setup() {
 }
 
 # Expected base member count (per contracts/profiles.md)
-_EXPECTED_BASE_COUNT=21
+_EXPECTED_BASE_COUNT=22
 
 # Expected base members (must all appear in profile_expand base output)
 _EXPECTED_BASE_MEMBERS=(
   secrets ssh-setup rpmfusion dnf-tune fedora-third-party flatpak
   coreutils git curl wget unzip jq htop ripgrep fd fzf tmux
-  build-tools mise chezmoi docker
+  build-tools mise chezmoi chezmoi-repo docker
 )
 
 # ---------------------------------------------------------------------------
@@ -61,13 +61,13 @@ _EXPECTED_BASE_MEMBERS=(
 # ---------------------------------------------------------------------------
 # T019 — full depsort resolution against real modules/
 # ---------------------------------------------------------------------------
-@test "devboost list --profile base: resolves without cycle, all 21 modules present" {
+@test "devboost list --profile base: resolves without cycle, all 22 modules present" {
   run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
           DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
           "${DEVBOOST_ROOT}/bin/devboost" list --profile base
   [ "$status" -eq 0 ]
   [[ "$output" != *"cycle"* ]]
-  local expected_count=21
+  local expected_count=22
   local actual_count
   actual_count="$(printf '%s\n' "$output" | grep -c .)"
   [ "$actual_count" -eq "$expected_count" ]
@@ -234,22 +234,29 @@ _EXPECTED_CLI_SHELL_SHELL_MEMBERS=(
 }
 
 # ---------------------------------------------------------------------------
-@test "devboost list --profile base: secrets appears before chezmoi and ssh-setup" {
+@test "devboost list --profile base: secrets appears before ssh-setup and chezmoi-repo" {
   run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
           DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
           "${DEVBOOST_ROOT}/bin/devboost" list --profile base
   [ "$status" -eq 0 ]
-  local secrets_line chezmoi_line ssh_line
-  secrets_line="$(printf '%s\n' "$output" | grep -n '^secrets$' | cut -d: -f1)"
-  chezmoi_line="$(printf '%s\n' "$output" | grep -n '^chezmoi$' | cut -d: -f1)"
-  ssh_line="$(printf '%s\n' "$output" | grep -n '^ssh-setup$' | cut -d: -f1)"
-  # secrets must be present
-  [ -n "$secrets_line" ] || { echo "secrets not found in output"; return 1; }
-  # chezmoi and ssh-setup must come after secrets
-  [ "$chezmoi_line" -gt "$secrets_line" ] \
-    || { echo "chezmoi (line $chezmoi_line) must come after secrets (line $secrets_line)"; return 1; }
+  local secrets_line ssh_line chezmoi_repo_line chezmoi_line
+  secrets_line="$(printf '%s\n' "$output" | grep -n '^secrets$'      | cut -d: -f1)"
+  ssh_line="$(printf '%s\n'     "$output" | grep -n '^ssh-setup$'    | cut -d: -f1)"
+  chezmoi_repo_line="$(printf '%s\n' "$output" | grep -n '^chezmoi-repo$' | cut -d: -f1)"
+  chezmoi_line="$(printf '%s\n' "$output" | grep -n '^chezmoi$'      | cut -d: -f1)"
+  # All must be present
+  [ -n "$secrets_line" ]      || { echo "secrets not found in output";      return 1; }
+  [ -n "$ssh_line" ]          || { echo "ssh-setup not found in output";    return 1; }
+  [ -n "$chezmoi_repo_line" ] || { echo "chezmoi-repo not found in output"; return 1; }
+  [ -n "$chezmoi_line" ]      || { echo "chezmoi not found in output";      return 1; }
+  # ssh-setup requires secrets, so secrets must precede ssh-setup
   [ "$ssh_line" -gt "$secrets_line" ] \
     || { echo "ssh-setup (line $ssh_line) must come after secrets (line $secrets_line)"; return 1; }
+  # chezmoi-repo requires both chezmoi and secrets, so both must precede it
+  [ "$chezmoi_line" -lt "$chezmoi_repo_line" ] \
+    || { echo "chezmoi (line $chezmoi_line) must come before chezmoi-repo (line $chezmoi_repo_line)"; return 1; }
+  [ "$secrets_line" -lt "$chezmoi_repo_line" ] \
+    || { echo "secrets (line $secrets_line) must come before chezmoi-repo (line $chezmoi_repo_line)"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -947,4 +954,41 @@ _assert_order() {
 @test "profiles.toml: security-cli = pass + pass-store (opt-in, not full)" {
   run _expand_stack security-cli
   [ "$status" -eq 0 ]; [[ "$output" == *"pass"* && "$output" == *"pass-store"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Task 3 — chezmoi-repo in base, not in terminal; secrets not reachable from terminal
+# ---------------------------------------------------------------------------
+
+@test "profiles.toml: chezmoi-repo is a member of base" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand base | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"chezmoi-repo"* ]] \
+    || { echo "chezmoi-repo not found in base expansion"; return 1; }
+}
+
+@test "profiles.toml: chezmoi-repo is NOT a member of terminal" {
+  run bash -c '
+    source "$DEVBOOST_ROOT/lib/log.sh"
+    source "$DEVBOOST_ROOT/lib/toml.sh"
+    source "$DEVBOOST_ROOT/lib/profile.sh"
+    DEVBOOST_PROFILES="$DEVBOOST_ROOT/profiles.toml" profile_expand terminal | tr "\n" " "
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"chezmoi-repo"* ]] \
+    || { echo "chezmoi-repo must NOT appear in terminal expansion"; return 1; }
+}
+
+@test "devboost list --profile terminal: secrets is NOT reachable from terminal" {
+  run env DEVBOOST_MODULES_DIR="${DEVBOOST_ROOT}/modules" \
+          DEVBOOST_PROFILES="${DEVBOOST_ROOT}/profiles.toml" \
+          "${DEVBOOST_ROOT}/bin/devboost" list --profile terminal
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"secrets"* ]] \
+    || { echo "secrets must NOT be reachable from terminal (transitively or directly)"; return 1; }
 }
