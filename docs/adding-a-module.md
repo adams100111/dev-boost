@@ -29,5 +29,21 @@ bats tests/                   # keep green (add a test for non-trivial modules)
 Add `[install].<os>` (e.g. `ubuntu`, `macos`, `windows`) to the affected modules. `doctor` reports
 coverage gaps. No engine change required.
 
+### Optional manifest fields
+
+- `gui = true` — marks a GUI-only module (e.g. a terminal app, fonts). The typed engine
+  auto-skips it on headless boxes (no `$DISPLAY`/`$WAYLAND_DISPLAY`).
+- `[fallback]` — used when the distro package is absent/stale. The engine appends these
+  after the `[install].<os>` step: `mise = "aqua:<owner/repo>"` (or `cargo:`/`github:`),
+  or `script = "<url>"` (run as `curl -fsSL <url> | sh`). Example:
+
+  ```toml
+  [install]
+  fedora = "sudo dnf install -y eza"
+  debian = "sudo apt-get install -y eza"
+  [fallback]
+  mise = "aqua:eza-community/eza"
+  ```
+
 ## Conventions
 TDD (test-first), idempotent, verify-guarded, no prompts, pin versions in module data.
