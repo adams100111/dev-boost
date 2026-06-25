@@ -34,12 +34,12 @@ enrollment on NVIDIA when Secure Boot is on.
 | Profile | Installs (resolved modules) |
 |---------|------------------------------|
 | `apps` | bitwarden, bruno, flameshot, localsend, obsidian, obsidian-sync, vlc |
-| `base` | build-tools, chezmoi, coreutils, curl, dnf-tune, docker, fd, fedora-third-party, flatpak, fzf, git, htop, jq, mise, ripgrep, rpmfusion, secrets, ssh-setup, tmux, unzip, wget |
+| `base` | build-tools, chezmoi, chezmoi-repo, coreutils, curl, dnf-tune, docker, fd, fedora-third-party, flatpak, fzf, git, htop, jq, mise, ripgrep, rpmfusion, secrets, ssh-setup, tmux, unzip, wget |
 | `cli` | atuin, bat, btop, claude-code, delta, direnv, duf, dust, eza, fastfetch, gh, lazydocker, lazygit, sd, tealdeer, tpm, yq, zoxide |
 | `data` | data-services |
 | `dev-hygiene` | aspire-gc |
-| `devtools` | aspire, ddev, dotnet-lsp, dotnet-sdk, python-lsp, uv, web-lsp, web-runtimes |
 | `devops` | devops-lsp, devops-tools |
+| `devtools` | aspire, ddev, dotnet-lsp, dotnet-sdk, python-lsp, uv, web-lsp, web-runtimes |
 | `dotnet` | aspire, dotnet-lsp, dotnet-sdk |
 | `editors` | fresh, fresh-lsp, vscode |
 | `gnome` | gnome-extensions, gnome-manager-apps, gnome-settings |
@@ -54,7 +54,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `security-cli` | pass, pass-store |
 | `shell` | bash-config, dotfiles, ghostty, nerd-fonts, starship |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, thermald |
-| `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, dust, duf, eza, fastfetch, fd, fresh, fzf, gh, ghostty, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wget, yq, zoxide |
+| `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, ghostty, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
 <!-- END generated profiles table -->
 
