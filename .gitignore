@@ -26,3 +26,8 @@ id_rsa*
 .superpowers/
 workstation-config/exports/
 *.qcow2
+
+# Build artifacts — produced by scripts/build-bundle.sh
+dist/
+build/
+*.spec

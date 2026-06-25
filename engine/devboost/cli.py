@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -12,7 +13,11 @@ from devboost.runner import RunResult, SubprocessExecutor, run_plan
 
 app = typer.Typer(help="dev-boost portable installer", no_args_is_help=True)
 
-_DEFAULT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_ROOT = (
+    Path(os.environ["DEVBOOST_ROOT"])
+    if os.environ.get("DEVBOOST_ROOT")
+    else Path(__file__).resolve().parents[2]
+)
 RootOpt = Annotated[Path, typer.Option(help="Repo root holding modules/ + profiles.toml")]
 DryOpt = Annotated[bool, typer.Option("--dry-run", help="Preview without executing")]
 ForceOpt = Annotated[bool, typer.Option("--force", help="Reinstall even if verify passes")]

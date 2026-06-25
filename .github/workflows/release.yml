@@ -1,0 +1,64 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build frozen binary
+        run: bash scripts/build-bundle.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devboost-${{ matrix.arch }}
+          path: dist/devboost-${{ matrix.arch }}
+
+  data:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package data tarball
+        run: tar -czf devboost-data.tar.gz modules lib dotfiles profiles.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devboost-data
+          path: devboost-data.tar.gz
+
+  release:
+    needs: [binary, data]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect assets + checksums
+        run: |
+          mkdir -p out
+          cp artifacts/devboost-x86_64/devboost-x86_64 out/
+          cp artifacts/devboost-aarch64/devboost-aarch64 out/
+          cp artifacts/devboost-data/devboost-data.tar.gz out/
+          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-data.tar.gz > checksums.txt )
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/devboost-x86_64
+            out/devboost-aarch64
+            out/devboost-data.tar.gz
+            out/checksums.txt

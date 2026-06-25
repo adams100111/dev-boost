@@ -27,6 +27,8 @@ on the target). Both consume the same declarative TOML modules + `profiles.toml`
 - **Bash engine** — `bin/devboost` + `lib/*.sh` (the original; Fedora-reference, zero-config USB path).
 - **Typed-Python engine** — `engine/devboost/` (Typer CLI), with the portable
   `terminal`/`devtools` tiers, headless auto-skip, and a distro→mise→script fallback ladder.
+  Built as a frozen single-file binary by `.github/workflows/release.yml` (PyInstaller onefile,
+  published on each `v*` tag) and delivered by `scripts/get.sh` (arch-detect, download, SHA256-verify).
 
 Design specs: `docs/superpowers/specs/2026-06-19-devboost-platform-design.md`,
 `2026-06-25-portable-two-tier-installer-design.md`, `2026-06-25-ubuntu-parity-portable-tiers-design.md`.

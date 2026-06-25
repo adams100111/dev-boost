@@ -24,6 +24,25 @@ curl -fsSL https://…/install.sh | bash   # bootstrap path
 ./bin/devboost doctor
 ```
 
+## Install (any OS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
+```
+
+Detects your architecture, downloads the matching frozen `devboost` binary + config data from the latest
+GitHub Release, verifies SHA256, and runs `devboost install terminal` — no Python, no clone. Add `devtools`
+for language runtimes/frameworks, or `--dry-run` to preview:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal devtools
+```
+
+Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
+(Requires this repo to be public.)
+
+## Quick start — from the repo
+
 Secrets (a GitHub PAT) are pre-provisioned once on the USB (`age`-encrypted); the GPU vendor is
 **auto-detected** (no flag). The only possibly-interactive moment is a one-time Secure-Boot MOK
 enrollment on NVIDIA when Secure Boot is on.
@@ -125,8 +144,8 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 - `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
 
 Both resolve the same declarative TOML modules/profiles as the bash engine, with a
-distro-package-first, pinned-upstream-fallback install ladder. (A `curl … | bash`
-bootstrap is planned.)
+distro-package-first, pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any-os)
+section above for the one-liner.
 
 ## Requirements & supported OS
 
