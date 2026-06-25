@@ -7,3 +7,6 @@ verify   = "command -v zoxide"
 fedora = "sudo dnf install -y zoxide"
 debian = "sudo apt-get install -y zoxide"
 macos  = "brew install zoxide"
+
+[fallback]
+script = "https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh"

@@ -23,3 +23,9 @@ system           = ["snapper","snapper-dnf-hook","grub-btrfs","btrfs-assistant",
 hardware-nvidia  = ["nvidia-akmod","cuda","libva-nvidia-driver","secureboot-mok","nvidia-resign-service","nvidia-container-toolkit"]
 optional-editors = ["neovim","jetbrains-toolbox"]
 security-cli     = ["pass","pass-store"]
+terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
+            "ripgrep","fd","fzf","bat","eza","btop","zoxide","atuin","direnv",
+            "delta","lazygit","dust","duf","sd","yq","gh","tealdeer","fastfetch",
+            "tmux","fresh","starship","bash-config","dotfiles","ghostty","nerd-fonts"]
+devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
+            "dotnet-lsp","ddev"]

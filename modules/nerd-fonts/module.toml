@@ -3,6 +3,7 @@ category    = "shell"
 description = "Install JetBrainsMono and MesloLGS Nerd Font Mono into ~/.local/share/fonts/"
 requires    = []
 profiles    = ["shell"]
+gui         = true
 verify      = "fc-list | grep -qi 'JetBrainsMono Nerd Font'"
 
 [install]
