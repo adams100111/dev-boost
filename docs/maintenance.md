@@ -12,7 +12,7 @@ The git repo is the single source of truth; machines are disposable projections.
   user timer runs `dev gc` hourly).
 
 ## Quarterly checklist
-1. Refresh the Fedora ISO on the Ventoy USB (`ventoy/make-usb.sh … --update` + copy newest ISO).
+1. Refresh the Fedora ISO on the Ventoy USB (`devboost usb --update` (re-stage Ventoy + newest ISO)).
 2. `devboost update` → review the proposed pins + `devboost.lock` diff → commit.
 3. Confirm the vault round-trips (Obsidian Git + the daily `devboost-vault-sync` timer).
 4. `devboost verify --profile <selected>` green; re-running install is a no-op.
