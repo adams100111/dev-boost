@@ -84,3 +84,25 @@ def test_build_no_mirror_when_offline_mirror_false(  # type: ignore[no-untyped-d
     )
     assert order == ["boot", "extra", "installers"]
     assert "mirror" not in order
+
+
+def test_build_update_mode_calls_update_stage_not_boot(  # type: ignore[no-untyped-def]
+    tmp_path: Path, monkeypatch
+) -> None:
+    import devboost.usb.stages as stages
+    from devboost.usb.report import FakeReporter
+
+    order: list[str] = []
+    monkeypatch.setattr(stages, "boot_artifacts", lambda *a, **k: order.append("boot"))
+    monkeypatch.setattr(stages, "update_stage", lambda *a, **k: order.append("update"))
+    monkeypatch.setattr(stages, "extra_isos", lambda *a, **k: None)
+    monkeypatch.setattr(stages, "installers", lambda *a, **k: None)
+
+    iso = IsoSpec("fedora-44", "u", hashlib.sha256(b"i").hexdigest(), "E")
+    cfg = UsbBuildConfig(
+        device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path, mode="update"
+    )
+    build(Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor()),
+          cfg, FakeDownloader(Cache(tmp_path), {}), vtoy_mount=tmp_path / "VTOY",
+          reporter=FakeReporter())
+    assert order == ["update"] and "boot" not in order
