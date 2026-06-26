@@ -39,3 +39,27 @@ class SecretsError(DevbootError):
 
 class GithubError(DevbootError):
     """A GitHub REST API call failed."""
+
+
+class UsbError(DevbootError):
+    """Base for `devboost usb` build failures."""
+
+
+class DeviceError(UsbError):
+    """The target device is unsafe or invalid."""
+
+
+class DownloadError(UsbError):
+    """A download failed or failed verification."""
+
+    def __init__(self, url: str, reason: str) -> None:
+        self.url = url
+        super().__init__(f"download {url}: {reason}")
+
+
+class VentoyError(UsbError):
+    """A Ventoy install/layout step failed."""
+
+
+class MirrorError(UsbError):
+    """An offline-mirror step failed."""

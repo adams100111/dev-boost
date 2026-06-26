@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.5",
     "loguru>=0.7",
     "tenacity>=9.0",
+    "questionary>=2.0",
 ]
 
 [project.scripts]
