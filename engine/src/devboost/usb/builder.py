@@ -14,4 +14,5 @@ def build(ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path) ->
     stages.boot_artifacts(ctx, cfg, dl, vtoy_mount=vtoy_mount)
     stages.extra_isos(cfg, vtoy_mount=vtoy_mount)
     stages.installers(cfg, vtoy_mount=vtoy_mount)
-    # P2: if cfg.offline_mirror: stages.mirror(ctx, cfg, vtoy_mount=vtoy_mount)
+    if cfg.offline_mirror:
+        stages.mirror(ctx, cfg, vtoy_mount=vtoy_mount)

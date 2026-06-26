@@ -13,8 +13,13 @@ from devboost.usb.devices import validate
 from devboost.usb.download import Downloader
 
 
-def render_kscfg(template: str, profiles: tuple[str, ...]) -> str:
-    return template.replace("devboost install full", "devboost install " + " ".join(profiles))
+def render_kscfg(
+    template: str, profiles: tuple[str, ...], *, offline: bool = False
+) -> str:
+    install_cmd = "devboost install " + " ".join(profiles)
+    if offline:
+        install_cmd += " --offline"
+    return template.replace("devboost install full", install_cmd)
 
 
 def boot_artifacts(
@@ -30,7 +35,9 @@ def boot_artifacts(
 
     shutil.copyfile(resource_path("ventoy", "ventoy.json"), vtoy_mount / "ventoy" / "ventoy.json")
     kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
-    (boot / "ks.cfg").write_text(render_kscfg(kscfg, cfg.profiles), encoding="utf-8")
+    (boot / "ks.cfg").write_text(
+        render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
+    )
 
     tarball = resource_path("dist", f"devboost-{cfg.arch}.tar.gz")
     if not tarball.exists():
@@ -52,3 +59,12 @@ def extra_isos(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
 def installers(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
     for src in cfg.installers:
         shutil.copyfile(src, vtoy_mount / "Installers" / src.name)
+
+
+def mirror(ctx: Ctx, cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+    from devboost.core.settings import settings
+    from devboost.usb.mirror import mirror_dnf, mirror_flatpak, package_set
+
+    dnf, flat = package_set(cfg.profiles, settings.root)
+    mirror_dnf(ctx, dnf, vtoy_mount / "Bootstrap" / "repo" / "dnf")
+    mirror_flatpak(ctx, flat, vtoy_mount / "Bootstrap" / "repo" / "flatpak")

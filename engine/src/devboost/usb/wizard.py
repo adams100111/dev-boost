@@ -47,6 +47,11 @@ def run(ctx: Ctx) -> UsbBuildConfig:
         "Cache dir for downloads:",
         default=str(Path(gettempdir()) / "devboost-usb"),
     ).ask()
+    offline_mirror: bool = questionary.confirm(
+        "Pre-mirror dnf+flatpak packages for OFFLINE install?"
+        " (large — tens of GB; mise/npm/github tools still need network)",
+        default=False,
+    ).ask()
 
     return UsbBuildConfig(
         device=device,
@@ -55,4 +60,5 @@ def run(ctx: Ctx) -> UsbBuildConfig:
         profiles=tuple(profiles),
         secrets_path=Path(secrets) if secrets else None,
         cache_dir=Path(cache),
+        offline_mirror=offline_mirror,
     )

@@ -76,6 +76,19 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     assert (vtoy / "ISO" / "fedora-44.iso").exists()
 
 
+def test_render_kscfg_offline_appends_flag() -> None:
+    tmpl = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/x 2>&1'"
+    out = render_kscfg(tmpl, ("full",), offline=True)
+    assert "devboost install full --offline" in out
+
+
+def test_render_kscfg_offline_default_unchanged() -> None:
+    tmpl = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/x 2>&1'"
+    out = render_kscfg(tmpl, ("full",))
+    assert "--offline" not in out
+    assert "devboost install full" in out
+
+
 def test_extra_isos_and_installers_are_staged(tmp_path: Path) -> None:
     from devboost.usb.config import IsoSpec, UsbBuildConfig
     from devboost.usb.stages import extra_isos, installers

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -14,7 +15,7 @@ from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.usb import usb as _usb
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
-from devboost.core.plan import build_plan
+from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load, validate_profiles
 from devboost.core.runner import RunResult, run_plan
@@ -38,10 +39,29 @@ def _order(tokens: list[str], root: Path) -> tuple[list[str], dict[str, type[Mod
     return toposort(names, modules), modules
 
 
-def _run(tokens: list[str], root: Path, dry_run: bool, force: bool) -> list[RunResult]:
+def _apply_offline_filter(
+    plan: list[PlannedModule],
+    modules: Mapping[str, type[Module]],
+) -> list[PlannedModule]:
+    """Replace network-only modules with a needs-network skip; leave already-skipped ones alone."""
+    from devboost.usb.mirror import offline_installable
+
+    return [
+        pm
+        if pm.skip_reason is not None or offline_installable(modules[pm.name])
+        else PlannedModule(name=pm.name, skip_reason="needs-network")
+        for pm in plan
+    ]
+
+
+def _run(
+    tokens: list[str], root: Path, dry_run: bool, force: bool, offline: bool = False
+) -> list[RunResult]:
     order, modules = _order(tokens, root)
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
+    if offline:
+        plan = _apply_offline_filter(plan, modules)
     results = run_plan(plan, modules, ctx)
     if any(r.status == "fail" for r in results):
         raise typer.Exit(code=1)
@@ -69,9 +89,12 @@ def install(
     root: RootOpt = settings.root,
     dry_run: DryOpt = False,
     force: ForceOpt = False,
+    offline: Annotated[
+        bool, typer.Option("--offline", help="skip modules that need network")
+    ] = False,
 ) -> None:
     """Install one or more profiles/modules (default: full)."""
-    _run(profiles, root, dry_run, force)
+    _run(profiles, root, dry_run, force, offline)
 
 
 @app.command(name="list")

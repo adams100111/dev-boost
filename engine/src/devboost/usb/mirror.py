@@ -10,7 +10,7 @@ from devboost.core.osinfo import OsInfo
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor, Result
-from devboost.model import Ctx
+from devboost.model import Ctx, Module
 
 _FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
@@ -58,3 +58,11 @@ def mirror_flatpak(ctx: Ctx, app_ids: set[str], dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for app in sorted(app_ids):
         ctx.ex.run(["flatpak", "create-usb", str(dest), app])
+
+
+def offline_installable(cls: type[Module]) -> bool:
+    """Return True if a module class can be installed from the offline mirror."""
+    from devboost.modules._pkgmodule import PackageModule
+    from devboost.modules.apps import FlatpakApp
+
+    return issubclass(cls, (PackageModule, FlatpakApp))
