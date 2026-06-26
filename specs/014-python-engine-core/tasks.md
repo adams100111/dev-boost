@@ -103,11 +103,11 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `devboost install base && devboost verify base` is fully green on a clean Fedora VM.
 
-- [ ] T030 [P] [US1] Port base-group bats → pytest as the behavioral spec (test-first), in `engine/tests/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo, docker)
-- [ ] T031 [US1] Tests then impl: `copr`, `mise`, `flatpak` primitives in `engine/src/devboost/exec/primitives/{copr,mise,flatpak}.py`
-- [ ] T032 [US1] [US3] Port base modules to `engine/src/devboost/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo) — one typed file each (`docker` already done by the M0 tracer, T020)
-- [ ] T033 [US1] [US3] Port the CLI-tools clusters to `engine/src/devboost/modules/` (`base`: coreutils, git, curl, wget, unzip, jq, htop, ripgrep✓, fd, fzf, tmux; `cli`: eza, bat, btop, zoxide, atuin, direnv, delta, lazygit, lazydocker, dust, duf, sd, yq, gh, tealdeer, tpm, fastfetch, claude-code)
-- [ ] T034 [US1] Wire base/cli into `profiles.toml`; delete `lib/pkg.sh` + the ported modules' bash + their bats; run `install base` + `verify base` on a Fedora VM
+- [X] T030 [P] [US1] Port base-group bats → pytest as the behavioral spec (test-first), in `engine/tests/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo, docker)
+- [X] T031 [US1] Tests then impl: `copr`, `mise`, `flatpak` primitives in `engine/src/devboost/exec/primitives/{copr,mise,flatpak}.py`
+- [X] T032 [US1] [US3] Port base modules to `engine/src/devboost/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo) — one typed file each (`docker` already done by the M0 tracer, T020)
+- [X] T033 [US1] [US3] Port the CLI-tools clusters to `engine/src/devboost/modules/` (`base`: coreutils, git, curl, wget, unzip, jq, htop, ripgrep✓, fd, fzf, tmux; `cli`: eza, bat, btop, zoxide, atuin, direnv, delta, lazygit, lazydocker, dust, duf, sd, yq, gh, tealdeer, tpm, fastfetch, claude-code)
+- [X] T034 [US1] Wire base/cli into `profiles.toml`; delete `lib/pkg.sh` + the ported modules' bash + their bats; run `install base` + `verify base` on a Fedora VM
 
 **Checkpoint**: base + cli install/verify green; `lib/pkg.sh` gone.
 

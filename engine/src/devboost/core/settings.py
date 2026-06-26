@@ -6,9 +6,12 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from devboost.exec.resources import resource_root
+
 
 def _default_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    # Repo root in source mode; _MEIPASS (bundled data) in the frozen binary.
+    return resource_root()
 
 
 class Settings(BaseSettings):
