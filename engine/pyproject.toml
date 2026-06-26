@@ -11,6 +11,7 @@ dependencies = [
     "loguru>=0.7",
     "tenacity>=9.0",
     "questionary>=2.0",
+    "rich>=13.7",
 ]
 
 [project.scripts]
