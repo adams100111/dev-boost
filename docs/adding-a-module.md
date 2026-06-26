@@ -1,49 +1,65 @@
 # Adding a module (or an OS)
 
-## Add a tool — one file
+## Add a tool — one typed file
+
 ```sh
-devboost add <name>            # scaffolds modules/<name>/module.toml from the template
-devboost add <name> --folder   # also scaffolds an install.sh escape-hatch
+devboost add <name>            # scaffolds engine/src/devboost/modules/<name>.py
 ```
-Fill the manifest:
-```toml
-name     = "ripgrep"
-category = "cli"
-requires = []                  # other module names (topo-sorted before this one)
-profiles = ["cli"]
-verify   = "rg --version"      # success ⇒ already installed ⇒ skipped (idempotency guard)
-[install]
-fedora = "dnf install -y ripgrep"
+
+A module is one typed Python class. Most tools are a package install:
+
+```python
+from devboost.core.registry import register
+from devboost.exec.primitives import pkg
+from devboost.model import Ctx, Module
+
+@register
+class Ripgrep(Module):
+    name = "ripgrep"
+    category = "cli"
+    requires = ()                 # references to other Module classes (topo-sorted before this)
+    profiles = ("cli",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.which("rg")          # True ⇒ already installed ⇒ skipped (idempotency guard)
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "ripgrep")        # OS-dispatched; never names dnf/apt
 ```
-Then add `ripgrep` to a profile in `profiles.toml` and commit. Verify:
+
+For the common case there's a shared base — `class Ripgrep(PackageModule)` with
+`cmd`/`fedora_pkg` attributes (see `modules/cli_tools.py`). Add the name to a profile in
+`profiles.toml`, then:
+
 ```sh
-devboost list --profile cli   # see it resolve
-bats tests/                   # keep green (add a test for non-trivial modules)
+uv run devboost list cli       # see it resolve
+uv run pytest                  # add a FakeExecutor test for non-trivial modules
+uv run mypy && uv run ruff check
 ```
 
-## Escape hatch (complex tools)
-`modules/<name>/install.sh` (sources `lib/log.sh`+`lib/pkg.sh`; `set -Eeuo pipefail`; idempotent;
-`log_ok`/`die`) + `verify.sh`. Reference it from `[install].fedora = "bash \"$DEVBOOST_ROOT/modules/<name>/install.sh\""`.
+## Dependencies are typed references
 
-## Add an OS — one key
-Add `[install].<os>` (e.g. `ubuntu`, `macos`, `windows`) to the affected modules. `doctor` reports
-coverage gaps. No engine change required.
+`requires = (Docker,)` references the depended-on **class**, so `mypy --strict` proves the graph and
+the IDE refactors/navigates it. The registry validates the whole catalog at load (unique names,
+deps resolve, profiles exist, no cycles) before any side effect.
 
-### Optional manifest fields
+## Side effects go through the injected executor
 
-- `gui = true` — marks a GUI-only module (e.g. a terminal app, fonts). The typed engine
-  auto-skips it on headless boxes (no `$DISPLAY`/`$WAYLAND_DISPLAY`).
-- `[fallback]` — used when the distro package is absent/stale. The engine appends these
-  after the `[install].<os>` step: `mise = "aqua:<owner/repo>"` (or `cargo:`/`github:`),
-  or `script = "<url>"` (run as `curl -fsSL <url> | sh`). Example:
+Never call `subprocess` directly. Use `ctx.ex.run([...])` (argv lists, never a shell string) or a
+typed primitive (`pkg`, `flatpak`, `copr`, `mise`, `config`, `dconf`, `age`, `github`, `systemd`,
+`fs`, `gpu`; `shell.run(...)` is the rare escape hatch). In tests, inject a `FakeExecutor` that
+records calls — no real `dnf`/network.
 
-  ```toml
-  [install]
-  fedora = "sudo dnf install -y eza"
-  debian = "sudo apt-get install -y eza"
-  [fallback]
-  mise = "aqua:eza-community/eza"
-  ```
+## Add an OS — localized, no engine change
 
-## Conventions
-TDD (test-first), idempotent, verify-guarded, no prompts, pin versions in module data.
+The package manager is selected from `ctx.os` (Fedora's `Dnf` is implemented; `Apt`/`Pacman` are
+seams). Per-OS differences escalate only where needed:
+
+1. **Same package name** → nothing to do (`pkg.install(ctx, "git")`).
+2. **Name differs** → `pkg.install(ctx, OsMap(fedora="fd-find", default="fd"))`.
+3. **Source differs** (repo/script) → a typed `Source = OsMap[DnfRepo | AptRepo | Script]`.
+4. **Steps differ** → declare `per_os = OsMap(fedora=FooFedora(), debian=FooDebian())` of `Installer`
+   strategies; the engine calls the one resolved for the detected OS.
+
+Adding Ubuntu = implement the `Apt` manager once + fill `debian=` entries only in the modules that
+truly diverge. The OS-agnostic majority is untouched.

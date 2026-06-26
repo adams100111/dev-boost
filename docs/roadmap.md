@@ -1,5 +1,12 @@
 # dev-boost — Spec Roadmap to Production USB
 
+> **Update (2026-06-26):** the platform has been **fully rewritten from Bash to typed Python**
+> (spec `014-python-engine-core`, design `2026-06-26-python-engine-migration-design.md`). The
+> rows below describe the original Bash deliverables — now the *behavioral spec* that was ported
+> to typed modules + pytest and deleted. The engine, all ~100 modules, and all commands are typed
+> Python shipped as a frozen binary; only `get.sh` + the Kickstart `%post` remain bash.
+
+
 **Goal:** a Ventoy USB that installs Fedora unattended and lands a fully-configured
 developer workstation on a laptop in minutes — `curl … | bash` (primary) or
 zero-touch Kickstart (bonus). Source of truth: `docs/superpowers/specs/2026-06-19-devboost-platform-design.md`

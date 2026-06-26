@@ -1,6 +1,6 @@
 # Obsidian ↔ GitHub vault sync (design §7.1)
 
-Unattended, secure-by-default notes sync (the `apps` profile's `obsidian-sync` module + `lib/vault.sh`).
+Unattended, secure-by-default notes sync (the `apps` profile's `obsidian-sync` module + the typed `apps.ObsidianSync` module).
 
 ## Auth — repo-scoped deploy key (not the account key, not a PAT)
 - Generate `~/.ssh/notes_vault_ed25519` (passphrase-less, unattended).

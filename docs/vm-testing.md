@@ -4,7 +4,7 @@ Everything in dev-boost is unit-tested **hermetically** (all system calls stubbe
 on real hardware, validate it for real in a throwaway Fedora VM. Two paths, both supported by
 `scripts/vm-test.sh`:
 
-- **engine-only** — boot Fedora, install it, run `./install.sh`. Proves the *provisioning engine*. No USB, no root.
+- **engine-only** — boot Fedora, install it, run `devboost install full`. Proves the *provisioning engine*. No USB, no root.
 - **full USB** — boot the actual Ventoy USB (or drive `ventoy/ks.cfg` device-less). Proves the *delivery*
   layer (Ventoy → Kickstart → first-boot) too.
 
@@ -34,7 +34,7 @@ scripts/make-secrets.sh --out /tmp/devboost-secrets
 #   → /tmp/devboost-secrets/secrets.age   (encrypted { GIT_USER, GIT_EMAIL, GITHUB_PAT })
 #   → /tmp/devboost-secrets/age-key.txt   (the identity that decrypts it)
 ```
-Both files are gitignored. Use them with `./install.sh --secrets …/secrets.age` (export
+Both files are gitignored. Use them with `DEVBOOST_SECRETS=…/secrets.age devboost install full` (export
 `DEVBOOST_SECRETS_KEY=…/age-key.txt`), or copy both to the USB `Bootstrap/` for zero-touch.
 You can skip this and run profiles that don't need secrets (e.g. `cli,shell`) for a first smoke test.
 
@@ -52,8 +52,8 @@ boots the Live ISO. Then:
    ```sh
    scripts/vm-test.sh snapshot clean      # (run on the HOST, right after first boot)
    # in the guest:
-   ./install.sh --profile cli,shell       # fast smoke test
-   ./install.sh --profile full            # the whole workstation
+   devboost install cli shell       # fast smoke test
+   devboost install full            # the whole workstation
    ```
 3. Re-run from a pristine state any time: `scripts/vm-test.sh revert clean`.
 

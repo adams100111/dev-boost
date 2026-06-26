@@ -1,38 +1,51 @@
 # Architecture
 
-dev-boost is a **small legible engine + declarative data**. The engine never changes to add a tool.
+dev-boost is a **small, legible typed-Python engine + declarative data**. The engine never changes
+to add a tool. It is delivered as a **frozen single-file per-arch binary** (PyInstaller) — no Python
+runtime on the target.
 
-## Layers
-- **`bin/devboost`** — CLI dispatch: `install/verify/list/doctor/add/export/diff/update/self-update/dev`.
-- **`lib/`** — engine + feature helpers: `log.sh`, `os.sh`, `toml.sh` (TOML→JSON via python3), `module.sh`,
-  `depsort.sh` (Kahn topo-sort by `requires`), `profile.sh` (`profile_expand`), `install.sh` (verify-guarded
-  loop + summary), `pkg.sh`; feature libs `secrets.sh`, `github.sh`, `fresh.sh`, `gnome.sh`, `vault.sh`,
-  `lifecycle.sh`, `devhygiene.sh`, `gpu.sh`.
-- **`modules/<name>/module.toml`** — one tool: `name/category/requires/profiles/verify` + per-OS `[install]`.
-  Complex tools add `install.sh` (sourcing `lib/log.sh`+`lib/pkg.sh`) and `verify.sh`.
-- **`profiles.toml`** — named module sets; `profile_expand` resolves (and transitively pulls `requires`).
-- **`devboost.lock`** — deterministic sorted resolved-version manifest (reproducibility).
+## Layout (`engine/src/devboost/`)
+
+- **`cli/`** — the Typer app: `install/verify/list/doctor/add/export/diff/update/self-update/terminal/devtools/dev`.
+- **`model.py`** — the stable contract: `Ctx`, the `Installer` Protocol, the `Module` base, and the
+  typed install sources (`DnfRepo`/`AptRepo`/`Script`, `Source = OsMap[...]`).
+- **`core/`** — `osinfo` (+ `OsMap` for `distro→family→default`), `graph` (Kahn toposort over
+  `requires`), `profiles` (load + expand), `plan` (skip rules), `runner` (verify-guarded loop),
+  `registry` (`@register` auto-discovery + load-time validation), `settings`, `errors`, `log` (loguru).
+- **`exec/`** — `executor.py` (the `Executor` Protocol + `RealExecutor` + recording `FakeExecutor`) and
+  `primitives/` (the typed, idempotent, OS-aware vocabulary: `pkg`, `flatpak`, `copr`, `mise`, `config`,
+  `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`).
+- **`modules/`** — ~100 typed module classes, one declaration each; `requires` are class references.
+- **`profiles.toml`** (repo root, bundled in the binary) — named module sets; `expand` resolves them
+  and `toposort` adds the transitive `requires` closure. `devboost.lock` is the deterministic snapshot.
 
 ## Flow
-`install` → `profile_expand` → `depsort` → per module: `verify` (skip if green unless `--force`) →
-best-match `[install]` → re-verify → record → timed summary. Idempotent + resumable; a failure names the
-module + exact command. Cross-OS is data: a module without an `[install].<os>` key is *unsupported* there.
 
-## Engines (dual)
+`registry.load()` (validate the whole catalog) → `profiles.expand()` → `graph.toposort()` →
+`plan.build_plan()` (headless-GUI / unsupported-OS skips) → `runner.run_plan()`: per module, skip if
+`verify(ctx)` and not `--force`; else `install(ctx)`; re-`verify`; record ok/skip/fail. Idempotent +
+resumable; a failure names the module and the exact failing command.
 
-Per the constitution (v2.0.0), the engine may be implemented as pure Bash OR as a
-strictly-typed Python engine shipped as a frozen single-file binary (no Python runtime
-on the target). Both consume the same declarative TOML modules + `profiles.toml`:
+## OS dispatch
 
-- **Bash engine** — `bin/devboost` + `lib/*.sh` (the original; Fedora-reference, zero-config USB path).
-- **Typed-Python engine** — `engine/devboost/` (Typer CLI), with the portable
-  `terminal`/`devtools` tiers, headless auto-skip, and a distro→mise→script fallback ladder.
-  Built as a frozen single-file binary by `.github/workflows/release.yml` (PyInstaller onefile,
-  published on each `v*` tag) and delivered by `scripts/get.sh` (arch-detect, download, SHA256-verify).
+The package manager is selected once from `ctx.os` (Fedora's `Dnf` implemented; `Apt`/`Pacman` are
+seams). Per-OS divergence is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os`
+`Installer` strategies — resolved `distro → family → default`. No branching in the engine.
 
-Design specs: `docs/superpowers/specs/2026-06-19-devboost-platform-design.md`,
-`2026-06-25-portable-two-tier-installer-design.md`, `2026-06-25-ubuntu-parity-portable-tiers-design.md`.
+## Delivery
 
-## Principles (constitution)
-Engine+Data separation · Idempotent & verify-guarded · Reproducible (pinned, repo is source of truth) ·
-Unattended by default · Test-first (bats) · Cross-OS via data (Fedora reference).
+`scripts/build-bundle.sh` freezes `engine/` (`--collect-submodules devboost` so module auto-discovery
+works frozen; bundles `profiles.toml` + `data/` + `templates/`), emits `devboost-<arch>` and the
+Ventoy injection archive `devboost-<arch>.tar.gz` (binary at `opt/dev-boost/devboost`).
+`.github/workflows/release.yml` builds both arches natively on `v*` tags; `scripts/get.sh` arch-detects,
+downloads, SHA256-verifies, and execs. The only bash in the shipped product is `get.sh` and the
+Kickstart `%post`.
+
+Design: `docs/superpowers/specs/2026-06-26-python-engine-migration-design.md` (the bash→Python
+migration); spec `specs/014-python-engine-core/`.
+
+## Principles (constitution v3.0.1)
+
+Engine+Data separation (typed Python) · Idempotent & verify-guarded · Reproducible (pinned, repo is
+source of truth) · Unattended by default · Test-first (`pytest` + `mypy --strict` + ruff) · Cross-OS
+via typed data (Fedora reference; OS-ready seams).

@@ -8,20 +8,23 @@ Kickstart). "Production ready" means the box can **build, out of the box**: Lara
 (ghostty + starship + tmux + GNOME), all restored from chezmoi-managed dotfiles. A bad update is a
 **reboot**, not a rebuild (Btrfs snapshots).
 
-dev-boost is a small, legible **Bash engine + declarative data** (modules + `profiles.toml`):
-adding a tool is one file; adding an OS is one key.
+dev-boost is a small, legible **strictly-typed Python engine** (Typer + Pydantic) plus declarative
+data (typed modules + `profiles.toml`): adding a tool is one typed file; adding an OS is a localized
+per-OS entry. It ships as a **frozen single-file binary** (no Python runtime on the target); the only
+bash is the `curl|bash` bootstrap and the Kickstart `%post`.
 
 ## Quick start
 
 ```sh
-# From the repo (manual path — most reliable):
-./install.sh                       # installs the 'full' workstation (default)
-./install.sh --profile cli,shell   # or pick profiles
-curl -fsSL https://…/install.sh | bash   # bootstrap path
+# Installed binary (what get.sh / the USB place on PATH):
+devboost install                 # installs the 'full' workstation (default)
+devboost install cli shell       # or pick profiles
+devboost list base               # inspect the resolved order (no changes)
+devboost doctor                  # environment preflight
+devboost install full --dry-run  # preview everything, mutate nothing
 
-# Inspect first (no changes):
-./bin/devboost list --profile base
-./bin/devboost doctor
+# From a clone (developing the engine):
+cd engine && uv sync && uv run devboost list full
 ```
 
 ## Install (any OS)
@@ -49,7 +52,7 @@ enrollment on NVIDIA when Secure Boot is on.
 
 ## Profiles
 
-<!-- BEGIN generated profiles table (scripts/gen-profiles-table.sh) -->
+<!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
 | Profile | Installs (resolved modules) |
 |---------|------------------------------|
 | `apps` | bitwarden, bruno, flameshot, localsend, obsidian, obsidian-sync, vlc |
@@ -98,8 +101,8 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 ## Recovery walkthrough
 
 1. Boot the **Ventoy USB** → pick Fedora (manual installer ~10 min, or the zero-touch auto-install entry).
-2. Manual: reboot → `cd …/VTOY/Bootstrap/dev-boost && ./install.sh`. Zero-touch: Kickstart installs
-   Fedora with the snapshot-ready BTRFS layout, then a first-boot service runs `install.sh --profile full`.
+2. Manual: reboot → `/opt/dev-boost/devboost install full` (the firstboot oneshot). Zero-touch: Kickstart installs
+   Fedora with the snapshot-ready BTRFS layout, then a first-boot service runs `devboost install full`.
 3. **Bad update?** Reboot → GRUB "Fedora snapshots" → boot the pre-update snapshot.
 
 See [docs/recovery-runbook.md](docs/recovery-runbook.md) and [docs/ventoy.md](docs/ventoy.md).
@@ -107,16 +110,19 @@ See [docs/recovery-runbook.md](docs/recovery-runbook.md) and [docs/ventoy.md](do
 ## Adding a tool
 
 ```sh
-devboost add ripgrep            # scaffolds modules/ripgrep/module.toml
+devboost add ripgrep            # scaffolds engine/src/devboost/modules/ripgrep.py
 ```
-```toml
-name     = "ripgrep"
-category = "cli"
-requires = []
-profiles = ["cli"]
-verify   = "rg --version"        # success ⇒ already installed ⇒ skipped
-[install]
-fedora = "dnf install -y ripgrep"   # per-OS keys; non-Fedora without a key ⇒ unsupported
+```python
+@register
+class Ripgrep(Module):
+    name = "ripgrep"
+    category = "cli"
+    requires = ()                          # references to other Module classes
+    profiles = ("cli",)
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.which("rg")          # True ⇒ already installed ⇒ skipped
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "ripgrep")        # OS-dispatched; never names dnf/apt
 ```
 Add it to a profile in `profiles.toml`, commit. See [docs/adding-a-module.md](docs/adding-a-module.md).
 
@@ -152,7 +158,7 @@ section above for the one-liner.
 - **Reference OS:** Fedora Workstation 44 (modules ship `[install].fedora` keys).
 - **Engine:** bash 5, python3 ≥ 3.11, jq, `age` (for secrets). Other OSes: add `[install].<os>` keys
   (Cross-OS-via-Data) — non-Fedora modules without a key are reported unsupported, never silently skipped.
-- **Tests:** `bats tests/`.
+- **Tests:** `cd engine && uv run pytest` (+ `mypy --strict` + ruff).
 
 ## Docs
 
@@ -163,7 +169,7 @@ section above for the one-liner.
 ## Validate before shipping (in a throwaway Fedora VM)
 
 ```sh
-scripts/vm-test.sh engine --iso Fedora-Live.iso        # engine-only: install Fedora, run ./install.sh
+scripts/vm-test.sh engine --iso Fedora-Live.iso        # engine-only: install Fedora, run devboost install full
 scripts/vm-test.sh usb --kickstart Fedora-netinst.iso  # full USB (device-less zero-touch via ventoy/ks.cfg)
 scripts/vm-test.sh usb --device /dev/sdX               # full USB (boot the real Ventoy stick, passthrough)
 scripts/make-secrets.sh --out /tmp/sec                 # build the age-encrypted secrets bundle (PAT never logged)

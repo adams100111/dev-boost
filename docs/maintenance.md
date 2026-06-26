@@ -16,7 +16,7 @@ The git repo is the single source of truth; machines are disposable projections.
 2. `devboost update` → review the proposed pins + `devboost.lock` diff → commit.
 3. Confirm the vault round-trips (Obsidian Git + the daily `devboost-vault-sync` timer).
 4. `devboost verify --profile <selected>` green; re-running install is a no-op.
-5. `bats tests/` green.
+5. `uv run pytest` (+ `mypy --strict` + ruff) green in `engine/`.
 
 ## Notes
 - Nothing auto-commits: `update`/`self-update` only edit the working tree; you review `git diff` and commit.
