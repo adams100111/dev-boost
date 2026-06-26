@@ -1,34 +1,41 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.0.0 → 2.0.0
-Bump rationale: MAJOR — reverses the "engine is pure Bash; no other interpreters"
-  constraint. The engine MAY now be implemented either as pure Bash OR as a
-  strictly-typed Python engine shipped as a frozen single-file per-arch binary
-  (no runtime interpreter dependency on the target). Driven by the portable
-  two-tier installer (terminal/devtools), which is a typed-Python + Typer engine;
-  the cold-start/VPS promise is preserved by the frozen binary, not a runtime
-  Python dependency. Principle I restated in language-neutral terms.
-Principles (unchanged in intent; I reworded):
-  I.   Engine + Data Separation (engine language-neutral: Bash or typed-Python)
+Version change: 2.0.0 → 3.0.0
+Bump rationale: MAJOR — removes the co-equal "engine MAY be pure Bash OR
+  typed-Python" policy from v2.0.0. The engine and ALL commands/executables MUST now
+  be developed in strictly-typed Python with Typer, with fully type-annotated inputs
+  and outputs, comprehensive pytest coverage, and `mypy --strict` clean. Delivery to
+  targets remains a frozen single-file per-arch binary (PyInstaller) so the target
+  needs no Python runtime. Bash is demoted from a sanctioned engine form to a
+  non-logic bootstrap stub only (the curl|bash one-liner and Kickstart %post that
+  merely fetch, verify, and exec the frozen binary). This is backward-incompatible
+  with the dual-engine policy, hence MAJOR.
+Principles:
+  I.   Engine + Data Separation (engine language now fixed: typed Python + Typer)
   II.  Idempotent & Verify-Guarded
   III. Reproducible — Repo is Source of Truth
   IV.  Unattended by Default
-  V.   Test-First (TDD, NON-NEGOTIABLE)
+  V.   Test-First (TDD, NON-NEGOTIABLE) — typed, comprehensive
   VI.  Cross-OS via Data (Fedora is the reference)
 Modified sections:
-  • Core Principle I — "small, legible engine" now explicitly may be Bash or
-    typed-Python; capability still lives only in declarative TOML data.
-  • Technology & Security Constraints — dual engine path; a typed-Python engine
-    MUST be strictly typed (mypy --strict), parse TOML via stdlib tomllib, and
-    ship as a frozen single-file binary so the target needs no Python runtime.
-  • Development Workflow & Quality Gates — both suites (`bats tests/` for the Bash
-    engine AND the Python engine's pytest suite) MUST be green before merge.
+  • Core Principle I — the engine language is no longer an implementation detail; it
+    is strictly-typed Python exposed through Typer. Capability still lives only in
+    declarative TOML data.
+  • Technology & Security Constraints — single sanctioned engine path (typed Python +
+    Typer, mypy --strict, tomllib, frozen single-file binary). Bash restricted to a
+    non-logic bootstrap stub with no capability/decision logic.
+  • Development Workflow & Quality Gates — single test gate: the Python engine's
+    pytest suite (comprehensive, fully typed) plus `mypy --strict` clean before merge.
+    Removed the dual "bats tests/ AND pytest" requirement.
 Added/Removed sections: none.
 Templates reviewed for consistency:
-  ✅ .specify/templates/plan-template.md   — Constitution Check gate still accommodates these principles (no edit needed)
+  ✅ .specify/templates/plan-template.md   — Constitution Check gate accommodates these principles (no edit needed)
   ✅ .specify/templates/spec-template.md   — no new mandatory sections required (no edit needed)
-  ✅ .specify/templates/tasks-template.md  — TDD/test-first task ordering still applies to both engines (no edit needed)
+  ✅ .specify/templates/tasks-template.md  — TDD/test-first task ordering still applies (no edit needed)
 Deferred TODOs: none.
+Follow-up (outside constitution scope): downstream docs/specs that still reference a
+  pure-Bash engine or `bats tests/` should be reconciled to the single typed-Python
+  engine in their next spec cycle.
 -->
 
 # dev-boost Constitution
@@ -37,16 +44,16 @@ Deferred TODOs: none.
 
 ### I. Engine + Data Separation
 
-The platform is a small, legible engine plus declarative data. The engine MAY be
-implemented in pure Bash OR as a strictly-typed Python engine (see Technology &
-Security Constraints); the engine language is an implementation detail. Whatever the
-language, the engine MUST NOT change when a tool, stack, or operating system is added
-— those are added as data (a module manifest, a profile entry, or an install key).
-Every installable thing MUST be a self-contained module declaring `verify`, at least
-one `[install]` key, and its `requires`. Adding a tool MUST be one file; adding an OS
-MUST be one key. Rationale: extensibility and long-term maintainability come from
-never editing control flow to add capability — the highest-frequency change must be
-the cheapest, regardless of the engine's language.
+The platform is a small, legible engine plus declarative data. The engine — and
+every command and executable the platform ships — MUST be developed in strictly-typed
+Python, exposed through Typer (see Technology & Security Constraints). The engine MUST
+NOT change when a tool, stack, or operating system is added — those are added as data
+(a module manifest, a profile entry, or an install key). Every installable thing MUST
+be a self-contained module declaring `verify`, at least one `[install]` key, and its
+`requires`. Adding a tool MUST be one file; adding an OS MUST be one key. Rationale:
+extensibility and maintainability come from never editing control flow to add
+capability — the highest-frequency change must be the cheapest — and a single typed
+language keeps that control flow legible, refactorable, and statically verifiable.
 
 ### II. Idempotent & Verify-Guarded
 
@@ -78,10 +85,13 @@ minutes without supervision, including a zero-touch path from USB.
 
 Engine and library code MUST be built test-first: write the failing test, confirm
 it fails, implement the minimal code to pass, refactor. Tests MUST assert real
-behavior (no vacuous assertions). A task is complete only when its tests pass and
-a separate review confirms spec compliance AND code quality. Rationale: a bootstrap
-engine runs unattended on a fresh machine — correctness cannot be checked by hand
-after the fact.
+behavior (no vacuous assertions) and MUST be comprehensive — every command, every
+typed input/output contract, and every error path is covered by `pytest`. A task is
+complete only when its tests pass, the code type-checks clean under `mypy --strict`,
+and a separate review confirms spec compliance AND code quality. Rationale: a
+bootstrap engine runs unattended on a fresh machine — correctness cannot be checked
+by hand after the fact, and static types plus comprehensive tests are the only
+durable guard.
 
 ### VI. Cross-OS via Data (Fedora is the reference)
 
@@ -93,16 +103,24 @@ branching logic in the core.
 
 ## Technology & Security Constraints
 
-- The engine MAY be implemented in one of two sanctioned forms; no other
-  interpreters or config-management frameworks are permitted (no Ansible/Salt):
-  - **Pure Bash** — external runtime dependencies limited to the system `python3`
-    (for stdlib `tomllib` TOML parsing; floor ≥3.11) and `jq`.
-  - **Strictly-typed Python** (e.g. Typer CLI) — MUST type-check clean under
-    `mypy --strict`, MUST parse TOML via stdlib `tomllib`, and MUST be shipped to
-    targets as a **frozen single-file per-arch binary** so the target needs NO
-    Python runtime installed (preserving the cold-start / minimal-VPS promise).
-    Pure-Python source MUST NOT be the on-target runtime.
-- TOML is parsed only via stdlib `tomllib` — never a hand-rolled parser.
+- **Single engine language.** The engine and every command/executable MUST be
+  strictly-typed Python exposed through **Typer**. No other interpreters or
+  config-management frameworks are permitted (no Ansible/Salt), and there is no
+  parallel Bash engine.
+  - All command inputs and outputs MUST be fully type-annotated (Typer
+    `Annotated[...]` parameters; typed return/result models). Untyped or `Any`-typed
+    public command signatures are not permitted.
+  - The code MUST type-check clean under `mypy --strict`.
+  - TOML MUST be parsed only via stdlib `tomllib` — never a hand-rolled parser.
+- **Frozen-binary delivery.** The engine MUST be shipped to targets as a **frozen
+  single-file per-arch binary** (PyInstaller onefile, x86_64 + aarch64) so the target
+  needs NO Python runtime installed — preserving the cold-start / minimal-VPS promise.
+  Pure-Python source MUST NOT be the on-target runtime.
+- **Bash is a non-logic bootstrap stub only.** Shell is permitted solely for the
+  thin bootstrap surface that fetches, SHA256-verifies, installs, and execs the frozen
+  binary (the public `curl … | bash` one-liner and the Kickstart `%post`). Such stubs
+  MUST contain no capability, module, or decision logic — all behavior lives in the
+  typed Python engine.
 - Module `install`/`verify` strings run via `bash -c` under a local-manifest trust
   model; secrets are decrypted at bootstrap from an `age`-encrypted file and MUST
   remain gitignored. Untracked binaries and `.env`/key files MUST stay gitignored.
@@ -116,9 +134,9 @@ branching logic in the core.
   plan, producing working, testable software on its own.
 - Implementation runs test-first with a per-task review (spec + quality) and a
   broad whole-branch review before merge.
-- Every engine's full test suite MUST be green before any merge to `main`: the
-  Bash engine's `bats tests/` AND (where present) the typed-Python engine's
-  `pytest` suite, the latter additionally type-checking clean under `mypy --strict`.
+- Before any merge to `main`, the typed-Python engine's `pytest` suite MUST be green
+  AND the code MUST type-check clean under `mypy --strict`. Test coverage MUST be
+  comprehensive across commands, typed I/O contracts, and error paths.
 - Reusable knowledge and decisions live in the spec/docs, not only in
   conversation — durable artifacts over ephemeral context.
 
@@ -131,4 +149,4 @@ expanded principles/sections, PATCH for clarifications. Plans and reviews MUST
 verify compliance with these principles; deviations MUST be justified in writing or
 the work is not done. The design spec and `docs/` carry runtime development guidance.
 
-**Version**: 2.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-25
+**Version**: 3.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-26
