@@ -9,6 +9,7 @@ from typing import Protocol, runtime_checkable
 
 from devboost.core.errors import DownloadError
 from devboost.usb.cache import Cache
+from devboost.usb.report import Reporter
 
 
 @runtime_checkable
@@ -17,8 +18,9 @@ class Downloader(Protocol):
 
 
 class UrllibDownloader:
-    def __init__(self, cache: Cache) -> None:
+    def __init__(self, cache: Cache, reporter: Reporter | None = None) -> None:
         self.cache = cache
+        self.reporter = reporter
 
     def fetch(self, url: str, name: str, sha256: str) -> Path:
         dest = self.cache.path_for(name, sha256)
@@ -27,7 +29,14 @@ class UrllibDownloader:
         tmp = dest.with_suffix(dest.suffix + ".part")
         try:
             with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:
-                shutil.copyfileobj(resp, out)
+                total = int(resp.headers.get("Content-Length", 0) or 0)
+                if self.reporter is not None and total:
+                    with self.reporter.progress(name, total) as advance:
+                        for chunk in iter(lambda: resp.read(1 << 20), b""):
+                            out.write(chunk)
+                            advance(len(chunk))
+                else:
+                    shutil.copyfileobj(resp, out)
         except OSError as exc:
             raise DownloadError(url, str(exc)) from exc
         if not self.cache.verify(tmp, sha256):

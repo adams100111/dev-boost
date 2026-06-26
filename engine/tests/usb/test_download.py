@@ -29,3 +29,35 @@ def test_fake_downloader_rejects_bad_checksum(tmp_path: Path) -> None:
     dl = FakeDownloader(Cache(tmp_path), blobs={"https://x/f.iso": b"corrupt"})
     with pytest.raises(DownloadError):
         dl.fetch("https://x/f.iso", "f.iso", _sha(b"expected"))
+
+
+def test_urllib_downloader_drives_progress_with_byte_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    from devboost.usb.cache import Cache
+    from devboost.usb.download import UrllibDownloader
+    from devboost.usb.report import FakeReporter
+
+    data = b"x" * 2500  # > one 1 MiB chunk is not needed; assert total + chunking
+    sha = _sha(data)
+
+    class _Resp(io.BytesIO):
+        headers = {"Content-Length": str(len(data))}
+
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            self.close()
+
+    monkeypatch.setattr(
+        "devboost.usb.download.urllib.request.urlopen", lambda url: _Resp(data)
+    )
+    reporter = FakeReporter()
+    dl = UrllibDownloader(Cache(tmp_path), reporter)
+    out = dl.fetch("https://x/f.iso", "f.iso", sha)
+    assert out.read_bytes() == data
+    assert reporter.progress_calls == [("f.iso", len(data))]
+    assert sum(reporter.advances) == len(data)
