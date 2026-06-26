@@ -32,10 +32,10 @@ from devboost.usb.report import RichReporter
 
 def _iso_note(cfg: UsbBuildConfig) -> str:
     """Best-effort ISO download size for the dry-run preview (never raises)."""
-    cache = Cache(cfg.cache_dir)
-    if cache.has(f"{cfg.iso.id}.iso", cfg.iso.sha256):
-        return "cached"
     try:
+        cache = Cache(cfg.cache_dir)
+        if cache.has(f"{cfg.iso.id}.iso", cfg.iso.sha256):
+            return "cached"
         req = urllib.request.Request(cfg.iso.url, method="HEAD")
         with urllib.request.urlopen(req) as resp:
             size = int(resp.headers.get("Content-Length", 0) or 0)
