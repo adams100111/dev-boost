@@ -40,24 +40,29 @@ def usb(
     ] = False,
 ) -> None:
     """Build a bootable dev-boost Ventoy USB (interactive, or fully via flags)."""
-    ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
-    if device is None and not no_wizard:
-        cfg = wizard.run(ctx)
-    elif device is None:
+    if device is None and no_wizard:
         log.error("--device is required with --no-wizard")
         raise typer.Exit(code=1)
+
+    vtoy = Path(
+        os.environ.get("VTOY_MOUNT", f"/run/media/{os.environ.get('USER', 'root')}/VTOY")
+    )
+
+    if device is None:
+        ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
+        cfg = wizard.run(ctx)
     else:
+        os_info = osinfo.detect()
         cfg = UsbBuildConfig(
             device=device,
-            arch=arch or osinfo.detect().arch,
+            arch=arch or os_info.arch,
             iso=FEDORA[iso] if iso else default_iso(),
             profiles=tuple(profile) or ("full",),
             secrets_path=secrets,
             cache_dir=cache_dir or Path(gettempdir()) / "devboost-usb",
             assume_yes=yes,
         )
-    vtoy = Path(
-        os.environ.get("VTOY_MOUNT", f"/run/media/{os.environ.get('USER', 'root')}/VTOY")
-    )
+        ctx = Ctx(os=os_info, ex=RealExecutor())
+
     build(ctx, cfg, UrllibDownloader(Cache(cfg.cache_dir)), vtoy_mount=vtoy)
     log.ok(f"usb: built {cfg.device} (Fedora {cfg.iso.id}, profiles {' '.join(cfg.profiles)})")

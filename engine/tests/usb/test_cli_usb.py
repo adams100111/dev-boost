@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -21,7 +20,7 @@ def test_usb_help_lists_the_command() -> None:
     assert "--device" in clean and "--profile" in clean
 
 
-def test_usb_no_wizard_requires_device(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+def test_usb_no_wizard_requires_device() -> None:
     # --no-wizard with no --device should error out (exit 1), not prompt.
     result = runner.invoke(app, ["usb", "--no-wizard"])
     assert result.exit_code != 0
