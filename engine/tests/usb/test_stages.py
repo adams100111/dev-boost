@@ -24,13 +24,34 @@ _LSBLK = (
 )
 
 
-def test_render_ventoy_json_binds_to_staged_iso_name() -> None:
+def test_render_ventoy_json_default_only_omits_auto_install() -> None:
+    import json
+
     from devboost.usb.stages import render_ventoy_json
 
-    tmpl = '{"auto_install": [{"image": "/ISO/__DEVBOOST_ISO__", "template": "/Bootstrap/ks.cfg"}]}'
-    out = render_ventoy_json(tmpl, iso_name="fedora-44.iso")
-    assert "/ISO/fedora-44.iso" in out
-    assert "__DEVBOOST_ISO__" not in out
+    data = json.loads(render_ventoy_json(default_iso="fedora-44.iso", autoinstall_iso=None))
+    assert data["control"][1]["VTOY_DEFAULT_IMAGE"] == "/ISO/fedora-44.iso"
+    assert data["injection"] == [
+        {"image": "/ISO/fedora-44.iso", "archive": "/Bootstrap/devboost.tar.gz"}
+    ]
+    assert "auto_install" not in data
+
+
+def test_render_ventoy_json_with_autoinstall_binds_both() -> None:
+    import json
+
+    from devboost.usb.stages import render_ventoy_json
+
+    data = json.loads(
+        render_ventoy_json(default_iso="fedora-44.iso", autoinstall_iso="fedora-44-netinst.iso")
+    )
+    assert data["control"][1]["VTOY_DEFAULT_IMAGE"] == "/ISO/fedora-44.iso"
+    assert data["auto_install"] == [
+        {"image": "/ISO/fedora-44-netinst.iso", "template": "/Bootstrap/ks.cfg"}
+    ]
+    # injection lists BOTH ISOs
+    images = sorted(e["image"] for e in data["injection"])
+    assert images == ["/ISO/fedora-44-netinst.iso", "/ISO/fedora-44.iso"]
 
 
 def test_render_kscfg_substitutes_profiles() -> None:
@@ -61,15 +82,28 @@ def test_boot_artifacts_refuses_wipe_without_assume_yes(tmp_path: Path) -> None:
 def test_boot_artifacts_installs_ventoy_and_stages_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import json
+
     iso_bytes = b"fedora-iso"
     sha = hashlib.sha256(iso_bytes).hexdigest()
     iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256=sha, edition="Everything")
+
+    # give the build a netinst auto-install ISO too
+    netinst_bytes = b"fedora-netinst"
+    netinst_sha = hashlib.sha256(netinst_bytes).hexdigest()
+    netinst = IsoSpec(
+        id="fedora-44-netinst", url="https://x/n.iso", sha256=netinst_sha, edition="netinst"
+    )
+
     cache = Cache(tmp_path / "cache")
-    dl = FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes})
+    dl = FakeDownloader(
+        cache, blobs={"https://x/f.iso": iso_bytes, "https://x/n.iso": netinst_bytes}
+    )
     cfg = UsbBuildConfig(
         device="/dev/sdb",
         arch="x86_64",
         iso=iso,
+        autoinstall_iso=netinst,
         profiles=("cli",),
         cache_dir=cache.cache_dir,
         assume_yes=True,
@@ -83,19 +117,12 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     )
     fake_ks = tmp_path / "ks.cfg"
     fake_ks.write_text(ks_template, encoding="utf-8")
-    fake_ventoy_json = tmp_path / "ventoy.json"
-    fake_ventoy_json.write_text(
-        '{"auto_install": [{"image": "/ISO/__DEVBOOST_ISO__", "template": "/Bootstrap/ks.cfg"}]}',
-        encoding="utf-8",
-    )
     fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
     fake_tarball.write_bytes(b"dummy tarball bytes")
 
     def fake_resource_path(*parts: str) -> Path:
         if parts == ("ventoy", "ks.cfg"):
             return fake_ks
-        if parts == ("ventoy", "ventoy.json"):
-            return fake_ventoy_json
         if parts[0] == "dist":
             return fake_tarball
         raise KeyError(parts)
@@ -107,10 +134,13 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["ventoy", "-i", "/dev/sdb"] in calls or ["sudo", "ventoy", "-i", "/dev/sdb"] in calls
     assert (vtoy / "Bootstrap" / "ks.cfg").read_text().count("devboost install cli") == 1
+    # both ISOs staged
     assert (vtoy / "ISO" / "fedora-44.iso").exists()
-    # ventoy.json bindings track the actual staged ISO filename (not a hardcoded one)
-    rendered_json = (vtoy / "ventoy" / "ventoy.json").read_text()
-    assert "/ISO/fedora-44.iso" in rendered_json and "__DEVBOOST_ISO__" not in rendered_json
+    assert (vtoy / "ISO" / "fedora-44-netinst.iso").exists()
+    # generated ventoy.json binds both ISOs
+    vj = json.loads((vtoy / "ventoy" / "ventoy.json").read_text())
+    assert vj["auto_install"][0]["image"] == "/ISO/fedora-44-netinst.iso"
+    assert vj["control"][1]["VTOY_DEFAULT_IMAGE"] == "/ISO/fedora-44.iso"
 
 
 def test_render_kscfg_offline_appends_flag() -> None:
@@ -144,15 +174,13 @@ def test_update_stage_restages_without_wipe(
     ks_template = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full'"
     fake_ks = tmp_path / "ks.cfg"
     fake_ks.write_text(ks_template, encoding="utf-8")
-    fake_json = tmp_path / "ventoy.json"
-    fake_json.write_bytes(b"{}")
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
     fake_tar.write_bytes(b"tar")
 
     def fake_resource_path(*parts: str) -> Path:
-        return {("ventoy", "ks.cfg"): fake_ks, ("ventoy", "ventoy.json"): fake_json}.get(
-            parts, fake_tar
-        )
+        if parts == ("ventoy", "ks.cfg"):
+            return fake_ks
+        return fake_tar
 
     monkeypatch.setattr("devboost.usb.stages.resource_path", fake_resource_path)
     update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
@@ -187,15 +215,11 @@ def test_update_stage_refreshes_iso_when_requested(
     ctx = Ctx(os=OS, ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)}))
     fake_ks = tmp_path / "ks.cfg"
     fake_ks.write_text("install full", encoding="utf-8")
-    fake_json = tmp_path / "ventoy.json"
-    fake_json.write_bytes(b"{}")
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
     fake_tar.write_bytes(b"tar")
     monkeypatch.setattr(
         "devboost.usb.stages.resource_path",
-        lambda *p: {("ventoy", "ks.cfg"): fake_ks, ("ventoy", "ventoy.json"): fake_json}.get(
-            p, fake_tar
-        ),
+        lambda *p: fake_ks if p == ("ventoy", "ks.cfg") else fake_tar,
     )
     update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
     assert (vtoy / "ISO" / "fedora-44.iso").read_bytes() == iso_bytes

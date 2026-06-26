@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,14 +27,31 @@ def render_kscfg(
     return template.replace("devboost install full", install_cmd)
 
 
-def render_ventoy_json(template: str, *, iso_name: str) -> str:
-    """Bind ventoy.json's default-image/auto_install/injection to the actual staged ISO.
+def render_ventoy_json(*, default_iso: str, autoinstall_iso: str | None) -> str:
+    """Generate ventoy.json: default boot + injection on the Live media; auto_install on netinst.
 
-    The resource template carries the ``__DEVBOOST_ISO__`` placeholder; the builder stages the
-    ISO as ``<iso.id>.iso``, so the three bindings must reference that exact filename (otherwise
-    a non-Fedora catalog pick would leave ventoy.json pointing at a non-existent image).
+    ``default_iso``/``autoinstall_iso`` are bare filenames (e.g. ``fedora-44.iso``). The
+    ``auto_install`` block is emitted only when an autoinstall ISO is present; injection covers
+    every staged ISO so the dev-boost binary is available on whichever path boots.
     """
-    return template.replace("__DEVBOOST_ISO__", iso_name)
+    injection: list[dict[str, str]] = [
+        {"image": f"/ISO/{default_iso}", "archive": "/Bootstrap/devboost.tar.gz"}
+    ]
+    data: dict[str, list[dict[str, str]]] = {
+        "control": [
+            {"VTOY_MENU_TIMEOUT": "10"},
+            {"VTOY_DEFAULT_IMAGE": f"/ISO/{default_iso}"},
+        ],
+        "injection": injection,
+    }
+    if autoinstall_iso is not None:
+        injection.append(
+            {"image": f"/ISO/{autoinstall_iso}", "archive": "/Bootstrap/devboost.tar.gz"}
+        )
+        data["auto_install"] = [
+            {"image": f"/ISO/{autoinstall_iso}", "template": "/Bootstrap/ks.cfg"}
+        ]
+    return json.dumps(data, indent=2)
 
 
 def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
@@ -41,9 +59,10 @@ def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter)
     boot = vtoy_mount / "Bootstrap"
     for d in ("ISO", "Bootstrap", "Installers", "ventoy"):
         (vtoy_mount / d).mkdir(parents=True, exist_ok=True)
-    ventoy_json = resource_path("ventoy", "ventoy.json").read_text(encoding="utf-8")
+    ai_name = f"{cfg.autoinstall_iso.id}.iso" if cfg.autoinstall_iso is not None else None
     (vtoy_mount / "ventoy" / "ventoy.json").write_text(
-        render_ventoy_json(ventoy_json, iso_name=f"{cfg.iso.id}.iso"), encoding="utf-8"
+        render_ventoy_json(default_iso=f"{cfg.iso.id}.iso", autoinstall_iso=ai_name),
+        encoding="utf-8",
     )
     kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
     (boot / "ks.cfg").write_text(
@@ -67,6 +86,17 @@ def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter)
     reporter.step(f"Staged dev-boost payload ({cfg.iso.id}, {cfg.arch})")
 
 
+def _stage_autoinstall_iso(
+    cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+) -> None:
+    if cfg.autoinstall_iso is None:
+        return
+    spec = cfg.autoinstall_iso
+    iso_path = dl.fetch(spec.url, f"{spec.id}.iso", spec.sha256)
+    shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{spec.id}.iso")
+    reporter.step(f"Zero-touch ISO staged ({spec.id})")
+
+
 def boot_artifacts(
     ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
 ) -> None:
@@ -80,6 +110,7 @@ def boot_artifacts(
     iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
     shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
     reporter.step(f"Fedora ISO staged ({cfg.iso.id})")
+    _stage_autoinstall_iso(cfg, dl, vtoy_mount=vtoy_mount, reporter=reporter)
 
 
 def update_stage(
@@ -95,6 +126,7 @@ def update_stage(
         iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
         shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
         reporter.step(f"Fedora ISO refreshed ({cfg.iso.id})")
+        _stage_autoinstall_iso(cfg, dl, vtoy_mount=vtoy_mount, reporter=reporter)
 
 
 def extra_isos(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:

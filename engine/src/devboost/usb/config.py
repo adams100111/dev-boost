@@ -42,6 +42,7 @@ class UsbBuildConfig(BaseModel):
     device: str
     arch: str
     iso: IsoSpec
+    autoinstall_iso: IsoSpec | None = None
     profiles: tuple[str, ...] = ("full",)
     secrets_path: Path | None = None
     extra_isos: tuple[Path, ...] = ()
