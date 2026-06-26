@@ -45,3 +45,16 @@ def package_set(profiles: tuple[str, ...], root: Path) -> tuple[set[str], set[st
         except Exception:  # noqa: BLE001 — describing only; ignore modules needing real state
             continue
     return rec.dnf, rec.flatpak
+
+
+def mirror_dnf(ctx: Ctx, packages: set[str], dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    dnf_cmd = ["dnf", "download", "--resolve", "--destdir", str(dest), *sorted(packages)]
+    ctx.ex.run(dnf_cmd, sudo=True)
+    ctx.ex.run(["createrepo_c", str(dest)], sudo=True)
+
+
+def mirror_flatpak(ctx: Ctx, app_ids: set[str], dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    for app in sorted(app_ids):
+        ctx.ex.run(["flatpak", "create-usb", str(dest), app])
