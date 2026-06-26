@@ -97,11 +97,11 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 | `devboost update [--profile a,b]` | Propose pinned bumps + regenerate `devboost.lock`; never auto-commits. |
 | `devboost self-update` | `git pull` dev-boost, then re-validate. |
 | `devboost dev <status\|gc\|down>` | Dev-environment resource hygiene (orphan Aspire AppHost GC). |
-| `devboost usb [--device …] [--iso …] [--yes]` | Build the bootable Ventoy USB: interactive wizard (or flags) — picks a removable disk, downloads + verifies + caches the Fedora ISO, stages the binary/ks.cfg; optional extra ISOs + offline mirror. |
+| `devboost usb [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), downloads + verifies + caches the Fedora ISO with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
 
 ## Recovery walkthrough
 
-0. Build the stick once: `sudo devboost usb` (interactive) — see [docs/ventoy.md](docs/ventoy.md).
+0. Build the stick once: `sudo devboost usb` (interactive; add `--dry-run` to preview) — see [docs/ventoy.md](docs/ventoy.md).
 1. Boot the **Ventoy USB** → pick Fedora (manual installer ~10 min, or the zero-touch auto-install entry).
 2. Manual: reboot → `/opt/dev-boost/devboost install full` (the firstboot oneshot). Zero-touch: Kickstart installs
    Fedora with the snapshot-ready BTRFS layout, then a first-boot service runs `devboost install full`.

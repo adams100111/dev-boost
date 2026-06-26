@@ -17,6 +17,21 @@ multi-boot ISOs/installers and an offline dnf+flatpak package mirror. Drop your 
 `Bootstrap/` (never committed). `ventoy/ventoy.json` binds `ks.cfg` to the Fedora ISO (`auto_install`)
 and injects dev-boost (`injection`).
 
+## Update vs rebuild
+
+Re-running `devboost usb` on a stick that is **already a dev-boost USB** detects it (via the
+`Bootstrap/.devboost-usb.json` marker, read through a read-only mount) and defaults to a
+**non-destructive update**: it runs `ventoy -u`, re-stages the `devboost` binary, `ks.cfg`,
+`ventoy.json`, and refreshes the marker — while **preserving** `ISO/`, `secrets.age`, and the data
+partition. Pass `--refresh-iso` (or accept the wizard prompt) to also re-download the pinned Fedora
+ISO. A blank disk or a foreign Ventoy stick still goes through the explicit wipe confirmation.
+
+## Preview first (`--dry-run`)
+
+`devboost usb --device /dev/sdX --dry-run` resolves everything — catalog OS, detected disk state,
+build-vs-update mode, profiles, optional stages, and the estimated ISO download — and prints the plan
+**without running `ventoy`, downloading, or writing anything**. Use it to rehearse safely.
+
 ## Two boot paths
 1. **Manual (primary):** boot Fedora ISO → installer → reboot → run `devboost install full`.
 2. **Zero-touch (Kickstart):** auto-install entry → `ks.cfg` installs Fedora with the §10c BTRFS
