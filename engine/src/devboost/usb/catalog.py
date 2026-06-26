@@ -26,16 +26,22 @@ class Os:
 CATALOG: dict[str, Os] = {
     "fedora-44": Os(
         id="fedora-44",
-        name="Fedora 44 — Everything (netinst)",
+        name="Fedora 44 — Workstation (Live)",
         distro="fedora",
         version="44",
-        edition="Everything-netinst",
+        edition="Workstation-Live",
         isos={
             "x86_64": IsoSpec(
                 id="fedora-44",
-                url="https://download.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-44-1.7.iso",
-                sha256="bd285201494dd0ba09b54d05ac707de1401668b8512a573edb5922dcf9d7067e",
-                edition="Everything-netinst",
+                url="https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-Live-44-1.7.x86_64.iso",
+                sha256="1620295f6a00c27c3208f0c00b8ece4eab1ec69b9002152d97488bf26a426ddf",
+                edition="Workstation-Live",
+            ),
+            "aarch64": IsoSpec(
+                id="fedora-44",
+                url="https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-Live-44-1.7.aarch64.iso",
+                sha256="162ba3c552a2d241c7c63ec26777af0255ee1b5a135adc0be986ceed999933ef",
+                edition="Workstation-Live",
             ),
         },
     ),

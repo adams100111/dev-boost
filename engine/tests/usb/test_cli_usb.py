@@ -88,6 +88,6 @@ def test_usb_unpinned_arch_exits_cleanly(monkeypatch) -> None:  # type: ignore[n
     monkeypatch.setattr(cli_usb, "probe", lambda ctx, device: DiskState("blank"))
     result = runner.invoke(
         app,
-        ["usb", "--device", "/dev/sdb", "--no-wizard", "--arch", "aarch64", "--dry-run", "--yes"],
+        ["usb", "--device", "/dev/sdb", "--no-wizard", "--arch", "riscv64", "--dry-run", "--yes"],
     )
     assert result.exit_code == 1  # iso_for raises UsbError → caught → clean exit, not a traceback

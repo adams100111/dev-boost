@@ -33,9 +33,14 @@ def test_iso_for_x86_64_returns_spec() -> None:
     assert spec.id == "fedora-44" and "x86_64" in spec.url
 
 
+def test_iso_for_aarch64_returns_spec() -> None:
+    spec = iso_for("fedora-44", "aarch64")
+    assert spec.id == "fedora-44" and "aarch64" in spec.url
+
+
 def test_iso_for_unsupported_arch_raises() -> None:
-    with pytest.raises(UsbError, match="aarch64"):
-        iso_for("fedora-44", "aarch64")
+    with pytest.raises(UsbError, match="riscv64"):
+        iso_for("fedora-44", "riscv64")
 
 
 def test_iso_for_unknown_os_raises() -> None:
