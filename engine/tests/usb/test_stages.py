@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import DeviceError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
@@ -28,6 +29,25 @@ def test_render_kscfg_substitutes_profiles() -> None:
     assert "devboost install cli shell" in out and "install full" not in out
 
 
+def test_boot_artifacts_refuses_wipe_without_assume_yes(tmp_path: Path) -> None:
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    cache = Cache(tmp_path / "cache")
+    dl = FakeDownloader(cache, blobs={})
+    cfg = UsbBuildConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=False,
+    )
+    ex = FakeExecutor()
+    ctx = Ctx(os=OS, ex=ex)
+    with pytest.raises(DeviceError, match="not confirmed"):
+        boot_artifacts(ctx, cfg, dl, vtoy_mount=tmp_path / "VTOY")
+    assert not any("ventoy" in " ".join(c) for c in ex.calls)
+
+
 def test_boot_artifacts_installs_ventoy_and_stages_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -42,6 +62,7 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
         iso=iso,
         profiles=("cli",),
         cache_dir=cache.cache_dir,
+        assume_yes=True,
     )
     vtoy = tmp_path / "VTOY"
     ctx = Ctx(os=OS, ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)}))

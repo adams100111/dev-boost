@@ -12,6 +12,7 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Annotated
 
+import questionary
 import typer
 
 from devboost.core import log, osinfo
@@ -22,7 +23,7 @@ from devboost.usb.builder import build
 from devboost.usb.cache import Cache
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.download import UrllibDownloader
-from devboost.usb.isos import FEDORA, default_iso
+from devboost.usb.isos import FEDORA, default_iso, iso_for
 
 
 def usb(
@@ -53,14 +54,26 @@ def usb(
         cfg = wizard.run(ctx)
     else:
         os_info = osinfo.detect()
+        resolved_arch = arch or os_info.arch
+
+        assume_yes = yes
+        if not assume_yes:
+            ok = questionary.confirm(
+                f"WIPE {device}? All data on it is destroyed.", default=False
+            ).ask()
+            if not (ok or False):
+                log.error("aborted")
+                raise typer.Exit(code=1)
+            assume_yes = True
+
         cfg = UsbBuildConfig(
             device=device,
-            arch=arch or os_info.arch,
-            iso=FEDORA[iso] if iso else default_iso(),
+            arch=resolved_arch,
+            iso=iso_for(iso, resolved_arch) if iso else iso_for(default_iso().id, resolved_arch),
             profiles=tuple(profile) or ("full",),
             secrets_path=secrets,
             cache_dir=cache_dir or Path(gettempdir()) / "devboost-usb",
-            assume_yes=yes,
+            assume_yes=assume_yes,
         )
         ctx = Ctx(os=os_info, ex=RealExecutor())
 

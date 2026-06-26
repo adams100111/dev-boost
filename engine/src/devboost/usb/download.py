@@ -26,7 +26,7 @@ class UrllibDownloader:
             return dest
         tmp = dest.with_suffix(dest.suffix + ".part")
         try:
-            with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:  # noqa: S310
+            with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:
                 shutil.copyfileobj(resp, out)
         except OSError as exc:
             raise DownloadError(url, str(exc)) from exc

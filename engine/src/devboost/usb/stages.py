@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from devboost.core.errors import VentoyError
+from devboost.core.errors import DeviceError, VentoyError
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx
 from devboost.usb.config import UsbBuildConfig
@@ -25,6 +25,8 @@ def render_kscfg(
 def boot_artifacts(
     ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path
 ) -> None:
+    if not cfg.assume_yes:
+        raise DeviceError(f"refusing to wipe {cfg.device}: not confirmed")
     validate(ctx, cfg.device)
     if ctx.ex.run(["ventoy", "-i", cfg.device], sudo=True).code != 0:
         raise VentoyError(f"ventoy install failed on {cfg.device}")
