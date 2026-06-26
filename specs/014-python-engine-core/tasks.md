@@ -133,9 +133,9 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `install gnome && verify gnome` green on a GNOME VM (dark/scaling/extensions applied).
 
-- [ ] T038 [P] [US1] Port gnome bats → pytest (test-first)
-- [ ] T039 [US1] Tests then impl: `dconf` primitive (`load` schema dumps via `dconf` CLI through `Executor`) in `engine/src/devboost/exec/primitives/dconf.py`
-- [ ] T040 [US1] [US3] Port gnome modules (gnome-settings, gnome-extensions, gnome-manager-apps; opt-in aesthetics/theme bundles) ; delete `lib/gnome.sh` + bash + bats; VM-verify
+- [X] T038 [P] [US1] Port gnome bats → pytest (test-first)
+- [X] T039 [US1] Tests then impl: `dconf` primitive (`load` schema dumps via `dconf` CLI through `Executor`) in `engine/src/devboost/exec/primitives/dconf.py`
+- [X] T040 [US1] [US3] Port gnome modules (gnome-settings, gnome-extensions, gnome-manager-apps; opt-in aesthetics/theme bundles) ; delete `lib/gnome.sh` + bash + bats; VM-verify
 
 **Checkpoint**: gnome green; `lib/gnome.sh` gone.
 
