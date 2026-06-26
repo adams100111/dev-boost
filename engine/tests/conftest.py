@@ -33,10 +33,14 @@ def fedora_ctx(fedora_os: OsInfo, fake_ex: FakeExecutor) -> Ctx:
 def profiles_file(tmp_path: Path) -> Path:
     """A fixture profiles.toml referencing only the M0 tracer modules."""
     p = tmp_path / "profiles.toml"
+    # Must declare every profile the registered catalog references (load-time validation
+    # checks each module's `profiles` against these keys). Members only need to resolve
+    # for profiles actually exercised by a test.
     p.write_text(
         "[profiles]\n"
         'cli = ["ripgrep"]\n'
         'base = ["docker"]\n'
+        'shell = ["starship"]\n'
         'laravel = ["ddev"]\n'
         'full = ["cli", "base", "laravel"]\n'
         'terminal = ["ripgrep"]\n'

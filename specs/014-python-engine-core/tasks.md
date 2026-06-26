@@ -119,9 +119,9 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `install shell && verify shell` green; starship/ghostty/nerd-fonts/dotfiles applied.
 
-- [ ] T035 [P] [US1] Port cli/shell bats → pytest (test-first)
-- [ ] T036 [US1] [US3] Port `shell` modules (starship, bash-config, ghostty, nerd-fonts, dotfiles) to `engine/src/devboost/modules/`; reuse `config`/`fs`/`mise` primitives (extend as needed)
-- [ ] T037 [US1] Delete the ported modules' bash + bats; VM-verify `cli`+`shell`
+- [X] T035 [P] [US1] Port cli/shell bats → pytest (test-first)
+- [X] T036 [US1] [US3] Port `shell` modules (starship, bash-config, ghostty, nerd-fonts, dotfiles) to `engine/src/devboost/modules/`; reuse `config`/`fs`/`mise` primitives (extend as needed)
+- [X] T037 [US1] Delete the ported modules' bash + bats; VM-verify `cli`+`shell`
 
 **Checkpoint**: terminal experience green.
 
