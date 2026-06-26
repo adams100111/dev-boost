@@ -208,10 +208,10 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `install system && verify system` green; `gpu-detect` selects the right driver path; `doctor --gpu` reports the NVIDIA stack.
 
-- [ ] T058 [P] [US1] Port system + gpu/nvidia bats → pytest (test-first)
-- [ ] T059 [US1] Tests then impl: `gpu` primitive + MOK state machine (lspci detect, resign service, CRC fix) in `engine/src/devboost/exec/primitives/gpu.py`; complete `doctor --gpu` (T022)
-- [ ] T060 [US1] [US3] Port `system` modules (snapper, grub-btrfs, btrfsmaintenance, fwupd, tuned/thermald, earlyoom, smartmontools, dnf-automatic-security, restic-backup, gpu-detect) + `hardware-nvidia` modules (nvidia-akmod, cuda, libva-nvidia-driver, secureboot-mok, nvidia-resign-service, nvidia-container-toolkit) + `optional-editors` + `security-cli` (pass, pass-store)
-- [ ] T061 [US1] Delete `lib/gpu.sh` + ported bash + bats; VM-verify (stubbed MOK per design §10 oracle)
+- [X] T058 [P] [US1] Port system + gpu/nvidia bats → pytest (test-first)
+- [X] T059 [US1] Tests then impl: `gpu` primitive + MOK state machine (lspci detect, resign service, CRC fix) in `engine/src/devboost/exec/primitives/gpu.py`; complete `doctor --gpu` (T022)
+- [X] T060 [US1] [US3] Port `system` modules (snapper, grub-btrfs, btrfsmaintenance, fwupd, tuned/thermald, earlyoom, smartmontools, dnf-automatic-security, restic-backup, gpu-detect) + `hardware-nvidia` modules (nvidia-akmod, cuda, libva-nvidia-driver, secureboot-mok, nvidia-resign-service, nvidia-container-toolkit) + `optional-editors` + `security-cli` (pass, pass-store)
+- [X] T061 [US1] Delete `lib/gpu.sh` + ported bash + bats; VM-verify (stubbed MOK per design §10 oracle)
 
 **Checkpoint**: every module ported; only `lib/`-remnants + entrypoints remain to clean.
 

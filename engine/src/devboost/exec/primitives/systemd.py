@@ -21,3 +21,13 @@ def write_user_unit(ctx: Ctx, name: str, content: str) -> None:
 def enable_user_unit(ctx: Ctx, name: str, *, now: bool = False) -> None:
     argv = ["systemctl", "--user", "enable", *(["--now"] if now else []), name]
     ctx.ex.run(argv)
+
+
+def enable_system_unit(ctx: Ctx, name: str, *, now: bool = False) -> None:
+    argv = ["systemctl", "enable", *(["--now"] if now else []), name]
+    ctx.ex.run(argv, sudo=True)
+
+
+def is_enabled(ctx: Ctx, name: str, *, user: bool = False) -> bool:
+    scope = ["--user"] if user else []
+    return ctx.ex.run(["systemctl", *scope, "is-enabled", name]).ok

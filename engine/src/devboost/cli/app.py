@@ -104,7 +104,17 @@ def doctor(
 ) -> None:
     """Environment preflight."""
     if gpu:
-        log.warn("doctor --gpu: NVIDIA diagnostics arrive with the gpu milestone (M9)")
+        from devboost.exec.primitives import gpu as gpu_prim
+
+        gpus = gpu_prim.detect(_ctx())
+        vendors = [n for n, on in
+                   (("intel", gpus.intel), ("amd", gpus.amd), ("nvidia", gpus.nvidia)) if on]
+        log.ok(f"doctor --gpu: detected {', '.join(vendors) or 'no recognized GPU'}")
+        if gpus.nvidia:
+            ctx = _ctx()
+            for chk, ok in (("akmod-nvidia", ctx.ex.run(["rpm", "-q", "akmod-nvidia"]).ok),
+                            ("nvidia-ctk", ctx.ex.which("nvidia-ctk"))):
+                (log.ok if ok else log.warn)(f"  {chk}: {'present' if ok else 'missing'}")
         return
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
     checks = run_checks(ctx, root)

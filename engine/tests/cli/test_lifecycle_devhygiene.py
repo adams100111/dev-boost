@@ -30,6 +30,10 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'python = ["uv"]\nweb = ["web-runtimes"]\ndotnet = ["dotnet-sdk"]\n'
         'data = ["data-services"]\ndevops = ["devops-tools"]\n'
         'react-native = ["expo"]\napps = ["obsidian"]\ndev-hygiene = ["aspire-gc"]\n'
+        'system = ["gpu-detect"]\n'
+        'hardware-nvidia = ["nvidia-akmod"]\n'
+        'optional-editors = ["neovim"]\n'
+        'security-cli = ["pass"]\n'
         'laravel = ["ddev"]\n',
         encoding="utf-8",
     )
