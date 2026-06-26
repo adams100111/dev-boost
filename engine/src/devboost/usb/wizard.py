@@ -1,4 +1,8 @@
-"""Interactive wizard: questionary prompts (each defaulted) -> UsbBuildConfig."""
+"""Interactive wizard: questionary prompts (each defaulted) -> UsbBuildConfig.
+
+After the device pick we probe (read-only) and branch: an existing dev-boost stick
+offers a non-destructive update; a foreign Ventoy or blank stick confirms a wipe.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +14,18 @@ import questionary
 
 from devboost.core.errors import DeviceError
 from devboost.model import Ctx
-from devboost.usb.catalog import CATALOG, default_iso, iso_for
+from devboost.usb.catalog import default_os, iso_for, supported
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.devices import list_removable
+from devboost.usb.probe import probe
 
 _PROFILES = ("full", "terminal", "devtools", "base", "cli", "shell", "gnome")
+
+
+def _confirm_wipe(device: str, *, label: str) -> None:
+    ok = questionary.confirm(f"{label} {device}? All data on it is destroyed.", default=False).ask()
+    if not (ok or False):
+        raise DeviceError("aborted: device wipe not confirmed")
 
 
 def run(ctx: Ctx) -> UsbBuildConfig:
@@ -22,44 +33,59 @@ def run(ctx: Ctx) -> UsbBuildConfig:
     if not devices:
         raise DeviceError("no removable disk found — plug in a USB and retry")
     device = questionary.select(
-        "Target USB device (WILL BE WIPED):",
+        "Target USB device:",
         choices=[questionary.Choice(d.label(), value=d.path) for d in devices],
     ).ask()
-    # Distinct, safe labels like:  /dev/sdb  —  SanDisk Ultra (usb)  —  32G  [sn:4C53]
-    # (list_removable already filtered to removable + unmounted disks; the builder re-validate()s.)
     if device is None:
         raise DeviceError("aborted")
 
-    confirmed = questionary.confirm(
-        f"WIPE {device}? All data on it is destroyed.", default=False
-    ).ask()
-    if not (confirmed or False):
-        raise DeviceError("aborted: device wipe not confirmed")
+    state = probe(ctx, device)
+    mode = "build"
+    refresh_iso = False
+    if state.kind == "devboost":
+        built = state.marker.built_at if state.marker else "unknown"
+        os_id = state.marker.os_id if state.marker else "?"
+        action = questionary.select(
+            f"This is a dev-boost USB ({os_id}, built {built}). What now?",
+            choices=[
+                questionary.Choice("Update (keep ISOs/secrets, no wipe)", value="update"),
+                questionary.Choice("Rebuild (wipe everything)", value="build"),
+            ],
+            default="Update (keep ISOs/secrets, no wipe)",
+        ).ask() or "update"
+        mode = action
+        if mode == "update":
+            refresh_iso = questionary.confirm(
+                "Also re-download the pinned Fedora ISO?", default=False
+            ).ask() or False
+        else:
+            _confirm_wipe(device, label="REBUILD — WIPE")
+    elif state.kind == "ventoy-other":
+        _confirm_wipe(device, label="This is a non-dev-boost Ventoy stick. WIPE")
+    else:
+        _confirm_wipe(device, label="WIPE")
 
     arch = questionary.select(
-        "Architecture:",
-        choices=["x86_64", "aarch64"],
-        default=platform.machine(),
+        "Architecture:", choices=["x86_64", "aarch64"], default=platform.machine()
     ).ask()
     if arch is None:
         raise DeviceError("aborted")
 
-    iso_id = questionary.select(
-        "Fedora ISO:", choices=list(CATALOG), default=default_iso().id
+    os_id = questionary.select(
+        "Operating system:",
+        choices=[questionary.Choice(o.name, value=o.id) for o in supported()],
+        default=default_os().name,
     ).ask()
-    if iso_id is None:
+    if os_id is None:
         raise DeviceError("aborted")
 
     profiles = questionary.checkbox(
         "Profiles to install on first boot:",
         choices=[questionary.Choice(p, checked=(p == "full")) for p in _PROFILES],
     ).ask() or ["full"]
-    secrets = questionary.path(
-        "Path to secrets.age (blank to skip):", default=""
-    ).ask()
+    secrets = questionary.path("Path to secrets.age (blank to skip):", default="").ask()
     cache = questionary.path(
-        "Cache dir for downloads:",
-        default=str(Path(gettempdir()) / "devboost-usb"),
+        "Cache dir for downloads:", default=str(Path(gettempdir()) / "devboost-usb")
     ).ask()
     if cache is None:
         raise DeviceError("aborted")
@@ -73,10 +99,12 @@ def run(ctx: Ctx) -> UsbBuildConfig:
     return UsbBuildConfig(
         device=device,
         arch=arch,
-        iso=iso_for(iso_id, arch),
+        iso=iso_for(os_id, arch),
         profiles=tuple(profiles),
         secrets_path=Path(secrets) if secrets else None,
         cache_dir=Path(cache),
         offline_mirror=offline_mirror,
+        mode=mode,  # type: ignore[arg-type]
+        refresh_iso=refresh_iso,
         assume_yes=True,
     )
