@@ -1,9 +1,0 @@
-name        = "android-sdk"
-category    = "dev-stacks"
-description = "Android SDK for React Native (mise JDK temurin-17; cmdline-tools + platform-tools/API 35/build-tools 36.0.0; unattended licenses; idempotent)"
-requires    = ["mise"]
-profiles    = ["react-native"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/android-sdk/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/android-sdk/install.sh\""

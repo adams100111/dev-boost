@@ -1,9 +1,0 @@
-name     = "tmux"
-category = "base"
-requires = []
-verify   = "command -v tmux"
-
-[install]
-fedora = "sudo dnf install -y tmux"
-debian = "sudo apt-get install -y tmux"
-macos  = "brew install tmux"

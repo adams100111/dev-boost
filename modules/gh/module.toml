@@ -1,8 +1,0 @@
-name        = "gh"
-category    = "cli"
-description = "GitHub CLI — add dnf repo if absent and install"
-requires    = []
-verify      = "command -v gh"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/gh/install.sh\""

@@ -1,9 +1,0 @@
-name        = "gnome-theme-bundle"
-category    = "gnome"
-description = "OPT-IN: WhiteSur-Dark gtk theme + Papirus icons + Bibata cursor + Inter font + User Themes extension, applied via gsettings"
-requires    = ["gnome-settings"]
-profiles    = ["gnome-theme"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/gnome-theme-bundle/install.sh\" --verify-only"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/gnome-theme-bundle/install.sh\""

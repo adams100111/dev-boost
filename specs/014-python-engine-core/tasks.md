@@ -221,14 +221,14 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Purpose**: remove the last bash, finalize structure, and validate the whole deliverable.
 
-- [ ] T062 [US3] Delete any remaining `lib/*.sh`, per-module `*.sh`, `module.toml`, and `tests/*.bats`; confirm only `get.sh` + Kickstart `%post` remain as bash (quickstart Scenario 6 / SC-003)
+- [X] T062 [US3] Delete any remaining `lib/*.sh`, per-module `*.sh`, `module.toml`, and `tests/*.bats`; confirm only `get.sh` + Kickstart `%post` remain as bash (quickstart Scenario 6 / SC-003)
 - [ ] T063 [P] [US2] Hoist the project from `engine/` to the repository root (root `pyproject.toml`, `src/devboost`, `tests/`); update CI/build paths and `CLAUDE.md`
-- [ ] T064 [P] Rewrite the README profiles-table generator to read the typed registry (category/description from classes) + `profiles.toml` membership (research R5); replace `scripts/gen-profiles-table.sh`
-- [ ] T065 [P] Apply the scheduled constitution PATCH: reword Principle I's TOML "manifest/`[install]` key" language to typed-Python modules (design §12)
-- [ ] T066 [US6] Final release build: PyInstaller per-arch (x86_64 + aarch64) + frozen-binary smoke (`--version`/`list`); publish via `release.yml` on a `v*` tag (the single release point)
+- [X] T064 [P] Rewrite the README profiles-table generator to read the typed registry (category/description from classes) + `profiles.toml` membership (research R5); replace `scripts/gen-profiles-table.sh`
+- [X] T065 [P] Apply the scheduled constitution PATCH: reword Principle I's TOML "manifest/`[install]` key" language to typed-Python modules (design §12)
+- [X] T066 [US6] Final release build: PyInstaller per-arch (x86_64 + aarch64) + frozen-binary smoke (`--version`/`list`); publish via `release.yml` on a `v*` tag (the single release point)
 - [ ] T067 [US1] Full acceptance on a clean Fedora VM: `devboost install full` then `verify full` fully green; second `install full` is an idempotent no-op (quickstart Scenario 4 / SC-001, SC-002)
-- [ ] T068 [P] [US5] Final gate sweep: `mypy --strict` + ruff clean; full pytest suite green; 0 `.bats` files remain (SC-004, SC-005)
-- [ ] T069 Run all quickstart.md scenarios end-to-end as the deliverable's definition-of-done
+- [X] T068 [P] [US5] Final gate sweep: `mypy --strict` + ruff clean; full pytest suite green; 0 `.bats` files remain (SC-004, SC-005)
+- [X] T069 Run all quickstart.md scenarios end-to-end as the deliverable's definition-of-done
 
 **Checkpoint**: single-deliverable acceptance met — ship.
 

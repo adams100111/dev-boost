@@ -1,9 +1,0 @@
-name        = "fedora-third-party"
-category    = "base"
-description = "Enable Fedora third-party repository support (RPM + Flatpak)"
-requires    = []
-profiles    = ["base"]
-verify      = "fedora-third-party query | grep -q enabled"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/fedora-third-party/install.sh\""

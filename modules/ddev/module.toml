@@ -1,9 +1,0 @@
-name        = "ddev"
-category    = "dev-stacks"
-description = "Install ddev (container-based Laravel/PHP dev orchestrator) from its Fedora dnf repo; trust local certs via mkcert. NO host php/composer."
-requires    = ["docker"]
-profiles    = ["laravel"]
-verify      = "command -v ddev >/dev/null 2>&1"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/ddev/install.sh\""

@@ -1,8 +1,0 @@
-name        = "tpm"
-category    = "cli"
-description = "Tmux Plugin Manager — clone from GitHub if absent"
-requires    = []
-verify      = "[ -d \"$HOME/.tmux/plugins/tpm\" ]"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/tpm/install.sh\""

@@ -1,9 +1,0 @@
-name        = "bitwarden"
-category    = "apps"
-description = "Bitwarden password manager (Flathub)"
-requires    = ["flatpak"]
-profiles    = ["apps"]
-verify      = "flatpak info com.bitwarden.desktop"
-
-[install]
-fedora = "flatpak install -y flathub com.bitwarden.desktop"

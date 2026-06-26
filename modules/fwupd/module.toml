@@ -1,9 +1,0 @@
-name        = "fwupd"
-category    = "system"
-description = "Linux firmware update daemon (LVFS); enable fwupd.service"
-requires    = []
-profiles    = ["system"]
-verify      = "command -v fwupdmgr >/dev/null 2>&1 && systemctl is-enabled fwupd.service >/dev/null 2>&1"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/fwupd/install.sh\""

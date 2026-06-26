@@ -1,9 +1,0 @@
-name        = "jetbrains-toolbox"
-category    = "editors"
-description = "Install JetBrains Toolbox (download + extract the official tarball, seed-if-absent)"
-requires    = []
-profiles    = ["optional-editors"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/jetbrains-toolbox/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/jetbrains-toolbox/install.sh\""

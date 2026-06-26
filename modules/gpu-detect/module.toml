@@ -1,9 +1,0 @@
-name        = "gpu-detect"
-category    = "hardware"
-description = "Detect GPU vendor (lspci) and record a driver-path selection marker (nvidia ⇒ recommend hardware-nvidia profile; intel/amd ⇒ open). Installs no driver packages."
-requires    = ["rpmfusion"]
-profiles    = ["system"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/gpu-detect/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/gpu-detect/install.sh\""

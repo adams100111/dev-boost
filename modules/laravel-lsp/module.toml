@@ -1,9 +1,0 @@
-name        = "laravel-lsp"
-category    = "dev-stacks"
-description = "Wire PHP intelephense (global, mise-pinned) into fresh's config.json for the Laravel stack. Pint is per-project (template), not global."
-requires    = ["fresh", "mise", "ddev"]
-profiles    = ["laravel"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/laravel-lsp/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/laravel-lsp/install.sh\""

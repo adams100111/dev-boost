@@ -1,9 +1,0 @@
-name        = "neovim"
-category    = "editors"
-description = "Install Neovim and bootstrap the LazyVim starter config (seed-if-absent)"
-requires    = []
-profiles    = ["optional-editors"]
-verify      = "command -v nvim"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/neovim/install.sh\""

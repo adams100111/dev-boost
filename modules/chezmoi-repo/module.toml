@@ -1,9 +1,0 @@
-name        = "chezmoi-repo"
-category    = "base"
-description = "chezmoi init + clone the remote dotfiles repo (non-blocking); base/zero-config only"
-requires    = ["chezmoi", "secrets"]
-profiles    = ["base"]
-verify      = "[ -d \"$HOME/.local/share/chezmoi\" ]"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/chezmoi-repo/install.sh\""

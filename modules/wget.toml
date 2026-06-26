@@ -1,9 +1,0 @@
-name     = "wget"
-category = "base"
-requires = []
-verify   = "command -v wget"
-
-[install]
-fedora = "sudo dnf install -y wget"
-debian = "sudo apt-get install -y wget"
-macos  = "brew install wget"

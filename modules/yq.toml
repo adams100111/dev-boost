@@ -1,9 +1,0 @@
-name     = "yq"
-category = "cli"
-requires = []
-verify   = "command -v yq"
-
-[install]
-fedora = "sudo dnf install -y yq"
-debian = "sudo apt-get install -y yq"
-macos  = "brew install yq"

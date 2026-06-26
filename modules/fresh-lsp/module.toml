@@ -1,9 +1,0 @@
-name        = "fresh-lsp"
-category    = "editors"
-description = "Provision fresh's always-on base language intelligence (mise-sourced, pinned; idempotent jq-merge into config.json)"
-requires    = ["fresh", "mise"]
-profiles    = ["editors"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/fresh-lsp/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/fresh-lsp/install.sh\""

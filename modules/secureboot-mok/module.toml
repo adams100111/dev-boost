@@ -1,9 +1,0 @@
-name        = "secureboot-mok"
-category    = "hardware"
-description = "Secure Boot MOK enrollment for akmod-signed NVIDIA modules (state machine; one-time MOK screen)"
-requires    = ["nvidia-akmod"]
-profiles    = ["hardware-nvidia"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/secureboot-mok/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/secureboot-mok/install.sh\""

@@ -1,9 +1,0 @@
-name        = "flatpak"
-category    = "base"
-description = "Ensure Flatpak is installed, add Flathub remote, and remove Fedora's default filter"
-requires    = []
-profiles    = ["base"]
-verify      = "flatpak remotes | awk '{print $1}' | grep -qxF flathub"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/flatpak/install.sh\""

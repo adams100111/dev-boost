@@ -1,9 +1,0 @@
-name     = "ripgrep"
-category = "base"
-requires = []
-verify   = "command -v rg"
-
-[install]
-fedora = "sudo dnf install -y ripgrep"
-debian = "sudo apt-get install -y ripgrep"
-macos  = "brew install ripgrep"

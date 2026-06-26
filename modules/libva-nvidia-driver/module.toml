@@ -1,9 +1,0 @@
-name        = "libva-nvidia-driver"
-category    = "hardware"
-description = "NVIDIA VA-API driver (libva-nvidia-driver — renamed from nvidia-vaapi-driver)"
-requires    = ["nvidia-akmod"]
-profiles    = ["hardware-nvidia"]
-verify      = "rpm -q libva-nvidia-driver >/dev/null 2>&1"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/libva-nvidia-driver/install.sh\""

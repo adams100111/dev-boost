@@ -1,9 +1,0 @@
-name        = "expo"
-category    = "dev-stacks"
-description = "Expo / React Native project scaffolding template (NO global expo-cli — uses npx; seeds templates/react-native; idempotent)"
-requires    = ["web-runtimes"]
-profiles    = ["react-native"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/expo/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/expo/install.sh\""

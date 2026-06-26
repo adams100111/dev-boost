@@ -1,9 +1,0 @@
-name        = "dotnet-sdk"
-category    = "dev-stacks"
-description = ".NET 10 LTS SDK (Fedora in-distro; idempotent — skips when a 10.* SDK is already present)"
-requires    = []
-profiles    = ["dotnet"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/dotnet-sdk/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/dotnet-sdk/install.sh\""

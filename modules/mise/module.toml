@@ -1,9 +1,0 @@
-name        = "mise"
-category    = "base"
-description = "Install mise runtime version manager; migrate nvm/sdkman init blocks"
-requires    = []
-profiles    = ["base"]
-verify      = "command -v mise"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/mise/install.sh\""

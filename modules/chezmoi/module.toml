@@ -1,9 +1,0 @@
-name        = "chezmoi"
-category    = "base"
-description = "Install the chezmoi binary (portable, binary-only; remote clone lives in chezmoi-repo)"
-requires    = []
-profiles    = ["base"]
-verify      = "command -v chezmoi"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/chezmoi/install.sh\""

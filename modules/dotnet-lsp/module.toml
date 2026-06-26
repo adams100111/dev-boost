@@ -1,9 +1,0 @@
-name        = "dotnet-lsp"
-category    = "dev-stacks"
-description = "Provision fresh's C# language intelligence (csharp-ls + csharpier via dotnet tools; idempotent jq-merge)"
-requires    = ["fresh", "dotnet-sdk"]
-profiles    = ["dotnet"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/dotnet-lsp/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/dotnet-lsp/install.sh\""

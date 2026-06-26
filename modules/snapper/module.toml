@@ -1,9 +1,0 @@
-name        = "snapper"
-category    = "system"
-description = "Btrfs snapshot manager; create a 'root' snapshot config for /"
-requires    = []
-profiles    = ["system"]
-verify      = "snapper list-configs 2>/dev/null | grep -qw root"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/snapper/install.sh\""

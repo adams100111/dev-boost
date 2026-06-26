@@ -1,9 +1,0 @@
-name        = "nvidia-container-toolkit"
-category    = "hardware"
-description = "NVIDIA Container Toolkit (GPU access for Docker; nvidia-ctk runtime configure)"
-requires    = ["docker", "nvidia-akmod"]
-profiles    = ["hardware-nvidia"]
-verify      = "command -v nvidia-ctk >/dev/null 2>&1"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/nvidia-container-toolkit/install.sh\""

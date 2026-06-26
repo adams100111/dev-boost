@@ -84,6 +84,35 @@ class Snapper(Module):
 
 
 @register
+class SnapperDnfHook(Module):
+    name = "snapper-dnf-hook"
+    category = "system"
+    description = "dnf plugin: snapshot before/after transactions."
+    profiles = ("system",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.run(["rpm", "-q", "python3-dnf-plugin-snapper"]).ok
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "python3-dnf-plugin-snapper")
+
+
+@register
+class BtrfsAssistant(Module):
+    name = "btrfs-assistant"
+    category = "system"
+    description = "GUI for snapshots/subvolumes."
+    gui = True
+    profiles = ("system",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.which("btrfs-assistant") or ctx.ex.run(["rpm", "-q", "btrfs-assistant"]).ok
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "btrfs-assistant")
+
+
+@register
 class Btrfsmaintenance(Module):
     name = "btrfsmaintenance"
     category = "system"

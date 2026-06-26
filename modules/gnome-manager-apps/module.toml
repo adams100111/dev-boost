@@ -1,9 +1,0 @@
-name        = "gnome-manager-apps"
-category    = "gnome"
-description = "Install GNOME Extensions app, Extension Manager (flatpak) and GNOME Tweaks — discovery and tweak toolchain"
-requires    = ["gnome-settings"]
-profiles    = ["gnome"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/gnome-manager-apps/install.sh\" --verify-only"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/gnome-manager-apps/install.sh\""

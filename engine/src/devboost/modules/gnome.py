@@ -80,3 +80,33 @@ class GnomeManagerApps(Module):
         flatpak.remote_add(ctx, "flathub", "https://flathub.org/repo/flathub.flatpakrepo")
         flatpak.install(ctx, "com.mattjakeman.ExtensionManager")
         flatpak.install(ctx, "org.gnome.Extensions")
+
+
+@register
+class GnomeThemeBundle(Module):
+    name = "gnome-theme-bundle"
+    category = "gnome"
+    description = "Opt-in reproducible GTK theme + icons (adw-gtk3 + papirus)."
+    gui = True
+    profiles = ("gnome-theme",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.run(["rpm", "-q", "adw-gtk3-theme"]).ok
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "adw-gtk3-theme", "papirus-icon-theme")
+
+
+@register
+class GnomeAestheticsBundle(Module):
+    name = "gnome-aesthetics-bundle"
+    category = "gnome"
+    description = "Opt-in aesthetic extras (fonts + theming helpers)."
+    gui = True
+    profiles = ("gnome-aesthetics",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.run(["rpm", "-q", "gnome-shell-extension-user-theme"]).ok
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, "gnome-shell-extension-user-theme", "google-noto-sans-fonts")

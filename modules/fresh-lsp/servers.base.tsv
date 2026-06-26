@@ -1,8 +1,0 @@
-# Always-on base set of fresh language servers (markup/config/shell).
-# TAB-separated columns: lang <TAB> fresh-command <TAB> mise backend:tool@pin <TAB> args(space-sep, optional)
-# Pins here ARE the in-repo source of truth for these tools' versions (Principle III).
-# Per-stack rows (python/web/laravel/dotnet/devops) are added by dev-stacks (Spec 7).
-markdown	marksman	aqua:artempyanykh/marksman@2023-12-09
-toml	taplo	cargo:taplo-cli@0.9.3	lsp stdio
-bash	bash-language-server	npm:bash-language-server@5.4.0	start
-yaml	yaml-language-server	npm:yaml-language-server@1.15.0	--stdio

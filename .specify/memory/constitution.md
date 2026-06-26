@@ -1,5 +1,11 @@
 <!--
-SYNC IMPACT REPORT
+SYNC IMPACT REPORT (v3.0.1, 2026-06-26)
+PATCH: reworded Principle I + Tech Constraints from TOML "[install] keys / module
+manifest / bash -c strings" to the realized typed-Python model (module classes,
+typed install/verify over an injected executor, OsMap per-OS entries). No principle
+added/removed; reflects the completed bash→Python migration (spec 014).
+
+--- prior report ---
 Version change: 2.0.0 → 3.0.0
 Bump rationale: MAJOR — removes the co-equal "engine MAY be pure Bash OR
   typed-Python" policy from v2.0.0. The engine and ALL commands/executables MUST now
@@ -47,10 +53,11 @@ Follow-up (outside constitution scope): downstream docs/specs that still referen
 The platform is a small, legible engine plus declarative data. The engine — and
 every command and executable the platform ships — MUST be developed in strictly-typed
 Python, exposed through Typer (see Technology & Security Constraints). The engine MUST
-NOT change when a tool, stack, or operating system is added — those are added as data
-(a module manifest, a profile entry, or an install key). Every installable thing MUST
-be a self-contained module declaring `verify`, at least one `[install]` key, and its
-`requires`. Adding a tool MUST be one file; adding an OS MUST be one key. Rationale:
+NOT change when a tool, stack, or operating system is added — those are added as a
+typed declaration (a module class, a profile entry in `profiles.toml`, or a per-OS
+entry). Every installable thing MUST be a self-contained typed module declaring its
+`verify`, its `install`, and its `requires` (as references). Adding a tool MUST be one
+file; adding an OS MUST be one localized per-OS entry, never an engine change. Rationale:
 extensibility and maintainability come from never editing control flow to add
 capability — the highest-frequency change must be the cheapest — and a single typed
 language keeps that control flow legible, refactorable, and statically verifiable.
@@ -95,7 +102,7 @@ durable guard.
 
 ### VI. Cross-OS via Data (Fedora is the reference)
 
-OS differences MUST be expressed as data — per-OS `[install]` keys resolved by the
+OS differences MUST be expressed as typed data — per-OS entries (`OsMap`) resolved by the
 precedence `<distro>` → `<os-family>` → `default`. Fedora is the reference
 implementation; other OSes are schema-supported and may be thinner, but adding
 support MUST never require engine changes. Rationale: portability must not become
@@ -121,9 +128,10 @@ branching logic in the core.
   binary (the public `curl … | bash` one-liner and the Kickstart `%post`). Such stubs
   MUST contain no capability, module, or decision logic — all behavior lives in the
   typed Python engine.
-- Module `install`/`verify` strings run via `bash -c` under a local-manifest trust
-  model; secrets are decrypted at bootstrap from an `age`-encrypted file and MUST
-  remain gitignored. Untracked binaries and `.env`/key files MUST stay gitignored.
+- A module's `install`/`verify` are typed Python methods over an injected executor;
+  all external commands run as argv lists (never a shell string). Secrets are decrypted
+  at bootstrap from an `age`-encrypted file and MUST remain gitignored. Untracked
+  binaries and `.env`/key files MUST stay gitignored.
 - Commit messages MUST use Conventional Commits and MUST contain no Claude /
   Anthropic attribution and no `Co-Authored-By` trailer.
 
@@ -149,4 +157,4 @@ expanded principles/sections, PATCH for clarifications. Plans and reviews MUST
 verify compliance with these principles; deviations MUST be justified in writing or
 the work is not done. The design spec and `docs/` carry runtime development guidance.
 
-**Version**: 3.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-26
+**Version**: 3.0.1 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-26

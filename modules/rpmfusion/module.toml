@@ -1,9 +1,0 @@
-name        = "rpmfusion"
-category    = "base"
-description = "Enable RPM Fusion free + nonfree repositories and AppStream metadata"
-requires    = []
-profiles    = ["base"]
-verify      = "rpm -q rpmfusion-free-release rpmfusion-nonfree-release >/dev/null 2>&1"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/rpmfusion/install.sh\""

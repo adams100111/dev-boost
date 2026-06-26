@@ -1,5 +1,0 @@
-# Python stack fresh language servers (LSP + formatter).
-# TAB-separated columns: lang <TAB> fresh-command <TAB> mise backend:tool@pin <TAB> args(space-sep, optional)
-# Pins here ARE the in-repo source of truth for these tools' versions (Principle III).
-python	basedpyright-langserver	pipx:basedpyright@1.39.8	--stdio
-pythonfmt	ruff	pipx:ruff@0.15.18	server

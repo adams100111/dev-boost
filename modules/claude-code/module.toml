@@ -1,8 +1,0 @@
-name        = "claude-code"
-category    = "cli"
-description = "Claude Code CLI — install via npm global (requires mise node)"
-requires    = ["mise"]
-verify      = "command -v claude"
-
-[install]
-default = "bash \"$DEVBOOST_ROOT/modules/claude-code/install.sh\""

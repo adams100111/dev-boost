@@ -1,9 +1,0 @@
-name        = "grub-btrfs"
-category    = "system"
-description = "Auto-generate GRUB boot entries for Btrfs snapshots; enable grub-btrfsd"
-requires    = ["snapper"]
-profiles    = ["system"]
-verify      = "systemctl is-enabled grub-btrfsd >/dev/null 2>&1"
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/grub-btrfs/install.sh\""

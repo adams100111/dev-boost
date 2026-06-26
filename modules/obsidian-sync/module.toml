@@ -1,9 +1,0 @@
-name        = "obsidian-sync"
-category    = "apps"
-description = "Unattended Obsidian↔GitHub vault sync (repo-scoped deploy key, ~/Vault clone, auto-open, Obsidian Git plugin, daily push timer)"
-requires    = ["obsidian", "secrets", "ssh-setup"]
-profiles    = ["apps"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/obsidian-sync/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/obsidian-sync/install.sh\""

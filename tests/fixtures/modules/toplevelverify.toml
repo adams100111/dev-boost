@@ -1,4 +1,0 @@
-name = "toplevelverify"
-verify = "echo toplevel-verify-cmd"
-[install]
-default = "echo install toplevelverify"

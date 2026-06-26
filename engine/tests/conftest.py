@@ -42,6 +42,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'base = ["docker"]\n'
         'shell = ["starship"]\n'
         'gnome = ["gnome-settings"]\n'
+        'gnome-theme = ["gnome-theme-bundle"]\n'
+        'gnome-aesthetics = ["gnome-aesthetics-bundle"]\n'
         'multimedia = ["openh264"]\n'
         'editors = ["fresh"]\n'
         'python = ["uv"]\n'

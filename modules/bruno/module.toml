@@ -1,9 +1,0 @@
-name        = "bruno"
-category    = "apps"
-description = "Bruno API client (Flathub)"
-requires    = ["flatpak"]
-profiles    = ["apps"]
-verify      = "flatpak info com.usebruno.Bruno"
-
-[install]
-fedora = "flatpak install -y flathub com.usebruno.Bruno"

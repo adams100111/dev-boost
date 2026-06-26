@@ -1,9 +1,0 @@
-name        = "data-services"
-category    = "dev-stacks"
-description = "Data dev-stack (containers-only): postgres 18 + valkey + dbgate compose assets (no host DB service)"
-requires    = ["docker"]
-profiles    = ["data"]
-verify      = "bash \"$DEVBOOST_ROOT/modules/data-services/verify.sh\""
-
-[install]
-fedora = "bash \"$DEVBOOST_ROOT/modules/data-services/install.sh\""

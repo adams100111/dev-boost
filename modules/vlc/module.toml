@@ -1,9 +1,0 @@
-name        = "vlc"
-category    = "apps"
-description = "VLC media player (Flathub)"
-requires    = ["flatpak"]
-profiles    = ["apps"]
-verify      = "flatpak info org.videolan.VLC"
-
-[install]
-fedora = "flatpak install -y flathub org.videolan.VLC"

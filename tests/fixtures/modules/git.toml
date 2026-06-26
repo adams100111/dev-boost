@@ -1,4 +1,0 @@
-name = "git"
-[install]
-default = "echo install git"
-verify = "true"

@@ -1,9 +1,0 @@
-name     = "direnv"
-category = "cli"
-requires = []
-verify   = "command -v direnv"
-
-[install]
-fedora = "sudo dnf install -y direnv"
-debian = "sudo apt-get install -y direnv"
-macos  = "brew install direnv"
