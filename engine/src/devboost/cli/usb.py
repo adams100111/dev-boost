@@ -24,6 +24,7 @@ from devboost.usb.cache import Cache
 from devboost.usb.catalog import CATALOG, default_iso, iso_for
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.download import UrllibDownloader
+from devboost.usb.report import RichReporter
 
 
 def usb(
@@ -77,5 +78,5 @@ def usb(
         )
         ctx = Ctx(os=os_info, ex=RealExecutor())
 
-    build(ctx, cfg, UrllibDownloader(Cache(cfg.cache_dir)), vtoy_mount=vtoy)
+    build(ctx, cfg, UrllibDownloader(Cache(cfg.cache_dir)), vtoy_mount=vtoy, reporter=RichReporter())  # noqa: E501
     log.ok(f"usb: built {cfg.device} (Fedora {cfg.iso.id}, profiles {' '.join(cfg.profiles)})")

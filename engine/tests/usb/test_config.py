@@ -22,3 +22,5 @@ def test_config_defaults() -> None:
     assert cfg.profiles == ("full",)
     assert cfg.offline_mirror is False
     assert cfg.secrets_path is None
+    assert cfg.mode == "build"
+    assert cfg.refresh_iso is False

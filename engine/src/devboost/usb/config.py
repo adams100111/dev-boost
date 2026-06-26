@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -48,3 +49,5 @@ class UsbBuildConfig(BaseModel):
     offline_mirror: bool = False
     cache_dir: Path
     assume_yes: bool = False
+    mode: Literal["build", "update"] = "build"
+    refresh_iso: bool = False

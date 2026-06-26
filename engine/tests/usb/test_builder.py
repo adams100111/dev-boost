@@ -10,6 +10,7 @@ from devboost.usb.builder import build
 from devboost.usb.cache import Cache
 from devboost.usb.config import IsoSpec, UsbBuildConfig
 from devboost.usb.download import FakeDownloader
+from devboost.usb.report import FakeReporter
 
 
 def test_build_runs_boot_then_extras(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -23,8 +24,13 @@ def test_build_runs_boot_then_extras(tmp_path: Path, monkeypatch) -> None:  # ty
     data = b"iso"
     iso = IsoSpec("fedora-44", "u", hashlib.sha256(data).hexdigest(), "E")
     cfg = UsbBuildConfig(device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path)
-    build(Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor()),
-          cfg, FakeDownloader(Cache(tmp_path), {}), vtoy_mount=tmp_path / "VTOY")
+    build(
+        Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor()),
+        cfg,
+        FakeDownloader(Cache(tmp_path), {}),
+        vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
+    )
     assert order == ["boot", "extra", "installers"]
 
 
@@ -49,6 +55,7 @@ def test_build_calls_mirror_when_offline_mirror_true(  # type: ignore[no-untyped
         cfg,
         FakeDownloader(Cache(tmp_path), {}),
         vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
     )
     assert order == ["boot", "extra", "installers", "mirror"]
 
@@ -73,6 +80,7 @@ def test_build_no_mirror_when_offline_mirror_false(  # type: ignore[no-untyped-d
         cfg,
         FakeDownloader(Cache(tmp_path), {}),
         vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
     )
     assert order == ["boot", "extra", "installers"]
     assert "mirror" not in order
