@@ -193,10 +193,10 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `add`/`export`/`diff`/`update`/`self-update` and `dev status|gc|down` behave per contracts/cli.md.
 
-- [ ] T054 [P] [US1] Port lifecycle + devhygiene bats → pytest (test-first)
-- [ ] T055 [US1] [US2] Tests then impl: `cli/lifecycle.py` (`add` scaffolds a typed module file, `export`, `diff`, `update` + `devboost.lock` writer, `self-update`)
-- [ ] T056 [US1] [US2] Tests then impl: `cli/devhygiene.py` (`dev status|gc|down`; precise orphan GC) + the `aspire-gc` user-timer module
-- [ ] T057 [US1] Delete `lib/lifecycle.sh` + `lib/devhygiene.sh` + their bash + bats; VM-verify the verbs
+- [X] T054 [P] [US1] Port lifecycle + devhygiene bats → pytest (test-first)
+- [X] T055 [US1] [US2] Tests then impl: `cli/lifecycle.py` (`add` scaffolds a typed module file, `export`, `diff`, `update` + `devboost.lock` writer, `self-update`)
+- [X] T056 [US1] [US2] Tests then impl: `cli/devhygiene.py` (`dev status|gc|down`; precise orphan GC) + the `aspire-gc` user-timer module
+- [X] T057 [US1] Delete `lib/lifecycle.sh` + `lib/devhygiene.sh` + their bash + bats; VM-verify the verbs
 
 **Checkpoint**: full CLI surface (contracts/cli.md) implemented; lifecycle/devhygiene bash gone.
 

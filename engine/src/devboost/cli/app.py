@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
 from devboost import __version__
+from devboost.cli import devhygiene as dh
+from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
@@ -126,6 +128,63 @@ def devtools(
 ) -> None:
     """Install the devtools tier."""
     _run(["devtools"], root, dry_run, force)
+
+
+def _ctx() -> Ctx:
+    return Ctx(os=osinfo.detect(), ex=RealExecutor())
+
+
+@app.command()
+def add(name: str, root: RootOpt = settings.root) -> None:
+    """Scaffold a new typed module file."""
+    path = lc.scaffold_module(root / "engine" / "src" / "devboost" / "modules", name)
+    log.ok(f"created {path}")
+
+
+@app.command()
+def export(root: RootOpt = settings.root) -> None:
+    """Snapshot the actual installed state."""
+    out = lc.export_snapshot(_ctx(), root / "workstation-config" / "exports")
+    typer.echo(str(out))
+
+
+@app.command()
+def diff(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
+    """Report declared-vs-actual drift (exit != 0 on drift)."""
+    drift = lc.diff_drift(_ctx(), profiles, root)
+    for name in drift:
+        log.warn(f"drift: {name} not installed")
+    if drift:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def update(root: RootOpt = settings.root) -> None:
+    """Regenerate the deterministic devboost.lock (no commit)."""
+    log.ok(f"wrote {lc.write_lock(root)}")
+
+
+@app.command(name="self-update")
+def self_update(root: RootOpt = settings.root) -> None:
+    """Update dev-boost and re-validate the catalog."""
+    if not lc.self_update(_ctx(), root):
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> None:
+    """Dev-environment resource hygiene."""
+    valid: tuple[Literal["status", "gc", "down"], ...] = ("status", "gc", "down")
+    if action not in valid:
+        log.error("usage: devboost dev <status|gc|down>")
+        raise typer.Exit(code=1)
+    ctx = _ctx()
+    if action == "status":
+        typer.echo(dh.status(ctx))
+    elif action == "gc":
+        log.ok(f"gc: removed {dh.gc(ctx)} orphaned container(s)")
+    else:
+        log.ok(f"down: stopped {dh.down(ctx)} container(s)")
 
 
 def main() -> None:
