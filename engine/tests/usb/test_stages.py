@@ -24,6 +24,15 @@ _LSBLK = (
 )
 
 
+def test_render_ventoy_json_binds_to_staged_iso_name() -> None:
+    from devboost.usb.stages import render_ventoy_json
+
+    tmpl = '{"auto_install": [{"image": "/ISO/__DEVBOOST_ISO__", "template": "/Bootstrap/ks.cfg"}]}'
+    out = render_ventoy_json(tmpl, iso_name="fedora-44.iso")
+    assert "/ISO/fedora-44.iso" in out
+    assert "__DEVBOOST_ISO__" not in out
+
+
 def test_render_kscfg_substitutes_profiles() -> None:
     tmpl = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/x 2>&1'"
     out = render_kscfg(tmpl, ("cli", "shell"))
@@ -75,7 +84,10 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     fake_ks = tmp_path / "ks.cfg"
     fake_ks.write_text(ks_template, encoding="utf-8")
     fake_ventoy_json = tmp_path / "ventoy.json"
-    fake_ventoy_json.write_bytes(b'{"key": "val"}')
+    fake_ventoy_json.write_text(
+        '{"auto_install": [{"image": "/ISO/__DEVBOOST_ISO__", "template": "/Bootstrap/ks.cfg"}]}',
+        encoding="utf-8",
+    )
     fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
     fake_tarball.write_bytes(b"dummy tarball bytes")
 
@@ -96,6 +108,9 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     assert ["ventoy", "-i", "/dev/sdb"] in calls or ["sudo", "ventoy", "-i", "/dev/sdb"] in calls
     assert (vtoy / "Bootstrap" / "ks.cfg").read_text().count("devboost install cli") == 1
     assert (vtoy / "ISO" / "fedora-44.iso").exists()
+    # ventoy.json bindings track the actual staged ISO filename (not a hardcoded one)
+    rendered_json = (vtoy / "ventoy" / "ventoy.json").read_text()
+    assert "/ISO/fedora-44.iso" in rendered_json and "__DEVBOOST_ISO__" not in rendered_json
 
 
 def test_render_kscfg_offline_appends_flag() -> None:

@@ -26,12 +26,25 @@ def render_kscfg(
     return template.replace("devboost install full", install_cmd)
 
 
+def render_ventoy_json(template: str, *, iso_name: str) -> str:
+    """Bind ventoy.json's default-image/auto_install/injection to the actual staged ISO.
+
+    The resource template carries the ``__DEVBOOST_ISO__`` placeholder; the builder stages the
+    ISO as ``<iso.id>.iso``, so the three bindings must reference that exact filename (otherwise
+    a non-Fedora catalog pick would leave ventoy.json pointing at a non-existent image).
+    """
+    return template.replace("__DEVBOOST_ISO__", iso_name)
+
+
 def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
     """Lay out ventoy.json + ks.cfg + injection archive + secrets + marker (no wipe, no ISO)."""
     boot = vtoy_mount / "Bootstrap"
     for d in ("ISO", "Bootstrap", "Installers", "ventoy"):
         (vtoy_mount / d).mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(resource_path("ventoy", "ventoy.json"), vtoy_mount / "ventoy" / "ventoy.json")
+    ventoy_json = resource_path("ventoy", "ventoy.json").read_text(encoding="utf-8")
+    (vtoy_mount / "ventoy" / "ventoy.json").write_text(
+        render_ventoy_json(ventoy_json, iso_name=f"{cfg.iso.id}.iso"), encoding="utf-8"
+    )
     kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
     (boot / "ks.cfg").write_text(
         render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
