@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from devboost import __version__
+from devboost.cli.doctor import all_ok, run_checks
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
 from devboost.core.plan import build_plan
@@ -91,6 +92,23 @@ def verify(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
             log.error(f"{name}: missing")
             failed = True
     if failed:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def doctor(
+    root: RootOpt = settings.root,
+    gpu: Annotated[bool, typer.Option("--gpu", help="NVIDIA-stack diagnostics")] = False,
+) -> None:
+    """Environment preflight."""
+    if gpu:
+        log.warn("doctor --gpu: NVIDIA diagnostics arrive with the gpu milestone (M9)")
+        return
+    ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
+    checks = run_checks(ctx, root)
+    for c in checks:
+        (log.ok if c.ok else log.error)(f"{c.name}: {c.detail or ('ok' if c.ok else 'missing')}")
+    if not all_ok(checks):
         raise typer.Exit(code=1)
 
 
