@@ -389,8 +389,8 @@ product ships only after the last. Order follows the existing roadmap's dependen
 | Milestone | Scope | Deletes (bash reference) |
 |---|---|---|
 | **M0 — Foundation + tracer** | src-layout `engine/`; `Ctx`/`Executor`(+Fake)/`Module`/`Installer` contract; registry + load-time validation; engine flow (toposort/plan/run, cribbed); `pkg`/`config`/`fs` primitives (Dnf); **one tracer module** end-to-end to validate the model; `install`/`verify`/`list` + Python `doctor` preflight; `profiles.toml` loader + add `full`; rewrite `get.sh`/`ks.cfg`/firstboot to call the binary. | `bin/devboost`, `install.sh`, `lib/{log,os,toml,module,depsort,profile,install}.sh` |
-| **M1 — base** | `copr`/`mise`/`flatpak` primitives; port `base` modules (rpmfusion, dnf-tune, flatpak, build-tools, mise, chezmoi, docker, CLI tools). | `lib/pkg.sh`, base modules |
-| **M2 — secrets + github** | `age`, `github` (stdlib HTTP) primitives; port `secrets`/`ssh-setup`; doctor secrets preflight in Python. | `lib/secrets.sh`, `lib/github.sh` |
+| **M1 — secrets + github** | `age`, `github` (stdlib HTTP) primitives; port `secrets`/`ssh-setup`; doctor secrets preflight in Python. **First**, so credential-dependent modules (`chezmoi-repo`, `obsidian-sync`, private dev-stack repos) can rely on it. | `lib/secrets.sh`, `lib/github.sh` |
+| **M2 — base** | `copr`/`mise`/`flatpak` primitives; port `base` modules (rpmfusion, dnf-tune, flatpak, build-tools, mise, chezmoi, `chezmoi-repo`, CLI tools; `docker` already done by the M0 tracer). | `lib/pkg.sh`, base modules |
 | **M3 — cli + shell** | port `cli`/`shell` (starship, ghostty, nerd-fonts, dotfiles). | those modules |
 | **M4 — gnome** | `dconf` primitive; port gnome modules. | `lib/gnome.sh` |
 | **M5 — multimedia + editors** | va-hwaccel, VS Code, `fresh` + LSP wiring. | `lib/fresh.sh` |

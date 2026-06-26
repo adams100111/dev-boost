@@ -70,7 +70,7 @@ Everything else depends on this. (Serves US2/US3/US4/US5/US6 foundationally.)
 - [ ] T018 [P] [US1] Tests then impl: `config` + `fs` primitives (`json_merge`, `ensure_line`, `write`, `exists`) in `engine/tests/primitives/` + `engine/src/devboost/exec/primitives/{config,fs}.py`
 - [ ] T019 [US3] Tracer A — trivial module: tests then `engine/src/devboost/modules/ripgrep.py` (single `pkg.install`), proving registry→plan→run→primitive→FakeExecutor end-to-end
 - [ ] T020 [US1] Tracer B — per-OS `Source` module: tests then `engine/src/devboost/modules/{docker,ddev}.py` (`ddev` uses `DnfRepo` + `mkcert`), proving layer-3 dispatch (`requires=(Docker,)`)
-- [ ] T021 [US2] Tests then impl: Typer app + `install`/`verify`/`list` verbs over the engine in `engine/tests/cli/` (`CliRunner`) + `engine/src/devboost/cli/{app,install,verify,list}.py`
+- [ ] T021 [US2] Tests then impl: Typer app + `install`/`verify`/`list` verbs **and the `terminal`/`devtools` tier verbs** (thin wrappers that run `install` with the matching profile; `devtools` is fully exercisable once its member modules land in M2/M6, but the verb ships in M0) in `engine/tests/cli/` (`CliRunner`) + `engine/src/devboost/cli/{app,install,verify,list,tiers}.py`
 - [ ] T022 [US1] Tests then impl: `doctor` Python preflight (OS detect, deps `jq`/`age`, modules dir, secrets-state + mise-drift hooks as stubs to fill in M2/M1) in `engine/src/devboost/cli/doctor.py` — replaces `install.sh` dep-ensure
 - [ ] T023 [P] [US6] Tests then impl: `Settings` (pydantic-settings, `DEVBOOST_*`) + `resources` resolver (paths work from source and frozen) in `engine/src/devboost/core/settings.py` + `engine/src/devboost/exec/resources.py`
 - [ ] T024 [US6] Retarget delivery: update `scripts/build-bundle.sh` + `.github/workflows/release.yml` to PyInstaller-freeze `engine/` (`--onefile`, x86_64 + aarch64, bundle `data/`); add a frozen-binary smoke test (`--version`/`list`)
@@ -82,34 +82,34 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 ---
 
-## Phase 3: M1 — base profile (Priority: US1)
+## Phase 3: M1 — secrets + github (Priority: US1)
 
-**Goal**: port the `base` foundation modules into typed Python; establish the core install primitives.
-
-**Independent Test**: `devboost install base && devboost verify base` is fully green on a clean Fedora VM.
-
-- [ ] T026 [P] [US1] Port base-group bats → pytest as the behavioral spec (test-first), in `engine/tests/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo, docker)
-- [ ] T027 [US1] Tests then impl: `copr`, `mise`, `flatpak` primitives in `engine/src/devboost/exec/primitives/{copr,mise,flatpak}.py`
-- [ ] T028 [US1] [US3] Port base modules to `engine/src/devboost/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo) — one typed file each
-- [ ] T029 [US1] [US3] Port the CLI-tools clusters to `engine/src/devboost/modules/` (`base`: coreutils, git, curl, wget, unzip, jq, htop, ripgrep✓, fd, fzf, tmux; `cli`: eza, bat, btop, zoxide, atuin, direnv, delta, lazygit, lazydocker, dust, duf, sd, yq, gh, tealdeer, tpm, fastfetch, claude-code)
-- [ ] T030 [US1] Wire base/cli into `profiles.toml`; delete `lib/pkg.sh` + the ported modules' bash + their bats; run `install base` + `verify base` on a Fedora VM
-
-**Checkpoint**: base + cli install/verify green; `lib/pkg.sh` gone.
-
----
-
-## Phase 4: M2 — secrets + github (Priority: US1)
-
-**Goal**: typed secrets/age + GitHub API; fill `doctor`'s secrets preflight.
+**Goal**: typed secrets/age + GitHub API **first**, so credential-dependent modules (`chezmoi-repo`, `obsidian-sync`, private dev-stack repos) can rely on it; fill `doctor`'s secrets preflight.
 
 **Independent Test**: `secrets`/`ssh-setup` provision identity + upload key on a VM with a test bundle; `doctor` reports secrets state.
 
-- [ ] T031 [P] [US1] Port secrets/github bats → pytest (test-first) in `engine/tests/modules/` and `engine/tests/primitives/`
-- [ ] T032 [US1] Tests then impl: `age` primitive (decrypt the `secrets.age` bundle via the `age` CLI through `Executor`; parse JSON with stdlib) in `engine/src/devboost/exec/primitives/age.py`
-- [ ] T033 [US1] Tests then impl: `github` primitive (SSH-key upload via stdlib HTTP, not the `gh` CLI) in `engine/src/devboost/exec/primitives/github.py`
-- [ ] T034 [US1] [US3] Port `secrets` + `ssh-setup` modules; complete `doctor`'s secrets-state branch (T022 stub); delete `lib/secrets.sh` + `lib/github.sh` + their bats; VM-verify
+- [ ] T026 [P] [US1] Port secrets/github bats → pytest (test-first) in `engine/tests/modules/` and `engine/tests/primitives/`
+- [ ] T027 [US1] Tests then impl: `age` primitive (decrypt the `secrets.age` bundle via the `age` CLI through `Executor`; parse JSON with stdlib) in `engine/src/devboost/exec/primitives/age.py`
+- [ ] T028 [US1] Tests then impl: `github` primitive (SSH-key upload via stdlib HTTP, not the `gh` CLI) in `engine/src/devboost/exec/primitives/github.py`
+- [ ] T029 [US1] [US3] Port `secrets` + `ssh-setup` modules; complete `doctor`'s secrets-state branch (T022 stub); delete `lib/secrets.sh` + `lib/github.sh` + their bats; VM-verify
 
 **Checkpoint**: secrets/ssh-setup green; `doctor` secrets preflight real; `lib/secrets.sh`/`lib/github.sh` gone.
+
+---
+
+## Phase 4: M2 — base profile (Priority: US1)
+
+**Goal**: port the `base` foundation modules into typed Python; establish the core install primitives. Runs **after** secrets (M1) so `chezmoi-repo`'s credential-store clone works.
+
+**Independent Test**: `devboost install base && devboost verify base` is fully green on a clean Fedora VM.
+
+- [ ] T030 [P] [US1] Port base-group bats → pytest as the behavioral spec (test-first), in `engine/tests/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo, docker)
+- [ ] T031 [US1] Tests then impl: `copr`, `mise`, `flatpak` primitives in `engine/src/devboost/exec/primitives/{copr,mise,flatpak}.py`
+- [ ] T032 [US1] [US3] Port base modules to `engine/src/devboost/modules/` (rpmfusion, dnf-tune, fedora-third-party, flatpak, build-tools, mise, chezmoi, chezmoi-repo) — one typed file each (`docker` already done by the M0 tracer, T020)
+- [ ] T033 [US1] [US3] Port the CLI-tools clusters to `engine/src/devboost/modules/` (`base`: coreutils, git, curl, wget, unzip, jq, htop, ripgrep✓, fd, fzf, tmux; `cli`: eza, bat, btop, zoxide, atuin, direnv, delta, lazygit, lazydocker, dust, duf, sd, yq, gh, tealdeer, tpm, fastfetch, claude-code)
+- [ ] T034 [US1] Wire base/cli into `profiles.toml`; delete `lib/pkg.sh` + the ported modules' bash + their bats; run `install base` + `verify base` on a Fedora VM
+
+**Checkpoint**: base + cli install/verify green; `lib/pkg.sh` gone.
 
 ---
 
@@ -243,8 +243,9 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 - **M1–M9 (Phases 3–11)**: each depends on M0. Ordered by the roadmap dependency chain
   (base → secrets → cli/shell → gnome → multimedia/editors → dev-stacks → apps → lifecycle → system),
   but a given milestone only truly needs M0 + the primitives it introduces; later milestones reuse
-  earlier primitives. `secrets` (M2) is required before any module that needs credentials
-  (chezmoi-repo, obsidian-sync, dev-stack private repos).
+  earlier primitives. **`secrets` is M1 — placed before `base` (M2)** because `base`'s `chezmoi-repo`
+  (and later `obsidian-sync`, private dev-stack repos) clone via the credential store that `secrets`
+  provisions.
 - **M10 (Phase 12)**: depends on M1–M9 all complete — the single release point.
 
 ### Within each milestone
