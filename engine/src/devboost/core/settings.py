@@ -23,5 +23,9 @@ class Settings(BaseSettings):
     def profiles_path(self) -> Path:
         return self.root / "profiles.toml"
 
+    @property
+    def catalog_path(self) -> Path:
+        return self.root / "catalog.toml"
+
 
 settings = Settings()

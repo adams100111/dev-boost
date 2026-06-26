@@ -1,15 +1,23 @@
-"""Supported-OS catalog (id -> friendly name + per-arch pinned IsoSpec).
+"""Supported-OS catalog, loaded + validated from ``catalog.toml`` (in-repo pinned data).
 
-Pins are the in-repo source of truth (Principle III). Update via the Fedora
-release CHECKSUM; verify the hash before committing — never invent one. Adding a
-distro is one Os entry; it appears in the wizard select with zero code changes.
+Pins are the source of truth (Principle III). Edit ``catalog.toml`` to add a distro/arch or
+bump a release; each sha256 must come from the distro's signed CHECKSUM — never invent one.
+The TOML is validated at load (structure + 64-hex sha256), so a malformed pin fails loudly
+instead of silently shipping a bad hash. Adding an entry needs no code change — it shows up
+in the ``devboost usb`` wizard by its friendly name automatically.
 """
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
+
+from pydantic import BaseModel, Field, TypeAdapter
 
 from devboost.core.errors import UsbError
+from devboost.core.settings import settings
 from devboost.usb.config import IsoSpec
 
 
@@ -23,39 +31,63 @@ class Os:
     isos: dict[str, IsoSpec]
 
 
-CATALOG: dict[str, Os] = {
-    "fedora-44": Os(
-        id="fedora-44",
-        name="Fedora 44 — Workstation (Live)",
-        distro="fedora",
-        version="44",
-        edition="Workstation-Live",
-        isos={
-            "x86_64": IsoSpec(
-                id="fedora-44",
-                url="https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-Live-44-1.7.x86_64.iso",
-                sha256="1620295f6a00c27c3208f0c00b8ece4eab1ec69b9002152d97488bf26a426ddf",
-                edition="Workstation-Live",
-            ),
-            "aarch64": IsoSpec(
-                id="fedora-44",
-                url="https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-Live-44-1.7.aarch64.iso",
-                sha256="162ba3c552a2d241c7c63ec26777af0255ee1b5a135adc0be986ceed999933ef",
-                edition="Workstation-Live",
-            ),
-        },
-    ),
-}
+class _IsoRow(BaseModel):
+    url: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class _OsRow(BaseModel):
+    name: str
+    distro: str
+    version: str
+    edition: str
+    isos: dict[str, _IsoRow] = Field(min_length=1)
+
+
+_CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
+
+
+def load_catalog(path: Path) -> dict[str, Os]:
+    """Parse + validate a catalog TOML into typed ``Os`` entries.
+
+    Raises ``UsbError`` if the file is missing, malformed, or has a bad pin (e.g. a
+    sha256 that is not 64 lowercase hex).
+    """
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        rows = _CATALOG_ADAPTER.validate_python(raw)
+    except (OSError, ValueError) as exc:  # OSError: missing; ValueError: TOML/validation
+        raise UsbError(f"invalid catalog {path}: {exc}") from exc
+    return {
+        os_id: Os(
+            id=os_id,
+            name=row.name,
+            distro=row.distro,
+            version=row.version,
+            edition=row.edition,
+            isos={
+                arch: IsoSpec(id=os_id, url=iso.url, sha256=iso.sha256, edition=row.edition)
+                for arch, iso in row.isos.items()
+            },
+        )
+        for os_id, row in rows.items()
+    }
+
+
+@cache
+def catalog() -> dict[str, Os]:
+    """The validated catalog (cached). Source: ``settings.catalog_path`` (catalog.toml)."""
+    return load_catalog(settings.catalog_path)
 
 
 def supported() -> list[Os]:
     """All catalog entries, for the wizard's friendly-named select."""
-    return list(CATALOG.values())
+    return list(catalog().values())
 
 
 def iso_for(os_id: str, arch: str) -> IsoSpec:
     """The pinned IsoSpec for *os_id* on *arch*, or raise UsbError."""
-    os_entry = CATALOG.get(os_id)
+    os_entry = catalog().get(os_id)
     if os_entry is None:
         raise UsbError(f"unknown OS id {os_id!r}")
     spec = os_entry.isos.get(arch)
@@ -65,7 +97,7 @@ def iso_for(os_id: str, arch: str) -> IsoSpec:
 
 
 def default_os() -> Os:
-    return CATALOG["fedora-44"]
+    return catalog()["fedora-44"]
 
 
 def default_iso() -> IsoSpec:

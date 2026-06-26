@@ -106,10 +106,15 @@ def supported() -> list[Os]: ...                 # for the wizard select (friend
 def iso_for(os_id: str, arch: str) -> IsoSpec:   # raises UsbError if the id/arch isn't pinned
 ```
 
-The wizard renders `supported()` as `questionary.Choice(os.name, value=os.id)`. Implementation fills
-the **real Fedora-44 `Everything-netinst` x86_64 sha256** from the Fedora `CHECKSUM` (verified, not
-invented). Adding a distro later = append an `Os` entry; it shows up in the select with zero code
-changes.
+The wizard renders `supported()` as `questionary.Choice(os.name, value=os.id)`.
+
+**Pins live in an external `catalog.toml`** (repo root, bundled into the frozen binary alongside
+`profiles.toml` via `--add-data`, resolved through `settings.catalog_path`). `catalog.py` is a thin
+**Pydantic-validated loader** (`load_catalog(path)` → `dict[str, Os]`, cached by `catalog()`): the TOML
+is validated at load (structure + 64-hex sha256), so a malformed pin fails loudly instead of shipping a
+bad hash. The shipped catalog pins **Fedora 44 Workstation (Live)** for **x86_64 and aarch64** with the
+**real sha256s from Fedora's signed `CHECKSUM`** (verified, not invented). Adding a distro/arch = one
+TOML table; it appears in the select with zero code changes — and is editable without touching Python.
 
 ## 6. Update-detect (§2 #2, #3)
 

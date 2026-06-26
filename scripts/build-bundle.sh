@@ -18,6 +18,7 @@ esac
 
 # Bundle the static data the engine reads at runtime (resolved via devboost.exec.resources).
 data_args=(--add-data "${ROOT}/profiles.toml:.")
+[[ -f "${ROOT}/catalog.toml" ]] && data_args+=(--add-data "${ROOT}/catalog.toml:.")
 [[ -d "${ROOT}/templates" ]] && data_args+=(--add-data "${ROOT}/templates:templates")
 [[ -d "${ROOT}/data" ]] && data_args+=(--add-data "${ROOT}/data:data")
 [[ -d "${ROOT}/ventoy" ]] && data_args+=(--add-data "${ROOT}/ventoy:ventoy")

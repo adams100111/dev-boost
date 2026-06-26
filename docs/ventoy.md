@@ -17,6 +17,15 @@ multi-boot ISOs/installers and an offline dnf+flatpak package mirror. Drop your 
 `Bootstrap/` (never committed). `ventoy/ventoy.json` binds `ks.cfg` to the Fedora ISO (`auto_install`)
 and injects dev-boost (`injection`).
 
+## Which OS gets installed (`catalog.toml`)
+
+The selectable OSes live in **`catalog.toml`** at the repo root (bundled into the binary like
+`profiles.toml`). It currently pins **Fedora 44 Workstation (Live)** for **x86_64 and aarch64** with the
+real SHA256s from Fedora's signed `CHECKSUM`. `devboost usb` auto-detects the host architecture and
+picks the matching ISO. Adding a release or distro is one TOML table — no code change, no rebuild of the
+engine logic — and the file is validated on load (a bad/short sha256 fails loudly). The sha256 stays the
+integrity guard: change a URL without its matching hash and the download fails verification.
+
 ## Update vs rebuild
 
 Re-running `devboost usb` on a stick that is **already a dev-boost USB** detects it (via the
