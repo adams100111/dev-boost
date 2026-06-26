@@ -9,7 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from devboost.exec.primitives import age
 from devboost.model import Ctx
+from devboost.modules.secrets import bundle_path, key_path
 
 _REQUIRED_DEPS = ("jq", "age")
 
@@ -28,6 +30,9 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
     ]
     for dep in _REQUIRED_DEPS:
         checks.append(Check(f"dep:{dep}", ctx.ex.which(dep)))
+    # secrets state: 'missing' is a warning (ok), but a present-yet-broken bundle fails.
+    state = age.doctor_state(ctx, bundle_path(), key_path())
+    checks.append(Check("secrets", state in ("ok", "missing"), state))
     return checks
 
 

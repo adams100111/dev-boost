@@ -31,3 +31,11 @@ class InstallError(DevbootError):
 
 class UnsupportedOS(DevbootError):
     """No install path exists for the detected OS."""
+
+
+class SecretsError(DevbootError):
+    """The age-encrypted secrets bundle is missing, undecryptable, or incomplete."""
+
+
+class GithubError(DevbootError):
+    """A GitHub REST API call failed."""

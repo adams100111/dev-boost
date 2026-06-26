@@ -88,10 +88,10 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `secrets`/`ssh-setup` provision identity + upload key on a VM with a test bundle; `doctor` reports secrets state.
 
-- [ ] T026 [P] [US1] Port secrets/github bats → pytest (test-first) in `engine/tests/modules/` and `engine/tests/primitives/`
-- [ ] T027 [US1] Tests then impl: `age` primitive (decrypt the `secrets.age` bundle via the `age` CLI through `Executor`; parse JSON with stdlib) in `engine/src/devboost/exec/primitives/age.py`
-- [ ] T028 [US1] Tests then impl: `github` primitive (SSH-key upload via stdlib HTTP, not the `gh` CLI) in `engine/src/devboost/exec/primitives/github.py`
-- [ ] T029 [US1] [US3] Port `secrets` + `ssh-setup` modules; complete `doctor`'s secrets-state branch (T022 stub); delete `lib/secrets.sh` + `lib/github.sh` + their bats; VM-verify
+- [X] T026 [P] [US1] Port secrets/github bats → pytest (test-first) in `engine/tests/modules/` and `engine/tests/primitives/`
+- [X] T027 [US1] Tests then impl: `age` primitive (decrypt the `secrets.age` bundle via the `age` CLI through `Executor`; parse JSON with stdlib) in `engine/src/devboost/exec/primitives/age.py`
+- [X] T028 [US1] Tests then impl: `github` primitive (SSH-key upload via stdlib HTTP, not the `gh` CLI) in `engine/src/devboost/exec/primitives/github.py`
+- [X] T029 [US1] [US3] Port `secrets` + `ssh-setup` modules; complete `doctor`'s secrets-state branch (T022 stub); delete `lib/secrets.sh` + `lib/github.sh` + their bats; VM-verify
 
 **Checkpoint**: secrets/ssh-setup green; `doctor` secrets preflight real; `lib/secrets.sh`/`lib/github.sh` gone.
 
