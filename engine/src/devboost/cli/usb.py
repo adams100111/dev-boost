@@ -23,7 +23,7 @@ from devboost.model import Ctx
 from devboost.usb import wizard
 from devboost.usb.builder import build
 from devboost.usb.cache import Cache
-from devboost.usb.catalog import default_iso, iso_for
+from devboost.usb.catalog import autoinstall_for, default_iso, iso_for
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.download import UrllibDownloader
 from devboost.usb.preview import render_plan
@@ -32,15 +32,22 @@ from devboost.usb.report import RichReporter
 
 
 def _iso_note(cfg: UsbBuildConfig) -> str:
-    """Best-effort ISO download size for the dry-run preview (never raises)."""
+    """Best-effort combined ISO download size for the dry-run preview (never raises)."""
+    specs = [cfg.iso] + ([cfg.autoinstall_iso] if cfg.autoinstall_iso is not None else [])
     try:
         cache = Cache(cfg.cache_dir)
-        if cache.has(f"{cfg.iso.id}.iso", cfg.iso.sha256):
+        total = 0
+        all_cached = True
+        for spec in specs:
+            if cache.has(f"{spec.id}.iso", spec.sha256):
+                continue
+            all_cached = False
+            req = urllib.request.Request(spec.url, method="HEAD")
+            with urllib.request.urlopen(req) as resp:
+                total += int(resp.headers.get("Content-Length", 0) or 0)
+        if all_cached:
             return "cached"
-        req = urllib.request.Request(cfg.iso.url, method="HEAD")
-        with urllib.request.urlopen(req) as resp:
-            size = int(resp.headers.get("Content-Length", 0) or 0)
-        return f"≈{size / 1e9:.1f} GB" if size else "unknown"
+        return f"≈{total / 1e9:.1f} GB" if total else "unknown"
     except OSError:
         return "unknown"
 
@@ -53,8 +60,11 @@ def _summary_text(cfg: UsbBuildConfig) -> str:
     if cfg.extra_isos:
         extras.append(f"+{len(cfg.extra_isos)} extra ISO")
     tail = (" · " + " · ".join(extras)) if extras else ""
+    media = "Workstation Live" + (
+        " + netinst (zero-touch)" if cfg.autoinstall_iso is not None else ""
+    )
     head = (
-        f"✅ {verb} {cfg.device} — {cfg.iso.id} ({cfg.arch}) · "
+        f"✅ {verb} {cfg.device} — {cfg.iso.id} ({cfg.arch}) · media: {media} · "
         f"profiles: {' '.join(cfg.profiles)}{tail}"
     )
     if cfg.mode == "update":
@@ -129,14 +139,12 @@ def usb(
                 assume_yes = True
 
         try:
+            os_id = iso or default_iso().id
             cfg = UsbBuildConfig(
                 device=device,
                 arch=resolved_arch,
-                iso=(
-                    iso_for(iso, resolved_arch)
-                    if iso
-                    else iso_for(default_iso().id, resolved_arch)
-                ),
+                iso=iso_for(os_id, resolved_arch),
+                autoinstall_iso=autoinstall_for(os_id, resolved_arch),
                 profiles=tuple(profile) or ("full",),
                 secrets_path=secrets,
                 cache_dir=cache_dir or Path(gettempdir()) / "devboost-usb",

@@ -22,6 +22,8 @@ def render_plan(cfg: UsbBuildConfig, state: DiskState, *, download_note: str = "
         f"OS            : {cfg.iso.id} ({cfg.arch})",
         f"Profiles      : {', '.join(cfg.profiles)}",
     ]
+    if cfg.autoinstall_iso is not None:
+        lines.append("Zero-touch    : netinst auto-install staged")
     if cfg.extra_isos:
         lines.append(f"Extra ISOs    : {len(cfg.extra_isos)}")
     if cfg.installers:

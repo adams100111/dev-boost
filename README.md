@@ -97,7 +97,7 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 | `devboost update [--profile a,b]` | Propose pinned bumps + regenerate `devboost.lock`; never auto-commits. |
 | `devboost self-update` | `git pull` dev-boost, then re-validate. |
 | `devboost dev <status\|gc\|down>` | Dev-environment resource hygiene (orphan Aspire AppHost GC). |
-| `devboost usb [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), downloads + verifies + caches the Fedora ISO with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
+| `devboost usb [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), stages **both the Live (manual) and netinst (zero-touch) ISOs**, downloads + verifies + caches each with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
 
 ## Recovery walkthrough
 

@@ -44,6 +44,7 @@ def test_usb_dry_run_previews_without_building(monkeypatch) -> None:  # type: ig
     clean = _strip_ansi(result.stdout)
     assert "/dev/sdb" in clean and "build" in clean
     assert called["build"] is False
+    assert "Zero-touch" in clean or "netinst" in clean
 
 
 def test_usb_yes_on_devboost_stick_updates_not_wipes(monkeypatch) -> None:  # type: ignore[no-untyped-def]

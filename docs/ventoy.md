@@ -20,11 +20,17 @@ and injects dev-boost (`injection`).
 ## Which OS gets installed (`catalog.toml`)
 
 The selectable OSes live in **`catalog.toml`** at the repo root (bundled into the binary like
-`profiles.toml`). It currently pins **Fedora 44 Workstation (Live)** for **x86_64 and aarch64** with the
-real SHA256s from Fedora's signed `CHECKSUM`. `devboost usb` auto-detects the host architecture and
-picks the matching ISO. Adding a release or distro is one TOML table — no code change, no rebuild of the
-engine logic — and the file is validated on load (a bad/short sha256 fails loudly). The sha256 stays the
-integrity guard: change a URL without its matching hash and the download fails verification.
+`profiles.toml`). For each supported OS and architecture, `devboost usb` stages **two ISOs**:
+
+- **Workstation Live** — the standard desktop image (manual installer or live session; Ventoy default
+  boot entry).
+- **Everything netinst** — a minimal network-install image wired to `auto_install` + `ks.cfg` for the
+  zero-touch Kickstart path (no user interaction; BTRFS layout + firstboot service).
+
+Both are pinned per-arch in `catalog.toml` with real SHA256s from Fedora's signed `CHECKSUM`, and both
+are SHA256-verified on download. `devboost usb` auto-detects the host architecture and resolves both ISOs
+automatically — no flags required. Adding a release or distro is one TOML table — no code change, no
+rebuild of the engine logic — and the file is validated on load (a bad/short sha256 fails loudly).
 
 ## Update vs rebuild
 

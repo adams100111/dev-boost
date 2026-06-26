@@ -14,7 +14,7 @@ import questionary
 
 from devboost.core.errors import DeviceError
 from devboost.model import Ctx
-from devboost.usb.catalog import default_os, iso_for, supported
+from devboost.usb.catalog import autoinstall_for, default_os, iso_for, supported
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.devices import list_removable
 from devboost.usb.probe import probe
@@ -102,6 +102,7 @@ def run(ctx: Ctx) -> UsbBuildConfig:
         device=device,
         arch=arch,
         iso=iso_for(os_id, arch),
+        autoinstall_iso=autoinstall_for(os_id, arch),
         profiles=tuple(profiles),
         secrets_path=Path(secrets) if secrets else None,
         cache_dir=Path(cache),
