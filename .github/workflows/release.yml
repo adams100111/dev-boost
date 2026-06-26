@@ -27,6 +27,7 @@ jobs:
           name: devboost-${{ matrix.arch }}
           path: |
             dist/devboost-${{ matrix.arch }}
+            dist/devboost-${{ matrix.arch }}.tar.gz
             dist/checksums-${{ matrix.arch }}.txt
 
   release:
@@ -41,11 +42,16 @@ jobs:
           mkdir -p out
           cp artifacts/devboost-x86_64/devboost-x86_64 out/
           cp artifacts/devboost-aarch64/devboost-aarch64 out/
-          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 > checksums.txt )
+          cp artifacts/devboost-x86_64/devboost-x86_64.tar.gz out/     # Ventoy injection (x86_64)
+          cp artifacts/devboost-aarch64/devboost-aarch64.tar.gz out/   # Ventoy injection (aarch64)
+          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 \
+              devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             out/devboost-x86_64
             out/devboost-aarch64
+            out/devboost-x86_64.tar.gz
+            out/devboost-aarch64.tar.gz
             out/checksums.txt

@@ -54,5 +54,15 @@ mkdir -p "${vtoy}/ISO" "${vtoy}/Bootstrap" "${vtoy}/Installers" "${vtoy}/Backups
 cp "${HERE}/ventoy.json" "${vtoy}/ventoy/ventoy.json"
 cp "${HERE}/ks.cfg"      "${vtoy}/Bootstrap/ks.cfg"
 
-printf 'make-usb: done. Copy ISOs into %s/ISO and your secrets.age + devboost.tar.gz into %s/Bootstrap.\n' \
-  "${vtoy}" "${vtoy}"
+# Stage the Ventoy injection archive (the frozen binary at opt/dev-boost/devboost).
+# Build it first with scripts/build-bundle.sh for the target arch; copy it in as devboost.tar.gz.
+arch="$(uname -m)"; [[ "${arch}" == amd64 ]] && arch=x86_64; [[ "${arch}" == arm64 ]] && arch=aarch64
+tarball="${HERE}/../dist/devboost-${arch}.tar.gz"
+if [[ -f "${tarball}" ]]; then
+  cp "${tarball}" "${vtoy}/Bootstrap/devboost.tar.gz"
+  printf 'make-usb: staged devboost.tar.gz (%s binary). Now copy ISOs into %s/ISO and your secrets.age into %s/Bootstrap.\n' \
+    "${arch}" "${vtoy}" "${vtoy}"
+else
+  printf 'make-usb: NOTE — build the binary first: bash scripts/build-bundle.sh, then copy dist/devboost-%s.tar.gz to %s/Bootstrap/devboost.tar.gz. Also copy ISOs into %s/ISO and secrets.age into %s/Bootstrap.\n' \
+    "${arch}" "${vtoy}" "${vtoy}" "${vtoy}"
+fi

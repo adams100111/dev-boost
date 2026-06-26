@@ -36,5 +36,14 @@ mv "${DIST}/devboost" "${DIST}/devboost-${ARCH}"
 "${DIST}/devboost-${ARCH}" --version >/dev/null
 echo "build-bundle: smoke ok ($("${DIST}/devboost-${ARCH}" --version))"
 
-( cd "${DIST}" && sha256sum "devboost-${ARCH}" > "checksums-${ARCH}.txt" )
-echo "build-bundle: wrote ${DIST}/devboost-${ARCH} + checksums-${ARCH}.txt"
+# Ventoy injection archive: lands the arch-matched binary at /opt/dev-boost/devboost on the
+# installed system (Ventoy unpacks /Bootstrap/devboost.tar.gz into the install root). The
+# Kickstart firstboot oneshot then runs `/opt/dev-boost/devboost install full`.
+stage="$(mktemp -d)"
+mkdir -p "${stage}/opt/dev-boost"
+install -m 0755 "${DIST}/devboost-${ARCH}" "${stage}/opt/dev-boost/devboost"
+tar -czf "${DIST}/devboost-${ARCH}.tar.gz" -C "${stage}" opt
+rm -rf "${stage}"
+
+( cd "${DIST}" && sha256sum "devboost-${ARCH}" "devboost-${ARCH}.tar.gz" > "checksums-${ARCH}.txt" )
+echo "build-bundle: wrote ${DIST}/devboost-${ARCH}, devboost-${ARCH}.tar.gz (Ventoy injection), checksums-${ARCH}.txt"
