@@ -1,0 +1,34 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync
+      - name: ruff
+        run: uv run ruff check
+      - name: mypy --strict
+        run: uv run mypy
+      - name: pytest
+        run: uv run pytest
+
+  frozen-smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build + smoke the frozen binary
+        run: bash scripts/build-bundle.sh
+      - name: Verify it runs without a Python runtime
+        run: ./dist/devboost-x86_64 --version

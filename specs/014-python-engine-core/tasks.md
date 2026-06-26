@@ -41,7 +41,7 @@ deleted group-by-group. No intermediate release; the single release point is M10
 - [X] T002 Write `engine/pyproject.toml` (uv_build backend, `requires-python>=3.12`; deps: typer, pydantic, pydantic-settings, loguru, tenacity; dev: pytest, pytest-mock, mypy, ruff) and `engine/.python-version` (3.12); bump the stale `typer<0.22` pin to current (research R7)
 - [X] T003 [P] Configure `mypy` (`strict = true`, files = src) and `ruff` (line-length 100) in `engine/pyproject.toml`, and pytest options (markers `unit`/`integration`, `pythonpath=src`, `strict_markers`)
 - [X] T004 [P] Create `engine/tests/conftest.py` with the `FakeExecutor` and `fake_ctx` fixtures (fedora + headless + ubuntu-os variants) used by every unit test
-- [ ] T005 Retarget CI: update `.github/workflows/` to run `uv run pytest`, `mypy --strict`, `ruff check` against `engine/`, gating merges (US5)
+- [X] T005 Retarget CI: update `.github/workflows/` to run `uv run pytest`, `mypy --strict`, `ruff check` against `engine/`, gating merges (US5)
 
 **Checkpoint**: `uv sync` + `uv run pytest` run (empty-green) under strict typing/lint.
 
@@ -73,7 +73,7 @@ Everything else depends on this. (Serves US2/US3/US4/US5/US6 foundationally.)
 - [X] T021 [US2] Tests then impl: Typer app + `install`/`verify`/`list` verbs **and the `terminal`/`devtools` tier verbs** (thin wrappers that run `install` with the matching profile; `devtools` is fully exercisable once its member modules land in M2/M6, but the verb ships in M0) in `engine/tests/cli/` (`CliRunner`) + `engine/src/devboost/cli/{app,install,verify,list,tiers}.py`
 - [X] T022 [US1] Tests then impl: `doctor` Python preflight (OS detect, deps `jq`/`age`, modules dir, secrets-state + mise-drift hooks as stubs to fill in M2/M1) in `engine/src/devboost/cli/doctor.py` — replaces `install.sh` dep-ensure
 - [X] T023 [P] [US6] Tests then impl: `Settings` (pydantic-settings, `DEVBOOST_*`) + `resources` resolver (paths work from source and frozen) in `engine/src/devboost/core/settings.py` + `engine/src/devboost/exec/resources.py`
-- [ ] T024 [US6] Retarget delivery: update `scripts/build-bundle.sh` + `.github/workflows/release.yml` to PyInstaller-freeze `engine/` (`--onefile`, x86_64 + aarch64, bundle `data/`); add a frozen-binary smoke test (`--version`/`list`)
+- [X] T024 [US6] Retarget delivery: update `scripts/build-bundle.sh` + `.github/workflows/release.yml` to PyInstaller-freeze `engine/` (`--onefile`, x86_64 + aarch64, bundle `data/`); add a frozen-binary smoke test (`--version`/`list`)
 - [ ] T025 [US1] Rewrite the boot path: `get.sh` + `ventoy/ks.cfg` `%post` + `devboost-firstboot.service` call the binary directly; delete `bin/devboost` and `install.sh`'s logic (move dep-ensure into `doctor`); update `tests/ventoy.bats` references (or port to pytest)
 
 **Checkpoint (M0)**: `devboost install --profile <tracer>` installs ripgrep + ddev end-to-end on a
