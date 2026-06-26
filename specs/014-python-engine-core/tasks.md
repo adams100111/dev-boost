@@ -37,10 +37,10 @@ deleted group-by-group. No intermediate release; the single release point is M10
 
 **Purpose**: scaffold the typed `uv` project and the quality gates.
 
-- [ ] T001 Create the src-layout skeleton `engine/src/devboost/{cli,core,exec/primitives,modules}/` + `engine/tests/{core,exec,primitives,modules,cli}/` per plan.md
-- [ ] T002 Write `engine/pyproject.toml` (uv_build backend, `requires-python>=3.12`; deps: typer, pydantic, pydantic-settings, loguru, tenacity; dev: pytest, pytest-mock, mypy, ruff) and `engine/.python-version` (3.12); bump the stale `typer<0.22` pin to current (research R7)
-- [ ] T003 [P] Configure `mypy` (`strict = true`, files = src) and `ruff` (line-length 100) in `engine/pyproject.toml`, and pytest options (markers `unit`/`integration`, `pythonpath=src`, `strict_markers`)
-- [ ] T004 [P] Create `engine/tests/conftest.py` with the `FakeExecutor` and `fake_ctx` fixtures (fedora + headless + ubuntu-os variants) used by every unit test
+- [X] T001 Create the src-layout skeleton `engine/src/devboost/{cli,core,exec/primitives,modules}/` + `engine/tests/{core,exec,primitives,modules,cli}/` per plan.md
+- [X] T002 Write `engine/pyproject.toml` (uv_build backend, `requires-python>=3.12`; deps: typer, pydantic, pydantic-settings, loguru, tenacity; dev: pytest, pytest-mock, mypy, ruff) and `engine/.python-version` (3.12); bump the stale `typer<0.22` pin to current (research R7)
+- [X] T003 [P] Configure `mypy` (`strict = true`, files = src) and `ruff` (line-length 100) in `engine/pyproject.toml`, and pytest options (markers `unit`/`integration`, `pythonpath=src`, `strict_markers`)
+- [X] T004 [P] Create `engine/tests/conftest.py` with the `FakeExecutor` and `fake_ctx` fixtures (fedora + headless + ubuntu-os variants) used by every unit test
 - [ ] T005 Retarget CI: update `.github/workflows/` to run `uv run pytest`, `mypy --strict`, `ruff check` against `engine/`, gating merges (US5)
 
 **Checkpoint**: `uv sync` + `uv run pytest` run (empty-green) under strict typing/lint.
@@ -55,22 +55,22 @@ Everything else depends on this. (Serves US2/US3/US4/US5/US6 foundationally.)
 
 **⚠️ CRITICAL**: No module-group milestone (Phase 3+) may begin until M0 is complete.
 
-- [ ] T006 [P] Implement the `DevbootError` exception hierarchy in `engine/src/devboost/core/errors.py`
-- [ ] T007 [P] Implement loguru config (`info/ok/skip/error` semantics) in `engine/src/devboost/core/log.py`
-- [ ] T008 [P] [US4] Tests then impl: `OsInfo` + `detect()` (distro→family table, arch, headless; `/etc/os-release` path injectable) in `engine/tests/core/test_osinfo.py` + `engine/src/devboost/core/osinfo.py` (crib `engine/devboost/osinfo.py`)
-- [ ] T009 [US5] Tests then impl: `Executor` Protocol + `Result` + `RealExecutor` (argv-only, `sudo`, `env`, `dry_run`-honoring) + `FakeExecutor` (records `calls`) in `engine/tests/exec/test_executor.py` + `engine/src/devboost/exec/executor.py`
-- [ ] T010 [US3] Tests then impl: `Ctx`, `Installer` Protocol, `Module` base (`per_os`/`_strategy`/`verify`/`install`), `OsMap[T]`, `DnfRepo`/`Script` value objects in `engine/tests/core/test_model.py` + `engine/src/devboost/model.py`
-- [ ] T011 [US3] Tests then impl: registry `@register` + `load()` auto-scan of `devboost.modules.*` + graph validation (unique names, `requires` resolve, `profiles` exist, no cycles, gui rules) in `engine/tests/core/test_registry.py` + `engine/src/devboost/core/registry.py`
-- [ ] T012 [P] [US1] Tests then impl: Kahn `toposort` in `engine/tests/core/test_graph.py` + `engine/src/devboost/core/graph.py` (crib `engine/devboost/graph.py`)
-- [ ] T013 [US1] Tests then impl: pydantic `profiles.toml` loader + `expand()` (transitive profile/module) in `engine/tests/core/test_profiles.py` + `engine/src/devboost/core/profiles.py`
-- [ ] T014 [US1] Add the `full` profile (production aggregate, research R2 membership) to `profiles.toml`
-- [ ] T015 [US1] Tests then impl: `PlannedModule` + `build_plan` (headless-gui + unsupported-os skips) in `engine/tests/core/test_plan.py` + `engine/src/devboost/core/plan.py`
-- [ ] T016 [US1] Tests then impl: `run_plan` verify-guarded loop (skip/install/re-verify, `force`, `dry_run`, failure names module + command) in `engine/tests/core/test_runner.py` + `engine/src/devboost/core/runner.py`
-- [ ] T017 [US4] Tests then impl: `pkg` primitive — `PackageManager` Protocol, `Dnf` impl, `manager_for(os)`, `install/installed/add_repo`, `OsMap`/`Source` resolution in `engine/tests/primitives/test_pkg.py` + `engine/src/devboost/exec/primitives/pkg.py`
-- [ ] T018 [P] [US1] Tests then impl: `config` + `fs` primitives (`json_merge`, `ensure_line`, `write`, `exists`) in `engine/tests/primitives/` + `engine/src/devboost/exec/primitives/{config,fs}.py`
-- [ ] T019 [US3] Tracer A — trivial module: tests then `engine/src/devboost/modules/ripgrep.py` (single `pkg.install`), proving registry→plan→run→primitive→FakeExecutor end-to-end
-- [ ] T020 [US1] Tracer B — per-OS `Source` module: tests then `engine/src/devboost/modules/{docker,ddev}.py` (`ddev` uses `DnfRepo` + `mkcert`), proving layer-3 dispatch (`requires=(Docker,)`)
-- [ ] T021 [US2] Tests then impl: Typer app + `install`/`verify`/`list` verbs **and the `terminal`/`devtools` tier verbs** (thin wrappers that run `install` with the matching profile; `devtools` is fully exercisable once its member modules land in M2/M6, but the verb ships in M0) in `engine/tests/cli/` (`CliRunner`) + `engine/src/devboost/cli/{app,install,verify,list,tiers}.py`
+- [X] T006 [P] Implement the `DevbootError` exception hierarchy in `engine/src/devboost/core/errors.py`
+- [X] T007 [P] Implement loguru config (`info/ok/skip/error` semantics) in `engine/src/devboost/core/log.py`
+- [X] T008 [P] [US4] Tests then impl: `OsInfo` + `detect()` (distro→family table, arch, headless; `/etc/os-release` path injectable) in `engine/tests/core/test_osinfo.py` + `engine/src/devboost/core/osinfo.py` (crib `engine/devboost/osinfo.py`)
+- [X] T009 [US5] Tests then impl: `Executor` Protocol + `Result` + `RealExecutor` (argv-only, `sudo`, `env`, `dry_run`-honoring) + `FakeExecutor` (records `calls`) in `engine/tests/exec/test_executor.py` + `engine/src/devboost/exec/executor.py`
+- [X] T010 [US3] Tests then impl: `Ctx`, `Installer` Protocol, `Module` base (`per_os`/`_strategy`/`verify`/`install`), `OsMap[T]`, `DnfRepo`/`Script` value objects in `engine/tests/core/test_model.py` + `engine/src/devboost/model.py`
+- [X] T011 [US3] Tests then impl: registry `@register` + `load()` auto-scan of `devboost.modules.*` + graph validation (unique names, `requires` resolve, `profiles` exist, no cycles, gui rules) in `engine/tests/core/test_registry.py` + `engine/src/devboost/core/registry.py`
+- [X] T012 [P] [US1] Tests then impl: Kahn `toposort` in `engine/tests/core/test_graph.py` + `engine/src/devboost/core/graph.py` (crib `engine/devboost/graph.py`)
+- [X] T013 [US1] Tests then impl: pydantic `profiles.toml` loader + `expand()` (transitive profile/module) in `engine/tests/core/test_profiles.py` + `engine/src/devboost/core/profiles.py`
+- [X] T014 [US1] Add the `full` profile (production aggregate, research R2 membership) to `profiles.toml`
+- [X] T015 [US1] Tests then impl: `PlannedModule` + `build_plan` (headless-gui + unsupported-os skips) in `engine/tests/core/test_plan.py` + `engine/src/devboost/core/plan.py`
+- [X] T016 [US1] Tests then impl: `run_plan` verify-guarded loop (skip/install/re-verify, `force`, `dry_run`, failure names module + command) in `engine/tests/core/test_runner.py` + `engine/src/devboost/core/runner.py`
+- [X] T017 [US4] Tests then impl: `pkg` primitive — `PackageManager` Protocol, `Dnf` impl, `manager_for(os)`, `install/installed/add_repo`, `OsMap`/`Source` resolution in `engine/tests/primitives/test_pkg.py` + `engine/src/devboost/exec/primitives/pkg.py`
+- [X] T018 [P] [US1] Tests then impl: `config` + `fs` primitives (`json_merge`, `ensure_line`, `write`, `exists`) in `engine/tests/primitives/` + `engine/src/devboost/exec/primitives/{config,fs}.py`
+- [X] T019 [US3] Tracer A — trivial module: tests then `engine/src/devboost/modules/ripgrep.py` (single `pkg.install`), proving registry→plan→run→primitive→FakeExecutor end-to-end
+- [X] T020 [US1] Tracer B — per-OS `Source` module: tests then `engine/src/devboost/modules/{docker,ddev}.py` (`ddev` uses `DnfRepo` + `mkcert`), proving layer-3 dispatch (`requires=(Docker,)`)
+- [X] T021 [US2] Tests then impl: Typer app + `install`/`verify`/`list` verbs **and the `terminal`/`devtools` tier verbs** (thin wrappers that run `install` with the matching profile; `devtools` is fully exercisable once its member modules land in M2/M6, but the verb ships in M0) in `engine/tests/cli/` (`CliRunner`) + `engine/src/devboost/cli/{app,install,verify,list,tiers}.py`
 - [ ] T022 [US1] Tests then impl: `doctor` Python preflight (OS detect, deps `jq`/`age`, modules dir, secrets-state + mise-drift hooks as stubs to fill in M2/M1) in `engine/src/devboost/cli/doctor.py` — replaces `install.sh` dep-ensure
 - [ ] T023 [P] [US6] Tests then impl: `Settings` (pydantic-settings, `DEVBOOST_*`) + `resources` resolver (paths work from source and frozen) in `engine/src/devboost/core/settings.py` + `engine/src/devboost/exec/resources.py`
 - [ ] T024 [US6] Retarget delivery: update `scripts/build-bundle.sh` + `.github/workflows/release.yml` to PyInstaller-freeze `engine/` (`--onefile`, x86_64 + aarch64, bundle `data/`); add a frozen-binary smoke test (`--version`/`list`)

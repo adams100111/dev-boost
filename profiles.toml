@@ -1,4 +1,10 @@
 [profiles]
+# `full` — the production workstation aggregate (the default install target).
+# Union of the default-on profiles; opt-in/aesthetic/hardware profiles are excluded
+# (gnome-aesthetics, gnome-theme, hardware-nvidia, optional-editors, security-cli) and
+# the portable subsets terminal/devtools are alternative entry points, not part of full.
+full = ["base","cli","shell","gnome","multimedia","editors","python","web","laravel",
+        "dotnet","data","devops","react-native","apps","system","dev-hygiene"]
 base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker"]

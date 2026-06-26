@@ -1,22 +1,55 @@
 [project]
 name = "devboost"
 version = "0.1.0"
-requires-python = ">=3.11"
-dependencies = ["typer>=0.21,<0.22"]
+description = "dev-boost — typed-Python developer-workstation bootstrap engine"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.15",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "loguru>=0.7",
+    "tenacity>=9.0",
+]
 
 [project.scripts]
-devboost = "devboost.cli:app"
+devboost = "devboost.cli.app:main"
 
-[project.optional-dependencies]
-dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5"]
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-mock>=3.14",
+    "mypy>=1.13",
+    "ruff>=0.7",
+]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
 
 [tool.mypy]
 strict = true
-files = ["devboost"]
+files = ["src", "tests"]
 
 [tool.ruff]
 line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# Keep the pyreview house style (classic Generic[T], not PEP 695 type params).
+ignore = ["UP046", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+# Typer reads list-argument defaults at decoration time, not via a shared mutable,
+# so its idiomatic `arg: list[str] = []` is safe here.
+"src/devboost/cli/app.py" = ["B006"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+markers = [
+    "unit: hermetic, no real system access (default)",
+    "integration: touches a real system / VM",
+]
