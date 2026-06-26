@@ -10,9 +10,9 @@ import questionary
 
 from devboost.core.errors import DeviceError
 from devboost.model import Ctx
+from devboost.usb.catalog import CATALOG, default_iso, iso_for
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.devices import list_removable
-from devboost.usb.isos import FEDORA, default_iso, iso_for
 
 _PROFILES = ("full", "terminal", "devtools", "base", "cli", "shell", "gnome")
 
@@ -45,7 +45,7 @@ def run(ctx: Ctx) -> UsbBuildConfig:
         raise DeviceError("aborted")
 
     iso_id = questionary.select(
-        "Fedora ISO:", choices=list(FEDORA), default=default_iso().id
+        "Fedora ISO:", choices=list(CATALOG), default=default_iso().id
     ).ask()
     if iso_id is None:
         raise DeviceError("aborted")

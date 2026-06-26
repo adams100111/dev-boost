@@ -21,9 +21,9 @@ from devboost.model import Ctx
 from devboost.usb import wizard
 from devboost.usb.builder import build
 from devboost.usb.cache import Cache
+from devboost.usb.catalog import CATALOG, default_iso, iso_for
 from devboost.usb.config import UsbBuildConfig
 from devboost.usb.download import UrllibDownloader
-from devboost.usb.isos import FEDORA, default_iso, iso_for
 
 
 def usb(
@@ -31,7 +31,7 @@ def usb(
         str | None, typer.Option(help="Target removable disk, e.g. /dev/sdb")
     ] = None,
     arch: Annotated[str, typer.Option(help="x86_64 | aarch64")] = "",
-    iso: Annotated[str, typer.Option(help=f"ISO id: {', '.join(FEDORA)}")] = "",
+    iso: Annotated[str, typer.Option(help=f"ISO id: {', '.join(CATALOG)}")] = "",
     profile: Annotated[list[str], typer.Option(help="Profiles for firstboot (repeatable)")] = [],
     secrets: Annotated[Path | None, typer.Option(help="Path to secrets.age")] = None,
     cache_dir: Annotated[Path | None, typer.Option(help="Download cache dir")] = None,
