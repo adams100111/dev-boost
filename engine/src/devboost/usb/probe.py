@@ -40,19 +40,24 @@ def probe(ctx: Ctx, device: str) -> DiskState:
 
     Never blocks: any failure degrades to DiskState("blank") with a warning.
     """
-    part = _vtoy_partition(ctx, device)
-    if part is None:
-        return DiskState("blank")
-    mnt = Path(mkdtemp(prefix="devboost-probe-"))
     try:
-        if ctx.ex.run(["mount", "-o", "ro", part, str(mnt)], sudo=True).code != 0:
-            log.warn(f"probe: could not mount {part} read-only; treating {device} as blank")
+        part = _vtoy_partition(ctx, device)
+        if part is None:
             return DiskState("blank")
-        marker = read_marker(mnt)
-        if marker is not None:
-            return DiskState("devboost", marker)
-        return DiskState("ventoy-other")
-    finally:
-        ctx.ex.run(["umount", str(mnt)], sudo=True)
-        with suppress(OSError):
-            mnt.rmdir()
+        mnt = Path(mkdtemp(prefix="devboost-probe-"))
+        try:
+            if ctx.ex.run(["mount", "-o", "ro", part, str(mnt)], sudo=True).code != 0:
+                log.warn(f"probe: could not mount {part} read-only; treating {device} as blank")
+                return DiskState("blank")
+            marker = read_marker(mnt)
+            if marker is not None:
+                return DiskState("devboost", marker)
+            return DiskState("ventoy-other")
+        finally:
+            with suppress(Exception):
+                ctx.ex.run(["umount", str(mnt)], sudo=True)
+            with suppress(OSError):
+                mnt.rmdir()
+    except Exception as exc:  # a read-only probe must never block the run
+        log.warn(f"probe: {device} inspection failed ({exc}); treating as blank")
+        return DiskState("blank")

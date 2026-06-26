@@ -48,8 +48,10 @@ def test_probe_blank_when_no_vtoy_partition() -> None:
 def test_probe_blank_when_mount_fails(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr("devboost.usb.probe.mkdtemp", lambda **k: str(tmp_path / "mnt"))
     (tmp_path / "mnt").mkdir()
-    state = probe(_ctx(_VTOY, mount_code=1), "/dev/sdb")
+    ctx = _ctx(_VTOY, mount_code=1)
+    state = probe(ctx, "/dev/sdb")
     assert state.kind == "blank"
+    assert any("umount" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
 
 
 def test_probe_always_unmounts(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

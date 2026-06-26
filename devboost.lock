@@ -8,6 +8,7 @@ btrfs-assistant	-
 btrfsmaintenance	-
 build-tools	-
 chezmoi	-
+chezmoi-repo	-
 claude-code	-
 codecs	-
 cuda	-
@@ -52,6 +53,8 @@ nvidia-resign-service	-
 obsidian	-
 obsidian-sync	-
 openh264	-
+pass	-
+pass-store	-
 power-profiles-daemon	-
 python-lsp	-
 restic-backup	-
