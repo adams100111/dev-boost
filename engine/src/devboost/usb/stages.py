@@ -42,3 +42,13 @@ def boot_artifacts(
 
     iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
     shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
+
+
+def extra_isos(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+    for src in cfg.extra_isos:
+        shutil.copyfile(src, vtoy_mount / "ISO" / src.name)
+
+
+def installers(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+    for src in cfg.installers:
+        shutil.copyfile(src, vtoy_mount / "Installers" / src.name)

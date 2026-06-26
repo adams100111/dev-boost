@@ -74,3 +74,30 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     assert ["ventoy", "-i", "/dev/sdb"] in calls or ["sudo", "ventoy", "-i", "/dev/sdb"] in calls
     assert (vtoy / "Bootstrap" / "ks.cfg").read_text().count("devboost install cli") == 1
     assert (vtoy / "ISO" / "fedora-44.iso").exists()
+
+
+def test_extra_isos_and_installers_are_staged(tmp_path: Path) -> None:
+    from devboost.usb.config import IsoSpec, UsbBuildConfig
+    from devboost.usb.stages import extra_isos, installers
+
+    extra = tmp_path / "win.iso"
+    extra.write_bytes(b"win")
+    inst = tmp_path / "tool.run"
+    inst.write_bytes(b"run")
+    iso = IsoSpec(id="fedora-44", url="u", sha256="s", edition="E")
+    cfg = UsbBuildConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        cache_dir=tmp_path,
+        extra_isos=(extra,),
+        installers=(inst,),
+    )
+    vtoy = tmp_path / "VTOY"
+    (vtoy / "ISO").mkdir(parents=True)
+    (vtoy / "Installers").mkdir()
+    extra_isos(cfg, vtoy_mount=vtoy)
+    installers(cfg, vtoy_mount=vtoy)
+    assert (vtoy / "ISO" / "win.iso").exists() and (
+        vtoy / "Installers" / "tool.run"
+    ).exists()
