@@ -36,6 +36,8 @@ class Dnf:
             f"[{repo.name}]\nname={repo.name}\nbaseurl={repo.baseurl}\n"
             f"gpgcheck={1 if repo.gpgcheck else 0}\nenabled=1\n"
         )
+        if repo.gpgkey is not None:
+            body += f"gpgkey={repo.gpgkey}\n"
         ctx.ex.run(
             ["tee", f"/etc/yum.repos.d/{repo.name}.repo"],
             sudo=True,

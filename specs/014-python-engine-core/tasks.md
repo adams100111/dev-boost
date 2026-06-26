@@ -147,10 +147,10 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `install multimedia editors && verify …` green; `vainfo` works; `fresh` config has base LSPs.
 
-- [ ] T041 [P] [US1] Port multimedia + editors bats → pytest (test-first)
-- [ ] T042 [US1] [US3] Port multimedia modules (ffmpeg-full, codecs, va-hwaccel [GPU-aware], openh264)
-- [ ] T043 [US1] [US3] Port editors modules (vscode, fresh, fresh-lsp) + the `fresh` config-merge logic (replaces `lib/fresh.sh`) using the `config` primitive
-- [ ] T044 [US1] Delete `lib/fresh.sh` + ported bash + bats; VM-verify
+- [X] T041 [P] [US1] Port multimedia + editors bats → pytest (test-first)
+- [X] T042 [US1] [US3] Port multimedia modules (ffmpeg-full, codecs, va-hwaccel [GPU-aware], openh264)
+- [X] T043 [US1] [US3] Port editors modules (vscode, fresh, fresh-lsp) + the `fresh` config-merge logic (replaces `lib/fresh.sh`) using the `config` primitive
+- [X] T044 [US1] Delete `lib/fresh.sh` + ported bash + bats; VM-verify
 
 **Checkpoint**: multimedia + editors green; `lib/fresh.sh` gone.
 

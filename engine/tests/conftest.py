@@ -42,6 +42,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'base = ["docker"]\n'
         'shell = ["starship"]\n'
         'gnome = ["gnome-settings"]\n'
+        'multimedia = ["openh264"]\n'
+        'editors = ["fresh"]\n'
         'laravel = ["ddev"]\n'
         'full = ["cli", "base", "laravel"]\n'
         'terminal = ["ripgrep"]\n'
