@@ -70,3 +70,31 @@ def upload_ssh_key(
     if not (200 <= resp.status < 300):
         raise GithubError(f"POST /user/keys failed (HTTP {resp.status})")
     return True
+
+
+def add_deploy_key(
+    pat: str,
+    owner: str,
+    repo: str,
+    pubkey_body: str,
+    title: str,
+    *,
+    read_only: bool = False,
+    api: str = API,
+    http: HttpFn = _urllib_http,
+) -> bool:
+    """Register a repo deploy key. Idempotent by title/key; raises GithubError on failure."""
+    key_body = pubkey_body.strip()
+    path = f"{api}/repos/{owner}/{repo}/keys"
+    resp = http("GET", path, _headers(pat), None)
+    if not (200 <= resp.status < 300):
+        raise GithubError(f"GET deploy keys failed (HTTP {resp.status})")
+    for k in json.loads(resp.body or "[]"):
+        if k.get("title") == title or k.get("key") == key_body:
+            return True
+    payload = json.dumps({"title": title, "key": key_body, "read_only": read_only}).encode("utf-8")
+    headers = {**_headers(pat), "Content-Type": "application/json"}
+    resp = http("POST", path, headers, payload)
+    if not (200 <= resp.status < 300):
+        raise GithubError(f"POST deploy key failed (HTTP {resp.status})")
+    return True

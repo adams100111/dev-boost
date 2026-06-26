@@ -178,10 +178,10 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: `install apps && verify apps` green; Obsidian opens `~/Vault`, round-trips to GitHub.
 
-- [ ] T050 [P] [US1] Port apps + obsidian-sync bats → pytest (test-first)
-- [ ] T051 [US1] Tests then impl: `systemd` primitive (enable a `--user` unit/timer) in `engine/src/devboost/exec/primitives/systemd.py`
-- [ ] T052 [US1] [US3] Port `apps` modules (obsidian, bruno, bitwarden, flameshot, localsend, vlc) + `obsidian-sync` (reuses `github`/`age` primitives; replaces `lib/vault.sh`)
-- [ ] T053 [US1] Delete `lib/vault.sh` + ported bash + bats; VM-verify
+- [X] T050 [P] [US1] Port apps + obsidian-sync bats → pytest (test-first)
+- [X] T051 [US1] Tests then impl: `systemd` primitive (enable a `--user` unit/timer) in `engine/src/devboost/exec/primitives/systemd.py`
+- [X] T052 [US1] [US3] Port `apps` modules (obsidian, bruno, bitwarden, flameshot, localsend, vlc) + `obsidian-sync` (reuses `github`/`age` primitives; replaces `lib/vault.sh`)
+- [X] T053 [US1] Delete `lib/vault.sh` + ported bash + bats; VM-verify
 
 **Checkpoint**: apps + obsidian-sync green; `lib/vault.sh` gone.
 

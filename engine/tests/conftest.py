@@ -50,6 +50,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'data = ["data-services"]\n'
         'devops = ["devops-tools"]\n'
         'react-native = ["expo"]\n'
+        'apps = ["obsidian"]\n'
+        'dev-hygiene = ["aspire-gc"]\n'
         'laravel = ["ddev"]\n'
         'full = ["cli", "base", "laravel"]\n'
         'terminal = ["ripgrep"]\n'
