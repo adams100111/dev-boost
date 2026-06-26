@@ -116,11 +116,11 @@ _blockdev() { ls /dev/loop0 /dev/sda /dev/vda /dev/nvme0n1 2>/dev/null | head -1
 }
 
 # --- firstboot service ---------------------------------------------------------
-@test "devboost-firstboot.service: oneshot running install.sh --profile full, self-disabling" {
+@test "devboost-firstboot.service: oneshot running the devboost binary, self-disabling" {
   s="${DEVBOOST_ROOT}/ventoy/devboost-firstboot.service"
   grep -q 'Type=oneshot' "$s"
-  grep -q 'install.sh --profile full' "$s"
-  grep -q -- '--secrets' "$s"
+  grep -q '/opt/dev-boost/devboost install full' "$s"
+  grep -q 'DEVBOOST_SECRETS=' "$s"
   grep -q '/var/log/devboost-firstboot.log' "$s"
   grep -q 'systemctl disable devboost-firstboot.service' "$s"
 }

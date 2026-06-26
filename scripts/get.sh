@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# scripts/get.sh — dev-boost public bootstrap.
+# scripts/get.sh — dev-boost public bootstrap (one of two bash files in the shipped tree).
 # Usage: curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
-# Downloads the arch-matched frozen devboost binary + data tarball from the latest
-# GitHub Release, verifies SHA256, installs to ~/.local/share/devboost, and runs install.
+# Downloads the arch-matched frozen devboost binary from the latest GitHub Release, verifies
+# SHA256, installs it, and runs `devboost install`. No data tarball — profiles + templates are
+# bundled inside the binary (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/exec.
 set -Eeuo pipefail
 
 GS_REPO="adams100111/dev-boost"
@@ -19,21 +20,16 @@ gs_arch() {
   esac
 }
 
-# gs_fetch URL OUTFILE — download via curl or wget.
 gs_fetch() {
   local url="$1" out="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$out"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$out" "$url"
-  else
-    gs_err "need curl or wget"; return 1
-  fi
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$url" -o "$out"
+  elif command -v wget >/dev/null 2>&1; then wget -qO "$out" "$url"
+  else gs_err "need curl or wget"; return 1; fi
 }
 
 gs_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@";
-  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$@";
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$@"
   else gs_err "need sha256sum or shasum"; return 1; fi
 }
 
@@ -49,28 +45,22 @@ gs_verify() {
 gs_main() {
   local arch tmp profiles
   arch="$(gs_arch)" || return 1
-  command -v tar >/dev/null 2>&1 || { gs_err "need tar"; return 1; }
   profiles=("$@"); [ "${#profiles[@]}" -eq 0 ] && profiles=(terminal)
 
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
-  gs_err "downloading devboost-${arch} + data from the latest release…"
+  gs_err "downloading devboost-${arch} from the latest release…"
   gs_fetch "${GS_BASE}/checksums.txt" "${tmp}/checksums.txt" \
     || { gs_err "no published release yet (or network error). See README for releasing."; return 1; }
   gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" || return 1
-  gs_fetch "${GS_BASE}/devboost-data.tar.gz" "${tmp}/devboost-data.tar.gz" || return 1
-
-  gs_verify "$tmp" "devboost-${arch}"     || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
-  gs_verify "$tmp" "devboost-data.tar.gz" || { gs_err "checksum mismatch: data tarball"; return 1; }
+  gs_verify "$tmp" "devboost-${arch}" || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
 
   mkdir -p "${GS_PREFIX}/bin"
-  tar -xzf "${tmp}/devboost-data.tar.gz" -C "${GS_PREFIX}"
   install -m 0755 "${tmp}/devboost-${arch}" "${GS_PREFIX}/bin/devboost"
-
-  gs_err "installed to ${GS_PREFIX}; running: devboost install ${profiles[*]}"
-  export DEVBOOST_ROOT="${GS_PREFIX}"
   rm -rf "$tmp"
+
+  gs_err "installed to ${GS_PREFIX}/bin/devboost; running: devboost install ${profiles[*]}"
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }
 

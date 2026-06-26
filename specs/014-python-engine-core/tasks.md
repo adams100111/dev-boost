@@ -74,7 +74,7 @@ Everything else depends on this. (Serves US2/US3/US4/US5/US6 foundationally.)
 - [X] T022 [US1] Tests then impl: `doctor` Python preflight (OS detect, deps `jq`/`age`, modules dir, secrets-state + mise-drift hooks as stubs to fill in M2/M1) in `engine/src/devboost/cli/doctor.py` — replaces `install.sh` dep-ensure
 - [X] T023 [P] [US6] Tests then impl: `Settings` (pydantic-settings, `DEVBOOST_*`) + `resources` resolver (paths work from source and frozen) in `engine/src/devboost/core/settings.py` + `engine/src/devboost/exec/resources.py`
 - [X] T024 [US6] Retarget delivery: update `scripts/build-bundle.sh` + `.github/workflows/release.yml` to PyInstaller-freeze `engine/` (`--onefile`, x86_64 + aarch64, bundle `data/`); add a frozen-binary smoke test (`--version`/`list`)
-- [ ] T025 [US1] Rewrite the boot path: `get.sh` + `ventoy/ks.cfg` `%post` + `devboost-firstboot.service` call the binary directly; delete `bin/devboost` and `install.sh`'s logic (move dep-ensure into `doctor`); update `tests/ventoy.bats` references (or port to pytest)
+- [X] T025 [US1] Rewrite the boot path: `get.sh` + `ventoy/ks.cfg` `%post` + `devboost-firstboot.service` call the binary directly; delete `bin/devboost` and `install.sh`'s logic (move dep-ensure into `doctor`); update `tests/ventoy.bats` references (or port to pytest)
 
 **Checkpoint (M0)**: `devboost install --profile <tracer>` installs ripgrep + ddev end-to-end on a
 Fedora VM; `list`/`verify`/`doctor` work; `mypy --strict` + ruff + pytest green; frozen binary smoke
