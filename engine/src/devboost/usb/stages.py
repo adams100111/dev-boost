@@ -1,0 +1,44 @@
+"""Builder stages: install Ventoy + lay out the USB; optional extras."""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+from devboost.core.errors import VentoyError
+from devboost.exec.resources import resource_path
+from devboost.model import Ctx
+from devboost.usb.config import UsbBuildConfig
+from devboost.usb.devices import validate
+from devboost.usb.download import Downloader
+
+
+def render_kscfg(template: str, profiles: tuple[str, ...]) -> str:
+    return template.replace("devboost install full", "devboost install " + " ".join(profiles))
+
+
+def boot_artifacts(
+    ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path
+) -> None:
+    validate(ctx, cfg.device)
+    if ctx.ex.run(["ventoy", "-i", cfg.device], sudo=True).code != 0:
+        raise VentoyError(f"ventoy install failed on {cfg.device}")
+
+    boot = vtoy_mount / "Bootstrap"
+    for d in ("ISO", "Bootstrap", "Installers", "ventoy"):
+        (vtoy_mount / d).mkdir(parents=True, exist_ok=True)
+
+    shutil.copyfile(resource_path("ventoy", "ventoy.json"), vtoy_mount / "ventoy" / "ventoy.json")
+    kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
+    (boot / "ks.cfg").write_text(render_kscfg(kscfg, cfg.profiles), encoding="utf-8")
+
+    tarball = resource_path("dist", f"devboost-{cfg.arch}.tar.gz")
+    if not tarball.exists():
+        raise VentoyError(f"injection archive missing: {tarball} (run scripts/build-bundle.sh)")
+    shutil.copyfile(tarball, boot / "devboost.tar.gz")
+
+    if cfg.secrets_path is not None:
+        shutil.copyfile(cfg.secrets_path, boot / "secrets.age")
+
+    iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
+    shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
