@@ -11,6 +11,7 @@ from devboost import __version__
 from devboost.cli import devhygiene as dh
 from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
+from devboost.cli.usb import usb as _usb
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
 from devboost.core.plan import build_plan
@@ -195,6 +196,9 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
         log.ok(f"gc: removed {dh.gc(ctx)} orphaned container(s)")
     else:
         log.ok(f"down: stopped {dh.down(ctx)} container(s)")
+
+
+app.command(name="usb")(_usb)
 
 
 def main() -> None:

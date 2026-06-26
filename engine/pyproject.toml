@@ -45,6 +45,7 @@ ignore = ["UP046", "UP047"]
 # Typer reads list-argument defaults at decoration time, not via a shared mutable,
 # so its idiomatic `arg: list[str] = []` is safe here.
 "src/devboost/cli/app.py" = ["B006"]
+"src/devboost/cli/usb.py" = ["B006"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
