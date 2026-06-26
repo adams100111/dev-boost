@@ -20,4 +20,17 @@ def test_mirror_dnf_downloads_and_creates_repo(tmp_path) -> None:  # type: ignor
     mirror_dnf(ctx, {"ripgrep", "git"}, tmp_path)
     calls = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     assert any("dnf download --resolve" in c and "ripgrep" in c for c in calls)
-    assert any(c.startswith("createrepo_c") or "createrepo" in c for c in calls)
+    assert any("createrepo_c" in c for c in calls)
+
+
+def test_mirror_flatpak_creates_bundles(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from devboost.core.osinfo import OsInfo
+    from devboost.exec.executor import FakeExecutor
+    from devboost.model import Ctx
+    from devboost.usb.mirror import mirror_flatpak
+
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor())
+    mirror_flatpak(ctx, {"org.gnome.Foo", "md.obsidian.Obsidian"}, tmp_path)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["flatpak", "create-usb", str(tmp_path), "md.obsidian.Obsidian"] in calls
+    assert ["flatpak", "create-usb", str(tmp_path), "org.gnome.Foo"] in calls
