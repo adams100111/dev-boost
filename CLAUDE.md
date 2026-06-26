@@ -19,9 +19,14 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/011-ventoy-kickstart-usb/plan.md`
-(spec `specs/011-ventoy-kickstart-usb/spec.md`). Specs 1–10 merged to main (1080 tests). For
-technologies, project structure, shell commands, and other context, read that plan and the design
-doc / constitution. Spec 11 = the shippable Ventoy USB (make-usb.sh + ventoy.json + ks.cfg §10c BTRFS
-layout + devboost-firstboot.service); design §9/§10c oracle; artifacts only, validated hermetically.
+Active feature plan: `specs/014-python-engine-core/plan.md`
+(spec `specs/014-python-engine-core/spec.md`; design `docs/superpowers/specs/2026-06-26-python-engine-migration-design.md`).
+Spec 014 = the complete **bash → typed-Python rewrite** of the whole platform, shipped as one
+greenfield deliverable (no intermediate release): Typer/Pydantic/uv src-layout engine under `engine/`,
+pure-Python modules (one typed file each; `requires` as class refs), injected `Executor` seam (system
+tools shell out, data via stdlib), opt-in per-OS `Installer` strategy; Fedora implemented for parity
+with OS-dispatch seams for later OSes; frozen per-arch binary; only `get.sh` + Kickstart `%post` stay
+bash. Built across internal milestones M0–M10 (M0 = foundation + tracer). Constitution v3.0.0 governs;
+`mypy --strict` + ruff + pytest are merge gates. Specs 1–13 were the prior bash platform (now the
+behavioral spec to port + delete, group-by-group).
 <!-- SPECKIT END -->
