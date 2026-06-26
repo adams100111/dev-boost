@@ -19,3 +19,11 @@ sha256 = "1620295f6a00c27c3208f0c00b8ece4eab1ec69b9002152d97488bf26a426ddf"
 [fedora-44.isos.aarch64]
 url = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-Live-44-1.7.aarch64.iso"
 sha256 = "162ba3c552a2d241c7c63ec26777af0255ee1b5a135adc0be986ceed999933ef"
+
+[fedora-44.autoinstall.x86_64]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-44-1.7.iso"
+sha256 = "bd285201494dd0ba09b54d05ac707de1401668b8512a573edb5922dcf9d7067e"
+
+[fedora-44.autoinstall.aarch64]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Everything/aarch64/iso/Fedora-Everything-netinst-aarch64-44-1.7.iso"
+sha256 = "814801fbdda7492d9ee24dab8426c72b29f1635fe98d4ba675ede7e81189d57e"

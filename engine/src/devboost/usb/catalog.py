@@ -29,6 +29,7 @@ class Os:
     version: str
     edition: str
     isos: dict[str, IsoSpec]
+    autoinstall: dict[str, IsoSpec]
 
 
 class _IsoRow(BaseModel):
@@ -42,6 +43,7 @@ class _OsRow(BaseModel):
     version: str
     edition: str
     isos: dict[str, _IsoRow] = Field(min_length=1)
+    autoinstall: dict[str, _IsoRow] = {}
 
 
 _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
@@ -69,6 +71,12 @@ def load_catalog(path: Path) -> dict[str, Os]:
                 arch: IsoSpec(id=os_id, url=iso.url, sha256=iso.sha256, edition=row.edition)
                 for arch, iso in row.isos.items()
             },
+            autoinstall={
+                arch: IsoSpec(
+                    id=f"{os_id}-netinst", url=iso.url, sha256=iso.sha256, edition="netinst"
+                )
+                for arch, iso in row.autoinstall.items()
+            },
         )
         for os_id, row in rows.items()
     }
@@ -94,6 +102,14 @@ def iso_for(os_id: str, arch: str) -> IsoSpec:
     if spec is None:
         raise UsbError(f"no pinned ISO for arch {arch!r} (os_id={os_id!r})")
     return spec
+
+
+def autoinstall_for(os_id: str, arch: str) -> IsoSpec | None:
+    """The pinned zero-touch (netinst) IsoSpec for *os_id*+*arch*, or None if not pinned."""
+    os_entry = catalog().get(os_id)
+    if os_entry is None:
+        return None
+    return os_entry.autoinstall.get(arch)
 
 
 def default_os() -> Os:

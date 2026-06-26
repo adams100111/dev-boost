@@ -97,6 +97,47 @@ def test_load_catalog_missing_file_raises(tmp_path: Path) -> None:
         load_catalog(tmp_path / "nope.toml")
 
 
+def test_autoinstall_for_returns_netinst_spec() -> None:
+    from devboost.usb.catalog import autoinstall_for
+
+    spec = autoinstall_for("fedora-44", "x86_64")
+    assert spec is not None
+    assert spec.id == "fedora-44-netinst"
+    assert "netinst" in spec.url and len(spec.sha256) == 64
+
+
+def test_autoinstall_for_aarch64_present() -> None:
+    from devboost.usb.catalog import autoinstall_for
+
+    assert autoinstall_for("fedora-44", "aarch64") is not None
+
+
+def test_autoinstall_for_missing_returns_none() -> None:
+    from devboost.usb.catalog import autoinstall_for
+
+    assert autoinstall_for("fedora-44", "riscv64") is None  # arch not pinned
+    assert autoinstall_for("ubuntu-99", "x86_64") is None   # unknown os
+
+
+def test_load_catalog_parses_optional_autoinstall(tmp_path: Path) -> None:
+    toml = _VALID + (
+        "\n[fedora-99.autoinstall.x86_64]\n"
+        'url = "https://x/f99-netinst.iso"\n'
+        f'sha256 = "{"b" * 64}"\n'
+    )
+    p = tmp_path / "catalog.toml"
+    p.write_text(toml, encoding="utf-8")
+    cat = load_catalog(p)
+    ai = cat["fedora-99"].autoinstall["x86_64"]
+    assert ai.id == "fedora-99-netinst" and ai.edition == "netinst"
+
+
+def test_load_catalog_entry_without_autoinstall_has_empty_dict(tmp_path: Path) -> None:
+    p = tmp_path / "catalog.toml"
+    p.write_text(_VALID, encoding="utf-8")  # _VALID has no autoinstall table
+    assert load_catalog(p)["fedora-99"].autoinstall == {}
+
+
 def test_load_catalog_rejects_entry_without_isos(tmp_path: Path) -> None:
     p = tmp_path / "catalog.toml"
     p.write_text(
