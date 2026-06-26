@@ -17,6 +17,7 @@ import questionary
 import typer
 
 from devboost.core import log, osinfo
+from devboost.core.errors import UsbError
 from devboost.exec.executor import RealExecutor
 from devboost.model import Ctx
 from devboost.usb import wizard
@@ -80,7 +81,7 @@ def usb(
     secrets: Annotated[Path | None, typer.Option(help="Path to secrets.age")] = None,
     cache_dir: Annotated[Path | None, typer.Option(help="Download cache dir")] = None,
     yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Skip confirmation / accept wipe")
+        bool, typer.Option("--yes", "-y", help="Skip the wipe-confirmation prompt")
     ] = False,
     no_wizard: Annotated[
         bool, typer.Option("--no-wizard", help="Fail instead of prompting")
@@ -90,6 +91,9 @@ def usb(
     ] = False,
     refresh_iso: Annotated[
         bool, typer.Option("--refresh-iso", help="On update, also re-download the pinned ISO")
+    ] = False,
+    rebuild: Annotated[
+        bool, typer.Option("--rebuild", help="Wipe & rebuild even an existing dev-boost USB")
     ] = False,
 ) -> None:
     """Build (or non-destructively update) a dev-boost Ventoy USB."""
@@ -111,8 +115,8 @@ def usb(
         resolved_arch = arch or os_info.arch
         state = probe(ctx, device)
 
-        if state.kind == "devboost" and not yes:
-            mode, assume_yes = "update", True  # update is non-destructive
+        if state.kind == "devboost" and not rebuild:
+            mode, assume_yes = "update", True  # detected dev-boost stick → non-destructive update
         else:
             mode, assume_yes = "build", yes
             if not assume_yes and not dry_run:
@@ -124,17 +128,25 @@ def usb(
                     raise typer.Exit(code=1)
                 assume_yes = True
 
-        cfg = UsbBuildConfig(
-            device=device,
-            arch=resolved_arch,
-            iso=iso_for(iso, resolved_arch) if iso else iso_for(default_iso().id, resolved_arch),
-            profiles=tuple(profile) or ("full",),
-            secrets_path=secrets,
-            cache_dir=cache_dir or Path(gettempdir()) / "devboost-usb",
-            mode=mode,  # type: ignore[arg-type]
-            refresh_iso=refresh_iso,
-            assume_yes=assume_yes,
-        )
+        try:
+            cfg = UsbBuildConfig(
+                device=device,
+                arch=resolved_arch,
+                iso=(
+                    iso_for(iso, resolved_arch)
+                    if iso
+                    else iso_for(default_iso().id, resolved_arch)
+                ),
+                profiles=tuple(profile) or ("full",),
+                secrets_path=secrets,
+                cache_dir=cache_dir or Path(gettempdir()) / "devboost-usb",
+                mode=mode,  # type: ignore[arg-type]
+                refresh_iso=refresh_iso,
+                assume_yes=assume_yes,
+            )
+        except UsbError as exc:
+            log.error(str(exc))
+            raise typer.Exit(code=1) from exc
 
     if dry_run:
         if state is None:

@@ -65,8 +65,10 @@ def run(ctx: Ctx) -> UsbBuildConfig:
     else:
         _confirm_wipe(device, label="WIPE")
 
+    arches = sorted({a for o in supported() for a in o.isos})
+    host = platform.machine()
     arch = questionary.select(
-        "Architecture:", choices=["x86_64", "aarch64"], default=platform.machine()
+        "Architecture:", choices=arches, default=host if host in arches else arches[0]
     ).ask()
     if arch is None:
         raise DeviceError("aborted")

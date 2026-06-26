@@ -44,3 +44,50 @@ def test_usb_dry_run_previews_without_building(monkeypatch) -> None:  # type: ig
     clean = _strip_ansi(result.stdout)
     assert "/dev/sdb" in clean and "build" in clean
     assert called["build"] is False
+
+
+def test_usb_yes_on_devboost_stick_updates_not_wipes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import devboost.cli.usb as cli_usb
+    from devboost.usb.marker import Marker
+    from devboost.usb.probe import DiskState
+
+    marker = Marker(version="0.1.0", os_id="fedora-44", arch="x86_64",
+                    built_at="2026-06-26T00:00:00+00:00")
+    monkeypatch.setattr(cli_usb, "probe", lambda ctx, device: DiskState("devboost", marker))
+    monkeypatch.setattr(cli_usb, "build", lambda *a, **k: None)
+    monkeypatch.setattr(cli_usb, "_iso_note", lambda cfg: "cached")
+    result = runner.invoke(
+        app, ["usb", "--device", "/dev/sdb", "--no-wizard", "--dry-run", "--yes"]
+    )
+    assert result.exit_code == 0
+    clean = _strip_ansi(result.stdout)
+    assert "update" in clean  # --yes alone does NOT force a wipe on a dev-boost stick
+
+
+def test_usb_rebuild_flag_forces_build_on_devboost_stick(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import devboost.cli.usb as cli_usb
+    from devboost.usb.marker import Marker
+    from devboost.usb.probe import DiskState
+
+    marker = Marker(version="0.1.0", os_id="fedora-44", arch="x86_64",
+                    built_at="2026-06-26T00:00:00+00:00")
+    monkeypatch.setattr(cli_usb, "probe", lambda ctx, device: DiskState("devboost", marker))
+    monkeypatch.setattr(cli_usb, "build", lambda *a, **k: None)
+    monkeypatch.setattr(cli_usb, "_iso_note", lambda cfg: "cached")
+    result = runner.invoke(
+        app, ["usb", "--device", "/dev/sdb", "--no-wizard", "--dry-run", "--rebuild"]
+    )
+    assert result.exit_code == 0
+    assert "build" in _strip_ansi(result.stdout)
+
+
+def test_usb_unpinned_arch_exits_cleanly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import devboost.cli.usb as cli_usb
+    from devboost.usb.probe import DiskState
+
+    monkeypatch.setattr(cli_usb, "probe", lambda ctx, device: DiskState("blank"))
+    result = runner.invoke(
+        app,
+        ["usb", "--device", "/dev/sdb", "--no-wizard", "--arch", "aarch64", "--dry-run", "--yes"],
+    )
+    assert result.exit_code == 1  # iso_for raises UsbError → caught → clean exit, not a traceback
