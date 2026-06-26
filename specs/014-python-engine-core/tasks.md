@@ -162,11 +162,11 @@ passes on both arches. **The architecture is proven — bulk porting can begin.*
 
 **Independent Test**: each stack profile installs+verifies; sample projects build (Laravel/.NET+Aspire/Python/web/RN).
 
-- [ ] T045 [P] [US1] Port dev-stacks bats → pytest (test-first) for laravel/dotnet/python/web/data/devops/react-native
-- [ ] T046 [US1] [US3] Port `python` (uv, python-lsp) + `web` (web-runtimes, web-lsp) modules + templates
-- [ ] T047 [US1] [US3] Port `laravel` (ddev✓, laravel-lsp) + `dotnet` (dotnet-sdk, aspire, dotnet-lsp) modules + templates
-- [ ] T048 [US1] [US3] Port `data` (data-services) + `devops` (devops-tools, devops-lsp) + `react-native` (android-sdk, expo) modules + templates
-- [ ] T049 [US1] Delete ported dev-stack bash + bats; VM-verify each stack builds a sample project
+- [X] T045 [P] [US1] Port dev-stacks bats → pytest (test-first) for laravel/dotnet/python/web/data/devops/react-native
+- [X] T046 [US1] [US3] Port `python` (uv, python-lsp) + `web` (web-runtimes, web-lsp) modules + templates
+- [X] T047 [US1] [US3] Port `laravel` (ddev✓, laravel-lsp) + `dotnet` (dotnet-sdk, aspire, dotnet-lsp) modules + templates
+- [X] T048 [US1] [US3] Port `data` (data-services) + `devops` (devops-tools, devops-lsp) + `react-native` (android-sdk, expo) modules + templates
+- [X] T049 [US1] Delete ported dev-stack bash + bats; VM-verify each stack builds a sample project
 
 **Checkpoint**: all dev stacks green and buildable.
 

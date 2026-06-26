@@ -1,0 +1,9 @@
+# Web stack fresh language servers + formatter.
+# TAB-separated columns: lang <TAB> fresh-command <TAB> mise backend:tool@pin <TAB> args(space-sep, optional)
+# Pins here ARE the in-repo source of truth for these tools' versions (Principle III).
+# Note: eslint's binary lives inside vscode-langservers-extracted; tailwindcss is a scoped
+# package whose binary is the unscoped `tailwindcss-language-server`.
+typescript	typescript-language-server	npm:typescript-language-server@5.3.0	--stdio
+eslint	vscode-eslint-language-server	npm:vscode-langservers-extracted@4.10.0	--stdio
+tailwindcss	tailwindcss-language-server	npm:@tailwindcss/language-server@0.14.29	--stdio
+prettier	prettier	npm:prettier@3.8.4

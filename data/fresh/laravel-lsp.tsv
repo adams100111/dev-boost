@@ -1,0 +1,6 @@
+# Laravel-stack fresh language servers (PHP).
+# TAB-separated columns: lang <TAB> fresh-command <TAB> mise backend:tool@pin <TAB> args(space-sep, optional)
+# Pins here ARE the in-repo source of truth for these tools' versions (Principle III).
+# Pint (PHP formatter) is a per-project composer dev-dependency, wired in
+# templates/laravel/.fresh/config.json — NOT a global server.
+php	intelephense	npm:intelephense@1.12.0	--stdio
