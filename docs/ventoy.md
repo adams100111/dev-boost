@@ -9,13 +9,14 @@ sudo devboost usb                  # interactive wizard: pick the device + ISO +
 sudo devboost usb --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes   # fully scripted
 ```
 The `devboost usb` command (the typed replacement for the old `ventoy/make-usb.sh`) installs Ventoy on
-the chosen **removable** disk, downloads + SHA256-verifies + caches the Fedora ISO, and stages the
+the chosen **removable** disk, downloads + SHA256-verifies + caches the Fedora ISOs, and stages the
 injection archive (`devboost-<arch>.tar.gz`, which lands the binary at `opt/dev-boost/devboost`) +
-`ks.cfg` + `ventoy.json`. The device picker lists removable disks with vendor/size/serial and requires
-an explicit wipe confirmation (`--yes` to skip in automation). Optional wizard steps add extra
+`ks.cfg` + a generated `ventoy.json`. The device picker lists removable disks with vendor/size/serial and
+requires an explicit wipe confirmation (`--yes` to skip in automation). Optional wizard steps add extra
 multi-boot ISOs/installers and an offline dnf+flatpak package mirror. Drop your `secrets.age` into
-`Bootstrap/` (never committed). `ventoy/ventoy.json` binds `ks.cfg` to the Fedora ISO (`auto_install`)
-and injects dev-boost (`injection`).
+`Bootstrap/` (never committed). The engine **generates** `ventoy.json`: the default boot entry +
+`injection` (dev-boost binary) cover the Live ISO, and `auto_install` binds `ks.cfg` to the **netinst**
+ISO (`injection` covers both ISOs so the binary is available on either boot path).
 
 ## Which OS gets installed (`catalog.toml`)
 
