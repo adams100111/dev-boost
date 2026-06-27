@@ -3,19 +3,27 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
 from devboost import __version__
 from devboost.core.errors import DeviceError, VentoyError
-from devboost.exec.resources import resource_path
+from devboost.exec.resources import injection_archive_path, resource_path
+from devboost.media.cache import Cache
 from devboost.media.config import MediaConfig
 from devboost.media.devices import validate
 from devboost.media.download import Downloader
 from devboost.media.marker import Marker, write_marker
 from devboost.media.report import Reporter
+from devboost.media.ventoy import ensure_ventoy
 from devboost.model import Ctx
+
+_PAIR = re.compile(r'(\w+)="([^"]*)"')
 
 
 def render_kscfg(
@@ -54,6 +62,52 @@ def render_ventoy_json(*, default_iso: str, autoinstall_iso: str | None) -> str:
     return json.dumps(data, indent=2)
 
 
+def _find_vtoy_partition(ctx: Ctx, device: str) -> str | None:
+    """Return the /dev path of the child partition labelled VTOY, or None."""
+    out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,LABEL", device]).stdout
+    for line in out.splitlines():
+        fields = dict(_PAIR.findall(line))
+        if fields.get("LABEL") == "VTOY":
+            name = fields.get("NAME", "")
+            if not name:
+                return None
+            return name if name.startswith("/dev/") else f"/dev/{name}"
+    return None
+
+
+@contextmanager
+def _mounted_vtoy(
+    ctx: Ctx, device: str, *, override: Path | None = None
+) -> Iterator[Path]:
+    """Discover the VTOY partition, mount it read-write, yield the mountpoint, umount+sync.
+
+    When *override* is provided (tests / callers that already have a mount) it is yielded
+    directly without any system calls.
+    """
+    if override is not None:
+        yield override
+        return
+
+    part = _find_vtoy_partition(ctx, device)
+    if part is None:
+        raise VentoyError(
+            f"VTOY partition not found on {device} after Ventoy install — "
+            "the Ventoy2Disk.sh invocation may have failed silently"
+        )
+    mnt = Path(mkdtemp(prefix="devboost-build-"))
+    try:
+        if ctx.ex.run(["mount", part, str(mnt)], sudo=True).code != 0:
+            raise VentoyError(f"could not mount VTOY partition {part} on {mnt}")
+        try:
+            yield mnt
+        finally:
+            ctx.ex.run(["umount", str(mnt)], sudo=True)
+            ctx.ex.run(["sync"], sudo=True)
+    finally:
+        with suppress(OSError):
+            mnt.rmdir()
+
+
 def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
     """Lay out ventoy.json + ks.cfg + injection archive + secrets + marker (no wipe, no ISO)."""
     boot = vtoy_mount / "Bootstrap"
@@ -68,12 +122,18 @@ def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) ->
     (boot / "ks.cfg").write_text(
         render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
     )
-    tarball = resource_path("dist", f"devboost-{cfg.arch}.tar.gz")
+    # Resolve the injection tarball correctly in both source and frozen-binary mode.
+    tarball = injection_archive_path(cfg.arch)
     if not tarball.exists():
-        raise VentoyError(f"injection archive missing: {tarball} (run scripts/build-bundle.sh)")
+        raise VentoyError(
+            f"injection archive missing: {tarball} — "
+            "run scripts/build-bundle.sh (source) or ship the .tar.gz alongside the binary"
+        )
     shutil.copyfile(tarball, boot / "devboost.tar.gz")
     if cfg.secrets_path is not None:
         shutil.copyfile(cfg.secrets_path, boot / "secrets.age")
+    if cfg.secrets_key_path is not None:
+        shutil.copyfile(cfg.secrets_key_path, boot / "age-key.txt")
     write_marker(
         vtoy_mount,
         Marker(
@@ -98,35 +158,87 @@ def _stage_autoinstall_iso(
 
 
 def boot_artifacts(
-    ctx: Ctx, cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+    ctx: Ctx,
+    cfg: MediaConfig,
+    dl: Downloader,
+    cache: Cache,
+    *,
+    vtoy_mount: Path | None = None,
+    reporter: Reporter,
 ) -> None:
+    """Install Ventoy on *cfg.device*, mount the VTOY partition, stage all payload and ISOs.
+
+    *vtoy_mount* is a test/override path: when provided the mount lifecycle is skipped and
+    files are written directly there.  In production this is always ``None`` so the partition
+    is discovered via lsblk and mounted to a temp dir, then unmounted+synced in a finally.
+    """
     if not cfg.assume_yes:
         raise DeviceError(f"refusing to wipe {cfg.device}: not confirmed")
     validate(ctx, cfg.device)
-    if ctx.ex.run(["ventoy", "-i", cfg.device], sudo=True).code != 0:
-        raise VentoyError(f"ventoy install failed on {cfg.device}")
+
+    ventoy2disk = ensure_ventoy(ctx, dl, cache)
+    if (
+        ctx.ex.run(
+            ["sh", str(ventoy2disk), "-i", cfg.device],
+            sudo=True,
+            stdin="y\ny\n",
+        ).code
+        != 0
+    ):
+        raise VentoyError(f"Ventoy install failed on {cfg.device}")
     reporter.step(f"Ventoy installed on {cfg.device}")
-    _stage_payload(cfg, vtoy_mount=vtoy_mount, reporter=reporter)
-    iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
-    shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
-    reporter.step(f"Fedora ISO staged ({cfg.iso.id})")
-    _stage_autoinstall_iso(cfg, dl, vtoy_mount=vtoy_mount, reporter=reporter)
+
+    with _mounted_vtoy(ctx, cfg.device, override=vtoy_mount) as mnt:
+        _stage_payload(cfg, vtoy_mount=mnt, reporter=reporter)
+        iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
+        shutil.copyfile(iso_path, mnt / "ISO" / f"{cfg.iso.id}.iso")
+        reporter.step(f"Fedora ISO staged ({cfg.iso.id})")
+        _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
+        extra_isos(cfg, vtoy_mount=mnt)
+        if cfg.extra_isos:
+            reporter.step(f"Staged {len(cfg.extra_isos)} extra ISO(s)")
+        installers(cfg, vtoy_mount=mnt)
+        if cfg.installers:
+            reporter.step(f"Staged {len(cfg.installers)} installer(s)")
 
 
 def update_stage(
-    ctx: Ctx, cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+    ctx: Ctx,
+    cfg: MediaConfig,
+    dl: Downloader,
+    cache: Cache,
+    *,
+    vtoy_mount: Path | None = None,
+    reporter: Reporter,
 ) -> None:
-    """Non-destructive refresh: ventoy -u + re-stage payload; ISO only when refresh_iso."""
+    """Non-destructive refresh: Ventoy2Disk.sh -u + re-stage payload; ISO only when refresh_iso."""
     validate(ctx, cfg.device)
-    if ctx.ex.run(["ventoy", "-u", cfg.device], sudo=True).code != 0:
-        raise VentoyError(f"ventoy update failed on {cfg.device}")
+
+    ventoy2disk = ensure_ventoy(ctx, dl, cache)
+    if (
+        ctx.ex.run(
+            ["sh", str(ventoy2disk), "-u", cfg.device],
+            sudo=True,
+            stdin="y\ny\n",
+        ).code
+        != 0
+    ):
+        raise VentoyError(f"Ventoy update failed on {cfg.device}")
     reporter.step(f"Ventoy updated on {cfg.device}")
-    _stage_payload(cfg, vtoy_mount=vtoy_mount, reporter=reporter)
-    if cfg.refresh_iso:
-        iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
-        shutil.copyfile(iso_path, vtoy_mount / "ISO" / f"{cfg.iso.id}.iso")
-        reporter.step(f"Fedora ISO refreshed ({cfg.iso.id})")
-        _stage_autoinstall_iso(cfg, dl, vtoy_mount=vtoy_mount, reporter=reporter)
+
+    with _mounted_vtoy(ctx, cfg.device, override=vtoy_mount) as mnt:
+        _stage_payload(cfg, vtoy_mount=mnt, reporter=reporter)
+        if cfg.refresh_iso:
+            iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
+            shutil.copyfile(iso_path, mnt / "ISO" / f"{cfg.iso.id}.iso")
+            reporter.step(f"Fedora ISO refreshed ({cfg.iso.id})")
+            _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
+        extra_isos(cfg, vtoy_mount=mnt)
+        if cfg.extra_isos:
+            reporter.step(f"Staged {len(cfg.extra_isos)} extra ISO(s)")
+        installers(cfg, vtoy_mount=mnt)
+        if cfg.installers:
+            reporter.step(f"Staged {len(cfg.installers)} installer(s)")
 
 
 def extra_isos(cfg: MediaConfig, *, vtoy_mount: Path) -> None:
