@@ -25,7 +25,17 @@ devboost install full --dry-run  # preview everything, mutate nothing
 
 # From a clone (developing the engine):
 cd engine && uv sync && uv run devboost list full
+
+# Install from the clone so `devboost` runs from anywhere (editable, no rebuild):
+scripts/install-dev.sh           # = uv tool install --editable ./engine
+devboost installer --dry-run     # now works from any directory
 ```
+
+Editable keeps the engine pointed at your checkout, so the repo-root data
+(`profiles.toml`, `catalog.toml`, `ventoy/`) resolves correctly and code edits are
+live. Uninstall with `uv tool uninstall devboost`. (A plain wheel install won't
+work — that data lives outside the packaged module; the **frozen binary** is the
+shippable artifact for fresh machines.)
 
 ## Install (any OS)
 
