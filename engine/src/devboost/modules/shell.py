@@ -9,7 +9,7 @@ from pathlib import Path
 from devboost.core import log
 from devboost.core.registry import register
 from devboost.core.settings import settings
-from devboost.exec.primitives import copr, pkg
+from devboost.exec.primitives import copr, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
@@ -42,16 +42,23 @@ class Starship(Module):
 class Ghostty(Module):
     name = "ghostty"
     category = "shell"
-    description = "GPU-accelerated terminal (Fedora COPR)."
+    description = "GPU-accelerated terminal (Fedora COPR / Flathub flatpak on Ubuntu)."
     gui = True
     profiles = ("shell",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family == "debian":
+            return "com.mitchellh.ghostty" in ctx.ex.run(
+                ["flatpak", "list", "--app", "--columns=application"]
+            ).stdout
         return ctx.ex.which("ghostty")
 
     def install(self, ctx: Ctx) -> None:
-        copr.enable(ctx, "scottames/ghostty")
-        pkg.install(ctx, "ghostty")
+        if ctx.os.family == "debian":
+            flatpak.install(ctx, "com.mitchellh.ghostty")
+        else:
+            copr.enable(ctx, "scottames/ghostty")
+            pkg.install(ctx, "ghostty")
 
 
 @register

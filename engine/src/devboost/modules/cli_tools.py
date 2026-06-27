@@ -6,6 +6,8 @@ Each tool sets: name, category, profiles, cmd (verify), fedora_pkg (install), [c
 from __future__ import annotations
 
 from devboost.core.registry import register
+from devboost.exec.primitives import copr, pkg
+from devboost.model import Ctx
 from devboost.modules._pkgmodule import PackageModule
 
 
@@ -79,6 +81,7 @@ class Fd(PackageModule):
     profiles = ("base",)
     cmd = "fd"
     fedora_pkg = "fd-find"
+    debian_cmd = "fdfind"   # Ubuntu binary is fdfind; apt package fd-find is same
 
 
 @register
@@ -115,6 +118,7 @@ class Bat(PackageModule):
     profiles = ("cli",)
     cmd = "bat"
     fedora_pkg = "bat"
+    debian_cmd = "batcat"   # Ubuntu binary is batcat; apt package bat is same
 
 
 @register
@@ -181,6 +185,18 @@ class Lazydocker(PackageModule):
     fedora_pkg = "lazydocker"
     copr_repo = "atim/lazydocker"
 
+    def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "fedora":
+            copr.enable(ctx, "atim/lazydocker")
+            pkg.install(ctx, "lazydocker")
+        else:
+            # No native apt package — use the upstream cross-distro installer.
+            ctx.ex.run(
+                ["sh", "-c",
+                 "curl https://raw.githubusercontent.com/jesseduffield/lazydocker"
+                 "/master/scripts/install_update_linux.sh | bash"]
+            )
+
 
 @register
 class Dust(PackageModule):
@@ -189,6 +205,7 @@ class Dust(PackageModule):
     profiles = ("cli",)
     cmd = "dust"
     fedora_pkg = "rust-dust"
+    debian_pkg = "du-dust"   # Ubuntu apt package name differs from Fedora
 
 
 @register

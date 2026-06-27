@@ -6,12 +6,23 @@ import os
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, mise, pkg
-from devboost.model import Ctx, Module
+from devboost.model import AptRepo, Ctx, Module
 
 _NOTE_NVM = "# devboost: migrated nvm init to mise"
 _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
+
+_MISE_APT_SOURCE: pkg.Source = OsMap(
+    debian=AptRepo(
+        list_line=(
+            "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg]"
+            " https://mise.jdx.dev/apt/ * *"
+        ),
+        key_url="https://mise.jdx.dev/gpg-key.pub",
+    )
+)
 
 
 def _home() -> Path:
@@ -30,7 +41,10 @@ class Mise(Module):
 
     def install(self, ctx: Ctx) -> None:
         if not ctx.ex.which("mise"):
-            pkg.install(ctx, "mise")
+            if ctx.os.family == "debian":
+                pkg.install(ctx, "mise", source=_MISE_APT_SOURCE)
+            else:
+                pkg.install(ctx, "mise")
         self._migrate_nvm(ctx)
         self._migrate_sdkman(ctx)
 

@@ -6,15 +6,19 @@ import os
 from pathlib import Path
 
 from devboost.core import log
-from devboost.core.errors import SecretsError
+from devboost.core.errors import SecretsError, UnsupportedOS
 from devboost.core.registry import register
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
-_BUILD_PKGS = (
+_BUILD_PKGS_FEDORA = (
     "make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip "
     "gnupg fastfetch unrar android-tools fuse-libs ripgrep"
+).split()
+
+_BUILD_PKGS_DEBIAN = (
+    "build-essential cmake git wget perl vim nano unzip gnupg fastfetch libfuse2 ripgrep"
 ).split()
 
 
@@ -29,6 +33,8 @@ class Rpmfusion(Module):
         return ctx.ex.run(["rpm", "-q", "rpmfusion-free-release", "rpmfusion-nonfree-release"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(f"rpmfusion is Fedora-only; detected {ctx.os.distro!r}")
         rel = ctx.ex.run(["rpm", "-E", "%fedora"]).stdout.strip()
         base = "https://mirrors.rpmfusion.org"
         pkg.install(
@@ -58,6 +64,8 @@ class DnfTune(Module):
         return "max_parallel_downloads=10" in text and "fastestmirror=true" in text
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(f"dnf-tune is Fedora-only; detected {ctx.os.distro!r}")
         conf = self._conf()
         config.write_kv(ctx, conf, "max_parallel_downloads", "10")
         config.write_kv(ctx, conf, "fastestmirror", "true")
@@ -74,6 +82,8 @@ class FedoraThirdParty(Module):
         return "enabled" in ctx.ex.run(["fedora-third-party", "query"]).stdout
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(f"fedora-third-party is Fedora-only; detected {ctx.os.distro!r}")
         ctx.ex.run(["fedora-third-party", "enable"], sudo=True)
 
 
@@ -105,7 +115,10 @@ class BuildTools(Module):
         return all(ctx.ex.which(c) for c in ("gcc", "make", "cmake"))
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, *_BUILD_PKGS)
+        if ctx.os.family == "debian":
+            pkg.install(ctx, *_BUILD_PKGS_DEBIAN)
+        else:
+            pkg.install(ctx, *_BUILD_PKGS_FEDORA)
 
 
 @register
