@@ -46,3 +46,16 @@ def validate(ctx: Ctx, path: str) -> None:
         raise DeviceError(f"refusing {path}: not a removable whole disk")
     if match.mounted:
         raise DeviceError(f"refusing {path}: mounted — unmount first")
+    # lsblk -d only shows the disk itself, not child partitions.  A USB with a mounted
+    # partition (e.g. the VTOY FAT32 filesystem) would slip past the check above.  Run a
+    # second lsblk without -d and reject any child with a non-empty mountpoint.
+    disk_name = path.rsplit("/", 1)[-1]  # e.g. "sdb" from "/dev/sdb"
+    child_out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,MOUNTPOINT", path]).stdout
+    for line in child_out.splitlines():
+        f = dict(_PAIR.findall(line))
+        name = f.get("NAME", "")
+        mnt = f.get("MOUNTPOINT", "").strip()
+        if name and name != disk_name and mnt:
+            raise DeviceError(
+                f"refusing {path}: partition /dev/{name} is mounted ({mnt}) — unmount first"
+            )

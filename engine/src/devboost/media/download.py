@@ -28,21 +28,26 @@ class UrllibDownloader:
             return dest
         tmp = dest.with_suffix(dest.suffix + ".part")
         try:
-            with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:
-                total = int(resp.headers.get("Content-Length", 0) or 0)
-                if self.reporter is not None and total:
-                    with self.reporter.progress(name, total) as advance:
-                        for chunk in iter(lambda: resp.read(1 << 20), b""):
-                            out.write(chunk)
-                            advance(len(chunk))
-                else:
-                    shutil.copyfileobj(resp, out)
-        except OSError as exc:
-            raise DownloadError(url, str(exc)) from exc
-        if not self.cache.verify(tmp, sha256):
+            try:
+                with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:
+                    # total=0 when Content-Length is absent; progress bar runs indeterminate.
+                    total = int(resp.headers.get("Content-Length", 0) or 0)
+                    if self.reporter is not None:
+                        with self.reporter.progress(name, total) as advance:
+                            for chunk in iter(lambda: resp.read(1 << 20), b""):
+                                out.write(chunk)
+                                advance(len(chunk))
+                    else:
+                        shutil.copyfileobj(resp, out)
+            except OSError as exc:
+                raise DownloadError(url, str(exc)) from exc
+            if not self.cache.verify(tmp, sha256):
+                raise DownloadError(url, "checksum mismatch")
+            tmp.replace(dest)
+        except Exception:
+            # Always remove the .part file on any failure so we never leave disk-eating debris.
             tmp.unlink(missing_ok=True)
-            raise DownloadError(url, "checksum mismatch")
-        tmp.replace(dest)
+            raise
         return dest
 
 

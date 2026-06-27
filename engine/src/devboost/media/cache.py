@@ -1,17 +1,24 @@
-"""Content-addressed cache for downloaded build artifacts (ISO, binary, Ventoy)."""
+"""Download cache for build artifacts (ISOs, Ventoy tarball, frozen binary).
+
+Caching is **opt-in**: the default workflow uses an ephemeral temp dir that is cleaned up
+after the build.  Pass ``--cache-dir`` on the CLI to persist downloads across runs.  An
+optional TTL (``ttl_days``) evicts files older than N days from a persistent cache.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import time
 from pathlib import Path
 
 
 class Cache:
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, *, ttl_days: int | None = None) -> None:
         self.cache_dir = cache_dir
+        self.ttl_days = ttl_days
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def path_for(self, name: str, sha256: str) -> Path:
+    def path_for(self, name: str, sha256: str) -> Path:  # noqa: ARG002
         return self.cache_dir / name
 
     def verify(self, path: Path, sha256: str) -> bool:
@@ -25,3 +32,18 @@ class Cache:
 
     def has(self, name: str, sha256: str) -> bool:
         return self.verify(self.path_for(name, sha256), sha256)
+
+    def evict_stale(self) -> int:
+        """Remove regular files older than ``ttl_days``.  Returns the number of files removed.
+
+        No-op when ``ttl_days`` is ``None``.
+        """
+        if self.ttl_days is None:
+            return 0
+        cutoff = time.time() - self.ttl_days * 86400
+        removed = 0
+        for entry in self.cache_dir.iterdir():
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                entry.unlink(missing_ok=True)
+                removed += 1
+        return removed
