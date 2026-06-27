@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import SecretsError, UnsupportedOS
@@ -28,6 +29,7 @@ class Rpmfusion(Module):
     category = "base"
     description = "Enable RPM Fusion free + nonfree + AppStream metadata."
     profiles = ("base",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["rpm", "-q", "rpmfusion-free-release", "rpmfusion-nonfree-release"]).ok
@@ -52,6 +54,7 @@ class DnfTune(Module):
     category = "base"
     description = "Tune dnf.conf (parallel downloads, fastest mirror)."
     profiles = ("base",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def _conf(self) -> str:
         return os.environ.get("DEVBOOST_DNF_CONF", "/etc/dnf/dnf.conf")
@@ -77,6 +80,7 @@ class FedoraThirdParty(Module):
     category = "base"
     description = "Enable Fedora third-party repositories."
     profiles = ("base",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         return "enabled" in ctx.ex.run(["fedora-third-party", "query"]).stdout

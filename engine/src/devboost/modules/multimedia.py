@@ -7,6 +7,8 @@ VA-API (va-hwaccel): cross-distro with OS-aware package selection.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
 from devboost.core.registry import register
@@ -22,6 +24,7 @@ class FfmpegFull(Module):
     description = "Swap ffmpeg-free for the full ffmpeg from RPM Fusion (Fedora-only)."
     requires = (Rpmfusion,)
     profiles = ("multimedia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -51,6 +54,7 @@ class FfmpegUbuntu(Module):
     category = "multimedia"
     description = "ffmpeg from Ubuntu universe (Ubuntu/Debian-only)."
     profiles = ("multimedia",)
+    families: ClassVar[tuple[str, ...]] = ("debian",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("ffmpeg")
@@ -70,6 +74,7 @@ class Codecs(Module):
     description = "Install the @multimedia codec group (Fedora-only via RPM Fusion)."
     requires = (Rpmfusion,)
     profiles = ("multimedia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -102,6 +107,7 @@ class CodecsUbuntu(Module):
     category = "multimedia"
     description = "ubuntu-restricted-extras + libavcodec-extra (Ubuntu-only)."
     profiles = ("multimedia",)
+    families: ClassVar[tuple[str, ...]] = ("debian",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "debian":
@@ -182,6 +188,7 @@ class Openh264(Module):
     category = "multimedia"
     description = "Cisco OpenH264 for browser H.264 support (Fedora-only)."
     profiles = ("multimedia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
     _PKGS = ("openh264", "gstreamer1-plugin-openh264", "mozilla-openh264")
 
     def verify(self, ctx: Ctx) -> bool:

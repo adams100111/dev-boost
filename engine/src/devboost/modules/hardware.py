@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
@@ -26,6 +27,7 @@ class NvidiaAkmod(Module):
     description = "akmod-nvidia driver (RPM Fusion, Fedora-only)."
     requires = (Rpmfusion,)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -47,6 +49,7 @@ class Cuda(Module):
     description = "CUDA toolkit (Fedora-only via RPM Fusion)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -68,6 +71,7 @@ class LibvaNvidiaDriver(Module):
     description = "VA-API bridge for NVIDIA (Fedora-only via RPM Fusion)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -89,6 +93,7 @@ class NvidiaContainerToolkit(Module):
     description = "GPU access for containers (Fedora-only via akmod deps)."
     requires = (Docker, NvidiaAkmod)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("nvidia-ctk")
@@ -109,6 +114,7 @@ class SecurebootMok(Module):
     description = "Enroll a MOK so the signed NVIDIA modules load under Secure Boot (Fedora-only)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def _key(self) -> Path:
         return Path("/etc/pki/akmods/certs/public_key.der")
@@ -136,6 +142,7 @@ class NvidiaResignService(Module):
     description = "Re-sign NVIDIA modules after a kernel/akmod rebuild (Fedora-only)."
     requires = (SecurebootMok,)
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def _unit(self) -> Path:
         d = os.environ.get("DEVBOOST_SYSTEMD_SYSTEM_DIR", "/etc/systemd/system")
@@ -176,6 +183,7 @@ class NvidiaDriverUbuntu(Module):
     category = "hardware-nvidia"
     description = "NVIDIA driver via ubuntu-drivers autoinstall (Ubuntu-only)."
     profiles = ("hardware-nvidia",)
+    families: ClassVar[tuple[str, ...]] = ("debian",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("nvidia-smi")

@@ -77,6 +77,12 @@ def build_plan(
             combined = list(dict.fromkeys(effective_order + missing))
             effective_order = _toposort(combined, modules)
 
+    # Drop modules that are scoped to a different OS family.
+    effective_order = [
+        name for name in effective_order
+        if not modules[name].families or os_info.family in modules[name].families
+    ]
+
     plan: list[PlannedModule] = []
     for name in effective_order:
         cls = modules[name]

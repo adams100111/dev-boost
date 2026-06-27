@@ -35,6 +35,7 @@ class GrubBtrfs(SystemService):
     description = "Boot into BTRFS snapshots from GRUB."
     svc_pkg = "grub-btrfs"
     service = "grub-btrfsd"
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family != "fedora":
@@ -82,6 +83,7 @@ class Snapper(Module):
     category = "system"
     description = "BTRFS snapshots for /."
     profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -103,6 +105,7 @@ class SnapperDnfHook(Module):
     category = "system"
     description = "dnf plugin: snapshot before/after transactions."
     profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -124,6 +127,7 @@ class BtrfsAssistant(Module):
     description = "GUI for snapshots/subvolumes."
     gui = True
     profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -144,6 +148,7 @@ class Btrfsmaintenance(Module):
     category = "system"
     description = "Scheduled BTRFS balance/scrub/trim."
     profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
@@ -164,6 +169,7 @@ class DnfAutomaticSecurity(Module):
     category = "system"
     description = "Automatic security-only dnf updates."
     profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
 
     def _conf(self) -> str:
         return os.environ.get("DEVBOOST_DNF_AUTOMATIC_CONF", "/etc/dnf/automatic.conf")
