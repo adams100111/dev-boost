@@ -42,7 +42,7 @@ class GithubError(DevbootError):
 
 
 class MediaError(DevbootError):
-    """Base for `devboost usb` build failures."""
+    """Base for `devboost installer` build failures."""
 
 
 class DeviceError(MediaError):

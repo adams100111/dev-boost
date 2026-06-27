@@ -1,4 +1,4 @@
-"""Typed configuration for a `devboost usb` build (filled by flags or the wizard)."""
+"""Typed configuration for a `devboost installer` build (filled by flags or the wizard)."""
 
 from __future__ import annotations
 

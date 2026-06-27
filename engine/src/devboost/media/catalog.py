@@ -4,7 +4,7 @@ Pins are the source of truth (Principle III). Edit ``catalog.toml`` to add a dis
 bump a release; each sha256 must come from the distro's signed CHECKSUM — never invent one.
 The TOML is validated at load (structure + 64-hex sha256), so a malformed pin fails loudly
 instead of silently shipping a bad hash. Adding an entry needs no code change — it shows up
-in the ``devboost usb`` wizard by its friendly name automatically.
+in the ``devboost installer`` wizard by its friendly name automatically.
 """
 
 from __future__ import annotations
