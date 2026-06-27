@@ -24,7 +24,8 @@ from devboost.exec.executor import RealExecutor
 from devboost.media import wizard
 from devboost.media.builder import build
 from devboost.media.cache import Cache
-from devboost.media.catalog import autoinstall_for, default_iso, iso_for
+from devboost.core.osinfo import family_of
+from devboost.media.catalog import autoinstall_for, catalog, default_iso, iso_for
 from devboost.media.config import MediaConfig
 from devboost.media.download import UrllibDownloader
 from devboost.media.preview import render_plan
@@ -167,6 +168,7 @@ def installer(
                 arch=resolved_arch,
                 iso=iso_for(os_id, resolved_arch),
                 autoinstall_iso=autoinstall_for(os_id, resolved_arch),
+                os_family=family_of(catalog()[os_id].distro),
                 profiles=tuple(profile) or ("full",),
                 secrets_path=secrets,
                 secrets_key_path=secrets_key,

@@ -13,7 +13,8 @@ from tempfile import gettempdir
 import questionary
 
 from devboost.core.errors import DeviceError
-from devboost.media.catalog import autoinstall_for, default_os, iso_for, supported
+from devboost.core.osinfo import family_of
+from devboost.media.catalog import autoinstall_for, catalog, default_os, iso_for, supported
 from devboost.media.config import MediaConfig
 from devboost.media.devices import list_removable
 from devboost.media.probe import probe
@@ -103,6 +104,7 @@ def run(ctx: Ctx) -> MediaConfig:
         arch=arch,
         iso=iso_for(os_id, arch),
         autoinstall_iso=autoinstall_for(os_id, arch),
+        os_family=family_of(catalog()[os_id].distro),
         profiles=tuple(profiles),
         secrets_path=Path(secrets) if secrets else None,
         cache_dir=Path(cache),
