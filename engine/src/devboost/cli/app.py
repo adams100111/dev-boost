@@ -74,13 +74,29 @@ def _version(value: bool | None) -> None:
         raise typer.Exit()
 
 
+def _maybe_warn_update() -> None:
+    """Print a one-line update hint to stderr if a newer release is cached. Never raises."""
+    from devboost.core import selfupdate
+
+    new = selfupdate.update_available()
+    if new:
+        typer.echo(
+            f"dev-boost {new} is available (you have {__version__})"
+            " — run: devboost self-update",
+            err=True,
+        )
+
+
 @app.callback()
 def main_callback(
+    ctx: typer.Context,
     version: Annotated[
         bool | None, typer.Option("--version", callback=_version, is_eager=True)
     ] = None,
 ) -> None:
     """dev-boost CLI root."""
+    if ctx.invoked_subcommand not in (None, "self-update"):
+        _maybe_warn_update()
 
 
 @app.command()
@@ -199,10 +215,40 @@ def update(root: RootOpt = settings.root) -> None:
 
 
 @app.command(name="self-update")
-def self_update(root: RootOpt = settings.root) -> None:
-    """Update dev-boost and re-validate the catalog."""
-    if not lc.self_update(_ctx(), root):
-        raise typer.Exit(code=1)
+def self_update(
+    root: RootOpt = settings.root,
+    check: Annotated[
+        bool, typer.Option("--check", help="print current vs latest without installing")
+    ] = False,
+) -> None:
+    """Update dev-boost to the latest release (or git-pull from source)."""
+    from devboost.core import selfupdate
+
+    if check:
+        latest = selfupdate.latest_version()
+        if latest is None:
+            typer.echo("could not determine latest version (offline?)", err=True)
+            raise typer.Exit(code=1)
+        if selfupdate.version_tuple(latest) > selfupdate.version_tuple(__version__):
+            typer.echo(f"update available: {__version__} → {latest}")
+        else:
+            typer.echo(f"up to date: {__version__}")
+        return
+
+    if selfupdate.is_frozen():
+        latest = selfupdate.latest_version()
+        if latest == __version__:
+            typer.echo(f"already on the latest version ({__version__})")
+            return
+        try:
+            old, new = selfupdate.update_frozen()
+        except RuntimeError as exc:
+            typer.echo(f"self-update failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"updated {old} → {new}")
+    else:
+        if not lc.self_update(_ctx(), root):
+            raise typer.Exit(code=1)
 
 
 @app.command()
