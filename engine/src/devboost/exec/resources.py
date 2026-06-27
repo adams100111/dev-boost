@@ -34,6 +34,8 @@ def injection_archive_path(arch: str) -> Path:
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass is not None:
         # Frozen: tarball is shipped alongside the binary, not inside _MEIPASS.
-        return Path(sys.executable).parent / f"devboost-{arch}.tar.gz"
+        # resolve() so a launch via the ~/.local/bin/devboost symlink (get.sh) still
+        # finds the tarball next to the *real* binary in ~/.local/share/devboost/bin.
+        return Path(sys.executable).resolve().parent / f"devboost-{arch}.tar.gz"
     # Source: in the repo's dist/ directory (created by scripts/build-bundle.sh).
     return resource_root() / "dist" / f"devboost-{arch}.tar.gz"

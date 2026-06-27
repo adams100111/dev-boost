@@ -56,9 +56,15 @@ gs_main() {
     || { gs_err "no published release yet (or network error). See README for releasing."; return 1; }
   gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" || return 1
   gs_verify "$tmp" "devboost-${arch}" || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
+  # The Ventoy injection archive is shipped alongside the binary so the online-installed
+  # `devboost installer` can build a USB with no clone/build.
+  gs_fetch "${GS_BASE}/devboost-${arch}.tar.gz" "${tmp}/devboost-${arch}.tar.gz" || return 1
+  gs_verify "$tmp" "devboost-${arch}.tar.gz" \
+    || { gs_err "checksum mismatch: devboost-${arch}.tar.gz"; return 1; }
 
   mkdir -p "${GS_PREFIX}/bin"
   install -m 0755 "${tmp}/devboost-${arch}" "${GS_PREFIX}/bin/devboost"
+  install -m 0644 "${tmp}/devboost-${arch}.tar.gz" "${GS_PREFIX}/bin/devboost-${arch}.tar.gz"
   rm -rf "$tmp"
 
   # Put `devboost` on PATH: keep the payload in the data dir, link it into the user bin dir.
@@ -73,6 +79,12 @@ gs_main() {
        gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.bashrc" ;;
   esac
 
+  # `usb`/`none` => install the builder only; do NOT configure this machine.
+  if [ "${profiles[0]}" = "usb" ] || [ "${profiles[0]}" = "none" ]; then
+    gs_err "devboost installed (with the USB injection archive)."
+    gs_err "build a bootable USB on this machine:  sudo \"${link}\" installer"
+    return 0
+  fi
   gs_err "running: devboost install ${profiles[*]}"
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }
