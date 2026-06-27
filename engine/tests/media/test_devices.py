@@ -36,3 +36,41 @@ def test_validate_rejects_fixed_and_mounted() -> None:
     with pytest.raises(DeviceError):
         validate(ctx, "/dev/sdc")          # mounted -> rejected
     validate(ctx, "/dev/sdb")              # removable, unmounted -> OK (no raise)
+
+
+def test_validate_rejects_when_child_partition_is_mounted() -> None:
+    """A whole-disk lsblk -d can show the disk as unmounted even when a partition is mounted.
+
+    The new child-partition check must catch this case and reject the device.
+    """
+    # Combined output: disk is TYPE=disk/unmounted but sdb1 has a MOUNTPOINT
+    _LSBLK_WITH_MOUNTED_CHILD = (
+        'PATH="/dev/sdb" SIZE="32G" TYPE="disk" RM="1" MOUNTPOINT="" MODEL="Ultra"'
+        ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
+        # The following line is returned by the child-check lsblk call:
+        'NAME="sdb" MOUNTPOINT=""\n'
+        'NAME="sdb1" MOUNTPOINT="/run/media/user/VTOY"\n'
+    )
+    ctx = Ctx(
+        os=OS,
+        ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK_WITH_MOUNTED_CHILD)}),
+    )
+    with pytest.raises(DeviceError, match="mounted"):
+        validate(ctx, "/dev/sdb")
+
+
+def test_validate_passes_when_child_partitions_unmounted() -> None:
+    """Children with empty MOUNTPOINT must not trigger a rejection."""
+    _LSBLK_CLEAN_CHILDREN = (
+        'PATH="/dev/sdb" SIZE="32G" TYPE="disk" RM="1" MOUNTPOINT="" MODEL="Ultra"'
+        ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
+        'NAME="sdb" MOUNTPOINT=""\n'
+        'NAME="sdb1" MOUNTPOINT=""\n'
+        'NAME="sdb2" MOUNTPOINT=""\n'
+    )
+    ctx = Ctx(
+        os=OS,
+        ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK_CLEAN_CHILDREN)}),
+    )
+    # Should not raise
+    validate(ctx, "/dev/sdb")

@@ -147,3 +147,58 @@ def test_load_catalog_rejects_entry_without_isos(tmp_path: Path) -> None:
     )
     with pytest.raises(MediaError, match="invalid catalog"):
         load_catalog(p)
+
+
+# ---------------------------------------------------------------------------
+# Ventoy pin
+# ---------------------------------------------------------------------------
+
+def test_load_catalog_ignores_ventoy_section_in_os_validation(tmp_path: Path) -> None:
+    """The [ventoy] block must NOT cause an 'invalid catalog' error during OS validation."""
+    toml = _VALID + (
+        "\n[ventoy]\n"
+        'version = "1.1.16"\n'
+        'url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"\n'
+        f'sha256 = "{"a" * 64}"\n'
+    )
+    p = tmp_path / "catalog.toml"
+    p.write_text(toml, encoding="utf-8")
+    # load_catalog should succeed and NOT include 'ventoy' as an OS entry
+    cat = load_catalog(p)
+    assert "ventoy" not in cat
+    assert "fedora-99" in cat
+
+
+def test_ventoy_pin_is_present_in_live_catalog() -> None:
+    """The live catalog.toml (used by tests via settings) must have a valid [ventoy] block."""
+    from devboost.media.catalog import VentoySpec, ventoy_pin
+
+    pin = ventoy_pin()
+    assert isinstance(pin, VentoySpec)
+    assert pin.version == "1.1.16"
+    assert pin.url.endswith(".tar.gz")
+    import re
+    assert re.fullmatch(r"[0-9a-f]{64}", pin.sha256)
+
+
+def test_ventoy_pin_raises_for_missing_section(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """ventoy_pin() must raise MediaError when [ventoy] is absent."""
+    from devboost.media.catalog import MediaError
+
+    p = tmp_path / "catalog.toml"
+    p.write_text(_VALID, encoding="utf-8")  # no [ventoy] block
+
+    # Point the catalog module's settings reference at our stripped catalog path.
+    class _FakeSettings:
+        catalog_path = p
+
+    monkeypatch.setattr("devboost.media.catalog.settings", _FakeSettings())
+
+    # ventoy_pin uses @cache — clear between tests
+    from devboost.media.catalog import ventoy_pin
+    ventoy_pin.cache_clear()
+    try:
+        with pytest.raises(MediaError, match="ventoy"):
+            ventoy_pin()
+    finally:
+        ventoy_pin.cache_clear()

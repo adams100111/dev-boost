@@ -23,6 +23,17 @@ _LSBLK = (
     ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
 )
 
+# lsblk -P -o NAME,MOUNTPOINT /dev/sdb — no mounted children → validate() passes child check
+_LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
+
+# Fake path returned by a monkeypatched ensure_ventoy
+_FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
+
+
+def _make_executor(*, lsblk_out: str = _LSBLK, child_out: str = _LSBLK_CHILDREN_CLEAN) -> FakeExecutor:
+    """FakeExecutor that handles both lsblk call variants used by validate() + _find_vtoy_partition."""
+    return FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_out + child_out)})
+
 
 def test_render_ventoy_json_default_only_omits_auto_install() -> None:
     import json
@@ -75,8 +86,10 @@ def test_boot_artifacts_refuses_wipe_without_assume_yes(tmp_path: Path) -> None:
     ex = FakeExecutor()
     ctx = Ctx(os=OS, ex=ex)
     with pytest.raises(DeviceError, match="not confirmed"):
-        boot_artifacts(ctx, cfg, dl, vtoy_mount=tmp_path / "VTOY", reporter=FakeReporter())
-    assert not any("ventoy" in " ".join(c) for c in ex.calls)
+        boot_artifacts(ctx, cfg, dl, cache, vtoy_mount=tmp_path / "VTOY", reporter=FakeReporter())
+    # Must not have called any ventoy or mount commands
+    flat = [" ".join(c) for c in ex.calls]
+    assert not any("Ventoy2Disk" in c or "ventoy" in c for c in flat)
 
 
 def test_boot_artifacts_installs_ventoy_and_stages_files(
@@ -95,9 +108,18 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
         id="fedora-44-netinst", url="https://x/n.iso", sha256=netinst_sha, edition="netinst"
     )
 
+    ventoy_bytes = b"ventoy-tarball"
+    ventoy_sha = hashlib.sha256(ventoy_bytes).hexdigest()
+    ventoy_url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"
+
     cache = Cache(tmp_path / "cache")
     dl = FakeDownloader(
-        cache, blobs={"https://x/f.iso": iso_bytes, "https://x/n.iso": netinst_bytes}
+        cache,
+        blobs={
+            "https://x/f.iso": iso_bytes,
+            "https://x/n.iso": netinst_bytes,
+            ventoy_url: ventoy_bytes,
+        },
     )
     cfg = MediaConfig(
         device="/dev/sdb",
@@ -109,7 +131,7 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
         assume_yes=True,
     )
     vtoy = tmp_path / "VTOY"
-    ctx = Ctx(os=OS, ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)}))
+    ctx = Ctx(os=OS, ex=_make_executor())
 
     # Build hermetic fakes for resource_path targets
     ks_template = (
@@ -123,16 +145,24 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     def fake_resource_path(*parts: str) -> Path:
         if parts == ("ventoy", "ks.cfg"):
             return fake_ks
-        if parts[0] == "dist":
-            return fake_tarball
         raise KeyError(parts)
 
     monkeypatch.setattr("devboost.media.stages.resource_path", fake_resource_path)
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    # ensure_ventoy: return a fake Ventoy2Disk.sh path (no real extraction needed)
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
 
-    boot_artifacts(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
+    boot_artifacts(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
 
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["ventoy", "-i", "/dev/sdb"] in calls or ["sudo", "ventoy", "-i", "/dev/sdb"] in calls
+    # Should have called sh .../Ventoy2Disk.sh -i /dev/sdb (via sudo)
+    assert any(
+        "Ventoy2Disk.sh" in " ".join(c) and "-i" in c and "/dev/sdb" in c for c in calls
+    )
     assert (vtoy / "Bootstrap" / "ks.cfg").read_text().count("devboost install cli") == 1
     # both ISOs staged
     assert (vtoy / "ISO" / "fedora-44.iso").exists()
@@ -141,6 +171,49 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     vj = json.loads((vtoy / "ventoy" / "ventoy.json").read_text())
     assert vj["auto_install"][0]["image"] == "/ISO/fedora-44-netinst.iso"
     assert vj["control"][1]["VTOY_DEFAULT_IMAGE"] == "/ISO/fedora-44.iso"
+
+
+def test_boot_artifacts_stages_secrets_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """age-key.txt is staged alongside secrets.age when secrets_key_path is set."""
+    iso_bytes = b"iso"
+    sha = hashlib.sha256(iso_bytes).hexdigest()
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256=sha, edition="E")
+
+    secrets_file = tmp_path / "secrets.age"
+    secrets_file.write_bytes(b"age-encrypted")
+    key_file = tmp_path / "age-key.txt"
+    key_file.write_text("AGE-SECRET-KEY-1...", encoding="utf-8")
+
+    ventoy_sha = hashlib.sha256(b"vt").hexdigest()
+    ventoy_url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"
+    cache = Cache(tmp_path / "cache")
+    dl = FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes, ventoy_url: b"vt"})
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("full",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,
+        secrets_path=secrets_file,
+        secrets_key_path=key_file,
+    )
+    vtoy = tmp_path / "VTOY"
+    ctx = Ctx(os=OS, ex=_make_executor())
+    fake_ks = tmp_path / "ks.cfg"
+    fake_ks.write_text("install full", encoding="utf-8")
+    fake_tar = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tar.write_bytes(b"tar")
+    monkeypatch.setattr("devboost.media.stages.resource_path", lambda *p: fake_ks)
+    monkeypatch.setattr("devboost.media.stages.injection_archive_path", lambda arch: fake_tar)
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    boot_artifacts(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
+    assert (vtoy / "Bootstrap" / "secrets.age").exists()
+    assert (vtoy / "Bootstrap" / "age-key.txt").read_text() == "AGE-SECRET-KEY-1..."
 
 
 def test_render_kscfg_offline_appends_flag() -> None:
@@ -162,14 +235,15 @@ def test_update_stage_restages_without_wipe(
     from devboost.media.stages import update_stage
 
     iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    ventoy_url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"
     cache = Cache(tmp_path / "cache")
-    dl = FakeDownloader(cache, blobs={})
+    dl = FakeDownloader(cache, blobs={ventoy_url: b"vt"})
     cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
         cache_dir=cache.cache_dir, mode="update", assume_yes=True,
     )
     vtoy = tmp_path / "VTOY"
-    ctx = Ctx(os=OS, ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)}))
+    ctx = Ctx(os=OS, ex=_make_executor())
 
     ks_template = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full'"
     fake_ks = tmp_path / "ks.cfg"
@@ -177,22 +251,26 @@ def test_update_stage_restages_without_wipe(
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
     fake_tar.write_bytes(b"tar")
 
-    def fake_resource_path(*parts: str) -> Path:
-        if parts == ("ventoy", "ks.cfg"):
-            return fake_ks
-        return fake_tar
-
-    monkeypatch.setattr("devboost.media.stages.resource_path", fake_resource_path)
-    update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
+    monkeypatch.setattr(
+        "devboost.media.stages.resource_path",
+        lambda *p: fake_ks if p == ("ventoy", "ks.cfg") else fake_tar,
+    )
+    monkeypatch.setattr("devboost.media.stages.injection_archive_path", lambda arch: fake_tar)
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    update_stage(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
 
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     flat = [" ".join(c) for c in calls]
-    assert any("ventoy -u /dev/sdb" in c for c in flat)
-    assert not any("ventoy -i" in c for c in flat)           # never wipes
+    assert any("Ventoy2Disk.sh" in c and "-u" in c and "/dev/sdb" in c for c in flat)
+    assert not any("Ventoy2Disk.sh" in c and "-i" in c for c in flat)  # never wipes
     assert (vtoy / "Bootstrap" / "devboost.tar.gz").exists()
     assert (vtoy / "Bootstrap" / ".devboost-usb.json").exists()
-    assert not (vtoy / "ISO" / "fedora-44.iso").exists()     # payload-only by default
-    assert dl.fetched == []                                   # no ISO download
+    assert not (vtoy / "ISO" / "fedora-44.iso").exists()  # payload-only by default
+    assert dl.fetched == []  # no ISO download (Ventoy tarball is pre-staged in fake blobs
+    # but FakeDownloader doesn't record the ventoy URL since it's not fetched in this test
+    # because ensure_ventoy is monkeypatched out)
 
 
 def test_update_stage_refreshes_iso_when_requested(
@@ -212,7 +290,7 @@ def test_update_stage_refreshes_iso_when_requested(
         cache_dir=cache.cache_dir, mode="update", refresh_iso=True, assume_yes=True,
     )
     vtoy = tmp_path / "VTOY"
-    ctx = Ctx(os=OS, ex=FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)}))
+    ctx = Ctx(os=OS, ex=_make_executor())
     fake_ks = tmp_path / "ks.cfg"
     fake_ks.write_text("install full", encoding="utf-8")
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
@@ -221,7 +299,11 @@ def test_update_stage_refreshes_iso_when_requested(
         "devboost.media.stages.resource_path",
         lambda *p: fake_ks if p == ("ventoy", "ks.cfg") else fake_tar,
     )
-    update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
+    monkeypatch.setattr("devboost.media.stages.injection_archive_path", lambda arch: fake_tar)
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    update_stage(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
     assert (vtoy / "ISO" / "fedora-44.iso").read_bytes() == iso_bytes
     assert dl.fetched == ["https://x/f.iso"]
 
@@ -251,3 +333,43 @@ def test_extra_isos_and_installers_are_staged(tmp_path: Path) -> None:
     assert (vtoy / "ISO" / "win.iso").exists() and (
         vtoy / "Installers" / "tool.run"
     ).exists()
+
+
+def test_mount_lifecycle_recorded_when_no_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In production mode (vtoy_mount=None), stages must call mount + umount + sync."""
+    from devboost.media.stages import _mounted_vtoy
+
+    # lsblk output showing sdb1 with LABEL=VTOY
+    lsblk_vtoy = 'NAME="sdb" LABEL=""\nNAME="sdb1" LABEL="VTOY"\n'
+    ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_vtoy)})
+    ctx = Ctx(os=OS, ex=ex)
+
+    # Monkeypatch mkdtemp to return a real tmp_path subdir so we can observe it
+    mount_dir = tmp_path / "mount"
+    mount_dir.mkdir()
+    monkeypatch.setattr("devboost.media.stages.mkdtemp", lambda prefix="": str(mount_dir))
+
+    with _mounted_vtoy(ctx, "/dev/sdb") as mnt:
+        assert mnt == mount_dir
+
+    flat = [" ".join(c) for c in ex.calls]
+    assert any("mount" in c and "sdb1" in c for c in flat)
+    assert any("umount" in c for c in flat)
+    assert any("sync" in c for c in flat)
+
+
+def test_mounted_vtoy_yields_override_without_syscalls(tmp_path: Path) -> None:
+    """When override is provided, no mount/umount/sync calls are made."""
+    from devboost.media.stages import _mounted_vtoy
+
+    ex = FakeExecutor()
+    ctx = Ctx(os=OS, ex=ex)
+    override = tmp_path / "override"
+    override.mkdir()
+
+    with _mounted_vtoy(ctx, "/dev/sdb", override=override) as mnt:
+        assert mnt == override
+
+    assert ex.calls == []  # no system calls at all
