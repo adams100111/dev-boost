@@ -192,8 +192,16 @@ scripts/make-secrets.sh --out /tmp/sec                 # build the age-encrypted
 ```
 Full runbook (prereqs, snapshots, what to verify): [docs/vm-testing.md](docs/vm-testing.md).
 
-## License
+## License & disclaimer
 
-[MIT](LICENSE). This is a personal developer-workstation setup, shared **as-is** — it bakes in
-opinionated tool choices and a specific dotfiles/secrets flow, so it's offered for reference and reuse,
-not as a supported product (no warranty; issues/PRs aren't guaranteed a response).
+Licensed under the [MIT License](LICENSE).
+
+**Use entirely at your own risk.** dev-boost performs destructive and system-level operations — it
+**wipes the target drive** when building install media, installs/removes packages, rewrites system and
+desktop configuration, and provisions secrets (GitHub PAT, SSH keys). It is provided **"as is", without
+warranty of any kind** (see LICENSE), and **you alone are responsible** for any data loss, downtime, or
+damage resulting from its use. Read what it does, and **test in a VM** (`scripts/vm-test.sh`) before
+running it against real hardware or a drive you care about.
+
+It's a personal workstation setup — opinionated tool choices and a specific dotfiles/secrets flow —
+shared for reference and reuse, not a supported product (issues/PRs aren't guaranteed a response).
