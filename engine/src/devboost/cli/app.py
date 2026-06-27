@@ -12,7 +12,7 @@ from devboost import __version__
 from devboost.cli import devhygiene as dh
 from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
-from devboost.cli.usb import usb as _usb
+from devboost.cli.installer import installer as _installer
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
 from devboost.core.plan import PlannedModule, build_plan
@@ -44,7 +44,7 @@ def _apply_offline_filter(
     modules: Mapping[str, type[Module]],
 ) -> list[PlannedModule]:
     """Replace network-only modules with a needs-network skip; leave already-skipped ones alone."""
-    from devboost.usb.mirror import offline_installable
+    from devboost.media.mirror import offline_installable
 
     return [
         pm
@@ -221,7 +221,7 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
         log.ok(f"down: stopped {dh.down(ctx)} container(s)")
 
 
-app.command(name="usb")(_usb)
+app.command(name="installer")(_installer)
 
 
 def main() -> None:

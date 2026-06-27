@@ -1,4 +1,4 @@
-"""Interactive wizard: questionary prompts (each defaulted) -> UsbBuildConfig.
+"""Interactive wizard: questionary prompts (each defaulted) -> MediaConfig.
 
 After the device pick we probe (read-only) and branch: an existing dev-boost stick
 offers a non-destructive update; a foreign Ventoy or blank stick confirms a wipe.
@@ -13,11 +13,11 @@ from tempfile import gettempdir
 import questionary
 
 from devboost.core.errors import DeviceError
+from devboost.media.catalog import autoinstall_for, default_os, iso_for, supported
+from devboost.media.config import MediaConfig
+from devboost.media.devices import list_removable
+from devboost.media.probe import probe
 from devboost.model import Ctx
-from devboost.usb.catalog import autoinstall_for, default_os, iso_for, supported
-from devboost.usb.config import UsbBuildConfig
-from devboost.usb.devices import list_removable
-from devboost.usb.probe import probe
 
 _PROFILES = ("full", "terminal", "devtools", "base", "cli", "shell", "gnome")
 
@@ -28,7 +28,7 @@ def _confirm_wipe(device: str, *, label: str) -> None:
         raise DeviceError("aborted: device wipe not confirmed")
 
 
-def run(ctx: Ctx) -> UsbBuildConfig:
+def run(ctx: Ctx) -> MediaConfig:
     devices = list_removable(ctx)
     if not devices:
         raise DeviceError("no removable disk found — plug in a USB and retry")
@@ -98,7 +98,7 @@ def run(ctx: Ctx) -> UsbBuildConfig:
         default=False,
     ).ask() or False
 
-    return UsbBuildConfig(
+    return MediaConfig(
         device=device,
         arch=arch,
         iso=iso_for(os_id, arch),

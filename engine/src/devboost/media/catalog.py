@@ -16,9 +16,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-from devboost.core.errors import UsbError
+from devboost.core.errors import MediaError
 from devboost.core.settings import settings
-from devboost.usb.config import IsoSpec
+from devboost.media.config import IsoSpec
 
 
 @dataclass(frozen=True)
@@ -52,14 +52,14 @@ _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
 def load_catalog(path: Path) -> dict[str, Os]:
     """Parse + validate a catalog TOML into typed ``Os`` entries.
 
-    Raises ``UsbError`` if the file is missing, malformed, or has a bad pin (e.g. a
+    Raises ``MediaError`` if the file is missing, malformed, or has a bad pin (e.g. a
     sha256 that is not 64 lowercase hex).
     """
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         rows = _CATALOG_ADAPTER.validate_python(raw)
     except (OSError, ValueError) as exc:  # OSError: missing; ValueError: TOML/validation
-        raise UsbError(f"invalid catalog {path}: {exc}") from exc
+        raise MediaError(f"invalid catalog {path}: {exc}") from exc
     return {
         os_id: Os(
             id=os_id,
@@ -94,13 +94,13 @@ def supported() -> list[Os]:
 
 
 def iso_for(os_id: str, arch: str) -> IsoSpec:
-    """The pinned IsoSpec for *os_id* on *arch*, or raise UsbError."""
+    """The pinned IsoSpec for *os_id* on *arch*, or raise MediaError."""
     os_entry = catalog().get(os_id)
     if os_entry is None:
-        raise UsbError(f"unknown OS id {os_id!r}")
+        raise MediaError(f"unknown OS id {os_id!r}")
     spec = os_entry.isos.get(arch)
     if spec is None:
-        raise UsbError(f"no pinned ISO for arch {arch!r} (os_id={os_id!r})")
+        raise MediaError(f"no pinned ISO for arch {arch!r} (os_id={os_id!r})")
     return spec
 
 

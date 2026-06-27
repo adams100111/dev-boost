@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from devboost.core.errors import DownloadError
-from devboost.usb.cache import Cache
-from devboost.usb.download import FakeDownloader
+from devboost.media.cache import Cache
+from devboost.media.download import FakeDownloader
 
 
 def _sha(b: bytes) -> str:
@@ -36,9 +36,9 @@ def test_urllib_downloader_drives_progress_with_byte_counts(
 ) -> None:
     import io
 
-    from devboost.usb.cache import Cache
-    from devboost.usb.download import UrllibDownloader
-    from devboost.usb.report import FakeReporter
+    from devboost.media.cache import Cache
+    from devboost.media.download import UrllibDownloader
+    from devboost.media.report import FakeReporter
 
     data = b"x" * 2500  # > one 1 MiB chunk is not needed; assert total + chunking
     sha = _sha(data)
@@ -53,7 +53,7 @@ def test_urllib_downloader_drives_progress_with_byte_counts(
             self.close()
 
     monkeypatch.setattr(
-        "devboost.usb.download.urllib.request.urlopen", lambda url: _Resp(data)
+        "devboost.media.download.urllib.request.urlopen", lambda url: _Resp(data)
     )
     reporter = FakeReporter()
     dl = UrllibDownloader(Cache(tmp_path), reporter)

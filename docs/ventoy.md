@@ -5,10 +5,10 @@ unattended OS install + the BTRFS layout · **the `devboost` binary** = everythi
 
 ## Build the USB (once)
 ```sh
-sudo devboost usb                  # interactive wizard: pick the device + ISO + profiles (defaults everywhere)
-sudo devboost usb --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes   # fully scripted
+sudo devboost installer                  # interactive wizard: pick the device + ISO + profiles (defaults everywhere)
+sudo devboost installer --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes   # fully scripted
 ```
-The `devboost usb` command (the typed replacement for the old `ventoy/make-usb.sh`) installs Ventoy on
+The `devboost installer` command (the typed replacement for the old `ventoy/make-usb.sh`) installs Ventoy on
 the chosen **removable** disk, downloads + SHA256-verifies + caches the Fedora ISOs, and stages the
 injection archive (`devboost-<arch>.tar.gz`, which lands the binary at `opt/dev-boost/devboost`) +
 `ks.cfg` + a generated `ventoy.json`. The device picker lists removable disks with vendor/size/serial and
@@ -21,7 +21,7 @@ ISO (`injection` covers both ISOs so the binary is available on either boot path
 ## Which OS gets installed (`catalog.toml`)
 
 The selectable OSes live in **`catalog.toml`** at the repo root (bundled into the binary like
-`profiles.toml`). For each supported OS and architecture, `devboost usb` stages **two ISOs**:
+`profiles.toml`). For each supported OS and architecture, `devboost installer` stages **two ISOs**:
 
 - **Workstation Live** — the standard desktop image (manual installer or live session; Ventoy default
   boot entry).
@@ -29,13 +29,13 @@ The selectable OSes live in **`catalog.toml`** at the repo root (bundled into th
   zero-touch Kickstart path (no user interaction; BTRFS layout + firstboot service).
 
 Both are pinned per-arch in `catalog.toml` with real SHA256s from Fedora's signed `CHECKSUM`, and both
-are SHA256-verified on download. `devboost usb` auto-detects the host architecture and resolves both ISOs
+are SHA256-verified on download. `devboost installer` auto-detects the host architecture and resolves both ISOs
 automatically — no flags required. Adding a release or distro is one TOML table — no code change, no
 rebuild of the engine logic — and the file is validated on load (a bad/short sha256 fails loudly).
 
 ## Update vs rebuild
 
-Re-running `devboost usb` on a stick that is **already a dev-boost USB** detects it (via the
+Re-running `devboost installer` on a stick that is **already a dev-boost USB** detects it (via the
 `Bootstrap/.devboost-usb.json` marker, read through a read-only mount) and defaults to a
 **non-destructive update**: it runs `ventoy -u`, re-stages the `devboost` binary, `ks.cfg`,
 `ventoy.json`, and refreshes the marker — while **preserving** `ISO/`, `secrets.age`, and the data
@@ -44,7 +44,7 @@ ISO. A blank disk or a foreign Ventoy stick still goes through the explicit wipe
 
 ## Preview first (`--dry-run`)
 
-`devboost usb --device /dev/sdX --dry-run` resolves everything — catalog OS, detected disk state,
+`devboost installer --device /dev/sdX --dry-run` resolves everything — catalog OS, detected disk state,
 build-vs-update mode, profiles, optional stages, and the estimated ISO download — and prints the plan
 **without running `ventoy`, downloading, or writing anything**. Use it to rehearse safely.
 
@@ -56,7 +56,7 @@ build-vs-update mode, profiles, optional stages, and the estimated ISO download 
    `devboost install full` once (the injected binary at `/opt/dev-boost/devboost`), then disables itself.
 
 ## Safety
-`devboost usb` only accepts a whole, removable, unmounted disk (`lsblk` guards) and requires an
+`devboost installer` only accepts a whole, removable, unmounted disk (`lsblk` guards) and requires an
 explicit wipe confirmation before installing Ventoy — the single destructive step.
 
 ## Test it first (no hardware)

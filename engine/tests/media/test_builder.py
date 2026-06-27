@@ -5,16 +5,16 @@ from pathlib import Path
 
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
+from devboost.media.builder import build
+from devboost.media.cache import Cache
+from devboost.media.config import IsoSpec, MediaConfig
+from devboost.media.download import FakeDownloader
+from devboost.media.report import FakeReporter
 from devboost.model import Ctx
-from devboost.usb.builder import build
-from devboost.usb.cache import Cache
-from devboost.usb.config import IsoSpec, UsbBuildConfig
-from devboost.usb.download import FakeDownloader
-from devboost.usb.report import FakeReporter
 
 
 def test_build_runs_boot_then_extras(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    import devboost.usb.stages as stages
+    import devboost.media.stages as stages
 
     order: list[str] = []
     monkeypatch.setattr(stages, "boot_artifacts", lambda *a, **k: order.append("boot"))
@@ -23,7 +23,7 @@ def test_build_runs_boot_then_extras(tmp_path: Path, monkeypatch) -> None:  # ty
 
     data = b"iso"
     iso = IsoSpec("fedora-44", "u", hashlib.sha256(data).hexdigest(), "E")
-    cfg = UsbBuildConfig(device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path)
+    cfg = MediaConfig(device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path)
     build(
         Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor()),
         cfg,
@@ -37,7 +37,7 @@ def test_build_runs_boot_then_extras(tmp_path: Path, monkeypatch) -> None:  # ty
 def test_build_calls_mirror_when_offline_mirror_true(  # type: ignore[no-untyped-def]
     tmp_path: Path, monkeypatch
 ) -> None:
-    import devboost.usb.stages as stages
+    import devboost.media.stages as stages
 
     order: list[str] = []
     monkeypatch.setattr(stages, "boot_artifacts", lambda *a, **k: order.append("boot"))
@@ -47,7 +47,7 @@ def test_build_calls_mirror_when_offline_mirror_true(  # type: ignore[no-untyped
 
     data = b"iso"
     iso = IsoSpec("fedora-44", "u", hashlib.sha256(data).hexdigest(), "E")
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path, offline_mirror=True
     )
     build(
@@ -63,7 +63,7 @@ def test_build_calls_mirror_when_offline_mirror_true(  # type: ignore[no-untyped
 def test_build_no_mirror_when_offline_mirror_false(  # type: ignore[no-untyped-def]
     tmp_path: Path, monkeypatch
 ) -> None:
-    import devboost.usb.stages as stages
+    import devboost.media.stages as stages
 
     order: list[str] = []
     monkeypatch.setattr(stages, "boot_artifacts", lambda *a, **k: order.append("boot"))
@@ -72,7 +72,7 @@ def test_build_no_mirror_when_offline_mirror_false(  # type: ignore[no-untyped-d
 
     data = b"iso"
     iso = IsoSpec("fedora-44", "u", hashlib.sha256(data).hexdigest(), "E")
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path, offline_mirror=False
     )
     build(
@@ -89,8 +89,8 @@ def test_build_no_mirror_when_offline_mirror_false(  # type: ignore[no-untyped-d
 def test_build_update_mode_calls_update_stage_not_boot(  # type: ignore[no-untyped-def]
     tmp_path: Path, monkeypatch
 ) -> None:
-    import devboost.usb.stages as stages
-    from devboost.usb.report import FakeReporter
+    import devboost.media.stages as stages
+    from devboost.media.report import FakeReporter
 
     order: list[str] = []
     monkeypatch.setattr(stages, "boot_artifacts", lambda *a, **k: order.append("boot"))
@@ -99,7 +99,7 @@ def test_build_update_mode_calls_update_stage_not_boot(  # type: ignore[no-untyp
     monkeypatch.setattr(stages, "installers", lambda *a, **k: None)
 
     iso = IsoSpec("fedora-44", "u", hashlib.sha256(b"i").hexdigest(), "E")
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=tmp_path, mode="update"
     )
     build(Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor()),

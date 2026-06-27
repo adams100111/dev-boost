@@ -10,8 +10,8 @@ from tempfile import mkdtemp
 from typing import Literal
 
 from devboost.core import log
+from devboost.media.marker import Marker, read_marker
 from devboost.model import Ctx
-from devboost.usb.marker import Marker, read_marker
 
 _PAIR = re.compile(r'(\w+)="([^"]*)"')
 

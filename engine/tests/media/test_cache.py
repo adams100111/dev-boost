@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from devboost.usb.cache import Cache
+from devboost.media.cache import Cache
 
 
 def _sha(data: bytes) -> str:

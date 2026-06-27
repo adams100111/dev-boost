@@ -8,12 +8,12 @@ import pytest
 from devboost.core.errors import DeviceError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
+from devboost.media.cache import Cache
+from devboost.media.config import IsoSpec, MediaConfig
+from devboost.media.download import FakeDownloader
+from devboost.media.report import FakeReporter
+from devboost.media.stages import boot_artifacts, render_kscfg
 from devboost.model import Ctx
-from devboost.usb.cache import Cache
-from devboost.usb.config import IsoSpec, UsbBuildConfig
-from devboost.usb.download import FakeDownloader
-from devboost.usb.report import FakeReporter
-from devboost.usb.stages import boot_artifacts, render_kscfg
 
 OS = OsInfo("fedora", "fedora", "x86_64")
 
@@ -27,7 +27,7 @@ _LSBLK = (
 def test_render_ventoy_json_default_only_omits_auto_install() -> None:
     import json
 
-    from devboost.usb.stages import render_ventoy_json
+    from devboost.media.stages import render_ventoy_json
 
     data = json.loads(render_ventoy_json(default_iso="fedora-44.iso", autoinstall_iso=None))
     assert data["control"][1]["VTOY_DEFAULT_IMAGE"] == "/ISO/fedora-44.iso"
@@ -40,7 +40,7 @@ def test_render_ventoy_json_default_only_omits_auto_install() -> None:
 def test_render_ventoy_json_with_autoinstall_binds_both() -> None:
     import json
 
-    from devboost.usb.stages import render_ventoy_json
+    from devboost.media.stages import render_ventoy_json
 
     data = json.loads(
         render_ventoy_json(default_iso="fedora-44.iso", autoinstall_iso="fedora-44-netinst.iso")
@@ -64,7 +64,7 @@ def test_boot_artifacts_refuses_wipe_without_assume_yes(tmp_path: Path) -> None:
     iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
     cache = Cache(tmp_path / "cache")
     dl = FakeDownloader(cache, blobs={})
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb",
         arch="x86_64",
         iso=iso,
@@ -99,7 +99,7 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     dl = FakeDownloader(
         cache, blobs={"https://x/f.iso": iso_bytes, "https://x/n.iso": netinst_bytes}
     )
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb",
         arch="x86_64",
         iso=iso,
@@ -127,7 +127,7 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
             return fake_tarball
         raise KeyError(parts)
 
-    monkeypatch.setattr("devboost.usb.stages.resource_path", fake_resource_path)
+    monkeypatch.setattr("devboost.media.stages.resource_path", fake_resource_path)
 
     boot_artifacts(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
 
@@ -159,12 +159,12 @@ def test_render_kscfg_offline_default_unchanged() -> None:
 def test_update_stage_restages_without_wipe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from devboost.usb.stages import update_stage
+    from devboost.media.stages import update_stage
 
     iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
     cache = Cache(tmp_path / "cache")
     dl = FakeDownloader(cache, blobs={})
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
         cache_dir=cache.cache_dir, mode="update", assume_yes=True,
     )
@@ -182,7 +182,7 @@ def test_update_stage_restages_without_wipe(
             return fake_ks
         return fake_tar
 
-    monkeypatch.setattr("devboost.usb.stages.resource_path", fake_resource_path)
+    monkeypatch.setattr("devboost.media.stages.resource_path", fake_resource_path)
     update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
 
     calls = ctx.ex.calls  # type: ignore[attr-defined]
@@ -200,14 +200,14 @@ def test_update_stage_refreshes_iso_when_requested(
 ) -> None:
     import hashlib
 
-    from devboost.usb.stages import update_stage
+    from devboost.media.stages import update_stage
 
     iso_bytes = b"new-iso"
     sha = hashlib.sha256(iso_bytes).hexdigest()
     iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256=sha, edition="Everything")
     cache = Cache(tmp_path / "cache")
     dl = FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes})
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
         cache_dir=cache.cache_dir, mode="update", refresh_iso=True, assume_yes=True,
     )
@@ -218,7 +218,7 @@ def test_update_stage_refreshes_iso_when_requested(
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
     fake_tar.write_bytes(b"tar")
     monkeypatch.setattr(
-        "devboost.usb.stages.resource_path",
+        "devboost.media.stages.resource_path",
         lambda *p: fake_ks if p == ("ventoy", "ks.cfg") else fake_tar,
     )
     update_stage(ctx, cfg, dl, vtoy_mount=vtoy, reporter=FakeReporter())
@@ -227,15 +227,15 @@ def test_update_stage_refreshes_iso_when_requested(
 
 
 def test_extra_isos_and_installers_are_staged(tmp_path: Path) -> None:
-    from devboost.usb.config import IsoSpec, UsbBuildConfig
-    from devboost.usb.stages import extra_isos, installers
+    from devboost.media.config import IsoSpec, MediaConfig
+    from devboost.media.stages import extra_isos, installers
 
     extra = tmp_path / "win.iso"
     extra.write_bytes(b"win")
     inst = tmp_path / "tool.run"
     inst.write_bytes(b"run")
     iso = IsoSpec(id="fedora-44", url="u", sha256="s", edition="E")
-    cfg = UsbBuildConfig(
+    cfg = MediaConfig(
         device="/dev/sdb",
         arch="x86_64",
         iso=iso,

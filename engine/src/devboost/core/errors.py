@@ -41,15 +41,15 @@ class GithubError(DevbootError):
     """A GitHub REST API call failed."""
 
 
-class UsbError(DevbootError):
+class MediaError(DevbootError):
     """Base for `devboost usb` build failures."""
 
 
-class DeviceError(UsbError):
+class DeviceError(MediaError):
     """The target device is unsafe or invalid."""
 
 
-class DownloadError(UsbError):
+class DownloadError(MediaError):
     """A download failed or failed verification."""
 
     def __init__(self, url: str, reason: str) -> None:
@@ -57,9 +57,9 @@ class DownloadError(UsbError):
         super().__init__(f"download {url}: {reason}")
 
 
-class VentoyError(UsbError):
+class VentoyError(MediaError):
     """A Ventoy install/layout step failed."""
 
 
-class MirrorError(UsbError):
+class MirrorError(MediaError):
     """An offline-mirror step failed."""

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from devboost.usb.marker import Marker, marker_path, read_marker, write_marker
+from devboost.media.marker import Marker, marker_path, read_marker, write_marker
 
 
 def _m() -> Marker:

@@ -1,8 +1,8 @@
-"""The `devboost usb` command: flags or wizard -> build/update a bootable Ventoy USB.
+"""The `devboost installer` command: flags or wizard -> build/update a bootable Ventoy drive.
 
 NOTE (frozen binary): when running from a frozen devboost binary, the staged injection archive
 (dist/devboost-<arch>.tar.gz) must be present alongside the binary. Build it first via
-``scripts/build-bundle.sh``; the frozen ``usb`` command does not rebuild the tarball itself.
+``scripts/build-bundle.sh``; the frozen ``installer`` command does not rebuild the tarball itself.
 """
 
 from __future__ import annotations
@@ -17,21 +17,21 @@ import questionary
 import typer
 
 from devboost.core import log, osinfo
-from devboost.core.errors import UsbError
+from devboost.core.errors import MediaError
 from devboost.exec.executor import RealExecutor
+from devboost.media import wizard
+from devboost.media.builder import build
+from devboost.media.cache import Cache
+from devboost.media.catalog import autoinstall_for, default_iso, iso_for
+from devboost.media.config import MediaConfig
+from devboost.media.download import UrllibDownloader
+from devboost.media.preview import render_plan
+from devboost.media.probe import DiskState, probe
+from devboost.media.report import RichReporter
 from devboost.model import Ctx
-from devboost.usb import wizard
-from devboost.usb.builder import build
-from devboost.usb.cache import Cache
-from devboost.usb.catalog import autoinstall_for, default_iso, iso_for
-from devboost.usb.config import UsbBuildConfig
-from devboost.usb.download import UrllibDownloader
-from devboost.usb.preview import render_plan
-from devboost.usb.probe import DiskState, probe
-from devboost.usb.report import RichReporter
 
 
-def _iso_note(cfg: UsbBuildConfig) -> str:
+def _iso_note(cfg: MediaConfig) -> str:
     """Best-effort combined ISO download size for the dry-run preview (never raises)."""
     specs = [cfg.iso] + ([cfg.autoinstall_iso] if cfg.autoinstall_iso is not None else [])
     try:
@@ -52,7 +52,7 @@ def _iso_note(cfg: UsbBuildConfig) -> str:
         return "unknown"
 
 
-def _summary_text(cfg: UsbBuildConfig) -> str:
+def _summary_text(cfg: MediaConfig) -> str:
     verb = "Updated" if cfg.mode == "update" else "Built"
     extras: list[str] = []
     if cfg.offline_mirror:
@@ -81,7 +81,7 @@ def _summary_text(cfg: UsbBuildConfig) -> str:
     return head + "\n" + body
 
 
-def usb(
+def installer(
     device: Annotated[
         str | None, typer.Option(help="Target removable disk, e.g. /dev/sdb")
     ] = None,
@@ -106,7 +106,7 @@ def usb(
         bool, typer.Option("--rebuild", help="Wipe & rebuild even an existing dev-boost USB")
     ] = False,
 ) -> None:
-    """Build (or non-destructively update) a dev-boost Ventoy USB."""
+    """Build (or non-destructively update) a bootable dev-boost Ventoy drive."""
     if device is None and no_wizard:
         log.error("--device is required with --no-wizard")
         raise typer.Exit(code=1)
@@ -140,7 +140,7 @@ def usb(
 
         try:
             os_id = iso or default_iso().id
-            cfg = UsbBuildConfig(
+            cfg = MediaConfig(
                 device=device,
                 arch=resolved_arch,
                 iso=iso_for(os_id, resolved_arch),
@@ -152,7 +152,7 @@ def usb(
                 refresh_iso=refresh_iso,
                 assume_yes=assume_yes,
             )
-        except UsbError as exc:
+        except MediaError as exc:
             log.error(str(exc))
             raise typer.Exit(code=1) from exc
 

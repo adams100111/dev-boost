@@ -2,20 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from devboost.usb.config import IsoSpec, UsbBuildConfig
-from devboost.usb.marker import Marker
-from devboost.usb.preview import render_plan
-from devboost.usb.probe import DiskState
+from devboost.media.config import IsoSpec, MediaConfig
+from devboost.media.marker import Marker
+from devboost.media.preview import render_plan
+from devboost.media.probe import DiskState
 
 _ISO = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
 
 
-def _cfg(**kw: object) -> UsbBuildConfig:
+def _cfg(**kw: object) -> MediaConfig:
     base: dict[str, object] = dict(
         device="/dev/sdb", arch="x86_64", iso=_ISO, cache_dir=Path("/tmp/c")
     )
     base.update(kw)
-    return UsbBuildConfig(**base)  # type: ignore[arg-type]
+    return MediaConfig(**base)  # type: ignore[arg-type]
 
 
 def test_render_plan_blank_build() -> None:

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from devboost.core.errors import DownloadError
-from devboost.usb.cache import Cache
-from devboost.usb.report import Reporter
+from devboost.media.cache import Cache
+from devboost.media.report import Reporter
 
 
 @runtime_checkable

@@ -10,12 +10,12 @@ from pathlib import Path
 from devboost import __version__
 from devboost.core.errors import DeviceError, VentoyError
 from devboost.exec.resources import resource_path
+from devboost.media.config import MediaConfig
+from devboost.media.devices import validate
+from devboost.media.download import Downloader
+from devboost.media.marker import Marker, write_marker
+from devboost.media.report import Reporter
 from devboost.model import Ctx
-from devboost.usb.config import UsbBuildConfig
-from devboost.usb.devices import validate
-from devboost.usb.download import Downloader
-from devboost.usb.marker import Marker, write_marker
-from devboost.usb.report import Reporter
 
 
 def render_kscfg(
@@ -54,7 +54,7 @@ def render_ventoy_json(*, default_iso: str, autoinstall_iso: str | None) -> str:
     return json.dumps(data, indent=2)
 
 
-def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
+def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
     """Lay out ventoy.json + ks.cfg + injection archive + secrets + marker (no wipe, no ISO)."""
     boot = vtoy_mount / "Bootstrap"
     for d in ("ISO", "Bootstrap", "Installers", "ventoy"):
@@ -87,7 +87,7 @@ def _stage_payload(cfg: UsbBuildConfig, *, vtoy_mount: Path, reporter: Reporter)
 
 
 def _stage_autoinstall_iso(
-    cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+    cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
 ) -> None:
     if cfg.autoinstall_iso is None:
         return
@@ -98,7 +98,7 @@ def _stage_autoinstall_iso(
 
 
 def boot_artifacts(
-    ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+    ctx: Ctx, cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
 ) -> None:
     if not cfg.assume_yes:
         raise DeviceError(f"refusing to wipe {cfg.device}: not confirmed")
@@ -114,7 +114,7 @@ def boot_artifacts(
 
 
 def update_stage(
-    ctx: Ctx, cfg: UsbBuildConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
+    ctx: Ctx, cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
 ) -> None:
     """Non-destructive refresh: ventoy -u + re-stage payload; ISO only when refresh_iso."""
     validate(ctx, cfg.device)
@@ -129,19 +129,19 @@ def update_stage(
         _stage_autoinstall_iso(cfg, dl, vtoy_mount=vtoy_mount, reporter=reporter)
 
 
-def extra_isos(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+def extra_isos(cfg: MediaConfig, *, vtoy_mount: Path) -> None:
     for src in cfg.extra_isos:
         shutil.copyfile(src, vtoy_mount / "ISO" / src.name)
 
 
-def installers(cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+def installers(cfg: MediaConfig, *, vtoy_mount: Path) -> None:
     for src in cfg.installers:
         shutil.copyfile(src, vtoy_mount / "Installers" / src.name)
 
 
-def mirror(ctx: Ctx, cfg: UsbBuildConfig, *, vtoy_mount: Path) -> None:
+def mirror(ctx: Ctx, cfg: MediaConfig, *, vtoy_mount: Path) -> None:
     from devboost.core.settings import settings
-    from devboost.usb.mirror import mirror_dnf, mirror_flatpak, package_set
+    from devboost.media.mirror import mirror_dnf, mirror_flatpak, package_set
 
     dnf, flat = package_set(cfg.profiles, settings.root)
     mirror_dnf(ctx, dnf, vtoy_mount / "Bootstrap" / "repo" / "dnf")

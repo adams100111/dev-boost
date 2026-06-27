@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from devboost.usb.report import FakeReporter, Reporter
+from devboost.media.report import FakeReporter, Reporter
 
 
 def test_fake_reporter_records_steps_and_summaries() -> None:

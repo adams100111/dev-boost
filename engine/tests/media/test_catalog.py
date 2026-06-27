@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import UsbError
-from devboost.usb.catalog import (
+from devboost.core.errors import MediaError
+from devboost.media.catalog import (
     catalog,
     default_iso,
     default_os,
@@ -47,12 +47,12 @@ def test_iso_for_aarch64_returns_spec() -> None:
 
 
 def test_iso_for_unsupported_arch_raises() -> None:
-    with pytest.raises(UsbError, match="riscv64"):
+    with pytest.raises(MediaError, match="riscv64"):
         iso_for("fedora-44", "riscv64")
 
 
 def test_iso_for_unknown_os_raises() -> None:
-    with pytest.raises(UsbError, match="unknown OS"):
+    with pytest.raises(MediaError, match="unknown OS"):
         iso_for("ubuntu-99", "x86_64")
 
 
@@ -88,17 +88,17 @@ def test_load_catalog_parses_and_typed_isos(tmp_path: Path) -> None:
 def test_load_catalog_rejects_bad_sha256(tmp_path: Path) -> None:
     p = tmp_path / "catalog.toml"
     p.write_text(_VALID.replace("a" * 64, "tooshort"), encoding="utf-8")
-    with pytest.raises(UsbError, match="invalid catalog"):
+    with pytest.raises(MediaError, match="invalid catalog"):
         load_catalog(p)
 
 
 def test_load_catalog_missing_file_raises(tmp_path: Path) -> None:
-    with pytest.raises(UsbError, match="invalid catalog"):
+    with pytest.raises(MediaError, match="invalid catalog"):
         load_catalog(tmp_path / "nope.toml")
 
 
 def test_autoinstall_for_returns_netinst_spec() -> None:
-    from devboost.usb.catalog import autoinstall_for
+    from devboost.media.catalog import autoinstall_for
 
     spec = autoinstall_for("fedora-44", "x86_64")
     assert spec is not None
@@ -107,13 +107,13 @@ def test_autoinstall_for_returns_netinst_spec() -> None:
 
 
 def test_autoinstall_for_aarch64_present() -> None:
-    from devboost.usb.catalog import autoinstall_for
+    from devboost.media.catalog import autoinstall_for
 
     assert autoinstall_for("fedora-44", "aarch64") is not None
 
 
 def test_autoinstall_for_missing_returns_none() -> None:
-    from devboost.usb.catalog import autoinstall_for
+    from devboost.media.catalog import autoinstall_for
 
     assert autoinstall_for("fedora-44", "riscv64") is None  # arch not pinned
     assert autoinstall_for("ubuntu-99", "x86_64") is None   # unknown os
@@ -145,5 +145,5 @@ def test_load_catalog_rejects_entry_without_isos(tmp_path: Path) -> None:
         "[broken.isos]\n",  # empty isos table → min_length=1 fails
         encoding="utf-8",
     )
-    with pytest.raises(UsbError, match="invalid catalog"):
+    with pytest.raises(MediaError, match="invalid catalog"):
         load_catalog(p)

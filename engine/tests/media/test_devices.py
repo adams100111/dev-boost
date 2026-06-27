@@ -5,8 +5,8 @@ import pytest
 from devboost.core.errors import DeviceError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
+from devboost.media.devices import list_removable, validate
 from devboost.model import Ctx
-from devboost.usb.devices import list_removable, validate
 
 OS = OsInfo("fedora", "fedora", "x86_64")
 # lsblk -P output (one device per line, key="value" pairs)

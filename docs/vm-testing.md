@@ -67,7 +67,7 @@ boots the Live ISO. Then:
 ## 3. Option B — full USB
 
 ### B1. Boot the real Ventoy USB (most faithful)
-Build the USB first (see [ventoy.md](ventoy.md): `sudo devboost usb --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes`,
+Build the USB first (see [ventoy.md](ventoy.md): `sudo devboost installer --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes`,
 `secrets.age`, `devboost.tar.gz`). Find the device with `lsblk -o NAME,SIZE,TYPE,RM,MOUNTPOINT,MODEL`,
 then:
 ```sh

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from devboost.usb.config import UsbBuildConfig
-from devboost.usb.probe import DiskState
+from devboost.media.config import MediaConfig
+from devboost.media.probe import DiskState
 
 
 def _describe(state: DiskState) -> str:
@@ -14,7 +14,7 @@ def _describe(state: DiskState) -> str:
     return "blank / no dev-boost marker"
 
 
-def render_plan(cfg: UsbBuildConfig, state: DiskState, *, download_note: str = "") -> str:
+def render_plan(cfg: MediaConfig, state: DiskState, *, download_note: str = "") -> str:
     lines = [
         f"Target device : {cfg.device}",
         f"Detected state: {_describe(state)}",

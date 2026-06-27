@@ -36,7 +36,7 @@ class Device:
         return f"{self.path}  —  {name}{tran}  —  {self.size}{serial}"
 
 
-class UsbBuildConfig(BaseModel):
+class MediaConfig(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     device: str

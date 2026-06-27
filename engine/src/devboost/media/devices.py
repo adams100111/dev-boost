@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 
 from devboost.core.errors import DeviceError
+from devboost.media.config import Device
 from devboost.model import Ctx
-from devboost.usb.config import Device
 
 # `lsblk -P` emits robust key="value" pairs (safe for empty/multi-word fields like MODEL).
 _FIELDS = ["PATH", "SIZE", "TYPE", "RM", "MOUNTPOINT", "MODEL", "VENDOR", "SERIAL", "TRAN"]
