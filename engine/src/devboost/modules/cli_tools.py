@@ -179,7 +179,7 @@ class Lazydocker(PackageModule):
     profiles = ("cli",)
     cmd = "lazydocker"
     fedora_pkg = "lazydocker"
-    copr_repo = "atim/lazygit"
+    copr_repo = "atim/lazydocker"
 
 
 @register

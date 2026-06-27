@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.errors import SecretsError
 from devboost.core.registry import register
-from devboost.exec.primitives import config, flatpak, pkg
+from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
-from devboost.modules.secrets import Secrets
+from devboost.modules.secrets import Secrets, bundle_path, key_path
 
 _BUILD_PKGS = (
     "make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip "
@@ -137,6 +138,17 @@ class ChezmoiRepo(Module):
 
     def install(self, ctx: Ctx) -> None:
         repo = os.environ.get("DEVBOOST_DOTFILES_REPO")
-        argv = ["chezmoi", "init", "--apply", repo] if repo else ["chezmoi", "init"]
-        if not ctx.ex.run(argv).ok:
+        if not repo:
+            # Fall back to DOTFILES_REPO key in the decrypted secrets bundle.
+            try:
+                data = age.decrypt(ctx, bundle_path(), key_path())
+                repo = data.get("DOTFILES_REPO") or data.get("DEVBOOST_DOTFILES_REPO")
+            except Exception:
+                pass
+        if not repo:
+            raise SecretsError(
+                "chezmoi-repo: dotfiles repo URL not found — set DEVBOOST_DOTFILES_REPO "
+                "or add a DOTFILES_REPO key to the secrets bundle"
+            )
+        if not ctx.ex.run(["chezmoi", "init", "--apply", repo]).ok:
             log.warn("chezmoi-repo: init/clone failed — dotfiles not synced (non-blocking)")

@@ -154,7 +154,7 @@ class Earlyoom(Module):
     profiles = ("system",)
 
     def _conf(self) -> str:
-        return os.environ.get("DEVBOOST_EARLYOOM_CONF", "/etc/default/earlyoom")
+        return os.environ.get("DEVBOOST_EARLYOOM_CONF", "/etc/sysconfig/earlyoom")
 
     def verify(self, ctx: Ctx) -> bool:
         p = Path(self._conf())
@@ -182,7 +182,9 @@ class ResticBackup(Module):
 
     def verify(self, ctx: Ctx) -> bool:
         d = systemd._user_unit_dir()
-        return (d / "restic-backup.service").exists() and (d / "restic-backup.timer").exists()
+        if not ((d / "restic-backup.service").exists() and (d / "restic-backup.timer").exists()):
+            return False
+        return systemd.is_enabled(ctx, "restic-backup.timer", user=True)
 
     def install(self, ctx: Ctx) -> None:
         if not ctx.ex.which("restic"):
@@ -197,6 +199,7 @@ class ResticBackup(Module):
         )
         systemd.write_user_unit(ctx, "restic-backup.service", service)
         systemd.write_user_unit(ctx, "restic-backup.timer", timer)
+        systemd.enable_user_unit(ctx, "restic-backup.timer", now=True)
 
 
 @register
@@ -221,5 +224,7 @@ class GpuDetect(Module):
                    (("intel", gpus.intel), ("amd", gpus.amd), ("nvidia", gpus.nvidia)) if on]
         marker = self._marker()
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(",".join(vendors) + "\n", encoding="utf-8")
+        # One vendor token per line (intel / amd / nvidia).  The core agent reads this
+        # file and checks for the token "nvidia" to decide whether to inject hardware-nvidia.
+        marker.write_text("\n".join(vendors) + "\n" if vendors else "", encoding="utf-8")
         log.ok(f"gpu-detect: {', '.join(vendors) or 'no recognized GPU'}")

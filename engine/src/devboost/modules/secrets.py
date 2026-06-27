@@ -16,8 +16,19 @@ def home() -> Path:
 
 
 def _bootstrap_root() -> Path:
-    root = os.environ.get("DEVBOOST_BOOTSTRAP_DIR") or os.environ.get("DEVBOOST_ROOT", ".")
-    return Path(root)
+    """Resolve the directory containing secrets.age and age-key.txt.
+
+    Priority:
+      1. DEVBOOST_BOOTSTRAP_DIR env var (set by the firstboot service / kickstart %post)
+      2. /opt/dev-boost (CONTRACT: kickstart %post copies the bundle here)
+
+    Never falls back to the current working directory — a missing bundle produces a
+    clear SecretsError rather than a confusing "file not found: ./secrets.age".
+    """
+    val = os.environ.get("DEVBOOST_BOOTSTRAP_DIR")
+    if val:
+        return Path(val)
+    return Path("/opt/dev-boost")
 
 
 def bundle_path() -> Path:

@@ -30,4 +30,6 @@ class Ddev(Module):
 
     def install(self, ctx: Ctx) -> None:
         pkg.install(ctx, "ddev", source=DDEV_SOURCE, refresh=True)
+        if not ctx.ex.which("mkcert"):
+            pkg.install(ctx, "mkcert")
         ctx.ex.run(["mkcert", "-install"])

@@ -92,3 +92,33 @@ def test_android_sdk_provisions_jdk_and_sdkmanager(
     AndroidSdk().install(ctx)
     assert ["mise", "use", "-g", "java@temurin-17"] in ctx.ex.calls  # type: ignore[attr-defined]
     assert any("sdkmanager" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_android_sdk_renames_nested_cmdline_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simulate unzip producing cmdline-tools/cmdline-tools/ (nested); verify rename to latest/."""
+    sdk = tmp_path / "Android" / "Sdk"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("ANDROID_HOME", str(sdk))
+    # pre-create the nested directory that unzip produces
+    nested = sdk / "cmdline-tools" / "cmdline-tools" / "bin"
+    nested.mkdir(parents=True)
+    (nested / "sdkmanager").write_text("#!/bin/sh", encoding="utf-8")
+    ctx = _ctx()
+    AndroidSdk().install(ctx)
+    # The nested dir should have been renamed to latest/
+    assert (sdk / "cmdline-tools" / "latest" / "bin" / "sdkmanager").exists()
+    assert not (sdk / "cmdline-tools" / "cmdline-tools").exists()
+
+
+def test_android_sdk_writes_profile_d_android(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sdk = tmp_path / "Android" / "Sdk"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("ANDROID_HOME", str(sdk))
+    ctx = _ctx()
+    AndroidSdk().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert any("devboost-android.sh" in " ".join(c) for c in calls)

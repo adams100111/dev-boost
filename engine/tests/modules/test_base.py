@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import SecretsError
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import load, validate_profiles
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
-from devboost.modules.base import BuildTools, DnfTune, Flatpak, Rpmfusion
-from devboost.modules.cli_tools import Fd, Lazygit
+from devboost.modules.base import BuildTools, ChezmoiRepo, DnfTune, Flatpak, Rpmfusion
+from devboost.modules.cli_tools import Fd, Lazydocker, Lazygit
 from devboost.modules.mise import Mise
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -78,6 +80,54 @@ def test_mise_migrates_nvm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     bashrc = (tmp_path / ".bashrc").read_text(encoding="utf-8")
     assert "# export NVM_DIR=$HOME/.nvm" in bashrc
     assert "migrated nvm init to mise" in bashrc
+
+
+def test_lazydocker_uses_correct_copr_repo() -> None:
+    ctx = _ctx()
+    Lazydocker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "dnf", "copr", "enable", "-y", "atim/lazydocker"] in calls
+    assert ["sudo", "dnf", "install", "-y", "lazydocker"] in calls
+
+
+def test_chezmoi_repo_raises_when_no_repo_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DEVBOOST_DOTFILES_REPO", raising=False)
+    # No secrets bundle — age decrypt will fail / bundle absent → SecretsError raised
+    monkeypatch.setenv("DEVBOOST_BOOTSTRAP_DIR", str(tmp_path))
+    # tmp_path has no secrets.age → age.decrypt raises SecretsError
+    ctx = _ctx()
+    with pytest.raises(SecretsError, match="DEVBOOST_DOTFILES_REPO"):
+        ChezmoiRepo().install(ctx)
+
+
+def test_chezmoi_repo_reads_url_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_DOTFILES_REPO", "https://github.com/user/dotfiles")
+    ctx = _ctx()
+    ChezmoiRepo().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["chezmoi", "init", "--apply", "https://github.com/user/dotfiles"] in calls
+
+
+def test_chezmoi_repo_reads_url_from_secrets_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DEVBOOST_DOTFILES_REPO", raising=False)
+    bundle = tmp_path / "secrets.age"
+    bundle.write_text("cipher", encoding="utf-8")
+    monkeypatch.setenv("DEVBOOST_SECRETS", str(bundle))
+    monkeypatch.setenv("DEVBOOST_SECRETS_KEY", str(tmp_path / "key"))
+    secrets_json = json.dumps({
+        "GIT_USER": "u", "GIT_EMAIL": "u@x", "GITHUB_PAT": "ghp_x",
+        "DOTFILES_REPO": "https://github.com/user/dotfiles",
+    })
+    ctx = _ctx(scripts={"age": Result(0, stdout=secrets_json)})
+    ChezmoiRepo().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["chezmoi", "init", "--apply", "https://github.com/user/dotfiles"] in calls
 
 
 def test_registry_loads_base_and_cli_and_profiles_validate() -> None:

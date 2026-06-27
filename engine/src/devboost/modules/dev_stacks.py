@@ -230,11 +230,26 @@ class AndroidSdk(Module):
             sdk.mkdir(parents=True, exist_ok=True)
             ctx.ex.run(["curl", "-fsSL", "-o", str(zip_path), url])
             ctx.ex.run(["unzip", "-q", "-o", str(zip_path), "-d", str(sdk / "cmdline-tools")])
+            # The zip extracts to cmdline-tools/cmdline-tools/ (nested); rename to
+            # cmdline-tools/latest/ so sdkmanager is found at the expected path.
+            extracted = sdk / "cmdline-tools" / "cmdline-tools"
+            if extracted.is_dir() and not tools.exists():
+                extracted.rename(tools)
         sm = str(tools / "bin" / "sdkmanager")
         ctx.ex.run(
             ["sh", "-c", f"yes | {sm} --sdk_root={sdk} 'platform-tools' "
              "'platforms;android-35' 'build-tools;35.0.0'"]
         )
+        # Persist ANDROID_HOME so shells pick it up after reboot.
+        profile_d = Path("/etc/profile.d")
+        android_sh = profile_d / "devboost-android.sh"
+        content = (
+            f"# written by devboost android-sdk\n"
+            f"export ANDROID_HOME=\"{sdk}\"\n"
+            f"export PATH=\"$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+            f":$ANDROID_HOME/platform-tools\"\n"
+        )
+        ctx.ex.run(["tee", str(android_sh)], sudo=True, stdin=content)
 
 
 @register

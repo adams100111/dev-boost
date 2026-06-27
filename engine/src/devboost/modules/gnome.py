@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 from devboost.core.registry import register
-from devboost.exec.primitives import dconf, flatpak, pkg
+from devboost.exec.primitives import flatpak, pkg
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx, Module
+from devboost.modules.base import Flatpak as FlatpakModule
 
 _DCONF_DUMP = ("data", "gnome", "gnome.dconf")
 
@@ -32,7 +35,13 @@ class GnomeSettings(Module):
         return "prefer-dark" in out.stdout
 
     def install(self, ctx: Ctx) -> None:
-        dconf.load(ctx, resource_path(*_DCONF_DUMP))
+        dump_path = resource_path(*_DCONF_DUMP)
+        dump_text = dump_path.read_text(encoding="utf-8")
+        if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+            ctx.ex.run(["dconf", "load", "/"], stdin=dump_text)
+        else:
+            # headless firstboot: spawn a temporary dbus session so dconf can write
+            ctx.ex.run(["dbus-run-session", "--", "dconf", "load", "/"], stdin=dump_text)
 
 
 @register
@@ -64,7 +73,7 @@ class GnomeManagerApps(Module):
     category = "gnome"
     description = "GNOME Tweaks + Extensions app + Extension Manager (flatpak)."
     gui = True
-    requires = (GnomeSettings,)
+    requires = (GnomeSettings, FlatpakModule)
     profiles = ("gnome",)
 
     def verify(self, ctx: Ctx) -> bool:

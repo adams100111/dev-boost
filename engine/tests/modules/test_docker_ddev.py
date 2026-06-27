@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import pytest
+
+from devboost.core.osinfo import OsInfo
+from devboost.exec.executor import FakeExecutor, Result
+from devboost.model import Ctx
+from devboost.modules.ddev import Ddev
+from devboost.modules.docker import Docker, _invoking_user
+
+FEDORA = OsInfo("fedora", "fedora", "x86_64")
+
+
+def _ctx(**kw: object) -> Ctx:
+    return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
+
+
+# ── docker ──────────────────────────────────────────────────────────────────
+
+
+def test_docker_install_enables_daemon_and_adds_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = _ctx()
+    Docker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "dnf", "install", "-y", "moby-engine"] in calls
+    assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
+    assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
+
+
+def test_docker_install_skips_usermod_when_no_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.delenv("USER", raising=False)
+    ctx = _ctx()
+    Docker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert not any("usermod" in " ".join(c) for c in calls)
+
+
+def test_docker_verify_checks_daemon_enabled_and_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SUDO_USER", "alice")
+    # All checks pass: docker present, is-enabled ok, id shows docker group
+    ctx = _ctx(
+        present={"docker"},
+        scripts={"systemctl": Result(0), "id": Result(0, stdout="alice docker wheel")},
+    )
+    assert Docker().verify(ctx) is True
+
+
+def test_docker_verify_false_when_daemon_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = _ctx(
+        present={"docker"},
+        scripts={"systemctl": Result(1), "id": Result(0, stdout="alice docker")},
+    )
+    assert Docker().verify(ctx) is False
+
+
+def test_docker_verify_false_when_user_not_in_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = _ctx(
+        present={"docker"},
+        scripts={"systemctl": Result(0), "id": Result(0, stdout="alice wheel")},
+    )
+    assert Docker().verify(ctx) is False
+
+
+def test_invoking_user_prefers_sudo_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUDO_USER", "bob")
+    monkeypatch.setenv("USER", "root")
+    assert _invoking_user() == "bob"
+
+
+def test_invoking_user_falls_back_to_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("USER", "carol")
+    assert _invoking_user() == "carol"
+
+
+# ── ddev ────────────────────────────────────────────────────────────────────
+
+
+def test_ddev_install_installs_mkcert_if_missing() -> None:
+    ctx = _ctx()  # mkcert not in present → which("mkcert") is False
+    Ddev().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "dnf", "install", "-y", "mkcert"] in calls
+    assert ["mkcert", "-install"] in calls
+
+
+def test_ddev_install_skips_mkcert_pkg_when_already_present() -> None:
+    ctx = _ctx(present={"mkcert"})
+    Ddev().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert not any(c == ["sudo", "dnf", "install", "-y", "mkcert"] for c in calls)
+    assert ["mkcert", "-install"] in calls

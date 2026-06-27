@@ -10,7 +10,7 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import github
 from devboost.model import Ctx
-from devboost.modules.secrets import Secrets
+from devboost.modules.secrets import Secrets, _bootstrap_root
 from devboost.modules.ssh_setup import SshSetup
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -31,6 +31,23 @@ def home_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _ctx(present: set[str]) -> Ctx:
     ex = FakeExecutor(scripts={"age": Result(0, stdout=_JSON)}, present=present)
     return Ctx(os=FEDORA, ex=ex)
+
+
+def test_bootstrap_root_uses_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEVBOOST_BOOTSTRAP_DIR", "/mnt/usb/devboost")
+    assert str(_bootstrap_root()) == "/mnt/usb/devboost"
+
+
+def test_bootstrap_root_falls_back_to_opt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEVBOOST_BOOTSTRAP_DIR", raising=False)
+    assert str(_bootstrap_root()) == "/opt/dev-boost"
+
+
+def test_bootstrap_root_never_returns_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEVBOOST_BOOTSTRAP_DIR", raising=False)
+    root = _bootstrap_root()
+    assert str(root) != ".", "bootstrap root must never fall back to CWD"
+    assert root.is_absolute(), "bootstrap root must be an absolute path"
 
 
 def test_secrets_install_configures_git_and_credentials(home_env: Path) -> None:

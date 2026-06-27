@@ -13,7 +13,14 @@ from devboost.model import Ctx
 from devboost.modules.base import Rpmfusion
 from devboost.modules.hardware import NvidiaAkmod, NvidiaContainerToolkit
 from devboost.modules.optional import Neovim, Pass
-from devboost.modules.system import DnfAutomaticSecurity, Fwupd, GpuDetect, Snapper
+from devboost.modules.system import (
+    DnfAutomaticSecurity,
+    Earlyoom,
+    Fwupd,
+    GpuDetect,
+    ResticBackup,
+    Snapper,
+)
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
@@ -60,7 +67,56 @@ def test_gpu_detect_writes_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     ctx = _ctx(scripts={"lspci": Result(0, stdout=out)})
     GpuDetect().install(ctx)
     assert GpuDetect().verify(ctx) is True
-    assert "intel" in (tmp_path / "state" / "devboost" / "gpu-vendor").read_text(encoding="utf-8")
+    text = (tmp_path / "state" / "devboost" / "gpu-vendor").read_text(encoding="utf-8")
+    assert "intel" in text
+    # one vendor per line — no comma-separated format
+    assert "," not in text
+
+
+def test_gpu_detect_nvidia_one_per_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    out = "01:00.0 VGA compatible controller: NVIDIA GP104 [GeForce GTX 1080]"
+    ctx = _ctx(scripts={"lspci": Result(0, stdout=out)})
+    GpuDetect().install(ctx)
+    text = (tmp_path / "state" / "devboost" / "gpu-vendor").read_text(encoding="utf-8")
+    assert "nvidia" in text
+    assert "," not in text
+
+
+def test_restic_backup_writes_units_enables_timer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx(present={"restic"})
+    ResticBackup().install(ctx)
+    d = tmp_path / ".config" / "systemd" / "user"
+    assert (d / "restic-backup.service").exists()
+    assert (d / "restic-backup.timer").exists()
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["systemctl", "--user", "enable", "--now", "restic-backup.timer"] in calls
+
+
+def test_restic_backup_verify_checks_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # verify should be False when timer unit files are absent
+    ctx = _ctx()
+    assert ResticBackup().verify(ctx) is False
+
+
+def test_earlyoom_uses_fedora_sysconfig_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conf = tmp_path / "earlyoom"
+    monkeypatch.setenv("DEVBOOST_EARLYOOM_CONF", str(conf))
+    ctx = _ctx()
+    Earlyoom().install(ctx)
+    assert Earlyoom().verify(ctx) is True
+    # Default path without env override is Fedora sysconfig, not Debian default
+    monkeypatch.delenv("DEVBOOST_EARLYOOM_CONF", raising=False)
+    assert Earlyoom()._conf() == "/etc/sysconfig/earlyoom"
 
 
 def test_nvidia_akmod_requires_rpmfusion_and_installs() -> None:
