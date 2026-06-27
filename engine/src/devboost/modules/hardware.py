@@ -1,4 +1,9 @@
-"""hardware-nvidia profile — NVIDIA driver stack (applied when an NVIDIA GPU is detected)."""
+"""hardware-nvidia profile — NVIDIA driver stack (applied when an NVIDIA GPU is detected).
+
+Fedora path: akmod-nvidia + RPM Fusion (NvidiaAkmod, Cuda, LibvaNvidiaDriver,
+             NvidiaContainerToolkit, SecurebootMok, NvidiaResignService).
+Ubuntu path: ubuntu-drivers autoinstall (NvidiaDriverUbuntu).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import os
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.errors import UnsupportedOS
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg, systemd
 from devboost.model import Ctx, Module
@@ -17,14 +23,20 @@ from devboost.modules.docker import Docker
 class NvidiaAkmod(Module):
     name = "nvidia-akmod"
     category = "hardware-nvidia"
-    description = "akmod-nvidia driver (RPM Fusion)."
+    description = "akmod-nvidia driver (RPM Fusion, Fedora-only)."
     requires = (Rpmfusion,)
     profiles = ("hardware-nvidia",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.run(["rpm", "-q", "akmod-nvidia"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"nvidia-akmod uses akmod/RPM Fusion (Fedora-only); detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "akmod-nvidia", "xorg-x11-drv-nvidia-cuda")
 
 
@@ -32,14 +44,20 @@ class NvidiaAkmod(Module):
 class Cuda(Module):
     name = "cuda"
     category = "hardware-nvidia"
-    description = "CUDA toolkit."
+    description = "CUDA toolkit (Fedora-only via RPM Fusion)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.run(["rpm", "-q", "xorg-x11-drv-nvidia-cuda"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"cuda (RPM Fusion variant) is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "xorg-x11-drv-nvidia-cuda")
 
 
@@ -47,14 +65,20 @@ class Cuda(Module):
 class LibvaNvidiaDriver(Module):
     name = "libva-nvidia-driver"
     category = "hardware-nvidia"
-    description = "VA-API bridge for NVIDIA."
+    description = "VA-API bridge for NVIDIA (Fedora-only via RPM Fusion)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.run(["rpm", "-q", "libva-nvidia-driver"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"libva-nvidia-driver (RPM Fusion) is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "libva-nvidia-driver")
 
 
@@ -62,7 +86,7 @@ class LibvaNvidiaDriver(Module):
 class NvidiaContainerToolkit(Module):
     name = "nvidia-container-toolkit"
     category = "hardware-nvidia"
-    description = "GPU access for containers."
+    description = "GPU access for containers (Fedora-only via akmod deps)."
     requires = (Docker, NvidiaAkmod)
     profiles = ("hardware-nvidia",)
 
@@ -70,6 +94,10 @@ class NvidiaContainerToolkit(Module):
         return ctx.ex.which("nvidia-ctk")
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"nvidia-container-toolkit (akmod-based) is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "nvidia-container-toolkit")
         ctx.ex.run(["nvidia-ctk", "runtime", "configure", "--runtime=docker"], sudo=True)
 
@@ -78,7 +106,7 @@ class NvidiaContainerToolkit(Module):
 class SecurebootMok(Module):
     name = "secureboot-mok"
     category = "hardware-nvidia"
-    description = "Enroll a MOK so the signed NVIDIA modules load under Secure Boot."
+    description = "Enroll a MOK so the signed NVIDIA modules load under Secure Boot (Fedora-only)."
     requires = (NvidiaAkmod,)
     profiles = ("hardware-nvidia",)
 
@@ -90,6 +118,10 @@ class SecurebootMok(Module):
         return "akmods" in ctx.ex.run(["mokutil", "--list-enrolled"]).stdout.lower()
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"secureboot-mok uses akmods PKI paths (Fedora-only); detected {ctx.os.distro!r}"
+            )
         if not self._key().exists():
             log.warn("secureboot-mok: akmods signing key absent yet — re-run after akmod build")
             return
@@ -101,7 +133,7 @@ class SecurebootMok(Module):
 class NvidiaResignService(Module):
     name = "nvidia-resign-service"
     category = "hardware-nvidia"
-    description = "Re-sign NVIDIA modules after a kernel/akmod rebuild."
+    description = "Re-sign NVIDIA modules after a kernel/akmod rebuild (Fedora-only)."
     requires = (SecurebootMok,)
     profiles = ("hardware-nvidia",)
 
@@ -113,6 +145,10 @@ class NvidiaResignService(Module):
         return self._unit().exists()
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"nvidia-resign-service uses akmods (Fedora-only); detected {ctx.os.distro!r}"
+            )
         unit = (
             "[Unit]\nDescription=devboost NVIDIA module re-sign\nAfter=akmods.service\n\n"
             "[Service]\nType=oneshot\nExecStart=/usr/sbin/akmods --force\n\n"
@@ -124,3 +160,31 @@ class NvidiaResignService(Module):
         else:
             ctx.ex.run(["tee", str(path)], sudo=True, stdin=unit)
         systemd.enable_system_unit(ctx, "nvidia-resign.service")
+
+
+@register
+class NvidiaDriverUbuntu(Module):
+    """Ubuntu NVIDIA driver via ubuntu-drivers autoinstall.
+
+    This is the Ubuntu equivalent of the akmod-based Fedora stack.  It installs
+    whichever proprietary NVIDIA driver ubuntu-drivers recommends (typically the
+    latest tested nvidia-driver-NNN metapackage).  Secure-Boot enrollment on Ubuntu
+    is handled automatically by the DKMS/shim layer; no manual MOK step is needed.
+    """
+
+    name = "nvidia-driver-ubuntu"
+    category = "hardware-nvidia"
+    description = "NVIDIA driver via ubuntu-drivers autoinstall (Ubuntu-only)."
+    profiles = ("hardware-nvidia",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.which("nvidia-smi")
+
+    def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "debian":
+            raise UnsupportedOS(
+                "nvidia-driver-ubuntu uses ubuntu-drivers (Ubuntu/Debian-only);"
+                f" detected {ctx.os.distro!r}"
+            )
+        pkg.install(ctx, "ubuntu-drivers-common")
+        ctx.ex.run(["ubuntu-drivers", "autoinstall"], sudo=True)

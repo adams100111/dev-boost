@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
+from devboost.core.errors import UnsupportedOS
 from devboost.core.registry import register
 from devboost.exec.primitives import config, gpu, pkg, systemd
 from devboost.model import Ctx, Module
@@ -34,6 +35,13 @@ class GrubBtrfs(SystemService):
     description = "Boot into BTRFS snapshots from GRUB."
     svc_pkg = "grub-btrfs"
     service = "grub-btrfsd"
+
+    def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"grub-btrfs is Fedora/btrfs-only; detected {ctx.os.distro!r}"
+            )
+        super().install(ctx)
 
 
 @register
@@ -76,9 +84,15 @@ class Snapper(Module):
     profiles = ("system",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return "root" in ctx.ex.run(["snapper", "list-configs"]).stdout.split()
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"snapper/btrfs is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "snapper", "python3-dnf-plugin-snapper")
         ctx.ex.run(["snapper", "-c", "root", "create-config", "/"], sudo=True)
 
@@ -91,9 +105,15 @@ class SnapperDnfHook(Module):
     profiles = ("system",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.run(["rpm", "-q", "python3-dnf-plugin-snapper"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"snapper-dnf-hook is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "python3-dnf-plugin-snapper")
 
 
@@ -106,9 +126,15 @@ class BtrfsAssistant(Module):
     profiles = ("system",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.which("btrfs-assistant") or ctx.ex.run(["rpm", "-q", "btrfs-assistant"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"btrfs-assistant is Fedora/btrfs-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "btrfs-assistant")
 
 
@@ -120,9 +146,15 @@ class Btrfsmaintenance(Module):
     profiles = ("system",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
         return ctx.ex.run(["rpm", "-q", "btrfsmaintenance"]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"btrfsmaintenance is Fedora/btrfs-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "btrfsmaintenance")
 
 
@@ -141,6 +173,10 @@ class DnfAutomaticSecurity(Module):
         return p.exists() and "upgrade_type=security" in p.read_text(encoding="utf-8")
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"dnf-automatic-security is Fedora-only; detected {ctx.os.distro!r}"
+            )
         pkg.install(ctx, "dnf-automatic")
         config.write_kv(ctx, self._conf(), "upgrade_type", "security")
         systemd.enable_system_unit(ctx, "dnf-automatic.timer", now=True)
@@ -153,11 +189,22 @@ class Earlyoom(Module):
     description = "Userspace OOM killer (dev-protecting)."
     profiles = ("system",)
 
-    def _conf(self) -> str:
-        return os.environ.get("DEVBOOST_EARLYOOM_CONF", "/etc/sysconfig/earlyoom")
+    def _conf(self, ctx: Ctx | None = None) -> str:
+        """Return the earlyoom config path.
+
+        Respects DEVBOOST_EARLYOOM_CONF override; otherwise selects the
+        distro-conventional path: /etc/default/earlyoom on Debian/Ubuntu,
+        /etc/sysconfig/earlyoom on Fedora.
+        """
+        override = os.environ.get("DEVBOOST_EARLYOOM_CONF")
+        if override:
+            return override
+        if ctx is not None and ctx.os.family == "debian":
+            return "/etc/default/earlyoom"
+        return "/etc/sysconfig/earlyoom"
 
     def verify(self, ctx: Ctx) -> bool:
-        p = Path(self._conf())
+        p = Path(self._conf(ctx))
         if not p.exists():
             return False
         text = p.read_text(encoding="utf-8")
@@ -169,7 +216,7 @@ class Earlyoom(Module):
             "\"-r 60 --avoid '(^|/)(init|systemd|Xorg|sshd)$' "
             "--prefer '(^|/)(chrome|firefox|node|java)$'\""
         )
-        config.write_kv(ctx, self._conf(), "EARLYOOM_ARGS", args)
+        config.write_kv(ctx, self._conf(ctx), "EARLYOOM_ARGS", args)
         systemd.enable_system_unit(ctx, "earlyoom", now=True)
 
 

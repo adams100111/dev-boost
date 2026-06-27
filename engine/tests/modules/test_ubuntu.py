@@ -1,4 +1,4 @@
-"""Ubuntu/Debian path tests for terminal-profile modules."""
+"""Ubuntu/Debian path tests — terminal, hardware, and multimedia modules."""
 
 from __future__ import annotations
 
@@ -186,3 +186,223 @@ def test_mise_skips_apt_repo_if_already_present_on_ubuntu() -> None:
     Mise().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert not any("apt-get" in " ".join(c) for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# hardware.py — Fedora-only guards on Ubuntu
+# ---------------------------------------------------------------------------
+
+
+from devboost.modules.hardware import (  # noqa: E402
+    Cuda,
+    LibvaNvidiaDriver,
+    NvidiaAkmod,
+    NvidiaContainerToolkit,
+    NvidiaDriverUbuntu,
+    NvidiaResignService,
+    SecurebootMok,
+)
+
+
+def test_nvidia_akmod_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        NvidiaAkmod().install(ctx)
+
+
+def test_nvidia_akmod_verify_false_on_ubuntu() -> None:
+    ctx = _ctx()
+    assert NvidiaAkmod().verify(ctx) is False
+
+
+def test_cuda_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        Cuda().install(ctx)
+
+
+def test_libva_nvidia_driver_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        LibvaNvidiaDriver().install(ctx)
+
+
+def test_secureboot_mok_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        SecurebootMok().install(ctx)
+
+
+def test_nvidia_resign_service_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        NvidiaResignService().install(ctx)
+
+
+def test_nvidia_container_toolkit_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        NvidiaContainerToolkit().install(ctx)
+
+
+def test_nvidia_driver_ubuntu_installs_via_ubuntu_drivers() -> None:
+    ctx = _ctx()
+    NvidiaDriverUbuntu().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "ubuntu-drivers-common"] in calls
+    assert ["sudo", "ubuntu-drivers", "autoinstall"] in calls
+
+
+def test_nvidia_driver_ubuntu_verify_checks_nvidia_smi() -> None:
+    ctx = _ctx(present={"nvidia-smi"})
+    assert NvidiaDriverUbuntu().verify(ctx) is True
+
+
+def test_nvidia_driver_ubuntu_verify_false_when_absent() -> None:
+    ctx = _ctx()
+    assert NvidiaDriverUbuntu().verify(ctx) is False
+
+
+def test_nvidia_driver_ubuntu_raises_unsupported_on_fedora() -> None:
+    fedora_ctx = Ctx(
+        os=OsInfo(distro="fedora", family="fedora", arch="x86_64"),
+        ex=FakeExecutor(),
+    )
+    with pytest.raises(UnsupportedOS, match="Ubuntu"):
+        NvidiaDriverUbuntu().install(fedora_ctx)
+
+
+# ---------------------------------------------------------------------------
+# multimedia.py — Fedora-only guards + Ubuntu equivalents
+# ---------------------------------------------------------------------------
+
+
+from devboost.modules.multimedia import (  # noqa: E402
+    Codecs,
+    CodecsUbuntu,
+    FfmpegFull,
+    FfmpegUbuntu,
+    Openh264,
+    VaHwaccel,
+)
+
+
+def test_ffmpeg_full_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        FfmpegFull().install(ctx)
+
+
+def test_ffmpeg_full_verify_false_on_ubuntu() -> None:
+    ctx = _ctx()
+    assert FfmpegFull().verify(ctx) is False
+
+
+def test_ffmpeg_ubuntu_installs_ffmpeg_via_apt() -> None:
+    ctx = _ctx()
+    FfmpegUbuntu().install(ctx)
+    assert ["sudo", "apt-get", "install", "-y", "ffmpeg"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_ffmpeg_ubuntu_verify_checks_binary() -> None:
+    ctx = _ctx(present={"ffmpeg"})
+    assert FfmpegUbuntu().verify(ctx) is True
+
+
+def test_ffmpeg_ubuntu_raises_unsupported_on_fedora() -> None:
+    fedora_ctx = Ctx(
+        os=OsInfo(distro="fedora", family="fedora", arch="x86_64"),
+        ex=FakeExecutor(),
+    )
+    with pytest.raises(UnsupportedOS, match="Ubuntu"):
+        FfmpegUbuntu().install(fedora_ctx)
+
+
+def test_codecs_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        Codecs().install(ctx)
+
+
+def test_codecs_verify_false_on_ubuntu() -> None:
+    ctx = _ctx()
+    assert Codecs().verify(ctx) is False
+
+
+def test_codecs_ubuntu_installs_restricted_extras() -> None:
+    ctx = _ctx()
+    CodecsUbuntu().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y",
+            "ubuntu-restricted-extras", "libavcodec-extra"] in calls
+
+
+def test_codecs_ubuntu_verify_checks_dpkg() -> None:
+    ctx = _ctx(scripts={"dpkg": Result(0)})
+    assert CodecsUbuntu().verify(ctx) is True
+
+
+def test_codecs_ubuntu_verify_false_on_fedora() -> None:
+    fedora_ctx = Ctx(
+        os=OsInfo(distro="fedora", family="fedora", arch="x86_64"),
+        ex=FakeExecutor(),
+    )
+    assert CodecsUbuntu().verify(fedora_ctx) is False
+
+
+def test_codecs_ubuntu_raises_unsupported_on_fedora() -> None:
+    fedora_ctx = Ctx(
+        os=OsInfo(distro="fedora", family="fedora", arch="x86_64"),
+        ex=FakeExecutor(),
+    )
+    with pytest.raises(UnsupportedOS, match="Ubuntu"):
+        CodecsUbuntu().install(fedora_ctx)
+
+
+def test_openh264_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        Openh264().install(ctx)
+
+
+def test_openh264_verify_false_on_ubuntu() -> None:
+    ctx = _ctx()
+    assert Openh264().verify(ctx) is False
+
+
+# ---------------------------------------------------------------------------
+# VaHwaccel — cross-distro GPU-aware install
+# ---------------------------------------------------------------------------
+
+
+def test_va_hwaccel_ubuntu_intel_installs_intel_media_va_driver() -> None:
+    lspci_out = "00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 630"
+    ctx = _ctx(scripts={"lspci": Result(0, stdout=lspci_out)})
+    VaHwaccel().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "libva-utils"] in calls
+    assert ["sudo", "apt-get", "install", "-y", "intel-media-va-driver"] in calls
+
+
+def test_va_hwaccel_ubuntu_amd_installs_mesa_va_drivers() -> None:
+    lspci_out = "01:00.0 VGA compatible controller: Advanced Micro Devices [AMD/ATI] Navi 23"
+    ctx = _ctx(scripts={"lspci": Result(0, stdout=lspci_out)})
+    VaHwaccel().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "mesa-va-drivers"] in calls
+    # no dnf swap on Ubuntu
+    assert not any("dnf" in " ".join(c) for c in calls)
+
+
+def test_va_hwaccel_ubuntu_nvidia_installs_vaapi_driver() -> None:
+    lspci_out = "01:00.0 VGA compatible controller: NVIDIA Corporation GA106 [GeForce RTX 3060]"
+    ctx = _ctx(scripts={"lspci": Result(0, stdout=lspci_out)})
+    VaHwaccel().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "nvidia-vaapi-driver"] in calls
+
+
+def test_va_hwaccel_verify_cross_distro() -> None:
+    """vainfo binary check works on both distros."""
+    ctx = _ctx(scripts={"vainfo": Result(0)})
+    assert VaHwaccel().verify(ctx) is True

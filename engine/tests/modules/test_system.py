@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import UnsupportedOS
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import load, validate_profiles
 from devboost.core.settings import settings
@@ -14,15 +15,20 @@ from devboost.modules.base import Rpmfusion
 from devboost.modules.hardware import NvidiaAkmod, NvidiaContainerToolkit
 from devboost.modules.optional import Neovim, Pass
 from devboost.modules.system import (
+    BtrfsAssistant,
+    Btrfsmaintenance,
     DnfAutomaticSecurity,
     Earlyoom,
     Fwupd,
     GpuDetect,
+    GrubBtrfs,
     ResticBackup,
     Snapper,
+    SnapperDnfHook,
 )
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="x86_64")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -149,3 +155,114 @@ def test_full_catalog_loads_and_all_profiles_validate() -> None:
     validate_profiles(modules, set(data["profiles"]))
     # the whole production catalog is registered
     assert len(modules) >= 70
+
+
+# ---------------------------------------------------------------------------
+# Ubuntu / Fedora-only guards
+# ---------------------------------------------------------------------------
+
+
+def _ubuntu_ctx(**kw: object) -> Ctx:
+    return Ctx(os=UBUNTU, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
+
+
+def test_grub_btrfs_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        GrubBtrfs().install(ctx)
+
+
+def test_snapper_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        Snapper().install(ctx)
+
+
+def test_snapper_verify_false_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    assert Snapper().verify(ctx) is False
+
+
+def test_snapper_dnf_hook_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        SnapperDnfHook().install(ctx)
+
+
+def test_snapper_dnf_hook_verify_false_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    assert SnapperDnfHook().verify(ctx) is False
+
+
+def test_btrfs_assistant_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        BtrfsAssistant().install(ctx)
+
+
+def test_btrfs_assistant_verify_false_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    assert BtrfsAssistant().verify(ctx) is False
+
+
+def test_btrfsmaintenance_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        Btrfsmaintenance().install(ctx)
+
+
+def test_btrfsmaintenance_verify_false_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    assert Btrfsmaintenance().verify(ctx) is False
+
+
+def test_dnf_automatic_security_raises_unsupported_on_ubuntu() -> None:
+    ctx = _ubuntu_ctx()
+    with pytest.raises(UnsupportedOS, match="Fedora"):
+        DnfAutomaticSecurity().install(ctx)
+
+
+# ---------------------------------------------------------------------------
+# Earlyoom — cross-distro with OS-aware config path
+# ---------------------------------------------------------------------------
+
+
+def test_earlyoom_uses_debian_default_path_on_ubuntu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conf = tmp_path / "earlyoom"
+    monkeypatch.setenv("DEVBOOST_EARLYOOM_CONF", str(conf))
+    ctx = _ubuntu_ctx()
+    Earlyoom().install(ctx)
+    assert Earlyoom().verify(ctx) is True
+    # Without env override, Ubuntu should use /etc/default/earlyoom
+    monkeypatch.delenv("DEVBOOST_EARLYOOM_CONF", raising=False)
+    assert Earlyoom()._conf(ctx) == "/etc/default/earlyoom"
+
+
+def test_earlyoom_env_override_wins_on_ubuntu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = tmp_path / "custom-earlyoom"
+    monkeypatch.setenv("DEVBOOST_EARLYOOM_CONF", str(custom))
+    ctx = _ubuntu_ctx()
+    assert Earlyoom()._conf(ctx) == str(custom)
+
+
+def test_fwupd_installs_on_ubuntu() -> None:
+    """fwupd is cross-distro — same package name, same service."""
+    ctx = _ubuntu_ctx()
+    Fwupd().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "fwupd"] in calls
+    assert ["sudo", "systemctl", "enable", "--now", "fwupd.service"] in calls
+
+
+def test_restic_backup_installs_via_apt_on_ubuntu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ubuntu_ctx()
+    ResticBackup().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "restic"] in calls
