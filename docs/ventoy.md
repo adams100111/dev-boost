@@ -4,19 +4,33 @@ Three layers: **Ventoy** = delivery (multi-ISO boot + auto-install + injection) 
 unattended OS install + the BTRFS layout · **the `devboost` binary** = everything above the OS.
 
 ## Build the USB (once)
+
+Plug in the target USB stick, then:
 ```sh
-sudo devboost installer                  # interactive wizard: pick the device + ISO + profiles (defaults everywhere)
-sudo devboost installer --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes   # fully scripted
+sudo devboost installer --dry-run        # 1. rehearse — prints the plan, touches NOTHING
+sudo devboost installer                  # 2. interactive wizard — lists removable disks, you pick + confirm the wipe
+# …or fully scripted:
+sudo devboost installer --device /dev/sdX --secrets ./secrets.age --secrets-key ./age-key.txt --yes
 ```
-The `devboost installer` command (the typed replacement for the old `ventoy/make-usb.sh`) installs Ventoy on
-the chosen **removable** disk, downloads + SHA256-verifies + caches the Fedora ISOs, and stages the
-injection archive (`devboost-<arch>.tar.gz`, which lands the binary at `opt/dev-boost/devboost`) +
-`ks.cfg` + a generated `ventoy.json`. The device picker lists removable disks with vendor/size/serial and
-requires an explicit wipe confirmation (`--yes` to skip in automation). Optional wizard steps add extra
-multi-boot ISOs/installers and an offline dnf+flatpak package mirror. Drop your `secrets.age` into
-`Bootstrap/` (never committed). The engine **generates** `ventoy.json`: the default boot entry +
-`injection` (dev-boost binary) cover the Live ISO, and `auto_install` binds `ks.cfg` to the **netinst**
-ISO (`injection` covers both ISOs so the binary is available on either boot path).
+
+`devboost installer` is **self-contained** — no prerequisites to install by hand. It:
+- **auto-downloads Ventoy** (pinned + SHA256-verified) and installs it onto the chosen **removable** disk
+  (it runs Ventoy's `Ventoy2Disk.sh`; you do not install Ventoy yourself);
+- downloads + SHA256-verifies **both** Fedora ISOs (Workstation Live + Everything-netinst);
+- **mounts** the Ventoy data partition, stages the injection archive (binary → `opt/dev-boost/devboost`) +
+  `ks.cfg` + a generated `ventoy.json` + your secrets, then **unmounts + syncs**.
+
+The device picker lists only removable disks (vendor/size/serial) and requires an explicit wipe
+confirmation — `--yes` skips it in automation; `--rebuild` wipes an existing dev-boost stick (otherwise
+re-running an existing dev-boost stick does a non-destructive **update**).
+
+**Caching:** downloads are **ephemeral by default** (temp dir, cleaned after the build). Pass
+`--cache-dir <path>` to keep them for reuse, optionally with `--cache-ttl-days N` to evict files older
+than N days. **Secrets:** `--secrets secrets.age --secrets-key age-key.txt` (build the bundle with
+`scripts/make-secrets.sh`); both are staged into `Bootstrap/` and copied onto the installed system by the
+Kickstart `%post`. The engine **generates** `ventoy.json`: default boot + `injection` cover the Live ISO,
+`auto_install` binds `ks.cfg` to the **netinst** ISO (injection covers both, so the binary is present on
+either boot path).
 
 ## Which OS gets installed (`catalog.toml`)
 
