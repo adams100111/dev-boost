@@ -43,9 +43,10 @@ shippable artifact for fresh machines.)
 curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
 ```
 
-Detects your architecture, downloads the matching frozen `devboost` binary + config data from the latest
-GitHub Release, verifies SHA256, and runs `devboost install terminal` — no Python, no clone. Add `devtools`
-for language runtimes/frameworks, or `--dry-run` to preview:
+Detects your architecture, downloads the matching frozen `devboost` binary from the latest GitHub Release,
+verifies SHA256, **installs it onto PATH** (links `devboost` into `~/.local/bin`), and runs
+`devboost install terminal` — no Python, no clone. Afterward `devboost …` works from anywhere. Add
+`devtools` for language runtimes/frameworks, or `--dry-run` to preview:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal devtools

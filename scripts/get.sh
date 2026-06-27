@@ -2,8 +2,9 @@
 # scripts/get.sh — dev-boost public bootstrap (one of two bash files in the shipped tree).
 # Usage: curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
 # Downloads the arch-matched frozen devboost binary from the latest GitHub Release, verifies
-# SHA256, installs it, and runs `devboost install`. No data tarball — profiles + templates are
-# bundled inside the binary (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/exec.
+# SHA256, installs it (onto PATH via a symlink in the user bin dir), and runs `devboost install`.
+# No data tarball — profiles + templates are
+# bundled inside the binary (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/link/exec.
 set -Eeuo pipefail
 
 GS_REPO="adams100111/dev-boost"
@@ -43,7 +44,7 @@ gs_verify() {
 }
 
 gs_main() {
-  local arch tmp profiles
+  local arch tmp profiles bindir link
   arch="$(gs_arch)" || return 1
   profiles=("$@"); [ "${#profiles[@]}" -eq 0 ] && profiles=(terminal)
 
@@ -60,7 +61,19 @@ gs_main() {
   install -m 0755 "${tmp}/devboost-${arch}" "${GS_PREFIX}/bin/devboost"
   rm -rf "$tmp"
 
-  gs_err "installed to ${GS_PREFIX}/bin/devboost; running: devboost install ${profiles[*]}"
+  # Put `devboost` on PATH: keep the payload in the data dir, link it into the user bin dir.
+  bindir="${XDG_BIN_HOME:-${HOME}/.local/bin}"
+  mkdir -p "$bindir"
+  link="${bindir}/devboost"
+  ln -sf "${GS_PREFIX}/bin/devboost" "$link"
+  gs_err "installed ${GS_PREFIX}/bin/devboost → linked ${link}"
+  case ":${PATH}:" in
+    *":${bindir}:"*) : ;;
+    *) gs_err "note: ${bindir} is not on PATH — add it for future shells:"
+       gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.bashrc" ;;
+  esac
+
+  gs_err "running: devboost install ${profiles[*]}"
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }
 
