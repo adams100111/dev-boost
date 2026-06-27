@@ -7,11 +7,18 @@ ConditionPathExists=/opt/dev-boost/devboost
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Runs the full provisioning once on the first networked boot, then disables itself so
-# subsequent boots are normal. The frozen binary is the entrypoint (no bash). Secrets are
-# the age-encrypted bundle injected onto the USB.
+# All three vars are required by the secrets module (CONTRACT: secrets.py reads
+# DEVBOOST_BOOTSTRAP_DIR and must NOT fall back to ".").
+Environment=DEVBOOST_BOOTSTRAP_DIR=/opt/dev-boost
 Environment=DEVBOOST_SECRETS=/opt/dev-boost/secrets.age
-ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/devboost-firstboot.log 2>&1; systemctl disable devboost-firstboot.service'
+Environment=DEVBOOST_SECRETS_KEY=/opt/dev-boost/age-key.txt
+# Run the provisioning binary directly; redirect output to a persistent log.
+ExecStart=/opt/dev-boost/devboost install full
+StandardOutput=append:/var/log/devboost-firstboot.log
+StandardError=append:/var/log/devboost-firstboot.log
+# Self-disable ONLY on success (exit 0). On failure the service stays enabled so the
+# operator can retry: `systemctl reset-failed devboost-firstboot && systemctl start devboost-firstboot`
+ExecStartPost=/bin/systemctl disable devboost-firstboot.service
 
 [Install]
 WantedBy=multi-user.target
