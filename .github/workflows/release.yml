@@ -19,6 +19,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check tag matches version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pyproject="$(grep -m1 -oP '^version = "\K[^"]+' engine/pyproject.toml)"
+          init="$(grep -m1 -oP '^__version__ = "\K[^"]+' engine/src/devboost/__init__.py)"
+          echo "tag=${tag}  pyproject=${pyproject}  __version__=${init}"
+          if [ "${tag}" != "${pyproject}" ] || [ "${tag}" != "${init}" ]; then
+            echo "::error::tag v${tag} must match pyproject (${pyproject}) and __version__ (${init})"
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v5
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
