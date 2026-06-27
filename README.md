@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/
 **Or build a bootable USB online** (install the builder without configuring this machine, then build):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- usb
-sudo "$(command -v devboost)" installer            # wizard: pick the USB, confirm the wipe
+sudo devboost installer            # wizard: pick the USB, confirm the wipe
 ```
 `-- usb` also downloads the Ventoy injection archive, so `installer` works with no clone/build; it
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
@@ -120,7 +120,7 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 ## Recovery walkthrough
 
 0. Build the stick once (online, no clone): `curl … get.sh | bash -s -- usb` then
-   `sudo "$(command -v devboost)" installer` (interactive; add `--dry-run` to preview) — see [docs/ventoy.md](docs/ventoy.md).
+   `sudo devboost installer` (interactive; add `--dry-run` to preview) — see [docs/ventoy.md](docs/ventoy.md).
 1. Boot the **Ventoy USB** → pick Fedora (manual installer ~10 min, or the zero-touch auto-install entry).
 2. Manual: reboot → `/opt/dev-boost/devboost install full` (the firstboot oneshot). Zero-touch: Kickstart installs
    Fedora with the snapshot-ready BTRFS layout, then a first-boot service runs `devboost install full`.

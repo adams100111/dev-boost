@@ -79,10 +79,16 @@ gs_main() {
        gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.bashrc" ;;
   esac
 
+  # Also link into a root-PATH dir (when sudo permits) so `sudo devboost …` resolves
+  # — Fedora's sudo secure_path excludes ~/.local/bin. Best-effort; never fatal.
+  if sudo -n true 2>/dev/null; then
+    sudo -n ln -sf "${GS_PREFIX}/bin/devboost" /usr/local/bin/devboost 2>/dev/null || true
+  fi
+
   # `usb`/`none` => install the builder only; do NOT configure this machine.
   if [ "${profiles[0]}" = "usb" ] || [ "${profiles[0]}" = "none" ]; then
     gs_err "devboost installed (with the USB injection archive)."
-    gs_err "build a bootable USB on this machine:  sudo \"${link}\" installer"
+    gs_err "build a bootable USB on this machine:  sudo devboost installer"
     return 0
   fi
   gs_err "running: devboost install ${profiles[*]}"

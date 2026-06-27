@@ -26,7 +26,7 @@ sudo usermod -aG libvirt "$USER"                            # then log out/in
 
 ## 1. Build the encrypted secrets bundle
 
-`install.sh` provisions GitHub auth from an `age`-encrypted bundle (never committed):
+dev-boost provisions GitHub auth from an `age`-encrypted bundle (never committed):
 
 ```sh
 scripts/make-secrets.sh --out /tmp/devboost-secrets
@@ -67,7 +67,7 @@ boots the Live ISO. Then:
 ## 3. Option B — full USB
 
 ### B1. Boot the real Ventoy USB (most faithful)
-Build the USB first (see [ventoy.md](ventoy.md): `sudo "$(command -v devboost)" installer --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes`,
+Build the USB first (see [ventoy.md](ventoy.md): `sudo devboost installer --device /dev/sdX --iso fedora-44 --secrets ./secrets.age --yes`,
 `secrets.age`, `devboost.tar.gz`). Find the device with `lsblk -o NAME,SIZE,TYPE,RM,MOUNTPOINT,MODEL`,
 then:
 ```sh
@@ -83,8 +83,9 @@ Drives `ventoy/ks.cfg` directly to validate the Kickstart layout + first-boot se
 scripts/vm-test.sh usb --kickstart ~/Downloads/Fedora-Everything-netinst-x86_64-44.iso
 scripts/vm-test.sh console        # watch the unattended install
 ```
-The VM uses a SATA disk so the guest sees `/dev/sda`, matching `ks.cfg`'s `--only-use=sda`. After the
-unattended install + reboot, `devboost-firstboot.service` runs `install.sh --profile full` once.
+`ks.cfg` auto-detects the target disk in `%pre` (sda/vda/nvme0n1), so it installs onto the VM's disk
+without tweaking. After the unattended install + reboot, `devboost-firstboot.service` runs
+`devboost install full` once.
 
 ## 4. Lifecycle helpers
 
@@ -98,10 +99,9 @@ scripts/vm-test.sh destroy              # stop + undefine + delete its disk
 `--name` lets you run several VMs side by side; `--recreate` replaces an existing one.
 
 ## Caveats (this is first-real-run territory)
-- The artifacts are fully unit-tested but **have never run on real hardware** — expect to fix a rough
-  edge or two (e.g. the Kickstart `%post` copying the injected `dev-boost/` + `secrets.age` to
-  `/opt/dev-boost`, or `--only-use=sda` vs `vda`). The **engine-only** path avoids these and is the
-  cleanest first proof.
-- `ks.cfg` targets `sda`; B2 forces a SATA disk to match. On real hardware with NVMe the disk is
-  `nvme0n1` — adjust `ignoredisk --only-use=` accordingly.
+- The artifacts are unit-tested but **have not been booted on real hardware**. The Kickstart `%post`
+  binary/secrets copy and the `%pre` disk auto-detect are implemented (2026-06-27 rebuild) but unproven
+  on a real Anaconda install. The **engine-only** path avoids the delivery layer and is the cleanest
+  first proof.
+- `ks.cfg` auto-detects the target disk in `%pre` (sda/vda/nvme0n1) — no manual `--only-use=` tweak.
 - Give the VM ≥ 8 GiB RAM and ≥ 50 GiB disk for `--profile full` (the stacks + `system` pull a lot).

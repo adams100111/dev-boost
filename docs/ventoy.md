@@ -8,16 +8,17 @@ unattended OS install + the BTRFS layout · **the `devboost` binary** = everythi
 **Online — no clone, no build.** Install the builder, plug in the USB, then build:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- usb
-sudo "$(command -v devboost)" installer --dry-run    # 1. rehearse — prints the plan, touches NOTHING
-sudo "$(command -v devboost)" installer              # 2. wizard — pick the USB, confirm the wipe
+sudo devboost installer --dry-run    # 1. rehearse — prints the plan, touches NOTHING
+sudo devboost installer              # 2. wizard — pick the USB, confirm the wipe
 ```
-`bash -s -- usb` downloads the `devboost` binary **and its injection archive** (so `installer` works
-offline-of-clone) and puts `devboost` on PATH — without configuring this machine. The `sudo "$(command -v
-devboost)"` form is used because `~/.local/bin` usually isn't on root's PATH.
+`bash -s -- usb` downloads the `devboost` binary **and its injection archive** (so `installer` works with
+no clone) and puts `devboost` on PATH — without configuring this machine. It also best-effort-links
+`devboost` into a root-PATH dir (when sudo permits) so plain `sudo devboost installer` resolves; if it ever
+reports *command not found*, run once: `sudo ln -sf ~/.local/share/devboost/bin/devboost /usr/local/bin/devboost`.
 
 Fully scripted (e.g. with secrets):
 ```sh
-sudo "$(command -v devboost)" installer --device /dev/sdX --secrets ./secrets.age --secrets-key ./age-key.txt --yes
+sudo devboost installer --device /dev/sdX --secrets ./secrets.age --secrets-key ./age-key.txt --yes
 ```
 
 `devboost installer` is **self-contained** — no prerequisites to install by hand. It:
