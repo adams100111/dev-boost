@@ -30,8 +30,10 @@ _LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
 _FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
 
 
-def _make_executor(*, lsblk_out: str = _LSBLK, child_out: str = _LSBLK_CHILDREN_CLEAN) -> FakeExecutor:
-    """FakeExecutor that handles both lsblk call variants used by validate() + _find_vtoy_partition."""
+def _make_executor(
+    *, lsblk_out: str = _LSBLK, child_out: str = _LSBLK_CHILDREN_CLEAN
+) -> FakeExecutor:
+    """FakeExecutor handling both lsblk variants: validate() + _find_vtoy_partition()."""
     return FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_out + child_out)})
 
 
@@ -109,7 +111,6 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     )
 
     ventoy_bytes = b"ventoy-tarball"
-    ventoy_sha = hashlib.sha256(ventoy_bytes).hexdigest()
     ventoy_url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"
 
     cache = Cache(tmp_path / "cache")
@@ -186,7 +187,6 @@ def test_boot_artifacts_stages_secrets_key(
     key_file = tmp_path / "age-key.txt"
     key_file.write_text("AGE-SECRET-KEY-1...", encoding="utf-8")
 
-    ventoy_sha = hashlib.sha256(b"vt").hexdigest()
     ventoy_url = "https://github.com/ventoy/Ventoy/releases/download/v1.1.16/ventoy-1.1.16-linux.tar.gz"
     cache = Cache(tmp_path / "cache")
     dl = FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes, ventoy_url: b"vt"})
