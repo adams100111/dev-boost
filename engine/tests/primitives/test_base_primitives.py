@@ -8,10 +8,11 @@ from devboost.exec.primitives import config, copr, flatpak, mise
 from devboost.model import Ctx
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
 
 
-def _ctx(**kw: object) -> Ctx:
-    return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
+def _ctx(os: OsInfo = FEDORA, **kw: object) -> Ctx:
+    return Ctx(os=os, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
 def test_copr_enable() -> None:
@@ -21,15 +22,31 @@ def test_copr_enable() -> None:
 
 
 def test_flatpak_remote_add_idempotent() -> None:
-    ctx = _ctx(scripts={"flatpak": Result(0, stdout="flathub\n")})
+    # flatpak is already installed (present) and flathub is already registered.
+    ctx = _ctx(scripts={"flatpak": Result(0, stdout="flathub\n")}, present={"flatpak"})
     flatpak.remote_add(ctx, "flathub", "url")
     assert not any("remote-add" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
 
 
 def test_flatpak_remote_add_when_absent() -> None:
-    ctx = _ctx(scripts={"flatpak": Result(0, stdout="")})
+    # flatpak is already installed (present) but the remote is not yet added.
+    ctx = _ctx(scripts={"flatpak": Result(0, stdout="")}, present={"flatpak"})
     flatpak.remote_add(ctx, "flathub", "url")
     assert ["flatpak", "remote-add", "--if-not-exists", "flathub", "url"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_flatpak_installs_package_when_not_present_fedora() -> None:
+    # On Fedora, _ensure_flatpak installs via dnf when flatpak binary is absent.
+    ctx = _ctx(scripts={"flatpak": Result(0, stdout="")})  # flatpak not in present
+    flatpak.remote_add(ctx, "flathub", "url")
+    assert ["sudo", "dnf", "install", "-y", "flatpak"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_flatpak_installs_package_when_not_present_ubuntu() -> None:
+    # On Ubuntu, _ensure_flatpak installs via apt-get when flatpak binary is absent.
+    ctx = _ctx(os=UBUNTU, scripts={"flatpak": Result(0, stdout="")})  # not in present
+    flatpak.remote_add(ctx, "flathub", "url")
+    assert ["sudo", "apt-get", "install", "-y", "flatpak"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
 def test_mise_use_global() -> None:

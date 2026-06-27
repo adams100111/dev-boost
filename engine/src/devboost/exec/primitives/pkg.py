@@ -1,26 +1,29 @@
-"""Package primitive with OS dispatch. The package manager is selected from ctx.os;
-no module ever names dnf/apt. Dnf is implemented; Apt/Pacman are seams for later specs.
+"""Package primitive with OS dispatch.
+
+The package manager is selected from ctx.os; no module ever names dnf/apt directly.
+Dnf (Fedora) and Apt (Debian/Ubuntu) are implemented; Pacman is a seam for a later spec.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Protocol, runtime_checkable
 
 from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
-from devboost.model import Ctx, DnfRepo
+from devboost.model import AptRepo, Ctx, DnfRepo
 
 # A package name: a plain string, or per-OS names resolved distro->family->default.
 Pkg = str | OsMap[str]
-# A third-party install source per OS (only DnfRepo is applied for Fedora).
-Source = OsMap[DnfRepo]
+# A third-party install source per OS (DnfRepo for Fedora, AptRepo for Debian/Ubuntu).
+Source = OsMap[DnfRepo | AptRepo]
 
 
 @runtime_checkable
 class PackageManager(Protocol):
     def install(self, ctx: Ctx, *pkgs: str) -> None: ...
     def installed(self, ctx: Ctx, pkg: str) -> bool: ...
-    def add_repo(self, ctx: Ctx, repo: DnfRepo) -> None: ...
+    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None: ...
 
 
 class Dnf:
@@ -33,7 +36,9 @@ class Dnf:
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return ctx.ex.run(["rpm", "-q", pkg]).ok
 
-    def add_repo(self, ctx: Ctx, repo: DnfRepo) -> None:
+    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+        if not isinstance(repo, DnfRepo):
+            raise TypeError(f"Dnf.add_repo expects DnfRepo, got {type(repo).__name__}")
         body = (
             f"[{repo.name}]\nname={repo.name}\nbaseurl={repo.baseurl}\n"
             f"gpgcheck={1 if repo.gpgcheck else 0}\nenabled=1\n"
@@ -46,9 +51,57 @@ class Dnf:
             raise InstallError("dnf", f"tee {dest}", result.code)
 
 
+def _apt_slug(list_line: str) -> str:
+    """Derive a stable filename slug from the first URL in an apt list_line."""
+    m = re.search(r"https?://([^/\s]+)", list_line)
+    return m.group(1).replace(".", "-") if m else "custom-repo"
+
+
+class Apt:
+    def install(self, ctx: Ctx, *pkgs: str) -> None:
+        if pkgs:
+            result = ctx.ex.run(
+                ["apt-get", "install", "-y", *pkgs],
+                sudo=True,
+                env={"DEBIAN_FRONTEND": "noninteractive"},
+            )
+            if not result.ok:
+                raise InstallError("apt", f"apt-get install -y {' '.join(pkgs)}", result.code)
+
+    def installed(self, ctx: Ctx, pkg: str) -> bool:
+        return ctx.ex.run(["dpkg", "-s", pkg]).ok
+
+    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+        if not isinstance(repo, AptRepo):
+            raise TypeError(f"Apt.add_repo expects AptRepo, got {type(repo).__name__}")
+        slug = _apt_slug(repo.list_line)
+        # Download and store the signing key when provided.
+        if repo.key_url:
+            key_path = f"/etc/apt/keyrings/{slug}.gpg"
+            key_data = ctx.ex.run(["curl", "-fsSL", repo.key_url])
+            put = ctx.ex.run(["tee", key_path], sudo=True, stdin=key_data.stdout)
+            if not put.ok:
+                raise InstallError("apt", f"tee {key_path}", put.code)
+        # Write the sources list entry.
+        list_path = f"/etc/apt/sources.list.d/{slug}.list"
+        put = ctx.ex.run(["tee", list_path], sudo=True, stdin=repo.list_line + "\n")
+        if not put.ok:
+            raise InstallError("apt", f"tee {list_path}", put.code)
+        # Refresh the package index.
+        upd = ctx.ex.run(
+            ["apt-get", "update"],
+            sudo=True,
+            env={"DEBIAN_FRONTEND": "noninteractive"},
+        )
+        if not upd.ok:
+            raise InstallError("apt", "apt-get update", upd.code)
+
+
 def manager_for(os_info: OsInfo) -> PackageManager:
     if os_info.family == "fedora":
         return Dnf()
+    if os_info.family == "debian":
+        return Apt()
     raise UnsupportedOS(f"no package manager implemented for {os_info.distro!r}")
 
 
