@@ -61,7 +61,13 @@ class GnomeExtensions(Module):
 
     def install(self, ctx: Ctx) -> None:
         if not ctx.ex.which("gext"):
-            pkg.install(ctx, "python3-gnome-extensions-cli")
+            if ctx.os.family == "fedora":
+                pkg.install(ctx, "python3-gnome-extensions-cli")
+            else:
+                # Ubuntu/Debian: no apt package for gext; install via pip3
+                if not ctx.ex.which("pip3"):
+                    pkg.install(ctx, "python3-pip")
+                ctx.ex.run(["pip3", "install", "--user", "gnome-extensions-cli"])
         for uuid in _FUNCTIONAL_UUIDS:
             ctx.ex.run(["gext", "install", uuid])
             ctx.ex.run(["gext", "enable", uuid])
@@ -85,7 +91,11 @@ class GnomeManagerApps(Module):
         )
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "gnome-extensions-app", "gnome-tweaks")
+        if ctx.os.family == "fedora":
+            pkg.install(ctx, "gnome-extensions-app", "gnome-tweaks")
+        else:
+            # Ubuntu/Debian: gnome-tweaks is in apt; gnome-extensions-app is not packaged
+            pkg.install(ctx, "gnome-tweaks")
         flatpak.remote_add(ctx, "flathub", "https://flathub.org/repo/flathub.flatpakrepo")
         flatpak.install(ctx, "com.mattjakeman.ExtensionManager")
         flatpak.install(ctx, "org.gnome.Extensions")
@@ -99,11 +109,18 @@ class GnomeThemeBundle(Module):
     gui = True
     profiles = ("gnome-theme",)
 
+    def _theme_pkg(self, ctx: Ctx) -> str:
+        return "adw-gtk3-theme" if ctx.os.family == "fedora" else "adw-gtk3"
+
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.run(["rpm", "-q", "adw-gtk3-theme"]).ok
+        return pkg.installed(ctx, self._theme_pkg(ctx))
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "adw-gtk3-theme", "papirus-icon-theme")
+        if ctx.os.family == "fedora":
+            pkg.install(ctx, "adw-gtk3-theme", "papirus-icon-theme")
+        else:
+            # Ubuntu/Debian: adw-gtk3 (universe) + papirus-icon-theme
+            pkg.install(ctx, "adw-gtk3", "papirus-icon-theme")
 
 
 @register
@@ -114,8 +131,18 @@ class GnomeAestheticsBundle(Module):
     gui = True
     profiles = ("gnome-aesthetics",)
 
+    def _usertheme_pkg(self, ctx: Ctx) -> str:
+        # Fedora: standalone extension package; Ubuntu: gnome-shell-extensions bundle
+        if ctx.os.family == "fedora":
+            return "gnome-shell-extension-user-theme"
+        return "gnome-shell-extensions"
+
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.run(["rpm", "-q", "gnome-shell-extension-user-theme"]).ok
+        return pkg.installed(ctx, self._usertheme_pkg(ctx))
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "gnome-shell-extension-user-theme", "google-noto-sans-fonts")
+        if ctx.os.family == "fedora":
+            pkg.install(ctx, "gnome-shell-extension-user-theme", "google-noto-sans-fonts")
+        else:
+            # Ubuntu/Debian: gnome-shell-extensions (includes user-theme) + fonts-noto-core
+            pkg.install(ctx, "gnome-shell-extensions", "fonts-noto-core")

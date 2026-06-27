@@ -9,16 +9,29 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import github
 from devboost.model import Ctx
-from devboost.modules.apps import Bruno, Obsidian, ObsidianSync, Vlc
+from devboost.modules.apps import (
+    Bitwarden,
+    Bruno,
+    Flameshot,
+    Localsend,
+    Obsidian,
+    ObsidianSync,
+    Vlc,
+)
 from devboost.modules.dev_hygiene import AspireGc
 from devboost.modules.secrets import Secrets
 from devboost.modules.ssh_setup import SshSetup
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="x86_64")
 
 
 def _ctx(**kw: object) -> Ctx:
     return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
+
+
+def _ubuntu_ctx(**kw: object) -> Ctx:
+    return Ctx(os=UBUNTU, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
 def test_flatpak_apps_install_and_are_gui() -> None:
@@ -72,3 +85,35 @@ def test_aspire_gc_writes_timer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     AspireGc().install(ctx)
     assert AspireGc().verify(ctx) is True
     assert ["systemctl", "--user", "enable", "--now", "aspire-gc.timer"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Ubuntu — flatpak apps are cross-distro (no dnf/apt divergence)
+# ---------------------------------------------------------------------------
+
+
+def test_flatpak_apps_install_on_ubuntu() -> None:
+    """All FlatpakApp subclasses use flatpak install — fully cross-distro."""
+    apps = [Obsidian, Bruno, Bitwarden, Flameshot, Localsend, Vlc]
+    for app_cls in apps:
+        ctx = _ubuntu_ctx()
+        app_cls().install(ctx)
+        calls = ctx.ex.calls  # type: ignore[attr-defined]
+        assert any(
+            c[:3] == ["flatpak", "install", "-y"] and app_cls.app_id in c
+            for c in calls
+        ), f"{app_cls.name}: flatpak install not called with app_id {app_cls.app_id!r}"
+
+
+def test_flatpak_app_verify_on_ubuntu() -> None:
+    """Verify uses flatpak info — works identically on Ubuntu."""
+    ctx = _ubuntu_ctx(scripts={"flatpak": Result(0, stdout="md.obsidian.Obsidian - Obsidian")})
+    assert Obsidian().verify(ctx) is True
+
+
+def test_flatpak_apps_no_dnf_calls_on_ubuntu() -> None:
+    """No dnf or rpm commands must appear when installing flatpak apps on Ubuntu."""
+    ctx = _ubuntu_ctx()
+    Obsidian().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert not any("dnf" in " ".join(c) or "rpm" in " ".join(c) for c in calls)
