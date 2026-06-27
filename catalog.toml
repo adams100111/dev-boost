@@ -29,17 +29,17 @@ url = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Everythin
 sha256 = "814801fbdda7492d9ee24dab8426c72b29f1635fe98d4ba675ede7e81189d57e"
 
 ["ubuntu-26.04"]
-name = "Ubuntu 26.04 — Desktop (Budgie x86_64 / Ubuntu aarch64)"
+name = "Ubuntu 26.04 — Desktop (GNOME)"
 distro = "ubuntu"
 version = "26.04"
 edition = "desktop"
 
 ["ubuntu-26.04".isos.x86_64]
-url = "https://cdimage.ubuntu.com/ubuntu-budgie/releases/26.04/release/ubuntu-budgie-26.04-desktop-amd64.iso"
-sha256 = "cbdebfa6517d6f64ecc07f6b91a672cf623e1f378b1b92c6e2d27bd7c8b6ca42"
+url = "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso"
+sha256 = "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2"
 
 ["ubuntu-26.04".isos.aarch64]
-url = "https://cdimage.ubuntu.com/ubuntu/releases/resolute/release/ubuntu-26.04-desktop-arm64.iso"
+url = "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-desktop-arm64.iso"
 sha256 = "c2afd538d66fdd77377d03f1ed2ac76a34f1c116baecc9a8170d68f833121f57"
 
 # ---------------------------------------------------------------------------

@@ -123,10 +123,10 @@ def test_autoinstall_for_missing_returns_none() -> None:
 # Ubuntu 26.04 catalog entries
 # ---------------------------------------------------------------------------
 
-def test_ubuntu_iso_for_x86_64_returns_budgie() -> None:
+def test_ubuntu_iso_for_x86_64_returns_gnome_desktop() -> None:
     spec = iso_for("ubuntu-26.04", "x86_64")
     assert spec.id == "ubuntu-26.04"
-    assert "ubuntu-budgie" in spec.url
+    assert "ubuntu-26.04-desktop-amd64" in spec.url
     assert spec.url.endswith(".iso")
 
 
