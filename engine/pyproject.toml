@@ -3,6 +3,7 @@ name = "devboost"
 version = "0.1.0"
 description = "dev-boost — typed-Python developer-workstation bootstrap engine"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.15",

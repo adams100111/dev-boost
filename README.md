@@ -191,3 +191,9 @@ scripts/vm-test.sh usb --device /dev/sdX               # full USB (boot the real
 scripts/make-secrets.sh --out /tmp/sec                 # build the age-encrypted secrets bundle (PAT never logged)
 ```
 Full runbook (prereqs, snapshots, what to verify): [docs/vm-testing.md](docs/vm-testing.md).
+
+## License
+
+[MIT](LICENSE). This is a personal developer-workstation setup, shared **as-is** — it bakes in
+opinionated tool choices and a specific dotfiles/secrets flow, so it's offered for reference and reuse,
+not as a supported product (no warranty; issues/PRs aren't guaranteed a response).
