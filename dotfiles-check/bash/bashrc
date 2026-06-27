@@ -1,0 +1,246 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+# see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
+# for examples
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# don't put duplicate lines or lines starting with space in the history.
+# See bash(1) for more options
+HISTCONTROL=ignoreboth
+
+# append to the history file, don't overwrite it
+shopt -s histappend
+
+# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+HISTSIZE=1000
+HISTFILESIZE=2000
+
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+
+# If set, the pattern "**" used in a pathname expansion context will
+# match all files and zero or more directories and subdirectories.
+#shopt -s globstar
+
+# make less more friendly for non-text input files, see lesspipe(1)
+[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+
+# set variable identifying the chroot you work in (used in the prompt below)
+if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
+    debian_chroot=$(cat /etc/debian_chroot)
+fi
+
+# set a fancy prompt (non-color, unless we know we "want" color)
+case "$TERM" in
+    xterm-color|*-256color) color_prompt=yes;;
+esac
+
+# uncomment for a colored prompt, if the terminal has the capability; turned
+# off by default to not distract the user: the focus in a terminal window
+# should be on the output of commands, not on the prompt
+#force_color_prompt=yes
+
+if [ -n "$force_color_prompt" ]; then
+    if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
+	# We have color support; assume it's compliant with Ecma-48
+	# (ISO/IEC-6429). (Lack of such support is extremely rare, and such
+	# a case would tend to support setf rather than setaf.)
+	color_prompt=yes
+    else
+	color_prompt=
+    fi
+fi
+
+if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+else
+    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+fi
+unset color_prompt force_color_prompt
+
+# If this is an xterm set the title to user@host:dir
+case "$TERM" in
+xterm*|rxvt*)
+    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    ;;
+*)
+    ;;
+esac
+
+# ── tmux ──────────────────────────────────────────────────────────────────────
+if command -v tmux &>/dev/null; then
+    export TMUX_CONFIG="$HOME/.config/tmux/tmux.conf"
+
+    alias tmux='tmux -f "$TMUX_CONFIG"'
+    alias ta='tmux attach -t'           # attach to named session
+    alias tl='tmux list-sessions'       # list sessions
+    alias tk='tmux kill-session -t'     # kill named session
+    alias td='tmux detach'             # detach from current session
+
+    # ts <name> — attach to session or create it
+    ts() {
+        local name="${1:-main}"
+        tmux has-session -t "$name" 2>/dev/null \
+            && tmux attach -t "$name" \
+            || tmux new-session -s "$name"
+    }
+
+    # tdev — open a standard dev layout: editor top-left, terminal bottom, second pane top-right
+    tdev() {
+        local name="${1:-dev}"
+        if tmux has-session -t "$name" 2>/dev/null; then
+            tmux attach -t "$name"
+            return
+        fi
+        tmux new-session -d -s "$name" -x 220 -y 50
+        tmux rename-window -t "$name:1" "code"
+        tmux split-window -h -t "$name:1" -p 35
+        tmux split-window -v -t "$name:1.1" -p 30
+        tmux select-pane -t "$name:1.1"
+        tmux attach -t "$name"
+    }
+fi
+
+# ── delta (git diff pager) ────────────────────────────────────────────────────
+# configured via ~/.gitconfig — no aliases needed, git uses it automatically
+
+# ── lazygit ───────────────────────────────────────────────────────────────────
+if command -v lazygit &>/dev/null; then
+    alias lg='lazygit'
+fi
+
+# ── tldr ──────────────────────────────────────────────────────────────────────
+if command -v tldr &>/dev/null; then
+    alias help='tldr'
+    # update cache on first use if empty
+    tldr --update 2>/dev/null &
+fi
+
+# ── direnv ────────────────────────────────────────────────────────────────────
+if command -v direnv &>/dev/null; then
+    eval "$(direnv hook bash)"
+fi
+
+# ── yq ────────────────────────────────────────────────────────────────────────
+# yq is available as-is; no aliases needed — use: yq '.key' file.yaml
+
+# ── grep color ────────────────────────────────────────────────────────────────
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+# ── ripgrep ───────────────────────────────────────────────────────────────────
+if command -v rg &>/dev/null; then
+    export RIPGREP_CONFIG_PATH="$HOME/.config/ripgrep/ripgreprc"
+
+    alias rga='rg --no-ignore --hidden'               # search everything incl. ignored/hidden
+    alias rgl='rg -l'                                 # filenames only
+    alias rgf='rg --fixed-strings'                    # literal search (no regex)
+    alias rgc='rg --count'                            # match count per file
+    alias rgt='rg --type'                             # e.g. rgt py <pattern>
+    alias rgi='rg --ignore-case'                      # force case-insensitive
+
+    # fuzzy ripgrep — interactive search with fzf + bat preview
+    fzrg() {
+        local query="${*:-}"
+        rg --line-number --color=always --smart-case "$query" 2>/dev/null \
+            | fzf --ansi \
+                  --delimiter=: \
+                  --preview 'bat --color=always --style=numbers --highlight-line {2} {1}' \
+                  --preview-window=right:60%:+{2}+3/3:wrap \
+                  --bind='enter:execute(${EDITOR:-vim} +{2} {1})' \
+                  --bind='ctrl-/:toggle-preview'
+    }
+fi
+
+# ── bat (syntax-highlighted cat) ──────────────────────────────────────────────
+if command -v bat &>/dev/null; then
+    alias cat='bat --paging=never'           # drop-in cat replacement
+    alias catp='bat'                         # cat with paging
+    alias batd='bat --diff'                  # show only changed lines
+    alias bh='bat --plain --paging=never'    # no decorations (pipe-friendly)
+
+    # colourised man pages
+    export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+    export MANROFFOPT="-c"
+fi
+
+# ── fd (fast find) ────────────────────────────────────────────────────────────
+if command -v fd &>/dev/null; then
+    # common shorthands
+    alias fdf='fd --type f'                  # files only
+    alias fdd='fd --type d'                  # directories only
+    alias fdh='fd --hidden'                  # include hidden files
+    alias fdg='fd --no-ignore'               # include .gitignored files
+    alias fdx='fd --type x'                  # executables only
+fi
+
+# ── eza (modern ls replacement) ───────────────────────────────────────────────
+if command -v eza &>/dev/null; then
+    # basic replacements
+    alias ls='eza --icons --group-directories-first'
+    alias l='eza --icons --group-directories-first'
+    alias la='eza --icons --group-directories-first --all'
+
+    # long list
+    alias ll='eza --icons --group-directories-first --long --header --git'
+    alias lla='eza --icons --group-directories-first --long --header --git --all'
+    alias lls='eza --icons --group-directories-first --long --header --git --all --sort=size'
+    alias llm='eza --icons --group-directories-first --long --header --git --all --sort=modified'
+
+    # tree views
+    alias lt='eza --icons --group-directories-first --tree --level=2'
+    alias lta='eza --icons --group-directories-first --tree --level=2 --all'
+    alias lt3='eza --icons --group-directories-first --tree --level=3'
+    alias lT='eza --icons --group-directories-first --tree'
+else
+    # fallback if eza is somehow missing
+    alias ls='ls --color=auto'
+    alias ll='ls -alF'
+    alias la='ls -A'
+    alias l='ls -CF'
+fi
+
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+
+# Alias definitions.
+# You may want to put all your additions into a separate file like
+# ~/.bash_aliases, instead of adding them here directly.
+# See /usr/share/doc/bash-doc/examples in the bash-doc package.
+
+if [ -f ~/.bash_aliases ]; then
+    . ~/.bash_aliases
+fi
+
+# enable programmable completion features (you don't need to enable
+# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
+# sources /etc/bash.bashrc).
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+. "$HOME/.local/bin/env"
+
+# ── zoxide (smart cd) ─────────────────────────────────────────────────────────
+eval "$(zoxide init bash --cmd cd)"   # replaces cd with zoxide; use 'builtin cd' to bypass
+
+# ── fzf ───────────────────────────────────────────────────────────────────────
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
+
+eval "$(starship init bash)"
+
+. "$HOME/.atuin/bin/env"
+
+[[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
+eval "$(atuin init bash)"

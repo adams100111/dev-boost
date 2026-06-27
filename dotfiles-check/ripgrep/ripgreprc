@@ -1,0 +1,44 @@
+# ripgrep configuration
+# https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#configuration-file
+
+# ── Output ─────────────────────────────────────────────────────────────────────
+--color=always
+--colors=line:fg:yellow
+--colors=line:style:bold
+--colors=path:fg:green
+--colors=path:style:bold
+--colors=match:fg:red
+--colors=match:style:bold
+--hyperlink-format=default
+
+# ── Search behaviour ───────────────────────────────────────────────────────────
+# Smart case: case-insensitive unless pattern contains uppercase
+--smart-case
+
+# Follow symlinks
+--follow
+
+# ── Display ────────────────────────────────────────────────────────────────────
+--line-number
+--heading
+--pretty
+
+# ── Glob ignores ──────────────────────────────────────────────────────────────
+--glob=!.git/
+--glob=!node_modules/
+--glob=!.cache/
+--glob=!dist/
+--glob=!build/
+--glob=!target/
+--glob=!*.lock
+--glob=!package-lock.json
+--glob=!yarn.lock
+--glob=!pnpm-lock.yaml
+--glob=!*.min.js
+--glob=!*.min.css
+--glob=!*.map
+
+# ── Max columns ────────────────────────────────────────────────────────────────
+# Truncate lines longer than 500 chars to keep output readable
+--max-columns=500
+--max-columns-preview

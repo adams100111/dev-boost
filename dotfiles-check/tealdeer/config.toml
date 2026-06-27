@@ -1,0 +1,10 @@
+# tealdeer (tldr) configuration
+# https://dbrgn.github.io/tealdeer/config.html
+
+[display]
+compact = false          # show blank lines between sections
+use_pager = false        # don't pipe through less
+
+[updates]
+auto_update = true       # refresh cache automatically
+auto_update_interval_hours = 720   # every 30 days

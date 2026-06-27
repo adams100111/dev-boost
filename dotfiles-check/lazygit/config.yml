@@ -1,0 +1,57 @@
+# lazygit configuration
+# https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
+
+gui:
+  theme:
+    activeBorderColor:    ["#89b4fa", "bold"]
+    inactiveBorderColor:  ["#45475a"]
+    selectedLineBgColor:  ["#313244"]
+    cherryPickedCommitBgColor: ["#45475a"]
+    cherryPickedCommitFgColor: ["#89b4fa"]
+    unstagedChangesColor: ["#f38ba8"]
+    defaultFgColor:       ["#cdd6f4"]
+    searchingActiveBorderColor: ["#f9e2af", "bold"]
+  nerdFontsVersion: "3"
+  showIcons: true
+  border: "rounded"
+  sidePanelWidth: 0.25
+  expandFocusedSidePanel: true
+  commandLogSize: 8
+  mouseEvents: true
+  timeFormat: "02 Jan 06 15:04"
+
+git:
+  paging:
+    colorArg: always
+    pager: delta --color-only --dark --paging=never
+  commit:
+    signOff: false
+  merging:
+    manualCommit: false
+  autoFetch: true
+  autoRefresh: true
+  branchLogCmd: "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
+  parseEmoji: true
+
+keybinding:
+  universal:
+    quit: "q"
+    return: "<esc>"
+    togglePanel: "<tab>"
+    prevItem: "<up>"
+    nextItem: "<down>"
+    prevBlock: "<left>"
+    nextBlock: "<right>"
+    scrollUpMain: "<pgup>"
+    scrollDownMain: "<pgdn>"
+  commits:
+    squashDown: "s"
+    rewordCommit: "r"
+    renameCommit: "R"
+    viewResetOptions: "g"
+
+refresher:
+  refreshInterval: 10
+
+update:
+  method: never

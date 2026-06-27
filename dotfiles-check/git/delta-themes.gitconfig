@@ -1,0 +1,12 @@
+[delta "catppuccin-mocha"]
+    minus-style                   = syntax "#3d1022"
+    minus-non-emph-style          = syntax "#3d1022"
+    minus-emph-style              = syntax "#753148"
+    minus-empty-line-marker-style = syntax "#3d1022"
+    line-numbers-minus-style      = "#f38ba8"
+    plus-style                    = syntax "#1a2f1a"
+    plus-non-emph-style           = syntax "#1a2f1a"
+    plus-emph-style               = syntax "#2d5a2d"
+    plus-empty-line-marker-style  = syntax "#1a2f1a"
+    line-numbers-plus-style       = "#a6e3a1"
+    line-numbers-zero-style       = "#45475a"

@@ -1,0 +1,25 @@
+# bat configuration
+# https://github.com/sharkdp/bat
+
+# ── Theme ──────────────────────────────────────────────────────────────────────
+--theme="Dracula"
+
+# ── Style ──────────────────────────────────────────────────────────────────────
+# header: filename bar | numbers: line numbers | changes: git diff markers
+--style="full"
+
+# ── Layout ─────────────────────────────────────────────────────────────────────
+--italic-text=always
+
+# ── Pager ──────────────────────────────────────────────────────────────────────
+# -R  → pass colour codes through
+# -F  → exit immediately if content fits one screen
+# -X  → don't clear screen on exit
+--pager="less -RFX"
+
+# ── Wrapping ───────────────────────────────────────────────────────────────────
+--wrap=never
+--terminal-width=220
+
+# ── Tab width ──────────────────────────────────────────────────────────────────
+--tabs=2
