@@ -119,6 +119,40 @@ def test_autoinstall_for_missing_returns_none() -> None:
     assert autoinstall_for("ubuntu-99", "x86_64") is None   # unknown os
 
 
+# ---------------------------------------------------------------------------
+# Ubuntu 26.04 catalog entries
+# ---------------------------------------------------------------------------
+
+def test_ubuntu_iso_for_x86_64_returns_budgie() -> None:
+    spec = iso_for("ubuntu-26.04", "x86_64")
+    assert spec.id == "ubuntu-26.04"
+    assert "ubuntu-budgie" in spec.url
+    assert spec.url.endswith(".iso")
+
+
+def test_ubuntu_iso_for_aarch64_returns_arm64() -> None:
+    spec = iso_for("ubuntu-26.04", "aarch64")
+    assert spec.id == "ubuntu-26.04"
+    assert "arm64" in spec.url
+    assert spec.url.endswith(".iso")
+
+
+def test_ubuntu_autoinstall_is_none() -> None:
+    from devboost.media.catalog import autoinstall_for
+
+    # Ubuntu 26.04 is Live-only — no autoinstall section
+    assert autoinstall_for("ubuntu-26.04", "x86_64") is None
+
+
+def test_supported_includes_ubuntu() -> None:
+    distros = {o.distro for o in supported()}
+    assert "ubuntu" in distros
+
+
+def test_supported_len_equals_catalog_len() -> None:
+    assert len(supported()) == len(catalog())
+
+
 def test_load_catalog_parses_optional_autoinstall(tmp_path: Path) -> None:
     toml = _VALID + (
         "\n[fedora-99.autoinstall.x86_64]\n"
