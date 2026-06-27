@@ -20,11 +20,11 @@ import typer
 
 from devboost.core import log, osinfo
 from devboost.core.errors import MediaError
+from devboost.core.osinfo import family_of
 from devboost.exec.executor import RealExecutor
 from devboost.media import wizard
 from devboost.media.builder import build
 from devboost.media.cache import Cache
-from devboost.core.osinfo import family_of
 from devboost.media.catalog import autoinstall_for, catalog, default_iso, iso_for
 from devboost.media.config import MediaConfig
 from devboost.media.download import UrllibDownloader
