@@ -56,3 +56,6 @@ class MediaConfig(BaseModel):
     assume_yes: bool = False
     mode: Literal["build", "update"] = "build"
     refresh_iso: bool = False
+    # Target OS family for staging dispatch ("fedora" | "debian").  Defaults to "fedora"
+    # so existing configs are unchanged; Ubuntu builds must set this to "debian".
+    os_family: str = "fedora"

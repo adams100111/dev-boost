@@ -14,6 +14,13 @@ from tempfile import mkdtemp
 from devboost import __version__
 from devboost.core.errors import DeviceError, VentoyError
 from devboost.exec.resources import injection_archive_path, resource_path
+from devboost.media.autoinstall import (
+    EMPTY_META_DATA,
+    render_user_data,
+)
+from devboost.media.autoinstall import (
+    render_kscfg as render_kscfg,
+)
 from devboost.media.cache import Cache
 from devboost.media.config import MediaConfig
 from devboost.media.devices import validate
@@ -26,21 +33,23 @@ from devboost.model import Ctx
 _PAIR = re.compile(r'(\w+)="([^"]*)"')
 
 
-def render_kscfg(
-    template: str, profiles: tuple[str, ...], *, offline: bool = False
+def render_ventoy_json(
+    *,
+    default_iso: str,
+    autoinstall_iso: str | None,
+    auto_install_template: str = "/Bootstrap/ks.cfg",
 ) -> str:
-    install_cmd = "devboost install " + " ".join(profiles)
-    if offline:
-        install_cmd += " --offline"
-    return template.replace("devboost install full", install_cmd)
+    """Generate ventoy.json: default boot + injection on the Live media; auto_install block.
 
+    ``default_iso``/``autoinstall_iso`` are bare filenames (e.g. ``fedora-44.iso``).
 
-def render_ventoy_json(*, default_iso: str, autoinstall_iso: str | None) -> str:
-    """Generate ventoy.json: default boot + injection on the Live media; auto_install on netinst.
+    * **Fedora** (default): ``autoinstall_iso`` is the netinst filename; both ISOs appear in
+      ``injection``; ``auto_install`` binds the netinst + ``/Bootstrap/ks.cfg``.
+    * **Ubuntu**: ``autoinstall_iso`` equals ``default_iso`` (same live ISO); only one entry
+      appears in ``injection``; ``auto_install`` binds that ISO + ``/Bootstrap/user-data``
+      (pass ``auto_install_template="/Bootstrap/user-data"``).
 
-    ``default_iso``/``autoinstall_iso`` are bare filenames (e.g. ``fedora-44.iso``). The
-    ``auto_install`` block is emitted only when an autoinstall ISO is present; injection covers
-    every staged ISO so the dev-boost binary is available on whichever path boots.
+    The ``auto_install`` block is omitted when ``autoinstall_iso`` is ``None``.
     """
     injection: list[dict[str, str]] = [
         {"image": f"/ISO/{default_iso}", "archive": "/Bootstrap/devboost.tar.gz"}
@@ -53,11 +62,14 @@ def render_ventoy_json(*, default_iso: str, autoinstall_iso: str | None) -> str:
         "injection": injection,
     }
     if autoinstall_iso is not None:
-        injection.append(
-            {"image": f"/ISO/{autoinstall_iso}", "archive": "/Bootstrap/devboost.tar.gz"}
-        )
+        # Only add to injection when it is a distinct ISO (Fedora netinst); for Ubuntu the
+        # autoinstall ISO IS the live ISO so we must not add a duplicate injection entry.
+        if autoinstall_iso != default_iso:
+            injection.append(
+                {"image": f"/ISO/{autoinstall_iso}", "archive": "/Bootstrap/devboost.tar.gz"}
+            )
         data["auto_install"] = [
-            {"image": f"/ISO/{autoinstall_iso}", "template": "/Bootstrap/ks.cfg"}
+            {"image": f"/ISO/{autoinstall_iso}", "template": auto_install_template}
         ]
     return json.dumps(data, indent=2)
 
@@ -109,19 +121,43 @@ def _mounted_vtoy(
 
 
 def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) -> None:
-    """Lay out ventoy.json + ks.cfg + injection archive + secrets + marker (no wipe, no ISO)."""
+    """Lay out ventoy.json + autoinstall config + injection archive + secrets + marker.
+
+    Dispatches by ``cfg.os_family``:
+    * ``"fedora"`` (default) — stages ``ks.cfg``; ``auto_install`` binds the netinst ISO.
+    * ``"debian"``           — stages ``user-data`` + ``meta-data``; ``auto_install`` binds
+                               the live ISO (no separate netinst for Ubuntu).
+    """
     boot = vtoy_mount / "Bootstrap"
     for d in ("ISO", "Bootstrap", "Installers", "ventoy"):
         (vtoy_mount / d).mkdir(parents=True, exist_ok=True)
-    ai_name = f"{cfg.autoinstall_iso.id}.iso" if cfg.autoinstall_iso is not None else None
-    (vtoy_mount / "ventoy" / "ventoy.json").write_text(
-        render_ventoy_json(default_iso=f"{cfg.iso.id}.iso", autoinstall_iso=ai_name),
-        encoding="utf-8",
-    )
-    kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
-    (boot / "ks.cfg").write_text(
-        render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
-    )
+
+    if cfg.os_family == "debian":
+        # Ubuntu/Debian: autoinstall runs off the live ISO itself via Ventoy user-data injection.
+        live_name = f"{cfg.iso.id}.iso"
+        (vtoy_mount / "ventoy" / "ventoy.json").write_text(
+            render_ventoy_json(
+                default_iso=live_name,
+                autoinstall_iso=live_name,
+                auto_install_template="/Bootstrap/user-data",
+            ),
+            encoding="utf-8",
+        )
+        (boot / "user-data").write_text(
+            render_user_data(cfg.profiles, arch=cfg.arch), encoding="utf-8"
+        )
+        (boot / "meta-data").write_text(EMPTY_META_DATA, encoding="utf-8")
+    else:
+        # Fedora (default): autoinstall uses a separate netinst ISO + Kickstart template.
+        ai_name = f"{cfg.autoinstall_iso.id}.iso" if cfg.autoinstall_iso is not None else None
+        (vtoy_mount / "ventoy" / "ventoy.json").write_text(
+            render_ventoy_json(default_iso=f"{cfg.iso.id}.iso", autoinstall_iso=ai_name),
+            encoding="utf-8",
+        )
+        kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
+        (boot / "ks.cfg").write_text(
+            render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
+        )
     # Resolve the injection tarball correctly in both source and frozen-binary mode.
     tarball = injection_archive_path(cfg.arch)
     if not tarball.exists():
@@ -149,6 +185,9 @@ def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) ->
 def _stage_autoinstall_iso(
     cfg: MediaConfig, dl: Downloader, *, vtoy_mount: Path, reporter: Reporter
 ) -> None:
+    # Ubuntu/Debian: no separate autoinstall ISO — the live ISO carries the installer.
+    if cfg.os_family == "debian":
+        return
     if cfg.autoinstall_iso is None:
         return
     spec = cfg.autoinstall_iso
@@ -192,7 +231,8 @@ def boot_artifacts(
         _stage_payload(cfg, vtoy_mount=mnt, reporter=reporter)
         iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
         shutil.copyfile(iso_path, mnt / "ISO" / f"{cfg.iso.id}.iso")
-        reporter.step(f"Fedora ISO staged ({cfg.iso.id})")
+        _os_label = "Ubuntu" if cfg.os_family == "debian" else "Fedora"
+        reporter.step(f"{_os_label} ISO staged ({cfg.iso.id})")
         _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
         extra_isos(cfg, vtoy_mount=mnt)
         if cfg.extra_isos:
@@ -231,7 +271,8 @@ def update_stage(
         if cfg.refresh_iso:
             iso_path = dl.fetch(cfg.iso.url, f"{cfg.iso.id}.iso", cfg.iso.sha256)
             shutil.copyfile(iso_path, mnt / "ISO" / f"{cfg.iso.id}.iso")
-            reporter.step(f"Fedora ISO refreshed ({cfg.iso.id})")
+            _os_label = "Ubuntu" if cfg.os_family == "debian" else "Fedora"
+            reporter.step(f"{_os_label} ISO refreshed ({cfg.iso.id})")
             _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
         extra_isos(cfg, vtoy_mount=mnt)
         if cfg.extra_isos:
