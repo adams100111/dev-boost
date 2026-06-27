@@ -15,6 +15,7 @@ from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx, Module
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+FEDORA_HEADLESS = OsInfo("fedora", "fedora", "x86_64", headless=True)
 
 
 def test_toposort_orders_dependencies_first() -> None:
@@ -37,7 +38,12 @@ def test_profiles_expand_unknown_raises(profiles_file: Path) -> None:
         expand(["nope"], profiles, modules)
 
 
-def test_plan_skips_headless_gui() -> None:
+def test_plan_gui_modules_not_skipped_when_headless() -> None:
+    """GUI modules must NOT be blanket-skipped on headless hosts.
+
+    Installing GUI software (flatpak install, dnf install, config writes) does not
+    require a display; only *running* apps does.
+    """
     class GuiApp(Module):
         name = "guiapp"
         gui = True
@@ -47,9 +53,10 @@ def test_plan_skips_headless_gui() -> None:
 
         def install(self, ctx: Ctx) -> None: ...
 
-    headless = OsInfo("fedora", "fedora", "x86_64", headless=True)
-    plan = build_plan(["guiapp"], {"guiapp": GuiApp}, headless)
-    assert plan[0].skip_reason == "headless-gui"
+    plan = build_plan(["guiapp"], {"guiapp": GuiApp}, FEDORA_HEADLESS)
+    assert plan[0].skip_reason is None, (
+        "GUI modules must not be skipped headless — install does not need a display"
+    )
 
 
 def test_runner_skips_when_verify_passes() -> None:
@@ -99,3 +106,118 @@ def test_runner_reports_failure_with_detail() -> None:
     # docker installs (dnf) but `which docker` still false → verify-failed-after-install
     assert results[0].status == "fail"
     assert "verify" in results[0].detail
+
+
+def test_runner_blocks_dependent_when_required_fails() -> None:
+    """A module whose require failed must be blocked, not attempted."""
+    class Root(Module):
+        name = "root-mod"
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            raise RuntimeError("root install failed")
+
+    class Child(Module):
+        name = "child-mod"
+        requires = (Root,)
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            raise AssertionError("child install must not be called when root failed")
+
+    modules_map: dict[str, type[Module]] = {"root-mod": Root, "child-mod": Child}
+    # root-mod first (topo order: dependency before dependent)
+    plan = build_plan(["root-mod", "child-mod"], modules_map, FEDORA)
+    ex = FakeExecutor()
+    ctx = Ctx(os=FEDORA, ex=ex)
+    results = run_plan(plan, modules_map, ctx)
+
+    assert results[0].name == "root-mod"
+    assert results[0].status == "fail"
+    assert results[1].name == "child-mod"
+    assert results[1].status == "blocked"
+    assert "required-failed:root-mod" in results[1].detail
+
+
+def test_runner_cascades_block_transitively() -> None:
+    """A blocked module also blocks its own dependents (cascade)."""
+    class A(Module):
+        name = "a-mod"
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            raise RuntimeError("a failed")
+
+    class B(Module):
+        name = "b-mod"
+        requires = (A,)
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            raise AssertionError("must not run")
+
+    class C(Module):
+        name = "c-mod"
+        requires = (B,)
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            raise AssertionError("must not run")
+
+    modules_map: dict[str, type[Module]] = {"a-mod": A, "b-mod": B, "c-mod": C}
+    plan = build_plan(["a-mod", "b-mod", "c-mod"], modules_map, FEDORA)
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor())
+    results = run_plan(plan, modules_map, ctx)
+
+    statuses = {r.name: r.status for r in results}
+    assert statuses["a-mod"] == "fail"
+    assert statuses["b-mod"] == "blocked"
+    assert statuses["c-mod"] == "blocked"
+
+
+def test_plan_nvidia_auto_inject(tmp_path: Path) -> None:
+    """When the gpu-vendor marker contains 'nvidia', hardware-nvidia modules are injected."""
+    marker = tmp_path / "gpu-vendor"
+    marker.write_text("nvidia\n", encoding="utf-8")
+
+    modules = load()
+    # Start with only ripgrep selected; no nvidia modules requested.
+    plan = build_plan(["ripgrep"], modules, FEDORA, gpu_marker=marker)
+    plan_names = [pm.name for pm in plan]
+
+    assert "nvidia-akmod" in plan_names, "nvidia-akmod must be auto-injected on NVIDIA hardware"
+    # nvidia-akmod requires rpmfusion, which must appear before it.
+    rpmfusion_idx = next((i for i, n in enumerate(plan_names) if n == "rpmfusion"), None)
+    nvidia_idx = plan_names.index("nvidia-akmod")
+    assert rpmfusion_idx is not None
+    assert rpmfusion_idx < nvidia_idx, "rpmfusion must be ordered before nvidia-akmod"
+
+
+def test_plan_no_nvidia_inject_when_marker_absent(tmp_path: Path) -> None:
+    """When the gpu-vendor marker is absent, no hardware-nvidia modules are injected."""
+    modules = load()
+    # Use a non-existent marker path to simulate absence.
+    plan = build_plan(["ripgrep"], modules, FEDORA, gpu_marker=tmp_path / "no-such-file")
+    plan_names = [pm.name for pm in plan]
+    assert "nvidia-akmod" not in plan_names
+
+
+def test_plan_no_nvidia_inject_when_gpu_is_amd(tmp_path: Path) -> None:
+    """When the gpu-vendor marker says 'amd', no NVIDIA modules are injected."""
+    marker = tmp_path / "gpu-vendor"
+    marker.write_text("amd\n", encoding="utf-8")
+
+    modules = load()
+    plan = build_plan(["ripgrep"], modules, FEDORA, gpu_marker=marker)
+    plan_names = [pm.name for pm in plan]
+    assert "nvidia-akmod" not in plan_names

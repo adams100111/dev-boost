@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from devboost.core.errors import UnsupportedOS
+from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.model import Ctx, DnfRepo
 
@@ -26,7 +26,9 @@ class PackageManager(Protocol):
 class Dnf:
     def install(self, ctx: Ctx, *pkgs: str) -> None:
         if pkgs:
-            ctx.ex.run(["dnf", "install", "-y", *pkgs], sudo=True)
+            result = ctx.ex.run(["dnf", "install", "-y", *pkgs], sudo=True)
+            if not result.ok:
+                raise InstallError("dnf", f"dnf install -y {' '.join(pkgs)}", result.code)
 
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return ctx.ex.run(["rpm", "-q", pkg]).ok
@@ -38,11 +40,10 @@ class Dnf:
         )
         if repo.gpgkey is not None:
             body += f"gpgkey={repo.gpgkey}\n"
-        ctx.ex.run(
-            ["tee", f"/etc/yum.repos.d/{repo.name}.repo"],
-            sudo=True,
-            stdin=body,
-        )
+        dest = f"/etc/yum.repos.d/{repo.name}.repo"
+        result = ctx.ex.run(["tee", dest], sudo=True, stdin=body)
+        if not result.ok:
+            raise InstallError("dnf", f"tee {dest}", result.code)
 
 
 def manager_for(os_info: OsInfo) -> PackageManager:
@@ -78,7 +79,9 @@ def install(
         mgr.add_repo(ctx, repo)
     names = _resolve_names(ctx, pkgs)
     if refresh and isinstance(mgr, Dnf) and names:
-        ctx.ex.run(["dnf", "install", "--refresh", "-y", *names], sudo=True)
+        result = ctx.ex.run(["dnf", "install", "--refresh", "-y", *names], sudo=True)
+        if not result.ok:
+            raise InstallError("dnf", f"dnf install --refresh -y {' '.join(names)}", result.code)
         return
     mgr.install(ctx, *names)
 

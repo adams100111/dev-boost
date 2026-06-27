@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
+from devboost.core.graph import toposort as _toposort
 from devboost.core.osinfo import OsInfo
 from devboost.model import Module
 
@@ -15,18 +18,70 @@ class PlannedModule:
     skip_reason: str | None = None
 
 
+def _default_gpu_marker() -> Path:
+    """Canonical path for the gpu-vendor marker written by the gpu-detect module."""
+    state = os.environ.get("XDG_STATE_HOME") or str(
+        Path(os.environ.get("HOME", str(Path.home()))) / ".local" / "state"
+    )
+    return Path(state) / "devboost" / "gpu-vendor"
+
+
+def _read_gpu_vendor(marker: Path | None) -> str:
+    """Return the contents of the gpu-vendor marker (lower-cased), or '' if absent."""
+    path = marker if marker is not None else _default_gpu_marker()
+    try:
+        return path.read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return ""
+
+
+def _nvidia_module_names(modules: Mapping[str, type[Module]]) -> list[str]:
+    """Return all module names in the hardware-nvidia category."""
+    return [
+        name for name, cls in modules.items()
+        if getattr(cls, "category", "") == "hardware-nvidia"
+    ]
+
+
 def build_plan(
     order: list[str],
     modules: Mapping[str, type[Module]],
     os_info: OsInfo,
+    *,
+    gpu_marker: Path | None = None,
 ) -> list[PlannedModule]:
+    """Build a plan from a topologically-sorted module list.
+
+    GPU auto-inject
+    ---------------
+    If the gpu-vendor marker file (``~/.local/state/devboost/gpu-vendor`` by default,
+    overridable via ``gpu_marker`` for tests) contains the token ``nvidia``, all modules
+    in the ``hardware-nvidia`` category are automatically appended to the plan (if not
+    already present) and the combined set is re-sorted topologically.
+
+    Headless installs
+    -----------------
+    ``gui=True`` modules are NOT skipped when the host is headless.  *Installing* GUI
+    software (flatpak install, dnf install, writing configs) does not require a display;
+    only *running* apps does.  Modules that genuinely need a graphical session at install
+    time should handle that condition themselves.
+    """
+    effective_order = list(order)
+
+    # GPU auto-inject: add hardware-nvidia modules when the marker indicates NVIDIA hardware.
+    vendor = _read_gpu_vendor(gpu_marker)
+    if "nvidia" in vendor:
+        nvidia_names = _nvidia_module_names(modules)
+        missing = [n for n in nvidia_names if n not in effective_order and n in modules]
+        if missing:
+            combined = list(dict.fromkeys(effective_order + missing))
+            effective_order = _toposort(combined, modules)
+
     plan: list[PlannedModule] = []
-    for name in order:
+    for name in effective_order:
         cls = modules[name]
         reason: str | None = None
-        if cls.gui and os_info.headless:
-            reason = "headless-gui"
-        elif not _supported(cls, os_info):
+        if not _supported(cls, os_info):
             reason = "unsupported-os"
         plan.append(PlannedModule(name=name, skip_reason=reason))
     return plan
