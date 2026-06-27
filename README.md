@@ -162,15 +162,18 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
   only what's missing; `--dry-run` previews.
 - `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
 
-Both resolve the same declarative TOML modules/profiles as the bash engine, with a
-distro-package-first, pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any-os)
+Both resolve the same typed-Python modules + `profiles.toml`, with a distro-package-first,
+pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any-os)
 section above for the one-liner.
 
 ## Requirements & supported OS
 
-- **Reference OS:** Fedora Workstation 44 (modules ship `[install].fedora` keys).
-- **Engine:** bash 5, python3 ≥ 3.11, jq, `age` (for secrets). Other OSes: add `[install].<os>` keys
-  (Cross-OS-via-Data) — non-Fedora modules without a key are reported unsupported, never silently skipped.
+- **Reference OS:** Fedora Workstation 44 (each module implements a Fedora install path).
+- **Engine:** ships as a **frozen single-file binary** — no Python or other runtime deps on the
+  target; the only bash is `get.sh` + the Kickstart `%post`. Developing it needs **python ≥ 3.12 +
+  `uv`**; `age` is used for the secrets bundle. Other OSes: a module adds a per-OS `Installer`
+  strategy (`per_os`) — modules without one for the detected OS are reported unsupported, never
+  silently skipped.
 - **Tests:** `cd engine && uv run pytest` (+ `mypy --strict` + ruff).
 
 ## Docs
