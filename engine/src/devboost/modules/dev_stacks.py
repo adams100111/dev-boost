@@ -5,16 +5,30 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
-from devboost.exec.primitives import mise
+from devboost.exec.primitives import mise, pkg
 from devboost.exec.resources import resource_path
-from devboost.model import Ctx, Module
+from devboost.model import AptRepo, Ctx, Module
 from devboost.modules._lsp import LspModule
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
 from devboost.modules.editors import Fresh
 from devboost.modules.mise import Mise
+
+# Microsoft packages APT repo for .NET on Ubuntu 26.04 (resolute).
+# On Fedora, dotnet-sdk-10.0 ships in the standard Fedora repos — no repo addition needed.
+_DOTNET_APT_SOURCE: pkg.Source = OsMap(
+    debian=AptRepo(
+        list_line=(
+            "deb [arch=amd64,arm64"
+            " signed-by=/etc/apt/keyrings/packages-microsoft-com.gpg]"
+            " https://packages.microsoft.com/ubuntu/26.04/prod resolute main"
+        ),
+        key_url="https://packages.microsoft.com/keys/microsoft.asc",
+    )
+)
 
 _UV_VERSION = "0.11.23"
 
@@ -104,9 +118,11 @@ class DotnetSdk(Module):
         return out.ok and any(ln.startswith("10.") for ln in out.stdout.splitlines())
 
     def install(self, ctx: Ctx) -> None:
-        from devboost.exec.primitives import pkg
-
-        pkg.install(ctx, "dotnet-sdk-10.0")
+        if ctx.os.family == "debian":
+            # Add the Microsoft packages APT repo before installing on Ubuntu.
+            pkg.install(ctx, "dotnet-sdk-10.0", source=_DOTNET_APT_SOURCE)
+        else:
+            pkg.install(ctx, "dotnet-sdk-10.0")
 
 
 @register
@@ -219,6 +235,9 @@ class AndroidSdk(Module):
 
     def install(self, ctx: Ctx) -> None:
         mise.use_global(ctx, "java@temurin-17")
+        if ctx.os.family == "debian":
+            # libfuse2 is required by the Android Emulator on Ubuntu (FUSE2 compat layer).
+            pkg.install(ctx, "libfuse2")
         sdk = self._home_sdk()
         tools = sdk / "cmdline-tools" / "latest"
         if not (tools / "bin" / "sdkmanager").exists():

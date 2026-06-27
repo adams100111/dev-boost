@@ -9,11 +9,18 @@ from __future__ import annotations
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
-from devboost.model import Ctx, DnfRepo, Module
+from devboost.model import AptRepo, Ctx, DnfRepo, Module
 from devboost.modules.docker import Docker
 
 DDEV_SOURCE: pkg.Source = OsMap(
     fedora=DnfRepo(name="ddev", baseurl="https://pkg.ddev.com/yum/", gpgcheck=False),
+    debian=AptRepo(
+        list_line=(
+            "deb [signed-by=/etc/apt/keyrings/pkg-ddev-com.gpg]"
+            " https://pkg.ddev.com/apt/ * *"
+        ),
+        key_url="https://pkg.ddev.com/apt/gpg.key",
+    ),
 )
 
 
