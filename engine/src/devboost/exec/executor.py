@@ -88,14 +88,21 @@ class RealExecutor:
             }
         else:
             effective = base
-        proc = subprocess.run(
-            cmd,
-            input=stdin,
-            env=effective,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=stdin,
+                env=effective,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (FileNotFoundError, NotADirectoryError, PermissionError) as exc:
+            # The command (or sudo) was not found / not executable.  Report this as the
+            # conventional shell "command not found" exit code (127) rather than raising,
+            # so callers — notably verify() probes for not-yet-installed tools — see a
+            # non-ok Result instead of an unhandled traceback.
+            return Result(code=127, stderr=f"{cmd[0]}: {exc.strerror}")
         return Result(code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
     def which(self, cmd: str) -> bool:

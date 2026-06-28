@@ -21,6 +21,7 @@ from devboost.core.registry import load, validate_profiles
 from devboost.core.runner import RunResult, run_plan
 from devboost.core.settings import settings
 from devboost.exec.executor import RealExecutor
+from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 
 app = typer.Typer(help="dev-boost — typed workstation installer", no_args_is_help=True)
@@ -62,6 +63,10 @@ def _run(
     plan = build_plan(order, modules, ctx.os)
     if offline:
         plan = _apply_offline_filter(plan, modules)
+    elif not dry_run:
+        # Refresh the package index once up front so installs don't fail against a stale
+        # index on a fresh box (no network access happens in offline/dry-run modes).
+        pkg.refresh_index(ctx)
     results = run_plan(plan, modules, ctx)
     if any(r.status == "fail" for r in results):
         raise typer.Exit(code=1)

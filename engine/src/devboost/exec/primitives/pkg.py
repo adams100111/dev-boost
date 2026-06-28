@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Protocol, runtime_checkable
 
+from devboost.core import log
 from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.model import AptRepo, Ctx, DnfRepo
@@ -141,3 +142,24 @@ def install(
 
 def installed(ctx: Ctx, pkg: str) -> bool:
     return manager_for(ctx.os).installed(ctx, pkg)
+
+
+def refresh_index(ctx: Ctx) -> None:
+    """Refresh the package index once before the install loop (best-effort).
+
+    On Debian/Ubuntu a fresh or minimal system can carry a stale/incomplete apt index,
+    so installing an otherwise-available package (e.g. ``du-dust`` from universe) fails
+    with apt exit 100.  A single ``apt-get update`` up front makes installs robust without
+    per-package overhead.  No-op on Fedora (dnf refreshes metadata on demand) and on any
+    OS without a package manager.  Failures are logged, never raised: a transient mirror
+    error must not abort the run, and a usable cached index may still satisfy installs.
+    """
+    if ctx.os.family != "debian":
+        return
+    result = ctx.ex.run(
+        ["apt-get", "update"],
+        sudo=True,
+        env={"DEBIAN_FRONTEND": "noninteractive"},
+    )
+    if not result.ok:
+        log.warn(f"apt-get update failed (code {result.code}); using the existing index")

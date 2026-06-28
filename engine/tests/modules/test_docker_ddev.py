@@ -9,6 +9,7 @@ from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker, _invoking_user
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -26,6 +27,20 @@ def test_docker_install_enables_daemon_and_adds_user(
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["sudo", "dnf", "install", "-y", "moby-engine"] in calls
+    assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
+    assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
+
+
+def test_docker_install_uses_docker_io_on_ubuntu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Ubuntu the package is docker.io, never the Fedora-only moby-engine."""
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    Docker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "docker.io"] in calls
+    assert not any("moby-engine" in " ".join(c) for c in calls)
     assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
     assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
 

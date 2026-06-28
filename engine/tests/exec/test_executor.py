@@ -60,3 +60,17 @@ def test_real_executor_run_has_mise_on_path() -> None:
     result = ex.run(["sh", "-c", "echo $PATH"])
     assert result.ok
     assert "mise" in result.stdout or ".local" in result.stdout
+
+
+def test_real_executor_run_missing_binary_returns_127_not_raise() -> None:
+    """A missing command must yield Result(127), never raise FileNotFoundError.
+
+    verify() methods probe tools that may not be installed yet (e.g. `dotnet
+    --list-sdks`); the executor seam must report this as a non-ok Result so the
+    runner treats it as "not installed" rather than crashing with a traceback.
+    """
+    ex = RealExecutor()
+    result = ex.run(["definitely-not-a-real-binary-xyz", "--version"])
+    assert not result.ok
+    assert result.code == 127
+    assert "definitely-not-a-real-binary-xyz" in result.stderr

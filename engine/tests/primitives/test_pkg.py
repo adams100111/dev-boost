@@ -48,6 +48,30 @@ def test_dnf_install_failure_raises_install_error() -> None:
     assert exc_info.value.code == 1
 
 
+# ---------------------------------------------------------------------------
+# refresh_index — one-time package-index refresh before the install loop
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_index_runs_apt_update_on_debian() -> None:
+    ex = FakeExecutor()
+    pkg.refresh_index(Ctx(os=UBUNTU, ex=ex))
+    assert ["sudo", "apt-get", "update"] in ex.calls
+
+
+def test_refresh_index_noop_on_fedora() -> None:
+    ex = FakeExecutor()
+    pkg.refresh_index(Ctx(os=FEDORA, ex=ex))
+    assert ex.calls == []
+
+
+def test_refresh_index_best_effort_never_raises() -> None:
+    """A failing apt-get update must not abort the run — installs still attempt."""
+    ex = FakeExecutor(scripts={"apt-get": Result(1, stderr="mirror down")})
+    pkg.refresh_index(Ctx(os=UBUNTU, ex=ex))  # must not raise
+    assert ["sudo", "apt-get", "update"] in ex.calls
+
+
 def test_dnf_add_repo_failure_raises_install_error() -> None:
     ex = FakeExecutor(scripts={"tee": Result(1, stderr="permission denied")})
     repo = DnfRepo("test-repo", "https://example.com/repo/", gpgcheck=False)

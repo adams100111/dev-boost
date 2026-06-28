@@ -1,9 +1,10 @@
-"""Docker — dependency of ddev; uniform pkg install (Fedora: moby-engine)."""
+"""Docker — dependency of ddev (Fedora: moby-engine; Debian/Ubuntu: docker.io)."""
 
 from __future__ import annotations
 
 import os
 
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg, systemd
 from devboost.model import Ctx, Module
@@ -34,7 +35,8 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "moby-engine")
+        # Fedora ships the daemon as moby-engine; Debian/Ubuntu as docker.io (universe).
+        pkg.install(ctx, OsMap(fedora="moby-engine", debian="docker.io"))
         systemd.enable_system_unit(ctx, "docker.service", now=True)
         user = _invoking_user()
         if user:
