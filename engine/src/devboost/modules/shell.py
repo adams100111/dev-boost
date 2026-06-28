@@ -35,7 +35,15 @@ class Starship(Module):
         return ctx.ex.which("starship")
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "starship")
+        if ctx.os.family == "debian":
+            # Not in Ubuntu apt — official installer into ~/.local/bin (on PATH), no sudo.
+            bindir = _home() / ".local" / "bin"
+            ctx.ex.run(
+                ["sh", "-c",
+                 f"curl -sS https://starship.rs/install.sh | sh -s -- -y -b {bindir}"]
+            )
+        else:
+            pkg.install(ctx, "starship")
 
 
 @register

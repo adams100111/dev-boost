@@ -9,7 +9,20 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules.base import BuildTools, DnfTune, FedoraThirdParty, Rpmfusion
-from devboost.modules.cli_tools import Bat, Delta, Dust, Fd, Lazydocker, Lazygit
+from devboost.modules.cli_tools import (
+    Atuin,
+    Bat,
+    Delta,
+    Dust,
+    Eza,
+    Fastfetch,
+    Fd,
+    Gh,
+    Lazydocker,
+    Lazygit,
+    Tealdeer,
+    Yq,
+)
 from devboost.modules.mise import Mise
 from devboost.modules.shell import Ghostty
 
@@ -58,10 +71,13 @@ def test_bat_does_not_verify_bat_binary_on_ubuntu() -> None:
     assert Bat().verify(ctx) is False
 
 
-def test_dust_installs_du_dust_on_ubuntu() -> None:
+def test_dust_installs_release_binary_on_ubuntu() -> None:
+    """du-dust is absent from Ubuntu apt until 25.10 — install the GitHub release binary."""
     ctx = _ctx()
     Dust().install(ctx)
-    assert ["sudo", "apt-get", "install", "-y", "du-dust"] in ctx.ex.calls  # type: ignore[attr-defined]
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("github.com/bootandy/dust" in j and ".local/bin/dust" in j for j in joined)
+    assert not any("du-dust" in j for j in joined)
 
 
 def test_dust_verifies_dust_binary_on_ubuntu() -> None:
@@ -86,13 +102,66 @@ def test_delta_verifies_delta_binary_on_ubuntu() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lazygit_installs_via_apt_on_ubuntu_without_copr() -> None:
-    """lazygit is in Ubuntu apt (universe); COPR must not be used."""
+def test_lazygit_installs_release_binary_on_ubuntu_without_copr() -> None:
+    """lazygit is NOT in Ubuntu apt — install the GitHub release binary; never COPR/apt."""
     ctx = _ctx()
     Lazygit().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("copr" in " ".join(c) for c in calls), "COPR must not run on Ubuntu"
-    assert ["sudo", "apt-get", "install", "-y", "lazygit"] in calls
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert not any("copr" in j for j in joined), "COPR must not run on Ubuntu"
+    assert not any("apt-get install" in j and "lazygit" in j for j in joined)
+    assert any("github.com/jesseduffield/lazygit" in j and ".local/bin/lazygit" in j
+               for j in joined)
+
+
+def test_atuin_uses_official_installer_and_symlinks_on_ubuntu() -> None:
+    """atuin is not in Ubuntu apt — official installer, symlinked from ~/.atuin/bin."""
+    ctx = _ctx()
+    Atuin().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("setup.atuin.sh" in j for j in joined)
+    assert any(".atuin/bin/atuin" in j and ".local/bin/atuin" in j for j in joined)
+    assert not any("apt-get install" in j and " atuin" in j for j in joined)
+
+
+def test_eza_installs_release_binary_on_ubuntu() -> None:
+    ctx = _ctx()
+    Eza().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("github.com/eza-community/eza" in j and ".local/bin/eza" in j for j in joined)
+
+
+def test_yq_installs_release_binary_on_ubuntu() -> None:
+    ctx = _ctx()
+    Yq().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("github.com/mikefarah/yq" in j and ".local/bin/yq" in j for j in joined)
+
+
+def test_fastfetch_installs_release_deb_on_ubuntu() -> None:
+    ctx = _ctx()
+    Fastfetch().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("github.com/fastfetch-cli/fastfetch" in j and ".deb" in j for j in joined)
+
+
+def test_gh_adds_official_apt_repo_on_ubuntu() -> None:
+    ctx = _ctx()
+    Gh().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("cli.github.com/packages" in j for j in joined)
+    assert any("apt-get install -y gh" in j for j in joined)
+
+
+def test_tealdeer_verifies_tealdeer_binary_on_ubuntu() -> None:
+    """Ubuntu's tealdeer package installs `tealdeer`, not `tldr`."""
+    assert Tealdeer().verify(_ctx(present={"tealdeer"})) is True
+    assert Tealdeer().verify(_ctx(present={"tldr"})) is False
+
+
+def test_tealdeer_installs_tealdeer_package_on_ubuntu() -> None:
+    ctx = _ctx()
+    Tealdeer().install(ctx)
+    assert ["sudo", "apt-get", "install", "-y", "tealdeer"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
 def test_lazydocker_uses_curl_installer_on_ubuntu() -> None:
@@ -166,26 +235,26 @@ def test_build_tools_uses_build_essential_on_ubuntu() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mise apt repo on Ubuntu
+# Mise on Ubuntu — official installer (the apt repo is unreliable / needs a dearmored key)
 # ---------------------------------------------------------------------------
 
 
-def test_mise_adds_apt_repo_on_ubuntu() -> None:
+def test_mise_uses_official_installer_on_ubuntu() -> None:
     ctx = _ctx()
     Mise().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    # The mise apt repo must be written to sources.list.d
-    assert any("sources.list.d" in " ".join(c) for c in calls)
-    # apt-get install mise must follow
-    assert ["sudo", "apt-get", "install", "-y", "mise"] in calls
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("mise.run" in j for j in joined)
+    # No apt repo / apt install for mise on Ubuntu anymore.
+    assert not any("sources.list.d" in j for j in joined)
+    assert not any("apt-get install" in j and "mise" in j for j in joined)
 
 
-def test_mise_skips_apt_repo_if_already_present_on_ubuntu() -> None:
-    """If mise is already on PATH, skip the apt install entirely."""
+def test_mise_skips_install_if_already_present_on_ubuntu() -> None:
+    """If mise is already on PATH, skip the installer entirely."""
     ctx = _ctx(present={"mise"})
     Mise().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("apt-get" in " ".join(c) for c in calls)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert not any("mise.run" in j for j in joined)
 
 
 # ---------------------------------------------------------------------------

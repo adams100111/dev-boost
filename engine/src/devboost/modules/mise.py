@@ -6,23 +6,17 @@ import os
 from pathlib import Path
 
 from devboost.core import log
-from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, mise, pkg
-from devboost.model import AptRepo, Ctx, Module
+from devboost.model import Ctx, Module
 
 _NOTE_NVM = "# devboost: migrated nvm init to mise"
 _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
 
-_MISE_APT_SOURCE: pkg.Source = OsMap(
-    debian=AptRepo(
-        list_line=(
-            "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg]"
-            " https://mise.jdx.dev/apt/ * *"
-        ),
-        key_url="https://mise.jdx.dev/gpg-key.pub",
-    )
-)
+# mise is not in Ubuntu apt; its apt repo needs a dearmored key + per-arch suite. The
+# official cross-distro installer (https://mise.run) avoids all of that and drops the
+# binary in ~/.local/bin (on the executor's PATH), so verify (`which mise`) succeeds.
+_MISE_INSTALL_DEBIAN = "curl https://mise.run | sh"
 
 
 def _home() -> Path:
@@ -42,7 +36,7 @@ class Mise(Module):
     def install(self, ctx: Ctx) -> None:
         if not ctx.ex.which("mise"):
             if ctx.os.family == "debian":
-                pkg.install(ctx, "mise", source=_MISE_APT_SOURCE)
+                ctx.ex.run(["sh", "-c", _MISE_INSTALL_DEBIAN])
             else:
                 pkg.install(ctx, "mise")
         self._migrate_nvm(ctx)

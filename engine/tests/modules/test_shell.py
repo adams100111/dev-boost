@@ -12,6 +12,7 @@ from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
 from devboost.modules.shell import BashConfig, Dotfiles, Ghostty, NerdFonts, Starship
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -22,6 +23,16 @@ def test_starship_installs() -> None:
     ctx = _ctx()
     Starship().install(ctx)
     assert ["sudo", "dnf", "install", "-y", "starship"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_starship_installs_via_official_script_on_ubuntu() -> None:
+    """Not in Ubuntu apt — use the official install.sh into ~/.local/bin, no apt."""
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    Starship().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    joined = [" ".join(c) for c in calls]
+    assert any("starship.rs/install.sh" in j and ".local/bin" in j for j in joined)
+    assert not any("apt-get" in j for j in joined)
 
 
 def test_ghostty_is_gui_and_uses_copr() -> None:
