@@ -58,3 +58,16 @@ def test_delete_removes_home() -> None:
     ctx = _ctx()
     usermgmt.delete(ctx, "dev")
     assert ["sudo", "userdel", "-r", "dev"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_ensure_user_creates_with_explicit_home() -> None:
+    ctx = _ctx(scripts={"getent": Result(2)})  # user absent
+    usermgmt.ensure_user(ctx, "dev", shell="/bin/bash", home="/home/dev")
+    assert ["sudo", "useradd", "-m", "-s", "/bin/bash", "-d", "/home/dev", "dev"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_terminate_sessions_ignores_nonzero_exits() -> None:
+    ctx = _ctx(scripts={"loginctl": Result(1), "pkill": Result(1)})
+    usermgmt.terminate_sessions(ctx, "dev")  # must not raise
+    assert ["sudo", "loginctl", "terminate-user", "dev"] in ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "pkill", "-u", "dev"] in ctx.ex.calls  # type: ignore[attr-defined]
