@@ -5,7 +5,7 @@ zero config — delivered by an unattended **Ventoy USB** (primary: `curl … | 
 Kickstart). "Production ready" means the box can **build, out of the box**: Laravel (ddev),
 .NET + Aspire, Python (uv), Next.js/React (web), React Native + Expo (Android) — plus editors
 (VS Code + fresh), GUI apps (Obsidian w/ GitHub sync, Bruno, Bitwarden, …), terminal/shell/desktop
-(ghostty + starship + tmux + GNOME), all restored from chezmoi-managed dotfiles. A bad update is a
+(wezterm + starship + tmux + GNOME), all restored from chezmoi-managed dotfiles. A bad update is a
 **reboot**, not a rebuild (Btrfs snapshots).
 
 dev-boost is a small, legible **strictly-typed Python engine** (Typer + Pydantic) plus declarative
@@ -92,9 +92,9 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python` | python-lsp, uv |
 | `react-native` | android-sdk, expo, web-runtimes |
 | `security-cli` | pass, pass-store |
-| `shell` | bash-config, dotfiles, ghostty, nerd-fonts, starship |
+| `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, thermald |
-| `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, ghostty, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wget, yq, zoxide |
+| `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
 <!-- END generated profiles table -->
 
@@ -154,8 +154,10 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 
 | Tool | Config |
 |------|--------|
-| starship | minimal prompt (`dot_config/starship.toml`) |
-| ghostty | terminal theme + font (`dot_config/ghostty/config`) |
+| starship | Catppuccin prompt: minimal git, polyglot versions (`dot_config/starship.toml`) |
+| wezterm | default terminal: Catppuccin, tmux-style keys, SSH domains, RAM/disk status bar (`dot_config/wezterm/`) |
+| claude-statusline | Claude Code status line: model · context% · cost (`private_dot_claude/statusline.sh`) |
+| ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
 | tmux | mouse, true-color, vi copy (`dot_tmux.conf`) |
 | atuin | fuzzy history, directory up-key, enter-accept, secret-scrub |
 | bat | `--style=full`, Catppuccin theme |
