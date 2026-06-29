@@ -23,6 +23,8 @@ def test_accounts_create_writes_entry_with_no_apply(
 ) -> None:
     users = tmp_path / "users.toml"
     monkeypatch.setenv("DEVBOOST_USERS_PATH", str(users))
+    # OS-account check must see the user as absent so the test is host-independent.
+    monkeypatch.setattr("devboost.exec.primitives.usermgmt.exists", lambda ctx, name: False)
     # --no-apply must not touch the system; it only persists the entry locally.
     monkeypatch.setattr("devboost.cli.accounts._save_local", lambda u: users.write_text(
         __import__("devboost.accounts.config", fromlist=["dump_users_toml"]).dump_users_toml(u),

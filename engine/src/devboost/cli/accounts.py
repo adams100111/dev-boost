@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Annotated
 
 import typer
@@ -70,12 +71,11 @@ def create(
     if user.name in users:
         log.error(f"{user.name}: already managed (use 'accounts edit')")
         raise typer.Exit(2)
-    if apply_:
-        ctx = _ctx()
-        from devboost.exec.primitives import usermgmt as um
-        if um.exists(ctx, user.name) and not adopt:
-            log.error(f"{user.name}: account already exists; pass --adopt to manage it")
-            raise typer.Exit(2)
+    from devboost.exec.primitives import usermgmt as um
+    ctx = _ctx()
+    if um.exists(ctx, user.name) and not adopt:
+        log.error(f"{user.name}: account already exists; pass --adopt to manage it")
+        raise typer.Exit(2)
     users[user.name] = user
     _save_local(users)
     if apply_:
@@ -179,5 +179,4 @@ def _require(name: str) -> ManagedUser:
 
 
 def _with_enabled(u: ManagedUser, enabled: bool) -> ManagedUser:
-    from dataclasses import replace
     return replace(u, enabled=enabled)
