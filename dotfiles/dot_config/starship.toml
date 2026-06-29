@@ -1,13 +1,22 @@
 # ~/.config/starship.toml — dev-boost managed Starship prompt configuration.
 # # devboost — managed by chezmoi; edit via dotfiles/dot_config/starship.toml in the dev-boost repo.
-# Theme: Catppuccin Mocha (opinionated dev-boost baseline).
+# Theme: Catppuccin Mocha (matches the WezTerm / ghostty baseline).
+#
+# Layout (two lines):
+#   line 1 left : [user@host on SSH] directory  git branch/state/status
+#   line 1 right: runtime versions (only when relevant) · docker · cmd duration
+#   line 2      : prompt character (❯)
 
 "$schema" = 'https://starship.rs/config-schema.json'
 
-# Inserts a blank line between shell prompts
 add_newline = true
+scan_timeout = 30
+command_timeout = 500
 
-# A minimal left prompt
+# Single-line layout via $fill so the right-hand context renders in plain bash
+# (starship's right_format only works under ble.sh). $fill pushes everything
+# after it to the right edge of line 1. Language/runtime modules surface only
+# inside relevant projects; the RAM/disk gauges are always shown.
 format = """
 $username\
 $hostname\
@@ -15,10 +24,25 @@ $directory\
 $git_branch\
 $git_state\
 $git_status\
+$fill\
+$nodejs\
+$bun\
+$deno\
+$php\
+$dotnet\
+$python\
+$golang\
+$rust\
+$java\
+$ruby\
+$package\
+$docker_context\
 $cmd_duration\
 $line_break\
-$python\
 $character"""
+
+[fill]
+symbol = " "
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Catppuccin Mocha palette
@@ -53,29 +77,127 @@ crust     = "#11111b"
 
 palette = "catppuccin_mocha"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Identity — only shown when it matters (root, or SSH'd into a server)
+# ─────────────────────────────────────────────────────────────────────────────
+[username]
+show_always = false          # hidden locally; shown as root or over SSH
+style_user  = "bold lavender"
+style_root  = "bold red"
+format      = "[$user]($style)"
+
+[hostname]
+ssh_only = true              # only when connected to a remote (e.g. wezterm ssh)
+format   = "[@$hostname]($style) "
+style    = "bold peach"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Location + Git
+# ─────────────────────────────────────────────────────────────────────────────
 [directory]
-style = "bold blue"
+style             = "bold blue"
 truncation_length = 3
 truncate_to_repo  = true
+read_only         = " 󰌾"
+read_only_style   = "red"
+format            = "[$path]($style)[$read_only]($read_only_style) "
 
 [git_branch]
-format = "[$symbol$branch]($style) "
 symbol = " "
 style  = "bold mauve"
+format = "[$symbol$branch]($style) "
 
+[git_state]
+style  = "bold maroon"
+format = '([$state( $progress_current/$progress_total)]($style) )'
+
+# Minimal: one dot when the tree is dirty, arrows for unpushed/unpulled commits.
+# No per-file counts; untracked scanning is OFF (noise + slow in large trees).
 [git_status]
-format = '([\[$all_status$ahead_behind\]]($style) )'
-style  = "bold red"
+style      = "bold yellow"
+format     = '([$all_status$ahead_behind]($style) )'
+untracked  = ""
+stashed    = ""
+conflicted = "[!](bold red)"
+deleted    = ""
+renamed    = ""
+modified   = "●"
+staged     = "[✚](bold green)"
+ahead      = "⇡${count}"
+behind     = "⇣${count}"
+diverged   = "⇕"
 
 [character]
 success_symbol = "[❯](bold green)"
 error_symbol   = "[❯](bold red)"
+vimcmd_symbol  = "[❮](bold green)"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Right side — runtimes (auto-detected per project), docker, command time
+# ─────────────────────────────────────────────────────────────────────────────
 [cmd_duration]
 min_time = 2_000
-format   = "[ $duration]($style) "
+format   = "[ $duration]($style)"
 style    = "bold yellow"
 
+[nodejs]
+symbol = " "
+style  = "bold green"
+format = "[$symbol$version]($style) "
+
+[bun]
+symbol = "🥟 "
+style  = "bold peach"
+format = "[$symbol$version]($style) "
+
+[deno]
+symbol = " "
+style  = "bold sapphire"
+format = "[$symbol$version]($style) "
+
+[php]
+symbol = " "
+style  = "bold lavender"
+format = "[$symbol$version]($style) "
+
+[dotnet]
+symbol = " .NET "
+style  = "bold mauve"
+format = "[$symbol($version)(🎯 $tfm)]($style) "
+
 [python]
-format = '[$symbol$version]($style) '
+symbol = " "
 style  = "bold yellow"
+format = '[$symbol$version( \($virtualenv\))]($style) '
+
+[golang]
+symbol = " "
+style  = "bold sky"
+format = "[$symbol$version]($style) "
+
+[rust]
+symbol = " "
+style  = "bold peach"
+format = "[$symbol$version]($style) "
+
+[java]
+symbol = " "
+style  = "bold red"
+format = "[$symbol$version]($style) "
+
+[ruby]
+symbol = " "
+style  = "bold red"
+format = "[$symbol$version]($style) "
+
+[package]
+symbol  = "󰏗 "
+style   = "bold text"
+format  = "[$symbol$version]($style) "
+display_private = false
+
+[docker_context]
+symbol = " "
+style  = "bold sapphire"
+format = "[$symbol$context]($style) "
+only_with_files = true

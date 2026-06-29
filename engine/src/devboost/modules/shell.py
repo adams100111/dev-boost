@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -46,13 +47,69 @@ class Starship(Module):
             pkg.install(ctx, "starship")
 
 
+_WEZTERM_APPIMAGE = (
+    "https://github.com/wezterm/wezterm/releases/download/nightly/"
+    "WezTerm-nightly-Ubuntu20.04.AppImage"
+)
+
+
+@register
+class Wezterm(Module):
+    name = "wezterm"
+    category = "shell"
+    description = "GPU-accelerated terminal + multiplexer (nightly); default terminal."
+    gui = True
+    profiles = ("shell",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return ctx.ex.which("wezterm")
+
+    def install(self, ctx: Ctx) -> None:
+        # Nightly AppImage extracted into ~/.local (no FUSE, no sudo). The COPR
+        # lacks builds for newer Fedora releases, so the AppImage is the reliable
+        # path on both Fedora and Ubuntu. Symlinked onto PATH + a desktop entry.
+        home = _home()
+        bindir = home / ".local" / "bin"
+        appdir = home / ".local" / "wezterm-nightly"
+        script = f"""set -e
+tmp=$(mktemp -d)
+curl -fL --retry 2 -o "$tmp/wez.AppImage" "{_WEZTERM_APPIMAGE}"
+chmod +x "$tmp/wez.AppImage"
+(cd "$tmp" && ./wez.AppImage --appimage-extract >/dev/null)
+rm -rf "{appdir}"
+mv "$tmp/squashfs-root" "{appdir}"
+mkdir -p "{bindir}"
+ln -sf "{appdir}/AppRun" "{bindir}/wezterm"
+rm -rf "$tmp"
+icon=$(find "{appdir}" -maxdepth 4 -name org.wezfurlong.wezterm.png | head -1)
+if [ -n "$icon" ]; then
+  mkdir -p "$HOME/.local/share/icons/hicolor/128x128/apps"
+  cp "$icon" "$HOME/.local/share/icons/hicolor/128x128/apps/"
+fi
+mkdir -p "$HOME/.local/share/applications"
+cat > "$HOME/.local/share/applications/org.wezfurlong.wezterm.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=WezTerm
+GenericName=Terminal
+Exec={bindir}/wezterm start --cwd .
+TryExec={bindir}/wezterm
+Icon=org.wezfurlong.wezterm
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=org.wezfurlong.wezterm
+DESKTOP
+"""
+        ctx.ex.run(["sh", "-c", script])
+
+
 @register
 class Ghostty(Module):
     name = "ghostty"
     category = "shell"
-    description = "GPU-accelerated terminal (Fedora COPR / Flathub flatpak on Ubuntu)."
+    description = "GPU-accelerated terminal (optional; WezTerm is the default)."
     gui = True
-    profiles = ("shell",)
+    profiles = ()  # optional — install on demand; WezTerm is the default terminal
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family == "debian":
@@ -130,3 +187,51 @@ class BashConfig(Module):
     def install(self, ctx: Ctx) -> None:
         # No-op: the bashrc content is applied by the dotfiles module (this is a marker check).
         return
+
+
+@register
+class ClaudeStatusline(Module):
+    name = "claude-statusline"
+    category = "shell"
+    description = "Point Claude Code's statusLine at the managed ~/.claude/statusline.sh."
+    requires = (Dotfiles,)
+    profiles = ("shell",)
+
+    def _settings_path(self) -> Path:
+        return _home() / ".claude" / "settings.json"
+
+    def _script_path(self) -> str:
+        return str(_home() / ".claude" / "statusline.sh")
+
+    def verify(self, ctx: Ctx) -> bool:
+        path = self._settings_path()
+        if not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        line = data.get("statusLine") if isinstance(data, dict) else None
+        return isinstance(line, dict) and line.get("command") == self._script_path()
+
+    def install(self, ctx: Ctx) -> None:
+        # Idempotently merge the statusLine key into ~/.claude/settings.json,
+        # preserving any other settings the user already has. The script itself
+        # is delivered by the dotfiles module (private_dot_claude/statusline.sh).
+        path = self._settings_path()
+        data: dict[str, object] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                log.warn("claude-statusline: settings.json is not valid JSON — left untouched")
+                return
+            if isinstance(loaded, dict):
+                data = loaded
+        data["statusLine"] = {
+            "type": "command",
+            "command": self._script_path(),
+            "padding": 0,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
