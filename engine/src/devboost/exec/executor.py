@@ -136,3 +136,33 @@ class FakeExecutor:
 
     def which(self, cmd: str) -> bool:
         return cmd in self.present
+
+
+class DemotingExecutor:
+    """Run as root, but demote unprivileged commands to *target_user*.
+
+    Used by the accounts bootstrap: the engine runs as root, so sudo=True commands
+    execute directly, while sudo=False commands (user-scoped writes to the user's HOME)
+    are wrapped in ``sudo -u <user> -H`` so they run as — and create files owned by — the
+    target user.
+    """
+
+    def __init__(self, inner: Executor, target_user: str) -> None:
+        self._inner = inner
+        self._user = target_user
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        sudo: bool = False,
+        stdin: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> Result:
+        if sudo:
+            return self._inner.run(argv, sudo=False, stdin=stdin, env=env)
+        wrapped = ["sudo", "-u", self._user, "-H", *argv]
+        return self._inner.run(wrapped, sudo=False, stdin=stdin, env=env)
+
+    def which(self, cmd: str) -> bool:
+        return self._inner.which(cmd)

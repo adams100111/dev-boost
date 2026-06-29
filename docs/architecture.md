@@ -6,7 +6,9 @@ runtime on the target.
 
 ## Layout (`engine/src/devboost/`)
 
-- **`cli/`** — the Typer app: `install/verify/list/doctor/add/export/diff/update/self-update/terminal/devtools/dev`.
+- **`cli/`** — the Typer app: `install/verify/list/doctor/add/export/diff/update/self-update/term/devtools/dev/accounts`.
+  `accounts` is a **standalone sub-app** (never registered as a `Module`; not part of the install plan)
+  for creating and managing self-contained, resource-capped Linux sandbox users via `/etc/devboost/users.toml`.
 - **`model.py`** — the stable contract: `Ctx`, the `Installer` Protocol, the `Module` base, and the
   typed install sources (`DnfRepo`/`AptRepo`/`Script`, `Source = OsMap[...]`).
 - **`core/`** — `osinfo` (+ `OsMap` for `distro→family→default`), `graph` (Kahn toposort over

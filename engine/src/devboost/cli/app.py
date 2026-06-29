@@ -1,4 +1,4 @@
-"""The devboost Typer CLI: install / verify / list / terminal / devtools."""
+"""The devboost Typer CLI: install / verify / list / term / devtools."""
 
 from __future__ import annotations
 
@@ -9,10 +9,12 @@ from typing import Annotated, Literal
 import typer
 
 from devboost import __version__
+from devboost.cli import accounts as _accounts
 from devboost.cli import devhygiene as dh
 from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
+from devboost.cli.selection import select_modules
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
 from devboost.core.plan import PlannedModule, build_plan
@@ -30,14 +32,33 @@ ProfilesArg = Annotated[list[str], typer.Argument(help="profiles/modules (defaul
 RootOpt = Annotated[Path, typer.Option(help="repo root with profiles.toml + modules")]
 DryOpt = Annotated[bool, typer.Option("--dry-run", help="preview without executing")]
 ForceOpt = Annotated[bool, typer.Option("--force", help="reinstall even if verify passes")]
+AllOpt = Annotated[
+    bool,
+    typer.Option(
+        "--all/--no-all",
+        "-a",
+        help="install all apps in the tier (default); --no-all opens an interactive picker",
+    ),
+]
+AppOpt = Annotated[
+    list[str],
+    typer.Option("--app", help="install only this app (repeatable)"),
+]
 
 
-def _order(tokens: list[str], root: Path) -> tuple[list[str], dict[str, type[Module]]]:
+def _resolve(
+    tokens: list[str], root: Path
+) -> tuple[dict[str, type[Module]], list[str]]:
     modules = load()
     profiles = load_profiles(root / "profiles.toml")
     validate_profiles(modules, set(profiles))
-    names = expand(tokens or ["full"], profiles, modules)
-    return toposort(names, modules), modules
+    expanded = expand(tokens or ["full"], profiles, modules)
+    return modules, expanded
+
+
+def _order(tokens: list[str], root: Path) -> tuple[list[str], dict[str, type[Module]]]:
+    modules, expanded = _resolve(tokens, root)
+    return toposort(expanded, modules), modules
 
 
 def _apply_offline_filter(
@@ -56,9 +77,21 @@ def _apply_offline_filter(
 
 
 def _run(
-    tokens: list[str], root: Path, dry_run: bool, force: bool, offline: bool = False
+    tokens: list[str],
+    root: Path,
+    dry_run: bool,
+    force: bool,
+    offline: bool = False,
+    *,
+    all_: bool = True,
+    apps: list[str] | None = None,
 ) -> list[RunResult]:
-    order, modules = _order(tokens, root)
+    modules, expanded = _resolve(tokens, root)
+    selected = select_modules(expanded, modules, all_=all_, apps=apps or [])
+    order = toposort(selected, modules)
+    extra = [n for n in order if n not in selected]
+    if extra:
+        log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
     if offline:
@@ -113,9 +146,11 @@ def install(
     offline: Annotated[
         bool, typer.Option("--offline", help="skip modules that need network")
     ] = False,
+    all_: AllOpt = True,
+    app: AppOpt = [],
 ) -> None:
     """Install one or more profiles/modules (default: full)."""
-    _run(profiles, root, dry_run, force, offline)
+    _run(profiles, root, dry_run, force, offline, all_=all_, apps=app)
 
 
 @app.command(name="list")
@@ -169,20 +204,28 @@ def doctor(
         raise typer.Exit(code=1)
 
 
-@app.command()
-def terminal(
-    root: RootOpt = settings.root, dry_run: DryOpt = False, force: ForceOpt = False
+@app.command(name="term")
+def term(
+    root: RootOpt = settings.root,
+    dry_run: DryOpt = False,
+    force: ForceOpt = False,
+    all_: AllOpt = True,
+    app: AppOpt = [],
 ) -> None:
-    """Install the terminal tier."""
-    _run(["terminal"], root, dry_run, force)
+    """Install the terminal tier (--no-all to pick interactively, --app NAME for one)."""
+    _run(["terminal"], root, dry_run, force, all_=all_, apps=app)
 
 
 @app.command()
 def devtools(
-    root: RootOpt = settings.root, dry_run: DryOpt = False, force: ForceOpt = False
+    root: RootOpt = settings.root,
+    dry_run: DryOpt = False,
+    force: ForceOpt = False,
+    all_: AllOpt = True,
+    app: AppOpt = [],
 ) -> None:
     """Install the devtools tier."""
-    _run(["devtools"], root, dry_run, force)
+    _run(["devtools"], root, dry_run, force, all_=all_, apps=app)
 
 
 def _ctx() -> Ctx:
@@ -273,6 +316,7 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
 
 
 app.command(name="installer")(_installer)
+app.add_typer(_accounts.app, name="accounts")
 
 
 def main() -> None:
