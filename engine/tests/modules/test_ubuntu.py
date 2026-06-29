@@ -152,10 +152,11 @@ def test_gh_adds_official_apt_repo_on_ubuntu() -> None:
     assert any("apt-get install -y gh" in j for j in joined)
 
 
-def test_tealdeer_verifies_tealdeer_binary_on_ubuntu() -> None:
-    """Ubuntu's tealdeer package installs `tealdeer`, not `tldr`."""
+def test_tealdeer_verifies_either_binary_on_ubuntu() -> None:
+    """Ubuntu installs `tealdeer`, Fedora `tldr`; verify accepts either, neither → False."""
     assert Tealdeer().verify(_ctx(present={"tealdeer"})) is True
-    assert Tealdeer().verify(_ctx(present={"tldr"})) is False
+    assert Tealdeer().verify(_ctx(present={"tldr"})) is True
+    assert Tealdeer().verify(_ctx(present=set())) is False
 
 
 def test_tealdeer_installs_tealdeer_package_on_ubuntu() -> None:
@@ -244,8 +245,8 @@ def test_mise_uses_official_installer_on_ubuntu() -> None:
     Mise().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     assert any("mise.run" in j for j in joined)
-    # No apt repo / apt install for mise on Ubuntu anymore.
-    assert not any("sources.list.d" in j for j in joined)
+    # No apt repo is *written* (a `tee` into sources.list.d) and no apt install for mise.
+    assert not any("tee" in j and "sources.list.d" in j for j in joined)
     assert not any("apt-get install" in j and "mise" in j for j in joined)
 
 
@@ -255,6 +256,15 @@ def test_mise_skips_install_if_already_present_on_ubuntu() -> None:
     Mise().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     assert not any("mise.run" in j for j in joined)
+
+
+def test_mise_cleans_up_legacy_broken_apt_source_on_ubuntu() -> None:
+    """The malformed mise apt source from ≤0.1.5 must be removed (even if mise present)."""
+    ctx = _ctx(present={"mise"})
+    Mise().install(ctx)
+    assert ["sudo", "rm", "-f",
+            "/etc/apt/sources.list.d/mise-jdx-dev.list",
+            "/etc/apt/keyrings/mise-jdx-dev.gpg"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

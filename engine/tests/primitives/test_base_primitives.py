@@ -49,6 +49,21 @@ def test_flatpak_installs_package_when_not_present_ubuntu() -> None:
     assert ["sudo", "apt-get", "install", "-y", "flatpak"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
+def test_flatpak_install_adds_flathub_remote_first() -> None:
+    """A fresh flatpak has no remotes; install must register flathub before installing."""
+    ctx = _ctx(scripts={"flatpak": Result(0, stdout="")}, present={"flatpak"})
+    flatpak.install(ctx, "com.mitchellh.ghostty")
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert any(c[:2] == ["flatpak", "remote-add"] and "flathub" in c for c in calls)
+    assert ["flatpak", "install", "-y", "flathub", "com.mitchellh.ghostty"] in calls
+
+
+def test_flatpak_install_skips_remote_add_when_flathub_present() -> None:
+    ctx = _ctx(scripts={"flatpak": Result(0, stdout="flathub\n")}, present={"flatpak"})
+    flatpak.install(ctx, "com.mitchellh.ghostty")
+    assert not any("remote-add" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
 def test_mise_use_global() -> None:
     ctx = _ctx()
     mise.use_global(ctx, "node@22")

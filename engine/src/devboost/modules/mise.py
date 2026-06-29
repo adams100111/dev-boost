@@ -34,6 +34,8 @@ class Mise(Module):
         return ctx.ex.which("mise")
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "debian":
+            self._cleanup_legacy_apt_source(ctx)
         if not ctx.ex.which("mise"):
             if ctx.os.family == "debian":
                 ctx.ex.run(["sh", "-c", _MISE_INSTALL_DEBIAN])
@@ -41,6 +43,20 @@ class Mise(Module):
                 pkg.install(ctx, "mise")
         self._migrate_nvm(ctx)
         self._migrate_sdkman(ctx)
+
+    def _cleanup_legacy_apt_source(self, ctx: Ctx) -> None:
+        """Remove the malformed mise apt repo earlier versions (≤0.1.5) wrote.
+
+        That broken source (wrong URL/suite + an un-dearmored key) makes every subsequent
+        ``apt-get update`` fail with exit 100, which silently degrades unrelated installs.
+        Removing it is idempotent and unblocks apt on already-affected boxes.
+        """
+        ctx.ex.run(
+            ["rm", "-f",
+             "/etc/apt/sources.list.d/mise-jdx-dev.list",
+             "/etc/apt/keyrings/mise-jdx-dev.gpg"],
+            sudo=True,
+        )
 
     def _migrate_nvm(self, ctx: Ctx) -> None:
         nvm_dir = _home() / ".nvm"

@@ -98,7 +98,9 @@ _GH_DEBIAN = (
     " signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg]"
     ' https://cli.github.com/packages stable main"'
     " | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null\n"
-    "sudo apt-get update\n"
+    # `|| true`: an unrelated broken source must not abort the install — the github-cli
+    # repo still gets indexed, which is all `apt-get install gh` needs.
+    "sudo apt-get update || true\n"
     "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y gh\n"
 )
 
@@ -384,7 +386,11 @@ class Tealdeer(PackageModule):
     profiles = ("cli",)
     cmd = "tldr"
     fedora_pkg = "tealdeer"
-    debian_cmd = "tealdeer"   # Ubuntu's tealdeer package ships no `tldr` symlink
+
+    def verify(self, ctx: Ctx) -> bool:
+        # Fedora's package provides `tldr`; Ubuntu's provides `tealdeer` (no `tldr`
+        # symlink). Accept either so verify is correct on both.
+        return ctx.ex.which("tldr") or ctx.ex.which("tealdeer")
 
 
 @register

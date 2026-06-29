@@ -27,6 +27,13 @@ def remote_modify(ctx: Ctx, name: str, *args: str) -> None:
     ctx.ex.run(["flatpak", "remote-modify", *args, name])
 
 
+# The canonical Flathub repo descriptor — added on demand so installs work on a fresh box.
+_FLATHUB_URL = "https://flathub.org/repo/flathub.flatpakrepo"
+
+
 def install(ctx: Ctx, app_id: str, *, remote: str = "flathub") -> None:
     _ensure_flatpak(ctx)
+    # A freshly-installed flatpak has no remotes; an install against a missing remote fails.
+    if remote == "flathub":
+        remote_add(ctx, "flathub", _FLATHUB_URL)
     ctx.ex.run(["flatpak", "install", "-y", remote, app_id])
