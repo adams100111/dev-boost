@@ -28,3 +28,59 @@ def test_resolve_apps_unknown_raises_exit_with_suggestion(monkeypatch: pytest.Mo
     assert len(errors) == 1
     assert "unknown app 'gti'" in errors[0]
     assert "git" in errors[0]  # suggestion
+
+
+from collections.abc import Mapping
+
+from devboost.cli.selection import group_choices, select_modules
+from devboost.model import Module
+
+
+class _Cli(Module):
+    name = "git"
+    category = "Terminal tools"
+
+
+class _Gui(Module):
+    name = "obsidian"
+    category = "GUI apps"
+
+
+class _Bare(Module):
+    name = "mystery"
+    category = ""
+
+
+_MODS: Mapping[str, type[Module]] = {"git": _Cli, "obsidian": _Gui, "mystery": _Bare}
+
+
+def test_group_choices_groups_by_category_sorted_with_other_bucket() -> None:
+    rows = group_choices(["git", "obsidian", "mystery"], _MODS)
+    assert rows == [
+        ("GUI apps", None),
+        (None, "obsidian"),
+        ("Other", None),
+        (None, "mystery"),
+        ("Terminal tools", None),
+        (None, "git"),
+    ]
+
+
+def test_select_modules_all_returns_expanded() -> None:
+    assert select_modules(["git", "obsidian"], _MODS, all_=True, apps=[]) == ["git", "obsidian"]
+
+
+def test_select_modules_apps_takes_precedence_over_all() -> None:
+    assert select_modules(["git", "obsidian"], _MODS, all_=True, apps=["obsidian"]) == ["obsidian"]
+
+
+def test_select_modules_no_all_uses_injected_checklist() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_checklist(expanded: list[str], modules: Mapping[str, type[Module]]) -> list[str]:
+        captured["expanded"] = list(expanded)
+        return ["git"]
+
+    out = select_modules(["git", "obsidian"], _MODS, all_=False, apps=[], checklist=fake_checklist)
+    assert out == ["git"]
+    assert captured["expanded"] == ["git", "obsidian"]
