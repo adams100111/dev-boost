@@ -189,3 +189,54 @@ def clear_slice(ctx: Ctx, uid: int) -> None:
          "MemoryHigh=", "MemoryMax=", "CPUQuota=", "TasksMax="],
         sudo=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Disk quota: tiered, best-effort per-user cap
+# ---------------------------------------------------------------------------
+
+from devboost.exec.primitives import pkg  # noqa: E402
+
+
+def fstype_of(ctx: Ctx, path: str) -> str:
+    return ctx.ex.run(["findmnt", "-no", "FSTYPE", "--target", path]).stdout.strip()
+
+
+def _mountpoint_of(ctx: Ctx, path: str) -> str:
+    return ctx.ex.run(["findmnt", "-no", "TARGET", "--target", path]).stdout.strip() or "/"
+
+
+def ensure_subvolume(ctx: Ctx, path: str) -> None:
+    if not ctx.ex.run(["btrfs", "subvolume", "show", path]).ok:
+        ctx.ex.run(["btrfs", "subvolume", "create", path], sudo=True)
+
+
+def set_quota(ctx: Ctx, user: str, home: str, size: str) -> str:
+    """Best-effort per-user disk cap. Returns 'enforced' or 'skipped: <reason>'. Never raises."""
+    try:
+        fs = fstype_of(ctx, home)
+        if fs == "btrfs":
+            ctx.ex.run(["btrfs", "quota", "enable", "/"], sudo=True)
+            ctx.ex.run(["btrfs", "qgroup", "limit", size, home], sudo=True)
+            return "enforced"
+        if fs in ("ext4", "xfs"):
+            mnt = _mountpoint_of(ctx, home)
+            opts = ctx.ex.run(["findmnt", "-no", "OPTIONS", "--target", mnt]).stdout
+            if "usrquota" not in opts:
+                return f"skipped: usrquota not in mount options for {mnt}"
+            if not ctx.ex.which("setquota"):
+                pkg.install(ctx, "quota")
+            ctx.ex.run(["setquota", "-u", user, "0", size, "0", "0", mnt], sudo=True)
+            return "enforced"
+        return f"skipped: disk quota unsupported on {fs or 'unknown fs'}"
+    except Exception as exc:  # noqa: BLE001
+        return f"skipped: unexpected error — {exc}"
+
+
+def clear_quota(ctx: Ctx, user: str, home: str) -> None:
+    fs = fstype_of(ctx, home)
+    if fs == "btrfs":
+        ctx.ex.run(["btrfs", "qgroup", "limit", "none", home], sudo=True)
+    elif fs in ("ext4", "xfs"):
+        mnt = _mountpoint_of(ctx, home)
+        ctx.ex.run(["setquota", "-u", user, "0", "0", "0", "0", mnt], sudo=True)

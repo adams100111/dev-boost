@@ -152,3 +152,30 @@ def test_clear_slice_removes_and_resets() -> None:
     assert any(c[1] == "rm" and c[-1].endswith("50-devboost.conf") for c in calls)
     assert ["sudo", "systemctl", "daemon-reload"] in calls
     assert any(c[1:3] == ["systemctl", "set-property"] and "--runtime" in c for c in calls)
+
+
+def test_fstype_of_reads_findmnt() -> None:
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="btrfs\n")})
+    assert usermgmt.fstype_of(ctx, "/home/dev") == "btrfs"
+
+
+def test_set_quota_btrfs_enables_and_limits() -> None:
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="btrfs\n")})
+    status = usermgmt.set_quota(ctx, "dev", "/home/dev", "20G")
+    assert status == "enforced"
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert any(c[1:3] == ["btrfs", "quota"] and "enable" in c for c in calls)
+    assert any(c[1:4] == ["btrfs", "qgroup", "limit"] and c[-1] == "/home/dev" for c in calls)
+
+
+def test_set_quota_ext4_skips_when_not_active() -> None:
+    # findmnt -> ext4; OPTIONS probe has no usrquota -> skipped, never fails.
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="ext4\n")})
+    status = usermgmt.set_quota(ctx, "dev", "/home/dev", "20G")
+    assert status.startswith("skipped:")
+    assert not any("setquota" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_set_quota_unsupported_fs_skips() -> None:
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="overlay\n")})
+    assert usermgmt.set_quota(ctx, "dev", "/home/dev", "20G").startswith("skipped:")
