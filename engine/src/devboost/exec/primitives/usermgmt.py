@@ -119,3 +119,73 @@ def write_sudoers(ctx: Ctx, user: str, content: str) -> None:
 
 def remove_sudoers(ctx: Ctx, user: str) -> None:
     ctx.ex.run(["rm", "-f", sudoers_path(user)], sudo=True)
+
+
+# ---------------------------------------------------------------------------
+# Resource caps: systemd slice + drop-in + daemon-reload + set-property
+# ---------------------------------------------------------------------------
+
+_UNITS = {"K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+
+
+def _to_bytes(size: str) -> int:
+    s = size.rstrip("iB")
+    if s and s[-1] in _UNITS:
+        return int(float(s[:-1]) * _UNITS[s[-1]])
+    return int(s)
+
+
+def mem_high(ram: str) -> str:
+    """≈90% of *ram*, emitted in bytes (systemd accepts a bare byte count)."""
+    return str(int(_to_bytes(ram) * 0.9))
+
+
+def slice_dropin_text(ram: str | None, cpu: str | None, tasks: int | None) -> str | None:
+    if ram is None and cpu is None and tasks is None:
+        return None
+    lines = ["[Slice]"]
+    if ram is not None:
+        lines.append(f"MemoryHigh={mem_high(ram)}")
+        lines.append(f"MemoryMax={ram}")
+    if cpu is not None:
+        lines.append(f"CPUQuota={cpu}")
+    if tasks is not None:
+        lines.append(f"TasksMax={tasks}")
+    return "\n".join(lines) + "\n"
+
+
+def _slice_dir(uid: int) -> str:
+    return f"/etc/systemd/system/user-{uid}.slice.d"
+
+
+def _slice_props(ram: str | None, cpu: str | None, tasks: int | None) -> list[str]:
+    props: list[str] = []
+    if ram is not None:
+        props += [f"MemoryHigh={mem_high(ram)}", f"MemoryMax={ram}"]
+    if cpu is not None:
+        props.append(f"CPUQuota={cpu}")
+    if tasks is not None:
+        props.append(f"TasksMax={tasks}")
+    return props
+
+
+def set_slice(ctx: Ctx, uid: int, *, ram: str | None, cpu: str | None, tasks: int | None) -> None:
+    text = slice_dropin_text(ram, cpu, tasks)
+    if text is None:
+        return
+    d = _slice_dir(uid)
+    ctx.ex.run(["install", "-d", "-m", "755", d], sudo=True)
+    ctx.ex.run(["tee", f"{d}/50-devboost.conf"], sudo=True, stdin=text)
+    ctx.ex.run(["systemctl", "daemon-reload"], sudo=True)
+    ctx.ex.run(["systemctl", "set-property", f"user-{uid}.slice", *_slice_props(ram, cpu, tasks)],
+               sudo=True)
+
+
+def clear_slice(ctx: Ctx, uid: int) -> None:
+    ctx.ex.run(["rm", "-f", f"{_slice_dir(uid)}/50-devboost.conf"], sudo=True)
+    ctx.ex.run(["systemctl", "daemon-reload"], sudo=True)
+    ctx.ex.run(
+        ["systemctl", "set-property", "--runtime", f"user-{uid}.slice",
+         "MemoryHigh=", "MemoryMax=", "CPUQuota=", "TasksMax="],
+        sudo=True,
+    )

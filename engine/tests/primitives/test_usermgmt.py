@@ -110,3 +110,45 @@ def test_write_sudoers_raises_on_invalid() -> None:
         usermgmt.write_sudoers(ctx, "dev", "garbage\n")
     # never moved into place:
     assert not any(c[1:2] == ["mv"] for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_slice_dropin_text_none_when_all_unset() -> None:
+    assert usermgmt.slice_dropin_text(None, None, None) is None
+
+
+def test_slice_dropin_text_includes_only_set_knobs() -> None:
+    text = usermgmt.slice_dropin_text("4G", "50%", 200)
+    assert text is not None
+    assert "[Slice]" in text
+    assert "MemoryMax=4G" in text
+    assert "MemoryHigh=" in text          # ~90% derived
+    assert "CPUQuota=50%" in text
+    assert "TasksMax=200" in text
+    text2 = usermgmt.slice_dropin_text(None, "25%", None)
+    assert text2 is not None
+    assert "MemoryMax" not in text2 and "CPUQuota=25%" in text2
+
+
+def test_set_slice_writes_dropin_reloads_and_sets_property() -> None:
+    ctx = _ctx()
+    usermgmt.set_slice(ctx, 1005, ram="4G", cpu="50%", tasks=200)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert any(c[1] == "install" and c[-1].endswith("user-1005.slice.d") for c in calls)
+    assert any(c[1] == "tee" and c[-1].endswith("50-devboost.conf") for c in calls)
+    assert ["sudo", "systemctl", "daemon-reload"] in calls
+    assert any(c[1:4] == ["systemctl", "set-property", "user-1005.slice"] for c in calls)
+
+
+def test_set_slice_noop_when_all_unset() -> None:
+    ctx = _ctx()
+    usermgmt.set_slice(ctx, 1005, ram=None, cpu=None, tasks=None)
+    assert ctx.ex.calls == []  # type: ignore[attr-defined]
+
+
+def test_clear_slice_removes_and_resets() -> None:
+    ctx = _ctx()
+    usermgmt.clear_slice(ctx, 1005)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert any(c[1] == "rm" and c[-1].endswith("50-devboost.conf") for c in calls)
+    assert ["sudo", "systemctl", "daemon-reload"] in calls
+    assert any(c[1:3] == ["systemctl", "set-property"] and "--runtime" in c for c in calls)
