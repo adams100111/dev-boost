@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 import typer
 
 from devboost import __version__
+from devboost.cli import accounts as _accounts
 from devboost.cli import devhygiene as dh
 from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
@@ -315,6 +316,7 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
 
 
 app.command(name="installer")(_installer)
+app.add_typer(_accounts.app, name="accounts")
 
 
 def main() -> None:
