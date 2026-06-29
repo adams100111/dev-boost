@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 import typer
 
-from devboost.cli.selection import resolve_apps
+from devboost.cli.selection import group_choices, resolve_apps, select_modules
 from devboost.core import log
+from devboost.model import Module
 
 
 def test_resolve_apps_returns_requested_when_all_known() -> None:
@@ -28,12 +31,6 @@ def test_resolve_apps_unknown_raises_exit_with_suggestion(monkeypatch: pytest.Mo
     assert len(errors) == 1
     assert "unknown app 'gti'" in errors[0]
     assert "git" in errors[0]  # suggestion
-
-
-from collections.abc import Mapping
-
-from devboost.cli.selection import group_choices, select_modules
-from devboost.model import Module
 
 
 class _Cli(Module):
