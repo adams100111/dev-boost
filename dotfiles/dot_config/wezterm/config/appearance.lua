@@ -7,7 +7,11 @@ local caps = require("config.caps")
 local M = {}
 
 function M.apply(config)
-  config.color_scheme = "Catppuccin Mocha"
+  -- Follow the OS light/dark preference at startup; status.lua keeps it synced
+  -- live as the appearance changes.
+  local appearance = (wezterm.gui and wezterm.gui.get_appearance()) or "Dark"
+  local light = appearance:find("Light") ~= nil
+  config.color_scheme = light and "Catppuccin Latte" or "Catppuccin Mocha"
 
   config.font = wezterm.font_with_fallback({
     "JetBrainsMono Nerd Font",
@@ -24,19 +28,21 @@ function M.apply(config)
   config.enable_tab_bar = true
   config.use_fancy_tab_bar = true
   config.hide_tab_bar_if_only_one_tab = false
-  config.tab_bar_at_bottom = false
+  -- Status bar lives at the BOTTOM — where attention sits in agentic workflows
+  -- (the prompt and the agent's latest output).
+  config.tab_bar_at_bottom = true
   config.tab_max_width = 28
 
-  -- Style the fancy tab bar to match Catppuccin Mocha.
+  -- Style the fancy tab bar to match the active Catppuccin flavor.
   config.window_frame = {
     font = wezterm.font({ family = "JetBrainsMono Nerd Font", weight = "Bold" }),
     font_size = 11.0,
-    active_titlebar_bg = "#181825",   -- mantle
-    inactive_titlebar_bg = "#11111b", -- crust
+    active_titlebar_bg = light and "#e6e9ef" or "#181825",
+    inactive_titlebar_bg = light and "#dce0e8" or "#11111b",
   }
   config.colors = {
     tab_bar = {
-      inactive_tab_edge = "#313244", -- surface0
+      inactive_tab_edge = light and "#ccd0da" or "#313244",
     },
   }
 
