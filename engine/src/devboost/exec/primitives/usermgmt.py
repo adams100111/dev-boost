@@ -65,3 +65,57 @@ def enable_linger(ctx: Ctx, user: str) -> None:
 
 def disable_linger(ctx: Ctx, user: str) -> None:
     ctx.ex.run(["loginctl", "disable-linger", user], sudo=True)
+
+
+# ---------------------------------------------------------------------------
+# Privilege tiers: admin group + visudo-validated sudoers drop-in
+# ---------------------------------------------------------------------------
+
+from devboost.accounts.config import AccountsError, Privilege  # noqa: E402
+
+_STAGE = "/etc/sudoers.d/.devboost-stage"
+
+
+def in_admin_group(ctx: Ctx, user: str) -> bool:
+    groups = ctx.ex.run(["id", "-nG", user]).stdout.split()
+    return "wheel" in groups or "sudo" in groups
+
+
+def add_admin_group(ctx: Ctx, user: str) -> None:
+    ctx.ex.run(["usermod", "-aG", admin_group(ctx), user], sudo=True)
+
+
+def remove_admin_group(ctx: Ctx, user: str) -> None:
+    # Best-effort: drop from whichever admin group exists; ignore "not a member".
+    ctx.ex.run(["gpasswd", "-d", user, admin_group(ctx)], sudo=True)
+
+
+def sudoers_path(user: str) -> str:
+    return f"/etc/sudoers.d/devboost-{user}"
+
+
+def sudoers_content(
+    user: str, privilege: Privilege, sudo_commands: tuple[str, ...]
+) -> str | None:
+    if privilege in ("none", "full"):
+        return None
+    if privilege == "nopasswd":
+        return f"{user} ALL=(ALL) NOPASSWD: ALL\n"
+    # allowlist
+    cmds = ", ".join(sudo_commands)
+    return f"{user} ALL=(ALL) NOPASSWD: {cmds}\n"
+
+
+def write_sudoers(ctx: Ctx, user: str, content: str) -> None:
+    """Stage -> validate with visudo -> fix mode/owner -> atomic move. Raise on invalid."""
+    ctx.ex.run(["tee", _STAGE], sudo=True, stdin=content)
+    if not ctx.ex.run(["visudo", "-cf", _STAGE], sudo=True).ok:
+        ctx.ex.run(["rm", "-f", _STAGE], sudo=True)
+        raise AccountsError(f"sudoers content for {user!r} failed visudo validation")
+    ctx.ex.run(["chown", "root:root", _STAGE], sudo=True)
+    ctx.ex.run(["chmod", "0440", _STAGE], sudo=True)
+    ctx.ex.run(["mv", "-f", _STAGE, sudoers_path(user)], sudo=True)
+
+
+def remove_sudoers(ctx: Ctx, user: str) -> None:
+    ctx.ex.run(["rm", "-f", sudoers_path(user)], sudo=True)
