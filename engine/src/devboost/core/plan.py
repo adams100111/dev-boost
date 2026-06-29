@@ -61,10 +61,11 @@ def build_plan(
 
     Headless installs
     -----------------
-    ``gui=True`` modules are NOT skipped when the host is headless.  *Installing* GUI
-    software (flatpak install, dnf install, writing configs) does not require a display;
-    only *running* apps does.  Modules that genuinely need a graphical session at install
-    time should handle that condition themselves.
+    ``gui=True`` modules are skipped when the host is headless (a server — see
+    ``osinfo.is_headless``, which keys off the systemd default target so a desktop
+    mid-provisioning is *not* treated as headless).  Installing a GUI app on a server is
+    pointless and can fail outright (e.g. a Flatpak GUI terminal), so it is reported as a
+    clean skip rather than a failure.
     """
     effective_order = list(order)
 
@@ -89,6 +90,8 @@ def build_plan(
         reason: str | None = None
         if not _supported(cls, os_info):
             reason = "unsupported-os"
+        elif cls.gui and os_info.headless:
+            reason = "headless"
         plan.append(PlannedModule(name=name, skip_reason=reason))
     return plan
 

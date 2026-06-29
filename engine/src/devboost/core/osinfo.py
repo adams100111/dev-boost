@@ -34,15 +34,34 @@ def family_of(distro: str) -> str:
     return _FAMILY.get(distro, distro)
 
 
-def is_headless(env: Mapping[str, str] | None = None) -> bool:
+def is_headless(
+    env: Mapping[str, str] | None = None,
+    default_target_link: str = "/etc/systemd/system/default.target",
+) -> bool:
+    """Return True when the host is not a graphical machine (e.g. a server).
+
+    An active session is conclusive: if ``DISPLAY``/``WAYLAND_DISPLAY`` is set, the host
+    is graphical.  Otherwise — which includes a desktop mid-provisioning before any session
+    exists — fall back to the systemd *default target*: ``graphical.target`` means the box
+    boots to a GUI (not headless); anything else (``multi-user.target`` — a server) means
+    headless.  This avoids the trap of treating a freshly-provisioned laptop (no ``DISPLAY``
+    yet) as a server.  When the target can't be read, assume headless (skip GUI installs).
+    """
     e = os.environ if env is None else env
-    return not (e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
+    if e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"):
+        return False
+    try:
+        target = os.readlink(default_target_link)
+    except OSError:
+        return True
+    return not target.endswith("graphical.target")
 
 
 def detect(
     os_release_path: str = "/etc/os-release",
     machine: str | None = None,
     env: Mapping[str, str] | None = None,
+    default_target_link: str = "/etc/systemd/system/default.target",
 ) -> OsInfo:
     distro = "unknown"
     if platform.system() == "Darwin":
@@ -60,7 +79,7 @@ def detect(
         distro=distro,
         family=family_of(distro),
         arch=machine or platform.machine(),
-        headless=is_headless(env),
+        headless=is_headless(env, default_target_link),
     )
 
 

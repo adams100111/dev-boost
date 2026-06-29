@@ -38,25 +38,27 @@ def test_profiles_expand_unknown_raises(profiles_file: Path) -> None:
         expand(["nope"], profiles, modules)
 
 
-def test_plan_gui_modules_not_skipped_when_headless() -> None:
-    """GUI modules must NOT be blanket-skipped on headless hosts.
+class _GuiApp(Module):
+    name = "guiapp"
+    gui = True
 
-    Installing GUI software (flatpak install, dnf install, config writes) does not
-    require a display; only *running* apps does.
-    """
-    class GuiApp(Module):
-        name = "guiapp"
-        gui = True
+    def verify(self, ctx: Ctx) -> bool:
+        return False
 
-        def verify(self, ctx: Ctx) -> bool:
-            return False
+    def install(self, ctx: Ctx) -> None: ...
 
-        def install(self, ctx: Ctx) -> None: ...
 
-    plan = build_plan(["guiapp"], {"guiapp": GuiApp}, FEDORA_HEADLESS)
-    assert plan[0].skip_reason is None, (
-        "GUI modules must not be skipped headless — install does not need a display"
-    )
+def test_plan_gui_modules_skipped_when_headless() -> None:
+    """GUI modules are skipped on a headless host (server) — installing them is pointless
+    and a Flatpak GUI app can fail outright; a clean skip avoids a cascade failure."""
+    plan = build_plan(["guiapp"], {"guiapp": _GuiApp}, FEDORA_HEADLESS)
+    assert plan[0].skip_reason == "headless"
+
+
+def test_plan_gui_modules_installed_when_graphical() -> None:
+    """On a graphical host the same GUI module is planned for install (no skip)."""
+    plan = build_plan(["guiapp"], {"guiapp": _GuiApp}, FEDORA)
+    assert plan[0].skip_reason is None
 
 
 def test_runner_skips_when_verify_passes() -> None:
