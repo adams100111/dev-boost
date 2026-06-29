@@ -169,11 +169,19 @@ def test_set_quota_btrfs_enables_and_limits() -> None:
 
 
 def test_set_quota_ext4_skips_when_not_active() -> None:
-    # findmnt -> ext4; OPTIONS probe has no usrquota -> skipped, never fails.
-    ctx = _ctx(scripts={"findmnt": Result(0, stdout="ext4\n")})
+    # findmnt -> ext4; quotaon returns non-zero -> skipped, never fails.
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="ext4\n"), "quotaon": Result(1)})
     status = usermgmt.set_quota(ctx, "dev", "/home/dev", "20G")
     assert status.startswith("skipped:")
     assert not any("setquota" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_set_quota_ext4_enforces_when_active() -> None:
+    ctx = _ctx(scripts={"findmnt": Result(0, stdout="ext4\n"), "quotaon": Result(0)},
+               present={"setquota"})
+    status = usermgmt.set_quota(ctx, "dev", "/home/dev", "20G")
+    assert status == "enforced"
+    assert any(c[1] == "setquota" and "20G" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
 
 
 def test_set_quota_unsupported_fs_skips() -> None:

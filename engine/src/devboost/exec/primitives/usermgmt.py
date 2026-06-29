@@ -195,6 +195,7 @@ def clear_slice(ctx: Ctx, uid: int) -> None:
 # Disk quota: tiered, best-effort per-user cap
 # ---------------------------------------------------------------------------
 
+from devboost.core.errors import InstallError, UnsupportedOS  # noqa: E402
 from devboost.exec.primitives import pkg  # noqa: E402
 
 
@@ -213,24 +214,23 @@ def ensure_subvolume(ctx: Ctx, path: str) -> None:
 
 def set_quota(ctx: Ctx, user: str, home: str, size: str) -> str:
     """Best-effort per-user disk cap. Returns 'enforced' or 'skipped: <reason>'. Never raises."""
-    try:
-        fs = fstype_of(ctx, home)
-        if fs == "btrfs":
-            ctx.ex.run(["btrfs", "quota", "enable", "/"], sudo=True)
-            ctx.ex.run(["btrfs", "qgroup", "limit", size, home], sudo=True)
-            return "enforced"
-        if fs in ("ext4", "xfs"):
-            mnt = _mountpoint_of(ctx, home)
-            opts = ctx.ex.run(["findmnt", "-no", "OPTIONS", "--target", mnt]).stdout
-            if "usrquota" not in opts:
-                return f"skipped: usrquota not in mount options for {mnt}"
-            if not ctx.ex.which("setquota"):
+    fs = fstype_of(ctx, home)
+    if fs == "btrfs":
+        ctx.ex.run(["btrfs", "quota", "enable", "/"], sudo=True)
+        ctx.ex.run(["btrfs", "qgroup", "limit", size, home], sudo=True)
+        return "enforced"
+    if fs in ("ext4", "xfs"):
+        mnt = _mountpoint_of(ctx, home)
+        if not ctx.ex.run(["quotaon", "-pu", mnt]).ok:
+            return f"skipped: quota not enabled on {mnt} (needs usrquota mount + reboot)"
+        if not ctx.ex.which("setquota"):
+            try:
                 pkg.install(ctx, "quota")
-            ctx.ex.run(["setquota", "-u", user, "0", size, "0", "0", mnt], sudo=True)
-            return "enforced"
-        return f"skipped: disk quota unsupported on {fs or 'unknown fs'}"
-    except Exception as exc:  # noqa: BLE001
-        return f"skipped: unexpected error — {exc}"
+            except (InstallError, UnsupportedOS) as exc:
+                return f"skipped: cannot install quota tools — {exc}"
+        ctx.ex.run(["setquota", "-u", user, "0", size, "0", "0", mnt], sudo=True)
+        return "enforced"
+    return f"skipped: disk quota unsupported on {fs or 'unknown fs'}"
 
 
 def clear_quota(ctx: Ctx, user: str, home: str) -> None:
