@@ -27,11 +27,18 @@ def _run_profiles(ctx: Ctx, tokens: list[str], root: Path) -> None:
 
 def bootstrap_user(ctx: Ctx, user: ManagedUser, *, root: Path) -> None:
     """Install user.bootstrap_profiles for *user*: root for privileged, user for the rest."""
+    old_home = os.environ.get("HOME")
     os.environ["HOME"] = home_of(user)  # modules compute ~paths from $HOME
-    demoted = Ctx(
-        os=ctx.os,
-        ex=DemotingExecutor(ctx.ex, user.name),
-        force=ctx.force,
-        dry_run=ctx.dry_run,
-    )
-    _run_profiles(demoted, list(user.bootstrap_profiles), root)
+    try:
+        demoted = Ctx(
+            os=ctx.os,
+            ex=DemotingExecutor(ctx.ex, user.name),
+            force=ctx.force,
+            dry_run=ctx.dry_run,
+        )
+        _run_profiles(demoted, list(user.bootstrap_profiles), root)
+    finally:
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home

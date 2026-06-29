@@ -24,7 +24,9 @@ def ensure_user(ctx: Ctx, user: str, *, shell: str, home: str | None = None) -> 
     if home is not None:
         argv += ["-d", home]
     argv.append(user)
-    ctx.ex.run(argv, sudo=True)
+    res = ctx.ex.run(argv, sudo=True)
+    if not res.ok:
+        raise AccountsError(f"useradd failed for {user!r} (exit {res.code})")
 
 
 def set_authorized_keys(ctx: Ctx, user: str, home: str, keys: tuple[str, ...]) -> None:
@@ -82,7 +84,9 @@ def in_admin_group(ctx: Ctx, user: str) -> bool:
 
 
 def add_admin_group(ctx: Ctx, user: str) -> None:
-    ctx.ex.run(["usermod", "-aG", admin_group(ctx), user], sudo=True)
+    res = ctx.ex.run(["usermod", "-aG", admin_group(ctx), user], sudo=True)
+    if not res.ok:
+        raise AccountsError(f"failed adding {user!r} to admin group (exit {res.code})")
 
 
 def remove_admin_group(ctx: Ctx, user: str) -> None:
@@ -177,8 +181,10 @@ def set_slice(ctx: Ctx, uid: int, *, ram: str | None, cpu: str | None, tasks: in
     ctx.ex.run(["install", "-d", "-m", "755", d], sudo=True)
     ctx.ex.run(["tee", f"{d}/50-devboost.conf"], sudo=True, stdin=text)
     ctx.ex.run(["systemctl", "daemon-reload"], sudo=True)
-    ctx.ex.run(["systemctl", "set-property", f"user-{uid}.slice", *_slice_props(ram, cpu, tasks)],
-               sudo=True)
+    props = _slice_props(ram, cpu, tasks)
+    res = ctx.ex.run(["systemctl", "set-property", f"user-{uid}.slice", *props], sudo=True)
+    if not res.ok:
+        raise AccountsError(f"failed applying resource caps to user-{uid}.slice (exit {res.code})")
 
 
 def clear_slice(ctx: Ctx, uid: int) -> None:

@@ -33,3 +33,13 @@ def test_accounts_create_writes_entry_with_no_apply(
     assert result.exit_code == 0
     from devboost.accounts.config import load_users
     assert load_users(users)["dev"].ram == "4G"
+
+
+def test_accounts_apply_unknown_user_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    users = tmp_path / "users.toml"
+    users.write_text("", encoding="utf-8")  # empty registry — no managed users
+    monkeypatch.setenv("DEVBOOST_USERS_PATH", str(users))
+    result = runner.invoke(app, ["accounts", "apply", "nope"])
+    assert result.exit_code == 2

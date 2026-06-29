@@ -187,3 +187,21 @@ def test_set_quota_ext4_enforces_when_active() -> None:
 def test_set_quota_unsupported_fs_skips() -> None:
     ctx = _ctx(scripts={"findmnt": Result(0, stdout="overlay\n")})
     assert usermgmt.set_quota(ctx, "dev", "/home/dev", "20G").startswith("skipped:")
+
+
+def test_ensure_user_raises_on_useradd_failure() -> None:
+    ctx = _ctx(scripts={"getent": Result(2), "useradd": Result(1)})
+    with pytest.raises(AccountsError, match="useradd failed for 'dev'"):
+        usermgmt.ensure_user(ctx, "dev", shell="/bin/bash")
+
+
+def test_add_admin_group_raises_on_usermod_failure() -> None:
+    ctx = _ctx(scripts={"usermod": Result(1)})
+    with pytest.raises(AccountsError, match="failed adding 'dev' to admin group"):
+        usermgmt.add_admin_group(ctx, "dev")
+
+
+def test_set_slice_raises_on_set_property_failure() -> None:
+    ctx = _ctx(scripts={"systemctl": Result(1)})
+    with pytest.raises(AccountsError, match="failed applying resource caps to user-1005.slice"):
+        usermgmt.set_slice(ctx, 1005, ram="4G", cpu=None, tasks=None)

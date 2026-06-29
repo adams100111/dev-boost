@@ -64,10 +64,11 @@ def run_form(default: ManagedUser | None = None) -> ManagedUser:  # pragma: no c
         disk=disk or None,
         tasks=int(tasks_s) if tasks_s else None,
         privilege=privilege,
-        sudo_commands=(),
+        sudo_commands=d.sudo_commands if d else (),
         shell=d.shell if d else "/bin/bash",
         lock_shell=d.lock_shell if d else False,
         linger=d.linger if d else False,
         ssh_keys=d.ssh_authorized_keys if d else (),
         bootstrap_profiles=d.bootstrap_profiles if d else (),
+        enabled=d.enabled if d else True,
     )

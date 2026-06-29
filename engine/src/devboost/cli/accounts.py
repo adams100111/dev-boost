@@ -157,7 +157,7 @@ def apply(name: Annotated[str, typer.Argument(help="user (blank = all)")] = "") 
     """Reconcile all managed users, or one."""
     users = load_users()
     ctx = _ctx()
-    targets = [users[name]] if name else list(users.values())
+    targets = [_require(name)] if name else list(users.values())
     for u in targets:
         reconcile.apply_user(ctx, u)
     log.ok(f"applied {len(targets)} user(s)")

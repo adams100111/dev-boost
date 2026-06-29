@@ -205,7 +205,7 @@ admin-group membership, and disk quota; drop the entry from `users.toml`.
 
 ```
 devboost accounts delete dev          # warns if UID-owned files remain outside home
-devboost accounts delete dev --purge  # sweeps orphaned UID-owned files across filesystems
+devboost accounts delete dev --purge  # sweeps orphaned UID-owned files on the root filesystem
 ```
 
 `--purge` runs `find / -xdev -uid <uid>` (does not cross filesystem boundaries; skips
