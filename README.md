@@ -155,7 +155,7 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 | Tool | Config |
 |------|--------|
 | starship | Catppuccin prompt: minimal git, polyglot versions (`dot_config/starship.toml`) |
-| wezterm | default terminal: Catppuccin, tmux-style keys, SSH domains, RAM/disk status bar (`dot_config/wezterm/`) |
+| wezterm | default terminal: OS light/dark-reactive Catppuccin, bottom status bar, tmux-style keys, SSH domains, RAM/disk gauges + low-resource background alert (`dot_config/wezterm/`) |
 | claude-statusline | Claude Code status line: model · context% · cost (`private_dot_claude/statusline.sh`) |
 | ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
 | tmux | mouse, true-color, vi copy (`dot_tmux.conf`) |
