@@ -22,6 +22,9 @@ data_args=(--add-data "${ROOT}/profiles.toml:.")
 [[ -d "${ROOT}/templates" ]] && data_args+=(--add-data "${ROOT}/templates:templates")
 [[ -d "${ROOT}/data" ]] && data_args+=(--add-data "${ROOT}/data:data")
 [[ -d "${ROOT}/ventoy" ]] && data_args+=(--add-data "${ROOT}/ventoy:ventoy")
+# chezmoi dotfiles source — read by the Dotfiles module via settings.root/dotfiles so the
+# online (curl|bash) install also *configures* the tools it installs (no secrets in here).
+[[ -d "${ROOT}/dotfiles" ]] && data_args+=(--add-data "${ROOT}/dotfiles:dotfiles")
 
 # Build the frozen one-file binary from the src-layout package.
 #   --collect-submodules devboost  → ships modules/*.py so registry auto-discovery works frozen.
