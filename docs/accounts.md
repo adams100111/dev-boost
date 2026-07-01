@@ -204,7 +204,7 @@ Full teardown: terminate sessions, `userdel -r`, remove the slice drop-in, sudoe
 admin-group membership, and disk quota; drop the entry from `users.toml`.
 
 ```
-devboost accounts delete dev          # warns if UID-owned files remain outside home
+devboost accounts delete dev          # full teardown; leaves any UID-owned files outside home in place
 devboost accounts delete dev --purge  # sweeps orphaned UID-owned files on the root filesystem
 ```
 

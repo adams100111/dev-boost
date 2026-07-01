@@ -93,7 +93,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `react-native` | android-sdk, expo, web-runtimes |
 | `security-cli` | pass, pass-store |
 | `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm |
-| `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, thermald |
+| `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
 | `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
 <!-- END generated profiles table -->
@@ -167,7 +167,7 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 
 ### Portable tiers (typed engine)
 
-- `devboost terminal` — CLI/shell tools + dotfiles. Runs on any OS incl. a headless
+- `devboost term` — CLI/shell tools + dotfiles. Runs on any OS incl. a headless
   Ubuntu/Fedora VPS (auto-skips GUI-only pieces). Verify-guarded: re-running installs
   only what's missing; `--dry-run` previews.
 - `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
