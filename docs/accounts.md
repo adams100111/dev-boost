@@ -128,6 +128,11 @@ compute caps (RAM/CPU/tasks) are the reliable containment boundary; storage is b
 Create a managed user. With `NAME` omitted (or with `--interactive`) an interactive
 `questionary` form is shown. With a name, all limits are set via flags (unset = unbounded).
 
+The interactive form ends with an optional, **nothing-checked-by-default** toolchain picker
+(`terminal` / `devtools`) that maps to `--with-profile`; skip it (Enter) for a bare account.
+When a user is created with no toolchains, a hint prints the follow-up command
+(`devboost install terminal devtools`) so provisioning stays a deliberate, re-runnable step.
+
 ```
 devboost accounts create dev \
   --ram 4G \

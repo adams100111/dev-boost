@@ -4,6 +4,23 @@ from __future__ import annotations
 
 from devboost.accounts.config import ManagedUser, Privilege
 
+#: Toolchains offered (unchecked) in the interactive create form and named by the
+#: post-create hint. Kept a subset of profiles.toml (guarded by a test).
+BOOTSTRAP_PROFILE_CHOICES: tuple[str, ...] = ("terminal", "devtools")
+
+
+def provisioning_hint(bootstrap_profiles: tuple[str, ...]) -> str | None:
+    """Follow-up command to suggest when a user is created with no toolchains.
+
+    Returns None when profiles were already selected to bootstrap.
+    """
+    if bootstrap_profiles:
+        return None
+    return (
+        "provision this user's toolchain later: "
+        f"devboost install {' '.join(BOOTSTRAP_PROFILE_CHOICES)}"
+    )
+
 
 def merge_flags(
     name: str,
@@ -57,6 +74,15 @@ def run_form(default: ManagedUser | None = None) -> ManagedUser:  # pragma: no c
         choices=["none", "full", "nopasswd", "allowlist"],
         default=priv_default,
     ).ask()
+    # Optional, opt-in toolchain bootstrap — nothing checked by default so a bare
+    # account stays the fast path. Existing selections (incl. any not in the
+    # standard set) are preserved and pre-checked when editing.
+    existing = list(d.bootstrap_profiles) if d else []
+    choices = list(dict.fromkeys([*BOOTSTRAP_PROFILE_CHOICES, *existing]))
+    bootstrap = questionary.checkbox(
+        "Install toolchains now? (space to toggle, enter to skip):",
+        choices=[questionary.Choice(p, checked=p in existing) for p in choices],
+    ).ask()
     return merge_flags(
         name,
         ram=ram or None,
@@ -69,6 +95,6 @@ def run_form(default: ManagedUser | None = None) -> ManagedUser:  # pragma: no c
         lock_shell=d.lock_shell if d else False,
         linger=d.linger if d else False,
         ssh_keys=d.ssh_authorized_keys if d else (),
-        bootstrap_profiles=d.bootstrap_profiles if d else (),
+        bootstrap_profiles=tuple(bootstrap or ()),
         enabled=d.enabled if d else True,
     )

@@ -13,7 +13,7 @@ from rich.table import Table
 from devboost.accounts import bootstrap as bs
 from devboost.accounts import reconcile
 from devboost.accounts.config import ManagedUser, Privilege, load_users
-from devboost.accounts.form import merge_flags, run_form
+from devboost.accounts.form import merge_flags, provisioning_hint, run_form
 from devboost.core import log, osinfo
 from devboost.core.settings import settings
 from devboost.exec.executor import RealExecutor
@@ -86,6 +86,9 @@ def create(
             if user.bootstrap_profiles else None,
         )
     log.ok(f"{user.name}: created")
+    hint = provisioning_hint(user.bootstrap_profiles)
+    if hint:
+        log.info(f"↳ {hint}")
 
 
 @app.command(name="list")
