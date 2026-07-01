@@ -28,6 +28,10 @@ class OsInfo:
     family: str
     arch: str
     headless: bool = False
+    #: os-release VERSION_ID (e.g. "24.04") and VERSION_CODENAME (e.g. "noble").
+    #: Used to build version-correct third-party repo URLs; empty when unknown.
+    version_id: str = ""
+    codename: str = ""
 
 
 def family_of(distro: str) -> str:
@@ -64,15 +68,24 @@ def detect(
     default_target_link: str = "/etc/systemd/system/default.target",
 ) -> OsInfo:
     distro = "unknown"
+    version_id = ""
+    codename = ""
     if platform.system() == "Darwin":
         distro = "macos"
     else:
         try:
             with open(os_release_path, encoding="utf-8") as fh:
                 for line in fh:
-                    if line.startswith("ID="):
-                        distro = line.split("=", 1)[1].strip().strip('"')
-                        break
+                    key, sep, val = line.partition("=")
+                    if not sep:
+                        continue
+                    val = val.strip().strip('"')
+                    if key == "ID":
+                        distro = val
+                    elif key == "VERSION_ID":
+                        version_id = val
+                    elif key == "VERSION_CODENAME":
+                        codename = val
         except OSError:
             distro = "unknown"
     return OsInfo(
@@ -80,6 +93,8 @@ def detect(
         family=family_of(distro),
         arch=machine or platform.machine(),
         headless=is_headless(env, default_target_link),
+        version_id=version_id,
+        codename=codename,
     )
 
 

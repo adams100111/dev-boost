@@ -17,18 +17,24 @@ from devboost.modules.docker import Docker
 from devboost.modules.editors import Fresh
 from devboost.modules.mise import Mise
 
-# Microsoft packages APT repo for .NET on Ubuntu 26.04 (resolute).
+
+# Microsoft packages APT repo for .NET on Ubuntu, built for the *running* release.
+# The path segment is VERSION_ID (e.g. 24.04) and the suite is VERSION_CODENAME
+# (e.g. noble); hardcoding a release both 404s on other versions and trips
+# NO_PUBKEY when that release is signed by a key absent from microsoft.asc.
 # On Fedora, dotnet-sdk-10.0 ships in the standard Fedora repos — no repo addition needed.
-_DOTNET_APT_SOURCE: pkg.Source = OsMap(
-    debian=AptRepo(
-        list_line=(
-            "deb [arch=amd64,arm64"
-            " signed-by=/etc/apt/keyrings/packages-microsoft-com.gpg]"
-            " https://packages.microsoft.com/ubuntu/26.04/prod resolute main"
-        ),
-        key_url="https://packages.microsoft.com/keys/microsoft.asc",
+def _dotnet_apt_source(ctx: Ctx) -> pkg.Source:
+    return OsMap(
+        debian=AptRepo(
+            list_line=(
+                "deb [arch=amd64,arm64"
+                " signed-by=/etc/apt/keyrings/packages-microsoft-com.gpg]"
+                f" https://packages.microsoft.com/ubuntu/{ctx.os.version_id}/prod"
+                f" {ctx.os.codename} main"
+            ),
+            key_url="https://packages.microsoft.com/keys/microsoft.asc",
+        )
     )
-)
 
 _UV_VERSION = "0.11.23"
 
@@ -119,8 +125,8 @@ class DotnetSdk(Module):
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
-            # Add the Microsoft packages APT repo before installing on Ubuntu.
-            pkg.install(ctx, "dotnet-sdk-10.0", source=_DOTNET_APT_SOURCE)
+            # Add the Microsoft packages APT repo (version-matched) before installing.
+            pkg.install(ctx, "dotnet-sdk-10.0", source=_dotnet_apt_source(ctx))
         else:
             pkg.install(ctx, "dotnet-sdk-10.0")
 

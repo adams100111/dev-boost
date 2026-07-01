@@ -26,6 +26,17 @@ def test_detect_reads_os_release(tmp_path: Path) -> None:
     assert info.headless is True
 
 
+def test_detect_reads_version_id_and_codename(tmp_path: Path) -> None:
+    p = tmp_path / "os-release"
+    p.write_text('ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n', encoding="utf-8")
+    info = detect(
+        os_release_path=str(p), machine="x86_64", env={},
+        default_target_link=str(tmp_path / "no-such-target"),
+    )
+    assert info.version_id == "24.04"
+    assert info.codename == "noble"
+
+
 def test_is_headless_false_when_display_set(tmp_path: Path) -> None:
     assert is_headless({"DISPLAY": ":0"}, str(tmp_path / "missing")) is False
 

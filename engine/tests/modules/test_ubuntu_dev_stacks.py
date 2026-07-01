@@ -1,7 +1,7 @@
 """Ubuntu/Debian path tests for dev-stacks modules.
 
 Every test runs against OsInfo(distro="ubuntu", family="debian") to prove that
-install paths resolve the correct packages, repos, and commands on Ubuntu 26.04.
+install paths resolve the correct packages, repos, and commands on Ubuntu (24.04).
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ from devboost.modules.dev_stacks import (
     WebRuntimes,
 )
 
-UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="x86_64")
+UBUNTU = OsInfo(
+    distro="ubuntu", family="debian", arch="x86_64",
+    version_id="24.04", codename="noble",
+)
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -142,6 +145,23 @@ def test_dotnet_sdk_installs_via_apt_on_ubuntu() -> None:
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["sudo", "apt-get", "install", "-y", "dotnet-sdk-10.0"] in calls
     assert not any("dnf" in " ".join(c) for c in calls)
+
+
+def test_dotnet_sdk_repo_matches_running_ubuntu_version() -> None:
+    """The Microsoft repo must target the detected Ubuntu version, not a hardcoded one."""
+    from devboost.model import AptRepo
+    from devboost.modules.dev_stacks import _dotnet_apt_source
+
+    noble = OsInfo(
+        distro="ubuntu", family="debian", arch="x86_64",
+        version_id="24.04", codename="noble",
+    )
+    ctx = Ctx(os=noble, ex=FakeExecutor())  # type: ignore[arg-type]
+    repo = _dotnet_apt_source(ctx).get(noble)
+    assert isinstance(repo, AptRepo)
+    assert "ubuntu/24.04/prod noble" in repo.list_line
+    assert "26.04" not in repo.list_line
+    assert "resolute" not in repo.list_line
 
 
 def test_dotnet_sdk_verify_on_ubuntu() -> None:
