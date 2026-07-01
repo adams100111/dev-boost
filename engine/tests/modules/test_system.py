@@ -25,6 +25,7 @@ from devboost.modules.system import (
     ResticBackup,
     Snapper,
     SnapperDnfHook,
+    Swapfile,
 )
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -123,6 +124,80 @@ def test_earlyoom_uses_fedora_sysconfig_path(
     # Default path without env override is Fedora sysconfig, not Debian default
     monkeypatch.delenv("DEVBOOST_EARLYOOM_CONF", raising=False)
     assert Earlyoom()._conf() == "/etc/sysconfig/earlyoom"
+
+
+def test_swapfile_btrfs_creates_sizes_and_persists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swap = tmp_path / "swapfile"
+    fstab = tmp_path / "fstab"
+    monkeypatch.setenv("DEVBOOST_SWAPFILE_PATH", str(swap))
+    monkeypatch.setenv("DEVBOOST_FSTAB", str(fstab))
+    ctx = _ctx(scripts={
+        "free": Result(0, stdout=f"header\nMem: {16 * 1024**3} 0 0\n"),
+        "findmnt": Result(0, stdout="btrfs\n"),
+    })
+    Swapfile().install(ctx)
+    assert ["sudo", "btrfs", "filesystem", "mkswapfile",
+            "--size", "16g", "--uuid", "clear", str(swap)] in ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "swapon", str(swap)] in ctx.ex.calls  # type: ignore[attr-defined]
+    assert fstab.read_text(encoding="utf-8") == f"{swap} none swap defaults 0 0\n"
+
+
+def test_swapfile_caps_at_32g(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_SWAPFILE_PATH", str(tmp_path / "swapfile"))
+    monkeypatch.setenv("DEVBOOST_FSTAB", str(tmp_path / "fstab"))
+    ctx = _ctx(scripts={
+        "free": Result(0, stdout=f"header\nMem: {64 * 1024**3} 0 0\n"),
+        "findmnt": Result(0, stdout="btrfs\n"),
+    })
+    Swapfile().install(ctx)
+    assert any("--size" in c and "32g" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_swapfile_non_btrfs_uses_fallocate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swap = tmp_path / "swapfile"
+    monkeypatch.setenv("DEVBOOST_SWAPFILE_PATH", str(swap))
+    monkeypatch.setenv("DEVBOOST_FSTAB", str(tmp_path / "fstab"))
+    ctx = _ctx(scripts={
+        "free": Result(0, stdout=f"header\nMem: {8 * 1024**3} 0 0\n"),
+        "findmnt": Result(0, stdout="ext4\n"),
+    })
+    Swapfile().install(ctx)
+    assert ["sudo", "fallocate", "-l", "8G", str(swap)] in ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "mkswap", str(swap)] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_swapfile_verify_true_when_active_and_persisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swap = tmp_path / "swapfile"
+    fstab = tmp_path / "fstab"
+    fstab.write_text(f"{swap} none swap defaults 0 0\n", encoding="utf-8")
+    monkeypatch.setenv("DEVBOOST_SWAPFILE_PATH", str(swap))
+    monkeypatch.setenv("DEVBOOST_FSTAB", str(fstab))
+    ctx = _ctx(scripts={"swapon": Result(0, stdout=f"{swap}\n")})
+    assert Swapfile().verify(ctx) is True
+
+
+def test_swapfile_verify_false_when_inactive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_SWAPFILE_PATH", str(tmp_path / "swapfile"))
+    monkeypatch.setenv("DEVBOOST_FSTAB", str(tmp_path / "fstab"))
+    ctx = _ctx()  # swapon --show returns empty → not active
+    assert Swapfile().verify(ctx) is False
+
+
+def test_swapfile_is_fedora_only() -> None:
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    with pytest.raises(UnsupportedOS):
+        Swapfile().install(ctx)
+    assert Swapfile().verify(ctx) is False
 
 
 def test_nvidia_akmod_requires_rpmfusion_and_installs() -> None:

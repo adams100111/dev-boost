@@ -227,6 +227,100 @@ class Earlyoom(Module):
 
 
 @register
+class Swapfile(Module):
+    name = "swapfile"
+    category = "system"
+    description = "Disk swapfile sized to RAM for OOM headroom (page-out overflow above zram)."
+    profiles = ("system",)
+    families: ClassVar[tuple[str, ...]] = ("fedora",)
+
+    #: swapfile size = this fraction of total RAM, bounded above by ``cap_gib``.
+    percent_of_ram: ClassVar[float] = 1.0
+    cap_gib: ClassVar[int] = 32
+
+    def _path(self) -> str:
+        return os.environ.get("DEVBOOST_SWAPFILE_PATH", "/swapfile")
+
+    def _fstab(self) -> str:
+        return os.environ.get("DEVBOOST_FSTAB", "/etc/fstab")
+
+    def _total_ram_bytes(self, ctx: Ctx) -> int:
+        for line in ctx.ex.run(["free", "-b"]).stdout.splitlines():
+            parts = line.split()
+            if parts and parts[0] == "Mem:" and len(parts) > 1:
+                try:
+                    return int(parts[1])
+                except ValueError:
+                    break
+        try:  # fallback when `free` is unavailable/unparsable
+            return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        except (ValueError, OSError):
+            return 0
+
+    def _size_gib(self, ctx: Ctx) -> int:
+        gib = round(self._total_ram_bytes(ctx) * self.percent_of_ram / 1024**3)
+        return max(1, min(self.cap_gib, gib))
+
+    def _is_btrfs(self, ctx: Ctx) -> bool:
+        return ctx.ex.run(["findmnt", "-no", "FSTYPE", "/"]).stdout.strip() == "btrfs"
+
+    def _fstab_has(self, path: str) -> bool:
+        p = Path(self._fstab())
+        if not p.exists():
+            return False
+        return any(
+            ln.split()[:1] == [path]
+            for ln in p.read_text(encoding="utf-8").splitlines()
+            if ln.split()
+        )
+
+    def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "fedora":
+            return False
+        path = self._path()
+        active = path in ctx.ex.run(
+            ["swapon", "--show=NAME", "--noheadings"]
+        ).stdout.split()
+        return active and self._fstab_has(path)
+
+    def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "fedora":
+            raise UnsupportedOS(
+                f"swapfile module is Fedora-only; detected {ctx.os.distro!r}"
+            )
+        path = self._path()
+        size = self._size_gib(ctx)
+        if not Path(path).exists():
+            if self._is_btrfs(ctx):
+                # mkswapfile makes it NOCOW + uncompressed — the only correct way on btrfs;
+                # a fallocate'd swapfile is rejected/corrupt on btrfs.
+                ctx.ex.run(
+                    ["btrfs", "filesystem", "mkswapfile",
+                     "--size", f"{size}g", "--uuid", "clear", path],
+                    sudo=True,
+                )
+            else:
+                ctx.ex.run(["fallocate", "-l", f"{size}G", path], sudo=True)
+                ctx.ex.run(["chmod", "600", path], sudo=True)
+                ctx.ex.run(["mkswap", path], sudo=True)
+        ctx.ex.run(["swapon", path], sudo=True)
+        self._ensure_fstab(ctx, path)
+
+    def _ensure_fstab(self, ctx: Ctx, path: str) -> None:
+        if self._fstab_has(path):
+            return
+        fstab = self._fstab()
+        p = Path(fstab)
+        lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+        body = "\n".join([*lines, f"{path} none swap defaults 0 0"]) + "\n"
+        writable = os.access(fstab, os.W_OK) if p.exists() else os.access(p.parent, os.W_OK)
+        if writable:
+            p.write_text(body, encoding="utf-8")
+        else:
+            ctx.ex.run(["tee", fstab], sudo=True, stdin=body)
+
+
+@register
 class ResticBackup(Module):
     name = "restic-backup"
     category = "system"
