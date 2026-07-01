@@ -127,16 +127,22 @@ def test_ddev_skips_mkcert_pkg_when_already_present_on_ubuntu() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_dotnet_sdk_adds_microsoft_apt_repo_on_ubuntu() -> None:
+def test_dotnet_sdk_uses_microsoft_config_deb_on_ubuntu() -> None:
+    """.NET on Ubuntu installs via Microsoft's official config package, which wires
+    up the correct prod repo AND its current signing key for the running release —
+    not a hand-rolled repo line + the generic microsoft.asc (which misses the key)."""
     ctx = _ctx()
     DotnetSdk().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    # Microsoft GPG key must be fetched
-    assert any("packages.microsoft.com" in " ".join(c) for c in calls)
-    # The sources.list.d entry must be written
-    assert any("sources.list.d" in " ".join(c) for c in calls)
-    # apt-get update must run after repo add
+    blob = " ".join(" ".join(c) for c in calls)
+    # version-matched config package fetched + installed
+    assert "config/ubuntu/24.04/packages-microsoft-prod.deb" in blob
+    assert ["sudo", "dpkg", "-i", "/tmp/packages-microsoft-prod.deb"] in calls
     assert ["sudo", "apt-get", "update"] in calls
+    assert ["sudo", "apt-get", "install", "-y", "dotnet-sdk-10.0"] in calls
+    # the broken hand-rolled path must be gone
+    assert "microsoft.asc" not in blob
+    assert "/prod noble main" not in blob
 
 
 def test_dotnet_sdk_installs_via_apt_on_ubuntu() -> None:
@@ -147,21 +153,18 @@ def test_dotnet_sdk_installs_via_apt_on_ubuntu() -> None:
     assert not any("dnf" in " ".join(c) for c in calls)
 
 
-def test_dotnet_sdk_repo_matches_running_ubuntu_version() -> None:
-    """The Microsoft repo must target the detected Ubuntu version, not a hardcoded one."""
-    from devboost.model import AptRepo
-    from devboost.modules.dev_stacks import _dotnet_apt_source
-
-    noble = OsInfo(
-        distro="ubuntu", family="debian", arch="x86_64",
-        version_id="24.04", codename="noble",
+def test_dotnet_sdk_config_deb_url_matches_running_version() -> None:
+    """The config-deb URL path segment must be the detected VERSION_ID, never hardcoded."""
+    ctx = Ctx(
+        os=OsInfo(distro="ubuntu", family="debian", arch="x86_64",
+                  version_id="22.04", codename="jammy"),
+        ex=FakeExecutor(),  # type: ignore[arg-type]
     )
-    ctx = Ctx(os=noble, ex=FakeExecutor())  # type: ignore[arg-type]
-    repo = _dotnet_apt_source(ctx).get(noble)
-    assert isinstance(repo, AptRepo)
-    assert "ubuntu/24.04/prod noble" in repo.list_line
-    assert "26.04" not in repo.list_line
-    assert "resolute" not in repo.list_line
+    DotnetSdk().install(ctx)
+    blob = " ".join(" ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
+    assert "config/ubuntu/22.04/packages-microsoft-prod.deb" in blob
+    assert "26.04" not in blob
+    assert "resolute" not in blob
 
 
 def test_dotnet_sdk_verify_on_ubuntu() -> None:

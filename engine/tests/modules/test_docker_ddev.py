@@ -9,7 +9,7 @@ from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker, _invoking_user
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
-UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
+UBUNTU = OsInfo("ubuntu", "debian", "x86_64", version_id="24.04", codename="noble")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -31,18 +31,35 @@ def test_docker_install_enables_daemon_and_adds_user(
     assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
 
 
-def test_docker_install_uses_docker_io_on_ubuntu(
+def test_docker_install_uses_official_ce_repo_on_ubuntu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """On Ubuntu the package is docker.io, never the Fedora-only moby-engine."""
+    """On Ubuntu, install Docker's official docker-ce set — never docker.io (which
+    conflicts with docker-ce) nor the Fedora-only moby-engine."""
     monkeypatch.setenv("SUDO_USER", "alice")
     ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["sudo", "apt-get", "install", "-y", "docker.io"] in calls
+    assert [
+        "sudo", "apt-get", "install", "-y",
+        "docker-ce", "docker-ce-cli", "containerd.io",
+        "docker-buildx-plugin", "docker-compose-plugin",
+    ] in calls
+    assert not any("docker.io" in " ".join(c) for c in calls)
     assert not any("moby-engine" in " ".join(c) for c in calls)
     assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
     assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
+
+
+def test_docker_apt_source_targets_official_ce_repo() -> None:
+    from devboost.model import AptRepo
+    from devboost.modules.docker import _docker_apt_source
+
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    repo = _docker_apt_source(ctx).get(UBUNTU)
+    assert isinstance(repo, AptRepo)
+    assert "download.docker.com/linux/ubuntu noble stable" in repo.list_line
+    assert repo.key_url == "https://download.docker.com/linux/ubuntu/gpg"
 
 
 def test_docker_install_skips_usermod_when_no_user(

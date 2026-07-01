@@ -1,4 +1,4 @@
-"""Docker — dependency of ddev (Fedora: moby-engine; Debian/Ubuntu: docker.io)."""
+"""Docker — dependency of ddev (Fedora: moby-engine; Debian/Ubuntu: official docker-ce)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,29 @@ import os
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg, systemd
-from devboost.model import Ctx, Module
+from devboost.model import AptRepo, Ctx, Module
+
+#: Docker's official engine package set on Debian/Ubuntu. `docker.io` (Ubuntu's own
+#: package) is deliberately NOT used — Docker's docs list it as a *conflicting*
+#: package, so installing it on a box with the docker-ce repo fails.
+_CE_PKGS = (
+    "docker-ce", "docker-ce-cli", "containerd.io",
+    "docker-buildx-plugin", "docker-compose-plugin",
+)
+
+
+def _docker_apt_source(ctx: Ctx) -> pkg.Source:
+    """Docker's official apt repo for the running Ubuntu release (suite = codename)."""
+    return OsMap(
+        debian=AptRepo(
+            list_line=(
+                "deb [arch=amd64,arm64"
+                " signed-by=/etc/apt/keyrings/download-docker-com.gpg]"
+                f" https://download.docker.com/linux/ubuntu {ctx.os.codename} stable"
+            ),
+            key_url="https://download.docker.com/linux/ubuntu/gpg",
+        )
+    )
 
 
 def _invoking_user() -> str:
@@ -35,8 +57,12 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
-        # Fedora ships the daemon as moby-engine; Debian/Ubuntu as docker.io (universe).
-        pkg.install(ctx, OsMap(fedora="moby-engine", debian="docker.io"))
+        if ctx.os.family == "debian":
+            # Official docker-ce set from Docker's own apt repo.
+            pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
+        else:
+            # Fedora ships the daemon as moby-engine.
+            pkg.install(ctx, "moby-engine")
         systemd.enable_system_unit(ctx, "docker.service", now=True)
         user = _invoking_user()
         if user:

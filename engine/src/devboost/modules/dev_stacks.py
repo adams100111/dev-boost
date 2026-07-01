@@ -5,36 +5,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import mise, pkg
 from devboost.exec.resources import resource_path
-from devboost.model import AptRepo, Ctx, Module
+from devboost.model import Ctx, Module
 from devboost.modules._lsp import LspModule
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
 from devboost.modules.editors import Fresh
 from devboost.modules.mise import Mise
-
-
-# Microsoft packages APT repo for .NET on Ubuntu, built for the *running* release.
-# The path segment is VERSION_ID (e.g. 24.04) and the suite is VERSION_CODENAME
-# (e.g. noble); hardcoding a release both 404s on other versions and trips
-# NO_PUBKEY when that release is signed by a key absent from microsoft.asc.
-# On Fedora, dotnet-sdk-10.0 ships in the standard Fedora repos — no repo addition needed.
-def _dotnet_apt_source(ctx: Ctx) -> pkg.Source:
-    return OsMap(
-        debian=AptRepo(
-            list_line=(
-                "deb [arch=amd64,arm64"
-                " signed-by=/etc/apt/keyrings/packages-microsoft-com.gpg]"
-                f" https://packages.microsoft.com/ubuntu/{ctx.os.version_id}/prod"
-                f" {ctx.os.codename} main"
-            ),
-            key_url="https://packages.microsoft.com/keys/microsoft.asc",
-        )
-    )
 
 _UV_VERSION = "0.11.23"
 
@@ -125,8 +105,23 @@ class DotnetSdk(Module):
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
-            # Add the Microsoft packages APT repo (version-matched) before installing.
-            pkg.install(ctx, "dotnet-sdk-10.0", source=_dotnet_apt_source(ctx))
+            # Microsoft's config package wires up the correct prod repo AND its current
+            # signing key for the running Ubuntu release; a hand-rolled repo + the
+            # generic microsoft.asc misses that key (NO_PUBKEY on the prod suite).
+            deb = (
+                "https://packages.microsoft.com/config/ubuntu/"
+                f"{ctx.os.version_id}/packages-microsoft-prod.deb"
+            )
+            ctx.ex.run(
+                ["sh", "-c", f"curl -fsSL -o /tmp/packages-microsoft-prod.deb {deb}"]
+            )
+            ctx.ex.run(["dpkg", "-i", "/tmp/packages-microsoft-prod.deb"], sudo=True)
+            ctx.ex.run(
+                ["apt-get", "update"],
+                sudo=True,
+                env={"DEBIAN_FRONTEND": "noninteractive"},
+            )
+            pkg.install(ctx, "dotnet-sdk-10.0")
         else:
             pkg.install(ctx, "dotnet-sdk-10.0")
 
