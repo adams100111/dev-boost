@@ -154,10 +154,18 @@ class Dotfiles(Module):
     profiles = ("shell",)
 
     def verify(self, ctx: Ctx) -> bool:
-        bashrc = _home() / ".bashrc"
-        return (_home() / ".config" / "starship.toml").exists() and bashrc.exists() and (
-            "devboost" in bashrc.read_text(encoding="utf-8")
-        )
+        # Reflect actual sync state, NOT "did it ever run": chezmoi verify exits non-zero
+        # when the destination differs from the source. So after a dotfiles/config update
+        # this returns False and the module re-applies on the next install — a plain
+        # "did bashrc get written once" check would skip forever and never propagate
+        # config changes (would require --force). chezmoi apply is idempotent, so a
+        # re-apply on drift is safe.
+        src = settings.root / "dotfiles"
+        if not src.is_dir():
+            return True  # no source to apply → nothing to do
+        return ctx.ex.run(
+            ["chezmoi", "verify", "--source", str(src), "--destination", str(_home())]
+        ).ok
 
     def install(self, ctx: Ctx) -> None:
         src = settings.root / "dotfiles"

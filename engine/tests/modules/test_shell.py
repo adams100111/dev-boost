@@ -86,6 +86,14 @@ def test_dotfiles_requires_runtime_tools() -> None:
     assert {Chezmoi, Starship, Atuin, Zoxide, Direnv} <= set(Dotfiles.requires)
 
 
+def test_dotfiles_verify_reflects_chezmoi_sync_state() -> None:
+    """Dotfiles must re-apply when the source drifts from the destination (e.g. after a
+    config update) rather than skip forever once run — so verify uses `chezmoi verify`
+    (exit 0 = in sync → skip; non-zero = drift → re-apply)."""
+    assert Dotfiles().verify(_ctx(scripts={"chezmoi": Result(0)})) is True
+    assert Dotfiles().verify(_ctx(scripts={"chezmoi": Result(1)})) is False
+
+
 def test_claude_statusline_merges_preserving_existing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
