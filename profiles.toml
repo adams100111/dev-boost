@@ -32,6 +32,7 @@ security-cli     = ["pass","pass-store"]
 terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
             "ripgrep","fd","fzf","bat","eza","btop","zoxide","atuin","direnv",
             "delta","lazygit","dust","duf","sd","yq","gh","tealdeer","fastfetch",
-            "tmux","fresh","starship","bash-config","dotfiles","wezterm","nerd-fonts"]
+            "tmux","fresh","starship","bash-config","dotfiles","wezterm","nerd-fonts",
+            "claude-statusline"]
 devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
             "dotnet-lsp","ddev"]

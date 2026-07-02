@@ -94,7 +94,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `security-cli` | pass, pass-store |
 | `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
-| `terminal` | atuin, bash-config, bat, btop, chezmoi, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
+| `terminal` | atuin, bash-config, bat, btop, chezmoi, claude-statusline, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
 <!-- END generated profiles table -->
 
