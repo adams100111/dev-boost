@@ -7,6 +7,7 @@ Dnf (Fedora) and Apt (Debian/Ubuntu) are implemented; Pacman is a seam for a lat
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Protocol, runtime_checkable
 
 from devboost.core import log
@@ -76,13 +77,22 @@ class Apt:
         if not isinstance(repo, AptRepo):
             raise TypeError(f"Apt.add_repo expects AptRepo, got {type(repo).__name__}")
         slug = _apt_slug(repo.list_line)
-        # Download and store the signing key when provided.
+        # Fetch the signing key and normalize it to a BINARY keyring. Vendors serve
+        # either ASCII-armored keys (ddev, Microsoft, Docker) or binary keyrings;
+        # `gpg --dearmor` accepts both and always emits binary, matching the `.gpg`
+        # name used in signed-by. Writing an armored key straight to `.gpg` (the old
+        # behavior) trips NO_PUBKEY. Pipe curl→gpg in one shell run so a binary key is
+        # never corrupted by round-tripping through captured stdout.
         if repo.key_url:
             key_path = f"/etc/apt/keyrings/{slug}.gpg"
-            key_data = ctx.ex.run(["curl", "-fsSL", repo.key_url])
-            put = ctx.ex.run(["tee", key_path], sudo=True, stdin=key_data.stdout)
+            script = (
+                "mkdir -p /etc/apt/keyrings && "
+                f"curl -fsSL {shlex.quote(repo.key_url)} "
+                f"| gpg --dearmor --yes -o {shlex.quote(key_path)}"
+            )
+            put = ctx.ex.run(["sh", "-c", script], sudo=True)
             if not put.ok:
-                raise InstallError("apt", f"tee {key_path}", put.code)
+                raise InstallError("apt", f"import key {repo.key_url}", put.code)
         # Write the sources list entry.
         list_path = f"/etc/apt/sources.list.d/{slug}.list"
         put = ctx.ex.run(["tee", list_path], sudo=True, stdin=repo.list_line + "\n")

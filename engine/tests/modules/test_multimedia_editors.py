@@ -83,17 +83,18 @@ def test_vscode_adds_apt_repo_on_ubuntu() -> None:
     ctx = _ubuntu_ctx()
     Vscode().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    # Key downloaded via curl
-    assert any("curl" in c and "packages.microsoft.com/keys/microsoft.asc" in " ".join(c)
-               for c in calls)
-    # Key written to keyrings
-    assert any("tee" in " ".join(c) and "keyrings" in " ".join(c) for c in calls)
+    flat = [" ".join(c) for c in calls]
+    # Key fetched from the MS key URL and dearmored into the .gpg keyring in signed-by
+    assert any(
+        "packages.microsoft.com/keys/microsoft.asc" in s
+        and "gpg --dearmor" in s
+        and "keyrings/packages-microsoft-com.gpg" in s
+        for s in flat
+    )
     # sources.list.d entry written
     assert any(
-        "tee" in " ".join(c)
-        and "sources.list.d" in " ".join(c)
-        and "packages-microsoft-com" in " ".join(c)
-        for c in calls
+        "tee" in s and "sources.list.d" in s and "packages-microsoft-com" in s
+        for s in flat
     )
     # apt-get update run after adding repo
     assert ["sudo", "apt-get", "update"] in calls

@@ -131,6 +131,22 @@ def test_apt_add_repo_writes_list_and_updates() -> None:
     assert any("apt-get update" in s for s in flat)
 
 
+def test_apt_add_repo_dearmors_key_to_binary_keyring() -> None:
+    """Vendor keys (armored .asc from ddev/Microsoft/Docker) must be dearmored into the
+    binary .gpg keyring named in signed-by — writing armored text to .gpg trips NO_PUBKEY."""
+    ex = FakeExecutor()
+    repo = AptRepo(
+        list_line="deb https://pkg.ddev.example/apt/ * *",
+        key_url="https://pkg.ddev.example/apt/gpg.key",
+    )
+    pkg.manager_for(UBUNTU).add_repo(Ctx(os=UBUNTU, ex=ex), repo)
+    flat = [" ".join(c) for c in ex.calls]
+    assert any(
+        "gpg --dearmor" in s and "keyrings/pkg-ddev-example.gpg" in s for s in flat
+    )
+    assert any("pkg.ddev.example/apt/gpg.key" in s for s in flat)
+
+
 def test_apt_add_repo_no_key_skips_keyring() -> None:
     ex = FakeExecutor()
     repo = AptRepo(

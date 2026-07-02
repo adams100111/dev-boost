@@ -58,8 +58,12 @@ class Docker(Module):
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
-            # Official docker-ce set from Docker's own apt repo.
-            pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
+            # Skip the repo-add + install when Docker is already present (e.g. set up
+            # out-of-band): re-adding download.docker.com would conflict with an existing
+            # docker.asc Signed-By. Still (re)enable the daemon and fix the group below.
+            if not ctx.ex.which("docker"):
+                # Official docker-ce set from Docker's own apt repo.
+                pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
         else:
             # Fedora ships the daemon as moby-engine.
             pkg.install(ctx, "moby-engine")

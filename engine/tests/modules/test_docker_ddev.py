@@ -62,6 +62,22 @@ def test_docker_apt_source_targets_official_ce_repo() -> None:
     assert repo.key_url == "https://download.docker.com/linux/ubuntu/gpg"
 
 
+def test_docker_install_skips_repo_when_already_present_on_ubuntu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If Docker is already installed (e.g. set up out-of-band), don't re-add the repo
+    — that avoids a conflicting Signed-By against an existing docker.asc entry. Still
+    (re)enable the daemon and add the user to the docker group."""
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"docker"}))  # type: ignore[arg-type]
+    Docker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert not any("docker-ce" in " ".join(c) for c in calls)
+    assert not any("apt-get" in " ".join(c) for c in calls)
+    assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
+    assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
+
+
 def test_docker_install_skips_usermod_when_no_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
