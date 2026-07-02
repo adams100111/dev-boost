@@ -24,6 +24,20 @@ def _ubuntu_ctx(**kw: object) -> Ctx:
     return Ctx(os=UBUNTU, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
+def test_fresh_install_seeds_base_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fresh seeds its base config on install, so the editor is configured even in a
+    bare `terminal` install where no LSP module runs to seed it."""
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    Fresh().install(_ctx())
+    cfg = tmp_path / ".config" / "fresh" / "config.json"
+    assert cfg.exists()
+    assert json.loads(cfg.read_text(encoding="utf-8"))["theme"] == "catppuccin-mocha"
+
+
 def test_ffmpeg_full_swaps_and_requires_rpmfusion() -> None:
     assert Rpmfusion in FfmpegFull.requires
     ctx = _ctx()

@@ -7,7 +7,6 @@
 --glob=!dist/
 --glob=!build/
 --glob=!target/
---glob=!*.lock
 --glob=!*.min.js
 --glob=!*.map
 --max-columns=300

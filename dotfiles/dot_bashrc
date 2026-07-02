@@ -29,6 +29,12 @@ export RIPGREP_CONFIG_PATH="${HOME}/.config/ripgrep/ripgreprc"
 # Shell tool initialisers — managed by dev-boost (single copy; no duplication)
 # ---------------------------------------------------------------------------
 
+# fzf — sourced FIRST so atuin (below) binds Ctrl-R last and owns it; fzf keeps
+# Ctrl-T (files) and Alt-C (cd). Sourcing fzf after atuin steals Ctrl-R from atuin.
+[ -f /usr/share/fzf/shell/key-bindings.bash ] && source /usr/share/fzf/shell/key-bindings.bash
+[ -f /usr/share/fzf/shell/completion.bash ]   && source /usr/share/fzf/shell/completion.bash
+[ -f "${HOME}/.fzf.bash" ] && source "${HOME}/.fzf.bash"
+
 # starship — cross-shell prompt
 command -v starship &>/dev/null && eval "$(starship init bash)"
 
@@ -41,6 +47,17 @@ command -v zoxide &>/dev/null && eval "$(zoxide init bash)"
 # direnv — per-directory env
 command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 
-# fzf — fuzzy finder key-bindings (shipped with the fzf package on Fedora)
-[ -f /usr/share/fzf/shell/key-bindings.bash ] && source /usr/share/fzf/shell/key-bindings.bash
-[ -f "${HOME}/.fzf.bash" ] && source "${HOME}/.fzf.bash"
+# mise — polyglot runtime/version manager; puts managed runtimes (node/python/…)
+# on PATH for interactive shells. Without this, mise-installed tools aren't found.
+command -v mise &>/dev/null && eval "$(mise activate bash)"
+
+# ---------------------------------------------------------------------------
+# Aliases
+# ---------------------------------------------------------------------------
+# eza — modern ls (icons, git status, tree); falls back to plain ls if absent.
+if command -v eza &>/dev/null; then
+  alias ls='eza --group-directories-first'
+  alias ll='eza -l --git --group-directories-first'
+  alias la='eza -la --git --group-directories-first'
+  alias lt='eza --tree --level=2 --group-directories-first'
+fi

@@ -6,7 +6,7 @@ from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, DnfRepo, Module
-from devboost.modules._lsp import LspModule
+from devboost.modules._lsp import LspModule, seed_base_config
 from devboost.modules.mise import Mise
 
 _MS_KEY = "https://packages.microsoft.com/keys/microsoft.asc"
@@ -60,6 +60,9 @@ class Fresh(Module):
     def install(self, ctx: Ctx) -> None:
         # Upstream installer (rpm asset + post-install script); curl|sh escape hatch.
         ctx.ex.run(["sh", "-c", f"curl -fsSL {_FRESH_INSTALL} | sh"])
+        # Seed the base config so the editor is configured even in a bare `terminal`
+        # install (no LSP module present to seed it). Idempotent: only writes if absent.
+        seed_base_config()
 
 
 @register
