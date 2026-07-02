@@ -72,6 +72,17 @@ def test_refresh_index_best_effort_never_raises() -> None:
     assert ["sudo", "apt-get", "update"] in ex.calls
 
 
+def test_refresh_index_writes_apt_lock_timeout_dropin_on_debian() -> None:
+    """apt should WAIT for a held lock (cloud-init/unattended-upgrades) instead of failing
+    with exit 100 — a DPkg::Lock::Timeout drop-in applies to every apt call."""
+    ex = FakeExecutor()
+    pkg.refresh_index(Ctx(os=UBUNTU, ex=ex))
+    flat = [" ".join(c) for c in ex.calls]
+    assert any("/etc/apt/apt.conf.d/" in s and "lock-timeout" in s for s in flat)
+    assert ["sudo", "apt-get", "update"] in ex.calls  # update still runs
+    assert pkg._APT_LOCK_TIMEOUT >= 60  # waits a meaningful duration
+
+
 def test_dnf_add_repo_failure_raises_install_error() -> None:
     ex = FakeExecutor(scripts={"tee": Result(1, stderr="permission denied")})
     repo = DnfRepo("test-repo", "https://example.com/repo/", gpgcheck=False)

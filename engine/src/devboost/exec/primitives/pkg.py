@@ -154,6 +154,11 @@ def installed(ctx: Ctx, pkg: str) -> bool:
     return manager_for(ctx.os).installed(ctx, pkg)
 
 
+#: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).
+_APT_LOCK_TIMEOUT = 300
+_APT_LOCK_CONF = "/etc/apt/apt.conf.d/99-devboost-lock-timeout"
+
+
 def refresh_index(ctx: Ctx) -> None:
     """Refresh the package index once before the install loop (best-effort).
 
@@ -166,6 +171,14 @@ def refresh_index(ctx: Ctx) -> None:
     """
     if ctx.os.family != "debian":
         return
+    # Make every apt call WAIT up to _APT_LOCK_TIMEOUT for a held dpkg/apt lock (e.g.
+    # cloud-init / unattended-upgrades on a fresh VM) instead of failing with exit 100.
+    # A drop-in applies globally — including the user's own later `apt`. Best-effort.
+    ctx.ex.run(
+        ["tee", _APT_LOCK_CONF],
+        sudo=True,
+        stdin=f'DPkg::Lock::Timeout "{_APT_LOCK_TIMEOUT}";\n',
+    )
     result = ctx.ex.run(
         ["apt-get", "update"],
         sudo=True,
