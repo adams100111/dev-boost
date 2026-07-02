@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.errors import InstallError
 from devboost.core.registry import register
 from devboost.core.settings import settings
 from devboost.exec.primitives import copr, flatpak, pkg
@@ -153,28 +155,49 @@ class Dotfiles(Module):
     requires = (Chezmoi, Starship, Atuin, Zoxide, Direnv)
     profiles = ("shell",)
 
+    def _stamp(self) -> Path:
+        return _home() / ".config" / "devboost" / "dotfiles.sha256"
+
+    @staticmethod
+    def _source_digest(src: Path) -> str:
+        # Content+name digest of the bundled dotfiles source: changes when a release
+        # updates a dotfile, stable otherwise. Reliable and SYMMETRIC with apply —
+        # unlike `chezmoi verify`, which false-positived drift right after a clean apply
+        # (source mode), reporting "verify failed after install" and blocking dependents.
+        h = hashlib.sha256()
+        for p in sorted(src.rglob("*")):
+            if p.is_file():
+                h.update(p.relative_to(src).as_posix().encode())
+                h.update(b"\0")
+                h.update(p.read_bytes())
+        return h.hexdigest()
+
     def verify(self, ctx: Ctx) -> bool:
-        # Reflect actual sync state, NOT "did it ever run": chezmoi verify exits non-zero
-        # when the destination differs from the source. So after a dotfiles/config update
-        # this returns False and the module re-applies on the next install — a plain
-        # "did bashrc get written once" check would skip forever and never propagate
-        # config changes (would require --force). chezmoi apply is idempotent, so a
-        # re-apply on drift is safe.
+        # In sync iff the stamp matches the current source digest. After an update
+        # changes the bundled dotfiles the digest differs → re-apply on next install
+        # (so config changes propagate without --force); stays in sync afterwards.
         src = settings.root / "dotfiles"
         if not src.is_dir():
             return True  # no source to apply → nothing to do
-        return ctx.ex.run(
-            ["chezmoi", "verify", "--source", str(src), "--destination", str(_home())]
-        ).ok
+        stamp = self._stamp()
+        return (
+            stamp.is_file()
+            and stamp.read_text(encoding="utf-8").strip() == self._source_digest(src)
+        )
 
     def install(self, ctx: Ctx) -> None:
         src = settings.root / "dotfiles"
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
-        ctx.ex.run(
+        res = ctx.ex.run(
             ["chezmoi", "apply", "--source", str(src), "--destination", str(_home())]
         )
+        if not res.ok:
+            raise InstallError("chezmoi", "chezmoi apply", res.code)
+        stamp = self._stamp()
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
 
 
 @register
