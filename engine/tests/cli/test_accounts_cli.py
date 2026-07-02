@@ -35,6 +35,41 @@ def test_accounts_create_writes_entry_with_no_apply(
     assert load_users(users)["dev"].ram == "4G"
 
 
+def test_accounts_passwd_sets_password_via_primitive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from devboost.accounts.config import dump_users_toml
+    from devboost.accounts.form import merge_flags
+
+    dev = merge_flags(
+        "dev", ram=None, cpu=None, disk=None, tasks=None, privilege="full",
+        sudo_commands=(), shell="/bin/bash", lock_shell=False, linger=False,
+        ssh_keys=(), bootstrap_profiles=(),
+    )
+    users = tmp_path / "users.toml"
+    users.write_text(dump_users_toml({"dev": dev}), encoding="utf-8")
+    monkeypatch.setenv("DEVBOOST_USERS_PATH", str(users))
+    # getpass reads the tty, not stdin — stub it (new + confirm both return the same).
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "s3cret")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "devboost.exec.primitives.usermgmt.set_password",
+        lambda ctx, user, password: captured.update(user=user, password=password),
+    )
+    result = runner.invoke(app, ["accounts", "passwd", "dev"])
+    assert result.exit_code == 0
+    assert captured == {"user": "dev", "password": "s3cret"}
+
+
+def test_accounts_passwd_unknown_user_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    users = tmp_path / "users.toml"
+    users.write_text("", encoding="utf-8")
+    monkeypatch.setenv("DEVBOOST_USERS_PATH", str(users))
+    assert runner.invoke(app, ["accounts", "passwd", "ghost"]).exit_code == 2
+
+
 def test_accounts_apply_unknown_user_exits_2(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

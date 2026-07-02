@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Annotated
@@ -137,6 +138,27 @@ def enable(name: str) -> None:
     _save_local(users)
     reconcile.enable_user(_ctx(), user)
     log.ok(f"{name}: enabled")
+
+
+@app.command()
+def passwd(name: str) -> None:
+    """Set/reset a managed user's login password (prompted; never stored in config).
+
+    Run as root (e.g. `sudo devboost accounts passwd NAME`) — chpasswd needs privilege,
+    and you can't reset the password of an account whose sudo you're locked out of.
+    """
+    _require(name)
+    pw = getpass.getpass(f"New password for {name}: ")
+    if not pw:
+        log.error("empty password — aborted")
+        raise typer.Exit(1)
+    if pw != getpass.getpass("Confirm password: "):
+        log.error("passwords do not match — aborted")
+        raise typer.Exit(1)
+    from devboost.exec.primitives import usermgmt as um
+
+    um.set_password(_ctx(), name, pw)
+    log.ok(f"{name}: password updated")
 
 
 @app.command()

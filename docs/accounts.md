@@ -203,6 +203,19 @@ Unlock and re-apply a previously disabled account:
 devboost accounts enable dev
 ```
 
+### `accounts passwd NAME`
+
+Set or reset a managed user's **login password** (prompted twice; never written to
+`users.toml`). Needed before `--privilege full` (password-prompted sudo) is usable:
+
+```
+sudo devboost accounts passwd dev
+```
+
+Run as **root** — `chpasswd` requires privilege, and you can't reset the password of an
+account whose sudo you're locked out of. Passwords are deliberately kept out of managed
+config (FR-014); this is an imperative action, not persisted state.
+
 ### `accounts delete NAME [--purge]`
 
 Full teardown: terminate sessions, `userdel -r`, remove the slice drop-in, sudoers drop-in,
