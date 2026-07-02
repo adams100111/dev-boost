@@ -190,8 +190,14 @@ class Dotfiles(Module):
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
+        # --force: apply without prompting. The dotfiles are the source of truth, so
+        # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
+        # overwritten silently. Without it, chezmoi tries to prompt on /dev/tty for any
+        # changed target; under devboost's captured stdout that prompt blocks forever
+        # (observed: a `chezmoi apply` hung 90+ min holding the state lock, so nothing
+        # — including atuin — ever finished configuring).
         res = ctx.ex.run(
-            ["chezmoi", "apply", "--source", str(src), "--destination", str(_home())]
+            ["chezmoi", "apply", "--force", "--source", str(src), "--destination", str(_home())]
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)

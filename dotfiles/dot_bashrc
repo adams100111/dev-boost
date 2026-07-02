@@ -38,8 +38,16 @@ export RIPGREP_CONFIG_PATH="${HOME}/.config/ripgrep/ripgreprc"
 # starship — cross-shell prompt
 command -v starship &>/dev/null && eval "$(starship init bash)"
 
-# atuin — shell history search
-command -v atuin &>/dev/null && eval "$(atuin init bash)"
+# atuin — shell history search.
+# On bash, atuin appends its hooks to precmd_functions/preexec_functions, which
+# only exist (and only get invoked) if bash-preexec (or ble.sh) is loaded first.
+# Without it, `atuin init bash` binds Ctrl-R but NEVER records commands — atuin
+# reads as "not configured". bash-preexec is vendored via dotfiles (dot_bash-preexec.sh)
+# so this works on Fedora and Ubuntu alike, not just where atuin's installer drops it.
+if command -v atuin &>/dev/null; then
+  [ -f "${HOME}/.bash-preexec.sh" ] && source "${HOME}/.bash-preexec.sh"
+  eval "$(atuin init bash)"
+fi
 
 # zoxide — smarter cd
 command -v zoxide &>/dev/null && eval "$(zoxide init bash)"

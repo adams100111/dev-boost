@@ -99,6 +99,17 @@ def test_dotfiles_install_then_verify_roundtrip(
     assert Dotfiles().verify(ctx) is True  # stamp written → in sync
 
 
+def test_dotfiles_apply_uses_force(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """apply MUST pass --force: managed dotfiles are the source of truth, and without it
+    chezmoi prompts on /dev/tty for any drifted target (btop/atuin rewrite their own
+    config at runtime), which blocks forever under captured stdout and hangs the run."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx()
+    Dotfiles().install(ctx)
+    apply = next(c for c in ctx.ex.calls if c[:2] == ["chezmoi", "apply"])  # type: ignore[attr-defined]
+    assert "--force" in apply
+
+
 def test_dotfiles_verify_false_on_source_drift(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
