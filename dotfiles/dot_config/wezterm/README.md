@@ -1,8 +1,11 @@
 # WezTerm Config
 
 Modular WezTerm config tuned for heavy agentic coding + multi-server access.
-Catppuccin theme that follows the OS light/dark preference, a bottom status bar
-with live RAM/disk gauges, and a background **resource alert**.
+Catppuccin theme that follows the OS light/dark preference, a **top** tab bar +
+status (workspace · host · clock), and a background **resource alert** when RAM/disk
+go critical. Routine RAM/disk gauges are opt-in via `config/prefs.lua`
+(`show_resource_gauges`, default off — the starship prompt and Claude status line
+show them instead); enabling it also moves the bar back to the bottom.
 
 ## Install
 
@@ -44,12 +47,13 @@ Fonts: **JetBrainsMono Nerd Font** (required for the status glyphs).
 | File | Responsibility |
 | --- | --- |
 | `wezterm.lua` | entry point; wires the modules together |
+| `config/prefs.lua` | shared user prefs (`show_resource_gauges`) read by status + appearance |
 | `config/caps.lua` | stable-vs-nightly feature detection |
-| `config/appearance.lua` | fonts, colors, window decorations, OS light/dark scheme, bottom tab bar |
+| `config/appearance.lua` | fonts, colors, window decorations, OS light/dark scheme, tab-bar placement (top by default; bottom when `show_resource_gauges`) |
 | `config/domains.lua` | SSH domains auto-enumerated from `~/.ssh/config` (+ agent forwarding) |
 | `config/workspaces.lua` | per-project workspaces + one-key agent layout |
 | `config/keys.lua` | leader-driven keymap |
-| `config/status.lua` | bottom status bar, appearance-reactive theming, resource alert |
+| `config/status.lua` | status bar (workspace · host · clock), opt-in RAM/disk gauges, resource-critical alert |
 
 ## Appearance
 
@@ -61,25 +65,30 @@ Fonts: **JetBrainsMono Nerd Font** (required for the status glyphs).
   (`enable_wayland = false`) — the one combination that yields a single, clean
   GNOME title bar (GNOME/Mutter can't render WezTerm's integrated buttons alone;
   see wezterm/wezterm#4962, #6296).
-- **Tabs:** fancy tab bar with a per-tab close (`×`) button, pinned to the **bottom**
-  (attention sits at the prompt in agentic workflows). Inactive panes dim so the
-  focused agent pane stands out.
+- **Tabs:** fancy tab bar with a per-tab close (`×`) button, on the **top** by
+  default (tmux owns the bottom status line, nearer the prompt); it moves to the
+  bottom when `show_resource_gauges` is enabled. Inactive panes dim so the focused
+  agent pane stands out.
 
-## Status bar (bottom)
+## Status bar
 
 - **Left:** a `⌘ LEADER` indicator while the prefix is armed, or a resource **alert
   badge** when tripped.
-- **Right:** `workspace · [ssh host when remote] · RAM% · disk-free · clock`.
-  RAM is colored green `<60` / yellow `60–79` / red `≥80`; disk is teal, red at
-  `≥80%` used. RAM/disk are read from a throttled probe (no per-tick process spawn).
+- **Right:** `workspace · [ssh host when remote] · clock`, plus **opt-in** `RAM% ·
+  disk-free` gauges when `show_resource_gauges` (`config/prefs.lua`) is set — off by
+  default, since the starship prompt and Claude status line show them instead. When
+  shown, RAM is green `<60` / yellow `60–79` / red `≥80`; disk is teal, red at `≥80%`
+  used. Read from a throttled probe (no per-tick process spawn).
 
 ### Resource alert
 
-When **RAM ≥ 80%** or **free disk < 10 GB**, the window background gets a designed
-dark/light→red gradient and the left status shows a bold badge naming the cause
-(`⚠ RAM 85%` / `⚠ DISK 8G`). Both clear automatically on recovery. Applied via
-per-window config overrides, only on a state change. Thresholds live at the top of
-`config/status.lua` (`RAM_CRITICAL`, `DISK_LOW_GB`).
+Independent of the routine-gauge toggle and **always on**: when **RAM ≥ 80%** or
+**free disk < 10 GB**, the window background gets a designed dark/light→red gradient
+and the left status shows a bold badge naming the cause (`⚠ RAM 85%` / `⚠ DISK 8G`).
+Both clear automatically on recovery. Applied via per-window config overrides, only on
+a state change. Thresholds live at the top of `config/status.lua` (`RAM_CRITICAL`,
+`DISK_LOW_GB`). The starship prompt and Claude status line carry the same alert
+(a red badge / a red status row) so it reaches you even without WezTerm.
 
 ## Keybindings
 
@@ -102,7 +111,7 @@ Leader = **CTRL+Space**.
 
 Every concrete `Host` in `~/.ssh/config` is auto-registered as an SSH domain.
 `LEADER d` opens a fuzzy picker to attach to one in a tab; the local SSH agent is
-forwarded (nightly). The bottom status bar shows the remote host name while attached.
+forwarded (nightly). The status bar shows the remote host name while attached.
 
 ## Agent layout (`LEADER a`)
 

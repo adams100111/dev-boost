@@ -154,12 +154,12 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 
 | Tool | Config |
 |------|--------|
-| starship | Catppuccin prompt: minimal git, polyglot versions (`dot_config/starship.toml`) |
-| wezterm | default terminal: OS light/dark-reactive Catppuccin, bottom status bar, tmux-style keys, SSH domains, RAM/disk gauges + low-resource background alert (`dot_config/wezterm/`) |
-| claude-statusline | Claude Code status line: model · context% · cost (`private_dot_claude/statusline.sh`) |
+| starship | Catppuccin prompt: minimal git, polyglot versions, always-on RAM/disk gauges + red `⚠` badge when resources are critical (`dot_config/starship.toml`) |
+| wezterm | default terminal: OS light/dark-reactive Catppuccin, **top** tab bar (tmux owns the bottom), tmux-style keys, SSH domains, **opt-in** RAM/disk gauges (`prefs.show_resource_gauges`) + critical-resource background alert (`dot_config/wezterm/`) |
+| claude-statusline | Claude Code status line: dir · git · RAM/disk (left), model · context% · cost (right); whole row goes red when resources are critical (`private_dot_claude/statusline.sh`) |
 | ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
-| tmux | mouse, true-color, vi copy (`dot_tmux.conf`) |
-| atuin | fuzzy history, directory up-key, enter-accept, secret-scrub |
+| tmux | mouse, true-color, vi copy, **bottom** status bar (`dot_tmux.conf`) |
+| atuin | fuzzy history, directory up-key, enter-accept, secret-scrub (recording wired via bash-preexec in the managed `.bashrc`) |
 | bat | `--style=full`, Catppuccin theme |
 | ripgrep | glob-ignores (node_modules/dist/build/lockfiles); via `RIPGREP_CONFIG_PATH` |
 | lazygit | delta paging, Nerd Fonts v3 |
