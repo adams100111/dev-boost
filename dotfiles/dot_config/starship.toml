@@ -143,8 +143,11 @@ vimcmd_symbol  = "[❮](bold green)"
 # Right side — runtimes (auto-detected per project), docker, command time
 # ─────────────────────────────────────────────────────────────────────────────
 [cmd_duration]
-min_time = 2_000
-format   = "[ $duration]($style)"
+# Only surface genuinely long commands (>10s) so it stays signal, not noise —
+# routine sub-10s commands don't clutter the right side next to the gauges.
+min_time = 10_000
+# trailing space separates it from the RAM gauge that follows on the right side
+format   = "[ $duration]($style) "
 style    = "bold yellow"
 
 [nodejs]
