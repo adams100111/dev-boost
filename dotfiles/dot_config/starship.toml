@@ -20,6 +20,7 @@ command_timeout = 500
 # the [custom.*] blocks below) are always shown so a headless SSH box still has
 # resource visibility without WezTerm's status bar.
 format = """
+${custom.res_alert}\
 $username\
 $hostname\
 $directory\
@@ -220,6 +221,20 @@ only_with_files = true
 # Threshold coloring is done with mutually-exclusive `when`-gated modules — exactly
 # one RAM tier and one DISK tier renders. Probes are the same as status.lua:52-54
 # (/proc/meminfo + df), Linux-only and cheap; each is well under command_timeout.
+
+# Critical-resource badge — WezTerm's left-status alert (status.lua:140-146) for the
+# prompt: a red ⚠ badge naming the cause when RAM >=80% or free disk <10G. A shell
+# can't repaint the terminal bg like WezTerm's gradient, so this red badge at the far
+# left is the prompt-side alert. Only renders when critical (gated); clears on recovery.
+[custom.res_alert]
+when    = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); f=$(df -P -BG / | awk 'NR==2{sub("G","",$4);print $4}'); test "$r" -ge 80 || test "$f" -lt 10'''
+command = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); f=$(df -P -BG / | awk 'NR==2{sub("G","",$4);print $4}'); m=""; [ "$r" -ge 80 ] && m="RAM ${r}%"; [ "$f" -lt 10 ] && m="${m:+$m · }DISK ${f}G"; printf '%s' "$m"'''
+# hex, not palette names: starship silently drops a style when a palette name is used
+# as a background (`bg:red`), so the badge would render uncolored. #f38ba8/#1e1e2e are
+# the catppuccin red / base.
+style   = "bold fg:#1e1e2e bg:#f38ba8"
+format  = "[ ⚠ $output ]($style) "
+
 # ram % (used) — Linux /proc/meminfo, integer percent
 [custom.ram_ok]
 when    = '''test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -lt 60'''

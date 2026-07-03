@@ -80,6 +80,8 @@ except OSError:
     pass
 ram_s  = c(RED if ram >= 80 else YELLOW if ram >= 60 else GREEN, f"󰍛 {ram}%") if ram is not None else ""
 disk_s = c(RED if (dpct or 0) >= 80 else TEAL, f"󰋊 {dfree}G") if dfree is not None else ""
+# Critical thresholds mirror WezTerm status.lua (RAM_CRITICAL=80, DISK_LOW_GB=10).
+critical = (ram is not None and ram >= 80) or (dfree is not None and dfree < 10)
 # Left-side variants: RAM/disk group with dir/branch as "environment" context, so
 # leading separators are baked in here (the right side gets them from join()).
 ram_l  = ("  " + ram_s)  if ram_s  else ""
@@ -111,5 +113,16 @@ for L, R in candidates:
 
 right = join(right_parts)
 gap = cw_cols - width(left) - width(right) - 1
-sys.stdout.write(left + " " * gap + right if right and gap >= 1 else left)
+line = left + " " * gap + right if right and gap >= 1 else left
+
+if critical:
+    # Resource alert — WezTerm floods the window bg via window_background_gradient;
+    # the shell/Claude can't repaint the terminal, but it owns THIS row, so flood the
+    # whole row red instead. Flatten the per-segment fg colors to dark-on-red and pad
+    # to full width. Repainted every render, so it clears itself on recovery.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", line)
+    plain += " " * max(0, (cw_cols - 1) - width(plain))
+    sys.stdout.write(f"\x1b[48;2;{RED};38;2;30;30;46m{plain}\x1b[0m")
+else:
+    sys.stdout.write(line)
 PY
