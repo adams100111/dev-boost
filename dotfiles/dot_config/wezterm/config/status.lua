@@ -16,6 +16,13 @@ local M = {}
 local RAM_CRITICAL = 80 -- percent used
 local DISK_LOW_GB = 10  -- free GB on /
 
+-- Always-on RAM/disk cells in the right status bar. Default OFF: the starship prompt
+-- and Claude status line now show these, so hiding them here avoids showing the same
+-- gauges twice inside WezTerm. Flip to true if you don't use starship (or want the
+-- numbers in the bar too). The critical alert below — left badge + red background —
+-- is independent of this and always on; only the routine numbers are gated.
+local SHOW_RESOURCE_GAUGES = false
+
 local FRAME_FONT = wezterm.font({ family = "JetBrainsMono Nerd Font", weight = "Bold" })
 
 -- Per-appearance theme: Catppuccin Mocha (dark) / Latte (light).
@@ -165,7 +172,9 @@ function M.apply(config)
       table.insert(cells, { Text = "󰣀 " .. domain })
     end
 
-    if cache.ram ~= nil then
+    -- Routine gauges are opt-in (SHOW_RESOURCE_GAUGES); the probe still runs every
+    -- tick regardless, because the critical badge/background below depends on it.
+    if SHOW_RESOURCE_GAUGES and cache.ram ~= nil then
       sep()
       table.insert(cells, { Foreground = { Color = ram_color(pal, cache.ram) } })
       table.insert(cells, { Text = "󰍛 " .. cache.ram .. "%" })
