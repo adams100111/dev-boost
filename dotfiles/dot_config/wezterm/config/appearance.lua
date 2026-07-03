@@ -3,6 +3,7 @@
 -- text for dense, colorful agent/build output.
 local wezterm = require("wezterm")
 local caps = require("config.caps")
+local prefs = require("config.prefs")
 
 local M = {}
 
@@ -28,9 +29,11 @@ function M.apply(config)
   config.enable_tab_bar = true
   config.use_fancy_tab_bar = true
   config.hide_tab_bar_if_only_one_tab = false
-  -- Status bar lives at the BOTTOM — where attention sits in agentic workflows
-  -- (the prompt and the agent's latest output).
-  config.tab_bar_at_bottom = true
+  -- Tab-bar placement follows prefs.show_resource_gauges: when the gauges ride
+  -- WezTerm's bar it earns the BOTTOM (attention) spot; when off (default) the bar is
+  -- just tabs + workspace/clock, so tabs go TOP and tmux owns the bottom (near the
+  -- prompt). Keeps the two bars from stacking at the bottom either way.
+  config.tab_bar_at_bottom = prefs.show_resource_gauges
   config.tab_max_width = 28
 
   -- Style the fancy tab bar to match the active Catppuccin flavor.

@@ -3,6 +3,7 @@
 -- Tuned for heavy agentic coding + multi-server access. The config is split into
 -- focused modules under `config/`; this file just wires them together.
 --
+--   config/prefs.lua       shared user prefs (e.g. show_resource_gauges)
 --   config/caps.lua        feature detection (stable vs nightly)
 --   config/appearance.lua  fonts, colors, window, readability
 --   config/domains.lua     SSH domains (auto-enumerated) + agent forwarding
