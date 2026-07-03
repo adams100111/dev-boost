@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Minimal, responsive Claude Code status line — self-contained, Catppuccin Mocha.
-# Layout: left (dir · git) hugs left; right (model · context% · cost) is justified
-# to the right edge. As the window narrows, items drop lowest-first:
-# cost → model → branch, always keeping directory and the context %.
+# Layout: left = environment (dir · git branch · RAM · disk) hugs left; right =
+# Claude session (model · context% · cost) is justified to the right edge. Machine
+# gauges live with dir/branch, kept out of the session metrics you actively watch.
+# As the window narrows, items drop: cost → disk → ram → model → branch; directory
+# and context % always survive.
 # Context % is color-thresholded: green <50 · yellow 50–79 · red ≥80.
 # RAM/disk gauges mirror the WezTerm status bar / starship prompt, for headless &
-# SSH sessions (and inside Claude) where WezTerm's top bar isn't running. They sit
-# at the right and drop out first as the window narrows, so they never crowd ctx%.
+# SSH sessions (and inside Claude) where WezTerm's top bar isn't running.
 input=$(cat)
 cols=${COLUMNS:-80}
 dir=$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // ""')
@@ -79,18 +80,25 @@ except OSError:
     pass
 ram_s  = c(RED if ram >= 80 else YELLOW if ram >= 60 else GREEN, f"󰍛 {ram}%") if ram is not None else ""
 disk_s = c(RED if (dpct or 0) >= 80 else TEAL, f"󰋊 {dfree}G") if dfree is not None else ""
+# Left-side variants: RAM/disk group with dir/branch as "environment" context, so
+# leading separators are baked in here (the right side gets them from join()).
+ram_l  = ("  " + ram_s)  if ram_s  else ""
+disk_l = ("  " + disk_s) if disk_s else ""
 
 def join(parts): return "  ".join(p for p in parts if p)
 
-# Richest→leanest; first that fits wins. Drop cost→model→branch; dir & ctx survive.
+# Richest→leanest; first that fits wins. Left = environment (dir · branch · RAM ·
+# disk); right = Claude session (model · ctx% · cost) — keeps machine gauges out of
+# the session metrics you actively watch. Drop order: cost → disk → ram → model →
+# branch; dir & ctx% always survive.
 candidates = [
-    (dir_s + branch_s, [model_s, ctx_s, ram_s, disk_s, cost_s]),
-    (dir_s + branch_s, [model_s, ctx_s, ram_s, disk_s]),
-    (dir_s + branch_s, [model_s, ctx_s, ram_s]),
-    (dir_s + branch_s, [model_s, ctx_s]),
-    (dir_s + branch_s, [ctx_s]),
-    (dir_s,            [ctx_s]),
-    (dir_s,            []),
+    (dir_s + branch_s + ram_l + disk_l, [model_s, ctx_s, cost_s]),
+    (dir_s + branch_s + ram_l + disk_l, [model_s, ctx_s]),
+    (dir_s + branch_s + ram_l,          [model_s, ctx_s]),
+    (dir_s + branch_s,                  [model_s, ctx_s]),
+    (dir_s + branch_s,                  [ctx_s]),
+    (dir_s,                             [ctx_s]),
+    (dir_s,                             []),
 ]
 left, right_parts = candidates[-1]
 for L, R in candidates:
