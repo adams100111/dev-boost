@@ -47,6 +47,7 @@ ${custom.ram_crit}\
 ${custom.disk_ok}\
 ${custom.disk_crit}\
 $line_break\
+$status\
 $character"""
 
 [fill]
@@ -134,6 +135,18 @@ staged     = "[✚](bold green)"
 ahead      = "⇡${count}"
 behind     = "⇣${count}"
 diverged   = "⇕"
+
+# Last command's exit code — line 2, just before ❯. Renders ONLY on failure (nothing
+# on success), so the clean prompt stays clean; on failure it names *why* (127 not
+# found · 130 Ctrl-C · 126 not executable · …) to complement the ❯ going red. Reads
+# $? directly — no subprocess. pipestatus shows each stage of a failed pipeline.
+[status]
+disabled          = false
+symbol            = "✘ "
+pipestatus        = true
+pipestatus_format = "[$pipestatus]($style) "
+format            = "[$symbol$status]($style) "
+style             = "bold red"
 
 [character]
 success_symbol = "[❯](bold green)"
@@ -235,23 +248,28 @@ command = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/
 style   = "bold fg:#1e1e2e bg:#f38ba8"
 format  = "[ ⚠ $output ]($style) "
 
+# Each gauge's `when` is gated on `test -z "$TMUX"` so the prompt gauges HIDE inside
+# tmux — there the tmux status bar owns RAM/disk (and stays visible even while a
+# full-screen app fills the pane). Outside tmux the prompt shows them. No duplication.
+# The res_alert badge above is intentionally NOT gated: a critical alert is worth
+# showing on every surface. (`{ …; }` keeps each gate's internal `;`/`&&` intact.)
 # ram % (used) — Linux /proc/meminfo, integer percent
 [custom.ram_ok]
-when    = '''test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -lt 60'''
+when    = '''test -z "$TMUX" && { test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -lt 60; }'''
 command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
 symbol  = "󰍛 "
 style   = "bold green"
 format  = "[$symbol$output]($style) "
 
 [custom.ram_warn]
-when    = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); test "$r" -ge 60 && test "$r" -lt 80'''
+when    = '''test -z "$TMUX" && { r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); test "$r" -ge 60 && test "$r" -lt 80; }'''
 command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
 symbol  = "󰍛 "
 style   = "bold yellow"
 format  = "[$symbol$output]($style) "
 
 [custom.ram_crit]
-when    = '''test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -ge 80'''
+when    = '''test -z "$TMUX" && { test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -ge 80; }'''
 command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
 symbol  = "󰍛 "
 style   = "bold red"
@@ -259,14 +277,14 @@ format  = "[$symbol$output]($style) "
 
 # disk free GB on / — teal normally, red when / is ≥80% used
 [custom.disk_ok]
-when    = '''test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -lt 80'''
+when    = '''test -z "$TMUX" && { test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -lt 80; }'''
 command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
 symbol  = "󰋊 "
 style   = "bold teal"
 format  = "[$symbol$output]($style)"
 
 [custom.disk_crit]
-when    = '''test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -ge 80'''
+when    = '''test -z "$TMUX" && { test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -ge 80; }'''
 command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
 symbol  = "󰋊 "
 style   = "bold red"
