@@ -16,7 +16,9 @@ command_timeout = 500
 # Single-line layout via $fill so the right-hand context renders in plain bash
 # (starship's right_format only works under ble.sh). $fill pushes everything
 # after it to the right edge of line 1. Language/runtime modules surface only
-# inside relevant projects; the RAM/disk gauges are always shown.
+# inside relevant projects; the RAM/disk gauges (WezTerm-status equivalent, see
+# the [custom.*] blocks below) are always shown so a headless SSH box still has
+# resource visibility without WezTerm's status bar.
 format = """
 $username\
 $hostname\
@@ -38,6 +40,11 @@ $ruby\
 $package\
 $docker_context\
 $cmd_duration\
+${custom.ram_ok}\
+${custom.ram_warn}\
+${custom.ram_crit}\
+${custom.disk_ok}\
+${custom.disk_crit}\
 $line_break\
 $character"""
 
@@ -201,3 +208,48 @@ symbol = " "
 style  = "bold sapphire"
 format = "[$symbol$context]($style) "
 only_with_files = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# System resource gauges — the WezTerm status-bar equivalent for plain bash
+# (headless server / SSH, where WezTerm's status.lua isn't running). Mirrors it:
+#   RAM  󰍛  used%   green <60 · yellow 60–79 · red ≥80   (status.lua ram_color)
+#   DISK 󰋊  free-G  teal, red when / is ≥80% used         (status.lua disk cell)
+# Threshold coloring is done with mutually-exclusive `when`-gated modules — exactly
+# one RAM tier and one DISK tier renders. Probes are the same as status.lua:52-54
+# (/proc/meminfo + df), Linux-only and cheap; each is well under command_timeout.
+# ram % (used) — Linux /proc/meminfo, integer percent
+[custom.ram_ok]
+when    = '''test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -lt 60'''
+command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+symbol  = "󰍛 "
+style   = "bold green"
+format  = "[$symbol$output]($style) "
+
+[custom.ram_warn]
+when    = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); test "$r" -ge 60 && test "$r" -lt 80'''
+command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+symbol  = "󰍛 "
+style   = "bold yellow"
+format  = "[$symbol$output]($style) "
+
+[custom.ram_crit]
+when    = '''test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -ge 80'''
+command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+symbol  = "󰍛 "
+style   = "bold red"
+format  = "[$symbol$output]($style) "
+
+# disk free GB on / — teal normally, red when / is ≥80% used
+[custom.disk_ok]
+when    = '''test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -lt 80'''
+command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
+symbol  = "󰋊 "
+style   = "bold teal"
+format  = "[$symbol$output]($style)"
+
+[custom.disk_crit]
+when    = '''test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -ge 80'''
+command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
+symbol  = "󰋊 "
+style   = "bold red"
+format  = "[$symbol$output]($style)"
