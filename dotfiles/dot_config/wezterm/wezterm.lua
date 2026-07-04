@@ -8,6 +8,7 @@
 --   config/appearance.lua  fonts, colors, window, readability
 --   config/domains.lua     SSH domains (auto-enumerated) + agent forwarding
 --   config/keys.lua        leader-driven keymap (panes/tabs/workspaces/servers)
+--   config/paste.lua       smart paste (clipboard image → upload to VPS → remote path)
 --   config/workspaces.lua  per-project workspaces + one-key agent layout
 --   config/status.lua      status bar (workspace, host, leader indicator, clock)
 --
@@ -23,6 +24,7 @@ require("config.appearance").apply(config)
 require("config.domains").apply(config)
 require("config.workspaces").apply(config)
 require("config.keys").apply(config)
+require("config.paste").apply(config)
 require("config.status").apply(config)
 
 return config

@@ -281,6 +281,18 @@ class Direnv(PackageModule):
 
 
 @register
+class WlClipboard(PackageModule):
+    name = "wl-clipboard"
+    category = "shell"
+    description = "Wayland clipboard CLI (wl-copy/wl-paste) — powers the image-paste bridge."
+    profiles = ("shell",)
+    cmd = "wl-paste"
+    fedora_pkg = "wl-clipboard"
+    debian_pkg = "wl-clipboard"
+    gui = True  # laptop-only; skipped on a headless VPS
+
+
+@register
 class Delta(PackageModule):
     name = "delta"
     category = "cli"

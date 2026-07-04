@@ -10,7 +10,8 @@ base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatp
         "build-tools","mise","chezmoi","chezmoi-repo","docker"]
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","fastfetch","claude-code"]
-shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline"]
+shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline",
+         "wl-clipboard"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
 gnome-aesthetics = ["gnome-aesthetics-bundle"]
 gnome-theme      = ["gnome-theme-bundle"]
