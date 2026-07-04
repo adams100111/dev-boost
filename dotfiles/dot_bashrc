@@ -83,6 +83,25 @@ if command -v npx &>/dev/null; then
   }
 fi
 
+# img2ssh — paste a clipboard IMAGE into an SSH'd CLI (e.g. Claude Code) from ANY terminal,
+# not just WezTerm. A clipboard image can't cross SSH, so run this ON THE LAPTOP: it scps the
+# clipboard image to HOST and puts the remote PATH back on your clipboard — then paste that
+# path into your ssh session (Claude Code renders a path as an [Image]). WezTerm's Ctrl+V does
+# this automatically; this is the manual equivalent for GNOME Terminal/Konsole/etc.
+# HOST defaults to $DEVBOOST_PASTE_HOST; remote dir to $DEVBOOST_PASTE_DIR (/tmp/wezterm-paste).
+if command -v wl-paste &>/dev/null; then
+  img2ssh() {
+    local host="${1:-${DEVBOOST_PASTE_HOST:?usage: img2ssh HOST (or set DEVBOOST_PASTE_HOST)}}"
+    local dir="${DEVBOOST_PASTE_DIR:-/tmp/wezterm-paste}"
+    local mime; mime=$(wl-paste --list-types 2>/dev/null | grep -m1 '^image/')
+    [ -n "$mime" ] || { echo "img2ssh: no image in the clipboard" >&2; return 1; }
+    local path="${dir}/paste-$(date +%Y%m%d-%H%M%S).${mime##*/}"
+    wl-paste --type "$mime" | ssh "$host" "mkdir -p '${dir}' && cat > '${path}'" || return 1
+    printf '%s' "$path" | wl-copy    # remote path now on the clipboard → paste it in the ssh tab
+    echo "${path}  (path copied to clipboard — paste it in your ssh session)"
+  }
+fi
+
 # ---------------------------------------------------------------------------
 # Aliases
 # ---------------------------------------------------------------------------
