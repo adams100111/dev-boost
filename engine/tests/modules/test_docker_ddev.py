@@ -13,6 +13,20 @@ UBUNTU = OsInfo("ubuntu", "debian", "x86_64", version_id="24.04", codename="nobl
 UBUNTU_HEADLESS = OsInfo("ubuntu", "debian", "x86_64", headless=True)
 
 
+def test_ddev_debian_uses_canonical_apt_repo() -> None:
+    """On Debian, set up ddev's OWN repo (ddev.sources + ddev.asc, per ddev docs) and remove
+    the old conflicting file, then install via the Apt primitive — no Signed-By clash."""
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"mkcert"}))  # type: ignore[arg-type]
+    Ddev().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    repo = next(c for c in calls if c[:3] == ["sudo", "sh", "-c"])
+    script = repo[3]
+    assert "/etc/apt/sources.list.d/ddev.sources" in script
+    assert "/etc/apt/keyrings/ddev.asc" in script
+    assert "pkg-ddev-com.list" in script  # the conflicting third-party file is removed
+    assert ["sudo", "apt-get", "install", "-y", "ddev"] in calls  # install via Apt primitive
+
+
 def test_ddev_remote_binds_all_interfaces_on_a_server() -> None:
     ctx = Ctx(os=UBUNTU_HEADLESS, ex=FakeExecutor())
     DdevRemote().install(ctx)

@@ -17,7 +17,7 @@ from devboost.core.errors import SecretsError, UnsupportedOS
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
-from devboost.modules.secrets import Secrets, bundle_path, key_path
+from devboost.modules.secrets import bundle_path, key_path
 
 
 def _secret(ctx: Ctx, field: str) -> str | None:
@@ -40,7 +40,9 @@ class Tailscale(Module):
     category = "server"
     description = "Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key)."
     profiles = ("server",)
-    requires = (Secrets,)
+    # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
+    # degrades to None when the bundle is absent). A hard require would let a missing
+    # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("tailscale")
@@ -179,7 +181,9 @@ class ResticB2(Module):
     category = "server"
     description = "Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer."
     profiles = ("server",)
-    requires = (Secrets,)
+    # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
+    # degrades to None when the bundle is absent). A hard require would let a missing
+    # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
         d = systemd._user_unit_dir()
