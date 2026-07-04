@@ -228,6 +228,18 @@ def devtools(
     _run(["devtools"], root, dry_run, force, all_=all_, apps=app)
 
 
+@app.command()
+def server(
+    root: RootOpt = settings.root,
+    dry_run: DryOpt = False,
+    force: ForceOpt = False,
+    all_: AllOpt = True,
+    app: AppOpt = [],
+) -> None:
+    """Install the server tier (headless-VPS hardening + ops; Ubuntu/Debian)."""
+    _run(["server"], root, dry_run, force, all_=all_, apps=app)
+
+
 def _ctx() -> Ctx:
     return Ctx(os=osinfo.detect(), ex=RealExecutor())
 
