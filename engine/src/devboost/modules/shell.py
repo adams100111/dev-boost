@@ -38,15 +38,15 @@ class Starship(Module):
         return ctx.ex.which("starship")
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.os.family == "debian":
-            # Not in Ubuntu apt — official installer into ~/.local/bin (on PATH), no sudo.
-            bindir = _home() / ".local" / "bin"
-            ctx.ex.run(
-                ["sh", "-c",
-                 f"curl -sS https://starship.rs/install.sh | sh -s -- -y -b {bindir}"]
-            )
-        else:
-            pkg.install(ctx, "starship")
+        # Not in Ubuntu apt OR Fedora's default repos — the official installer drops the binary
+        # into ~/.local/bin (on PATH), no sudo, on any distro. The installer's -b doesn't create
+        # the dir, so ensure it exists (fresh boxes may not have ~/.local/bin yet).
+        bindir = _home() / ".local" / "bin"
+        bindir.mkdir(parents=True, exist_ok=True)
+        ctx.ex.run(
+            ["sh", "-c",
+             f"curl -sS https://starship.rs/install.sh | sh -s -- -y -b {bindir}"]
+        )
 
 
 _WEZTERM_APPIMAGE = (

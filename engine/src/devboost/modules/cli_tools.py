@@ -366,13 +366,36 @@ class Duf(PackageModule):
     fedora_pkg = "duf"
 
 
+_SD_INSTALL = (
+    "set -e\n"
+    'ver=$(curl -fsSL https://api.github.com/repos/chmln/sd/releases/latest'
+    " | grep -Po '\"tag_name\": *\"v\\K[^\"]*')\n"
+    'case "$(uname -m)" in\n'
+    "  x86_64) t=x86_64-unknown-linux-gnu ;;\n"
+    "  aarch64) t=aarch64-unknown-linux-musl ;;\n"  # no aarch64-gnu asset — use musl
+    '  *) echo "sd: unsupported arch $(uname -m)" >&2; exit 1 ;;\n'
+    "esac\n"
+    "tmp=$(mktemp -d)\n"
+    'curl -fsSL -o "$tmp/sd.tar.gz"'
+    ' "https://github.com/chmln/sd/releases/download/v${ver}/sd-v${ver}-${t}.tar.gz"\n'
+    'tar -xf "$tmp/sd.tar.gz" -C "$tmp"\n'
+    'install -Dm755 "$tmp/sd-v${ver}-${t}/sd" "$HOME/.local/bin/sd"\n'
+    'rm -rf "$tmp"\n'
+)
+
+
 @register
 class Sd(PackageModule):
     name = "sd"
     category = "cli"
     profiles = ("cli",)
     cmd = "sd"
-    fedora_pkg = "sd"
+    fedora_pkg = "sd"  # unused — sd is absent from Fedora 44 apt/dnf; binary install below
+
+    def install(self, ctx: Ctx) -> None:
+        # Not reliably packaged (dropped from Fedora 44, not in Ubuntu apt) — install the
+        # official release binary into ~/.local/bin, cross-distro (same pattern as dust).
+        ctx.ex.run(["sh", "-c", _SD_INSTALL])
 
 
 @register

@@ -45,6 +45,9 @@ class Docker(Module):
     profiles = ("base",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "debian":
+            # Fedora path: rootless Podman + its docker-compat socket (see install()).
+            return ctx.ex.which("podman") and systemd.is_enabled(ctx, "podman.socket", user=True)
         if not ctx.ex.which("docker"):
             return False
         if not systemd.is_enabled(ctx, "docker.service"):
@@ -57,16 +60,20 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.os.family == "debian":
-            # Skip the repo-add + install when Docker is already present (e.g. set up
-            # out-of-band): re-adding download.docker.com would conflict with an existing
-            # docker.asc Signed-By. Still (re)enable the daemon and fix the group below.
-            if not ctx.ex.which("docker"):
-                # Official docker-ce set from Docker's own apt repo.
-                pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
-        else:
-            # Fedora ships the daemon as moby-engine.
-            pkg.install(ctx, "moby-engine")
+        if ctx.os.family != "debian":
+            # Fedora Workstation is Podman-native — it ships `podman` + the `podman-docker`
+            # shim, which CONFLICTS with `moby-engine` (why `dnf install moby-engine` fails).
+            # Don't fight the distro: use rootless Podman as the engine ddev talks to. Ensure
+            # podman + the docker-compat shim, then enable the rootless user socket. (The
+            # DOCKER_HOST that points ddev at that socket is exported by the managed .bashrc.)
+            pkg.install(ctx, "podman", "podman-docker")
+            systemd.enable_user_unit(ctx, "podman.socket", now=True)
+            return
+        # Debian/Ubuntu: real docker-ce from Docker's own apt repo (no podman conflict there).
+        # Skip the repo-add + install when Docker is already present (re-adding
+        # download.docker.com would conflict on an existing docker.asc Signed-By).
+        if not ctx.ex.which("docker"):
+            pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
         systemd.enable_system_unit(ctx, "docker.service", now=True)
         user = _invoking_user()
         if user:

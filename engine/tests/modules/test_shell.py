@@ -28,10 +28,13 @@ def _ctx(**kw: object) -> Ctx:
     return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
-def test_starship_installs() -> None:
+def test_starship_installs_via_official_installer_on_fedora() -> None:
+    """Not in Fedora's default repos either — use the official install.sh into ~/.local/bin."""
     ctx = _ctx()
     Starship().install(ctx)
-    assert ["sudo", "dnf", "install", "-y", "starship"] in ctx.ex.calls  # type: ignore[attr-defined]
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("starship.rs/install.sh" in j and ".local/bin" in j for j in joined)
+    assert not any("dnf" in j for j in joined)
 
 
 def test_starship_installs_via_official_script_on_ubuntu() -> None:
