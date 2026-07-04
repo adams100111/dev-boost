@@ -60,6 +60,30 @@ command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 command -v mise &>/dev/null && eval "$(mise activate bash)"
 
 # ---------------------------------------------------------------------------
+# Remote dev over Tailscale — publish a VPS port to your other devices, and drive
+# a headed browser on your laptop from tests on the VPS. Zero-config one-liners.
+# ---------------------------------------------------------------------------
+if command -v tailscale &>/dev/null; then
+  # expose 3000  → serves it at https://<this-host>.<tailnet>.ts.net (auto-TLS, background)
+  expose()   { tailscale serve --bg "${1:?usage: expose PORT}" && tailscale serve status; }
+  exposed()  { tailscale serve status; }        # what's currently published
+  unexpose() { tailscale serve reset; }          # take it all down
+fi
+
+if command -v npx &>/dev/null; then
+  # Playwright: watch headed tests on THIS machine's browser, driven from anywhere.
+  #   laptop:  pw-server            → opens a headed browser server; prints the pw-connect line
+  #   VPS:     pw-connect <ws-url>  → runs `playwright test` against that laptop browser
+  pw-server() {
+    NODE_PATH="$(npm root -g)" node -e "require('playwright').chromium.launchServer({headless:false,host:'0.0.0.0',port:${PW_PORT:-5000},wsPath:'pw'}).then(function(s){console.log('On the other machine run:  pw-connect '+s.wsEndpoint().replace('0.0.0.0','$(hostname)'))})"
+  }
+  pw-connect() {
+    local ws="${1:?usage: pw-connect ws://LAPTOP:5000/pw}"; shift
+    PW_TEST_CONNECT_WS_ENDPOINT="$ws" npx playwright test "$@"
+  }
+fi
+
+# ---------------------------------------------------------------------------
 # Aliases
 # ---------------------------------------------------------------------------
 # eza — modern ls (icons, git status, tree); falls back to plain ls if absent.

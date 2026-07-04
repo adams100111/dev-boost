@@ -40,3 +40,24 @@ class Ddev(Module):
         if not ctx.ex.which("mkcert"):
             pkg.install(ctx, "mkcert")
         ctx.ex.run(["mkcert", "-install"])
+
+
+@register
+class DdevRemote(Module):
+    name = "ddev-remote"
+    category = "dev-stacks"
+    description = "On a server, bind ddev's router to all interfaces (tailnet-reachable projects)."
+    requires = (Ddev,)
+    profiles = ("laravel",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        # Only meaningful on a headless server; on a GUI laptop ddev stays on localhost.
+        if not ctx.os.headless:
+            return True
+        out = ctx.ex.run(["ddev", "config", "global"]).stdout
+        return "router-bind-all-interfaces=true" in out
+
+    def install(self, ctx: Ctx) -> None:
+        if not ctx.os.headless:
+            return
+        ctx.ex.run(["ddev", "config", "global", "--router-bind-all-interfaces"])

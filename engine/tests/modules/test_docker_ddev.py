@@ -5,11 +5,25 @@ import pytest
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
-from devboost.modules.ddev import Ddev
+from devboost.modules.ddev import Ddev, DdevRemote
 from devboost.modules.docker import Docker, _invoking_user
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64", version_id="24.04", codename="noble")
+UBUNTU_HEADLESS = OsInfo("ubuntu", "debian", "x86_64", headless=True)
+
+
+def test_ddev_remote_binds_all_interfaces_on_a_server() -> None:
+    ctx = Ctx(os=UBUNTU_HEADLESS, ex=FakeExecutor())
+    DdevRemote().install(ctx)
+    assert ["ddev", "config", "global", "--router-bind-all-interfaces"] in ctx.ex.calls
+
+
+def test_ddev_remote_is_a_noop_on_a_gui_laptop() -> None:
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor())  # headless=False → keep ddev on localhost
+    DdevRemote().install(ctx)
+    assert ctx.ex.calls == []
+    assert DdevRemote().verify(ctx) is True
 
 
 def _ctx(**kw: object) -> Ctx:

@@ -86,7 +86,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-aesthetics` | gnome-aesthetics-bundle |
 | `gnome-theme` | gnome-theme-bundle |
 | `hardware-nvidia` | cuda, libva-nvidia-driver, nvidia-akmod, nvidia-container-toolkit, nvidia-resign-service, secureboot-mok |
-| `laravel` | ddev, laravel-lsp |
+| `laravel` | ddev, ddev-remote, laravel-lsp |
 | `multimedia` | codecs, ffmpeg-full, openh264, va-hwaccel |
 | `optional-editors` | jetbrains-toolbox, neovim |
 | `python` | python-lsp, uv |
@@ -184,6 +184,12 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 Both resolve the same typed-Python modules + `profiles.toml`, with a distro-package-first,
 pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any-os)
 section above for the one-liner.
+
+**Remote dev over Tailscale (zero-config).** Develop on the VPS, use it from the laptop:
+`ddev-remote` binds ddev's router to the tailnet on servers; managed shell helpers make
+the rest one word — `expose <port>` publishes a VPS port at `https://<host>.<tailnet>.ts.net`
+(auto-TLS), and `pw-server` (laptop) + `pw-connect <ws>` (VPS) run Playwright on the VPS while
+the **headed** browser opens on your laptop. Aspire: `expose 18888` for the dashboard.
 
 ## Requirements & supported OS
 
