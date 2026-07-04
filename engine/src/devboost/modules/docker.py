@@ -44,7 +44,16 @@ class Docker(Module):
     description = "Container engine (daemon enabled; invoking user added to docker group)."
     profiles = ("base",)
 
+    def _podman_path(self, ctx: Ctx) -> bool:
+        # Fedora with NO real Docker daemon. A `dockerd` binary means real Docker (docker-ce /
+        # moby) is installed out-of-band — the podman-docker shim never provides `dockerd` — so
+        # we respect it via the daemon path instead of installing podman (which would conflict).
+        return ctx.os.family != "debian" and not ctx.ex.which("dockerd")
+
     def verify(self, ctx: Ctx) -> bool:
+        if self._podman_path(ctx):
+            return ctx.ex.which("podman") and systemd.is_enabled(ctx, "podman.socket", user=True)
+        # Real Docker daemon (Fedora docker-ce installed out-of-band, or Debian docker-ce).
         if not ctx.ex.which("docker"):
             return False
         if not systemd.is_enabled(ctx, "docker.service"):
@@ -57,16 +66,19 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.os.family == "debian":
-            # Skip the repo-add + install when Docker is already present (e.g. set up
-            # out-of-band): re-adding download.docker.com would conflict with an existing
-            # docker.asc Signed-By. Still (re)enable the daemon and fix the group below.
-            if not ctx.ex.which("docker"):
-                # Official docker-ce set from Docker's own apt repo.
-                pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
-        else:
-            # Fedora ships the daemon as moby-engine.
-            pkg.install(ctx, "moby-engine")
+        if self._podman_path(ctx):
+            # Fedora Workstation is Podman-native — it ships `podman` + the `podman-docker`
+            # shim, which CONFLICTS with `moby-engine`/`docker-ce`. Don't fight the distro: use
+            # rootless Podman as the engine ddev/Aspire talk to (DOCKER_HOST wired in .bashrc).
+            pkg.install(ctx, "podman", "podman-docker")
+            systemd.enable_user_unit(ctx, "podman.socket", now=True)
+            return
+        # Real Docker daemon: Debian docker-ce, OR a pre-existing docker-ce on Fedora we respect
+        # (we never install podman-docker over it, and never pass --allowerasing, so it's kept).
+        # Debian: add the repo + install only when docker is absent (re-adding
+        # download.docker.com would conflict on an existing docker.asc Signed-By).
+        if ctx.os.family == "debian" and not ctx.ex.which("docker"):
+            pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
         systemd.enable_system_unit(ctx, "docker.service", now=True)
         user = _invoking_user()
         if user:

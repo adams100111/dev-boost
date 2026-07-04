@@ -59,6 +59,13 @@ command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 # on PATH for interactive shells. Without this, mise-installed tools aren't found.
 command -v mise &>/dev/null && eval "$(mise activate bash)"
 
+# Podman (Fedora): point docker-compatible tools (ddev, Aspire) at the rootless Podman
+# socket when it's running. Guarded on the socket existing, so it's a no-op on
+# Docker/Ubuntu (which has no such socket) — keeps this bashrc cross-distro.
+_pd_sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+[ -S "${_pd_sock}" ] && export DOCKER_HOST="unix://${_pd_sock}"
+unset _pd_sock
+
 # ---------------------------------------------------------------------------
 # Remote dev over Tailscale — publish a VPS port to your other devices, and drive
 # a headed browser on your laptop from tests on the VPS. Zero-config one-liners.
