@@ -207,6 +207,13 @@ class Dotfiles(Module):
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
+        # Reload a LIVE tmux server so config changes (status bar, gauges, keybinds, tab
+        # position) take effect now. A long-lived server reads ~/.tmux.conf only at start, so
+        # without this an update silently keeps stale config until the server is killed —
+        # exactly why gauges/tabs looked "broken" after an update. `tmux info` exits non-zero
+        # when no server is running, so this is a no-op on a box that isn't using tmux yet.
+        if ctx.ex.which("tmux") and ctx.ex.run(["tmux", "info"]).ok:
+            ctx.ex.run(["tmux", "source", str(_home() / ".tmux.conf")])
 
 
 @register

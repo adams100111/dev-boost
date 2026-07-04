@@ -27,9 +27,19 @@ local SSH_TAKES_ARG = {
   R = true, S = true, W = true, w = true,
 }
 
--- If this pane's foreground process is ssh, return its destination (user@host or a Host alias
--- from ~/.ssh/config — used verbatim for scp so it resolves identically). nil for a local pane.
+-- Return the ssh destination for this pane (user@host or a Host alias from ~/.ssh/config —
+-- used verbatim for scp so it resolves identically), or nil for a truly local pane.
 local function ssh_destination(pane)
+  -- 1. WezTerm SSH DOMAIN (the `LEADER d` launcher, multiplexing="None"): there is no local
+  --    ssh process to inspect — the pane's DOMAIN is named after the ssh Host (config/
+  --    domains.lua sets name = host), so the domain name IS the destination.
+  local ok_d, domain = pcall(function()
+    return pane:get_domain_name()
+  end)
+  if ok_d and domain and domain ~= "local" and domain ~= "unix" then
+    return domain
+  end
+  -- 2. Plain `ssh host` running in a LOCAL pane: parse the foreground ssh argv.
   local ok, info = pcall(function()
     return pane:get_foreground_process_info()
   end)
