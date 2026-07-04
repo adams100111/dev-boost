@@ -28,9 +28,11 @@
 -- Misc
 --   LEADER p        command palette
 --   LEADER e        quick-select (grab paths/hashes/URLs)
+--   LEADER u        open a URL from the screen (quick-select → launch on the laptop)
 --   LEADER c        copy mode
 --   LEADER r        reload configuration
 --   CTRL+SHIFT+f    search scrollback
+--   CTRL+SHIFT+click  open the link under the mouse (SHIFT bypasses tmux's mouse grab)
 local wezterm = require("wezterm")
 local act = wezterm.action
 local workspaces = require("config.workspaces")
@@ -39,6 +41,20 @@ local M = {}
 
 function M.apply(config)
   config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
+
+  -- Hyperlinks: WezTerm opens links on the LAPTOP (it runs the local URL handler), so
+  -- this works over SSH. The catch is tmux with `mouse on` grabs the click before
+  -- WezTerm sees it. SHIFT is WezTerm's mouse-reporting bypass, so CTRL+SHIFT+Click
+  -- lets WezTerm handle the click and open the URL even inside tmux. (Default
+  -- hyperlink_rules already auto-detect http/https URLs.)
+  config.bypass_mouse_reporting_modifiers = "SHIFT"
+  config.mouse_bindings = {
+    {
+      event = { Up = { streak = 1, button = "Left" } },
+      mods = "CTRL|SHIFT",
+      action = act.OpenLinkAtMouseCursor,
+    },
+  }
 
   local keys = {
     -- Panes
@@ -75,6 +91,25 @@ function M.apply(config)
     -- Misc
     { key = "p", mods = "LEADER", action = act.ActivateCommandPalette },
     { key = "e", mods = "LEADER", action = act.QuickSelect },
+    -- Open a URL without the mouse (works in tmux): quick-select over on-screen URLs,
+    -- then launch the chosen one via the laptop's default handler.
+    {
+      key = "u",
+      mods = "LEADER",
+      action = act.QuickSelectArgs({
+        label = "open url",
+        patterns = { "https?://\\S+", "www\\.\\S+" },
+        action = wezterm.action_callback(function(window, pane)
+          local url = window:get_selection_text_for_pane(pane)
+          if url and url ~= "" then
+            if url:match("^www%.") then
+              url = "https://" .. url
+            end
+            wezterm.open_with(url)
+          end
+        end),
+      }),
+    },
     { key = "c", mods = "LEADER", action = act.ActivateCopyMode },
     { key = "r", mods = "LEADER", action = act.ReloadConfiguration },
     { key = "f", mods = "CTRL|SHIFT", action = act.Search({ CaseInSensitiveString = "" }) },

@@ -104,8 +104,13 @@ Leader = **CTRL+Space**.
 
 **Servers:** `LEADER d` attach to an SSH host · `CTRL+SHIFT+D` detach domain.
 
-**Misc:** `LEADER p` command palette · `LEADER e` quick-select · `LEADER c` copy mode ·
-`LEADER r` reload · `CTRL+SHIFT+f` search.
+**Misc:** `LEADER p` command palette · `LEADER e` quick-select · `LEADER u` open a URL
+(quick-select → launch on the laptop) · `LEADER c` copy mode · `LEADER r` reload ·
+`CTRL+SHIFT+f` search.
+
+**Links:** WezTerm opens URLs on the laptop (so it works over SSH). Inside tmux (`mouse
+on`), the click is captured by tmux — hold **Shift** to bypass it: **`CTRL+SHIFT+Click`**
+opens the link under the cursor. Or go mouse-free with **`LEADER u`**.
 
 ## Servers
 
