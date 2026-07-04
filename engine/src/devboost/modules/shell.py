@@ -133,6 +133,9 @@ class NerdFonts(Module):
     name = "nerd-fonts"
     category = "shell"
     description = "JetBrainsMono Nerd Font."
+    gui = True  # a display concern — on a headless server glyphs render in the CLIENT's
+    # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
+    # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
     profiles = ("shell",)
 
     def verify(self, ctx: Ctx) -> bool:

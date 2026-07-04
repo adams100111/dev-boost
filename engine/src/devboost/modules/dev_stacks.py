@@ -69,6 +69,15 @@ class WebRuntimes(Module):
         ctx.ex.run(["mise", "use", "-g", *self._SPECS])
 
 
+# Chromium's shared-library deps on Fedora (Playwright's install-deps is apt-only). All resolve
+# on Fedora 44; installed best-effort so a future rename degrades to a warn, never an error.
+_CHROMIUM_FEDORA_LIBS = (
+    "alsa-lib", "atk", "at-spi2-atk", "at-spi2-core", "cairo", "cups-libs", "dbus-libs",
+    "expat", "glib2", "gtk3", "libX11", "libXcomposite", "libXdamage", "libXext", "libXfixes",
+    "libXrandr", "libdrm", "libxcb", "libxkbcommon", "mesa-libgbm", "nspr", "nss", "pango",
+)
+
+
 @register
 class Playwright(Module):
     name = "playwright"
@@ -97,10 +106,16 @@ class Playwright(Module):
                 env={"NEEDRESTART_MODE": "a"},
             )
         else:
-            log.warn(
-                "playwright: install Chromium's system libs via dnf (the bundled dep "
-                "installer is apt-only), or run tests in a container"
-            )
+            # Fedora: Playwright's install-deps is apt-only, so install Chromium's system libs
+            # via dnf ourselves. Best-effort — a lib renamed on some future Fedora must NOT fail
+            # the module (browsers still install; degrade with a warn, never error). dnf5 rejects
+            # --skip-unavailable, so we just don't raise on a non-zero transaction.
+            res = ctx.ex.run(["dnf", "install", "-y", *_CHROMIUM_FEDORA_LIBS], sudo=True)
+            if not res.ok:
+                log.warn(
+                    "playwright: some Chromium system libs didn't install via dnf — headed "
+                    "Chromium may need them; run tests in a container if it misbehaves"
+                )
         # Headless box (VPS) → the small headless-shell for the agent screenshot loop.
         # GUI box (laptop) → the FULL Chromium too, so you can run tests --headed and
         # watch them against the VPS app over Tailscale. Same module, both modes.

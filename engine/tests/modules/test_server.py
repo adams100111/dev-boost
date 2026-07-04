@@ -172,6 +172,20 @@ def test_playwright_gui_box_installs_full_chromium(
     assert ["npx", "--yes", "playwright", "install", "chromium", "chromium-headless-shell"] in calls
 
 
+def test_playwright_installs_chromium_libs_via_dnf_on_fedora(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fedora: Playwright's install-deps is apt-only, so install Chromium's system libs via dnf
+    (best-effort). NOT the apt install-deps path."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _fedora()
+    Playwright().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    dnf = next(c for c in calls if c[:3] == ["sudo", "dnf", "install"])
+    assert "nss" in dnf and "mesa-libgbm" in dnf and "gtk3" in dnf
+    assert not any("install-deps" in " ".join(c) for c in calls)  # not the apt path
+
+
 # ── agent-sudo (passwordless sudo so agents don't hang) ───────────────────────
 def test_agent_sudo_verify_uses_sudo_n(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SUDO_USER", raising=False)

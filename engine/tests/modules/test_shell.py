@@ -81,6 +81,12 @@ def test_nerd_fonts_download_unzip_cache(tmp_path: Path, monkeypatch: pytest.Mon
     assert cmds == ["curl", "unzip", "fc-cache"]
 
 
+def test_nerd_fonts_is_gui_so_it_skips_on_headless() -> None:
+    """Fonts render in the CLIENT terminal — pointless on a headless server (and fc-list may be
+    absent). gui=True makes the runner skip it there instead of failing verify."""
+    assert NerdFonts.gui is True
+
+
 def test_nerd_fonts_verify_reads_fc_list() -> None:
     ctx = _ctx(scripts={"fc-list": Result(0, stdout="JetBrainsMono Nerd Font:style=Regular")})
     assert NerdFonts().verify(ctx) is True
