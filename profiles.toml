@@ -39,4 +39,4 @@ devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
             "dotnet-lsp","ddev","playwright"]
 # server — headless-VPS hardening + ops (Ubuntu/Debian). Separate entry point, like
 # terminal/devtools; not part of `full` (which is the Fedora workstation aggregate).
-server = ["tailscale","server-firewall","zram","restic-b2","tmux-persist"]
+server = ["agent-sudo","tailscale","server-firewall","zram","restic-b2","tmux-persist"]

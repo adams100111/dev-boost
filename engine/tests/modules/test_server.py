@@ -10,7 +10,7 @@ from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules import server
 from devboost.modules.dev_stacks import Playwright
-from devboost.modules.server import ResticB2, ServerFirewall, Tailscale, Zram
+from devboost.modules.server import AgentSudo, ResticB2, ServerFirewall, Tailscale, Zram
 from devboost.modules.tpm import TmuxPersist
 
 UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="aarch64")
@@ -170,6 +170,28 @@ def test_playwright_gui_box_installs_full_chromium(
     Playwright().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["npx", "--yes", "playwright", "install", "chromium", "chromium-headless-shell"] in calls
+
+
+# ── agent-sudo (passwordless sudo so agents don't hang) ───────────────────────
+def test_agent_sudo_verify_uses_sudo_n(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("USER", "dev")
+    assert AgentSudo().verify(_ubuntu(scripts={"sudo": Result(0)})) is True
+    # sudo would need a password → not verified
+    assert AgentSudo().verify(_ubuntu(scripts={"sudo": Result(1)})) is False
+
+
+def test_agent_sudo_installs_via_visudo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("USER", "dev")
+    ctx = _ubuntu()
+    AgentSudo().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    # staged content is visudo-validated before it's moved into place (never corrupt sudoers)
+    assert ["sudo", "visudo", "-cf", "/etc/sudoers.d/.devboost-stage"] in calls
+    assert [
+        "sudo", "mv", "-f", "/etc/sudoers.d/.devboost-stage", "/etc/sudoers.d/devboost-dev",
+    ] in calls
 
 
 # ── tmux-persist (reboot survival) ────────────────────────────────────────────

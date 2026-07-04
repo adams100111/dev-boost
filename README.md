@@ -92,7 +92,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python` | python-lsp, uv |
 | `react-native` | android-sdk, expo, web-runtimes |
 | `security-cli` | pass, pass-store |
-| `server` | restic-b2, server-firewall, tailscale, tmux-persist, zram |
+| `server` | agent-sudo, restic-b2, server-firewall, tailscale, tmux-persist, zram |
 | `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm, wl-clipboard |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
 | `terminal` | atuin, bash-config, bat, btop, chezmoi, claude-statusline, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
@@ -172,9 +172,11 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
   Ubuntu/Fedora VPS (auto-skips GUI-only pieces). Verify-guarded: re-running installs
   only what's missing; `--dry-run` previews.
 - `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
-- `devboost server` — headless-VPS hardening + ops (Ubuntu/Debian): Tailscale + Tailscale
-  SSH, a ufw baseline (deny-in, keep SSH, open `tailscale0`, disable exposed rpcbind),
-  zram swap, restic→B2 nightly offsite backups, and tmux session-persistence. dev-boost's
+- `devboost server` — headless-VPS hardening + ops (Ubuntu/Debian): passwordless sudo for
+  your user (`agent-sudo` — so Claude Code / automation never hang on a password prompt;
+  visudo-validated, one-time interactive setup), Tailscale + Tailscale SSH, a ufw baseline
+  (deny-in, keep SSH, open `tailscale0`, disable exposed rpcbind), zram swap, restic→B2
+  nightly offsite backups, and tmux session-persistence. dev-boost's
   `system` tier is Fedora-desktop-shaped (btrfs/snapper/dnf); `server` is the Ubuntu-server
   counterpart. Dropping public `:22` and provisioning B2/Tailscale secrets stay deliberate
   operator steps.

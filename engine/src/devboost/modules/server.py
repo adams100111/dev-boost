@@ -15,7 +15,7 @@ from typing import ClassVar
 from devboost.core import log
 from devboost.core.errors import SecretsError, UnsupportedOS
 from devboost.core.registry import register
-from devboost.exec.primitives import age, pkg, systemd
+from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
@@ -133,6 +133,40 @@ class Zram(Module):
             )
             ctx.ex.run(["tee", conf], sudo=True, stdin=body)
             ctx.ex.run(["systemctl", "start", "systemd-zram-setup@zram0.service"], sudo=True)
+
+
+def _current_user() -> str:
+    for var in ("SUDO_USER", "USER", "LOGNAME"):
+        v = os.environ.get(var)
+        if v and v != "root":
+            return v
+    return os.environ.get("USER") or "root"
+
+
+@register
+class AgentSudo(Module):
+    name = "agent-sudo"
+    category = "server"
+    description = "Passwordless sudo for your user — so agents/automation never hang on a prompt."
+    profiles = ("server",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        # True only if sudo works non-interactively AND our drop-in is what enables it.
+        # `sudo -n` never prompts (it fails fast if a password would be needed), so this
+        # never hangs; the file check neutralises a still-valid sudo timestamp.
+        path = usermgmt.sudoers_path(_current_user())
+        return ctx.ex.run(["sudo", "-n", "test", "-f", path]).ok
+
+    def install(self, ctx: Ctx) -> None:
+        # NOPASSWD for the invoking user, written through the visudo-validated staging path
+        # (a bad rule is rejected, never left in place). The FIRST run needs one interactive
+        # sudo to write the drop-in (chicken-and-egg); every agent sudo afterward is silent.
+        # Fits dev-boost's model: a personal box you own, reached only over the tailnet.
+        user = _current_user()
+        content = usermgmt.sudoers_content(user, "nopasswd", ())
+        if content is None:  # unreachable for "nopasswd"; keeps the type honest
+            return
+        usermgmt.write_sudoers(ctx, user, content)
 
 
 def _devboost_dir() -> Path:
