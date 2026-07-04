@@ -1,4 +1,5 @@
-"""Docker — dependency of ddev (Fedora: moby-engine; Debian/Ubuntu: official docker-ce)."""
+"""Docker — dependency of ddev. Official docker-ce on both OSes (Fedora via Docker's Fedora
+repo, replacing the conflicting podman-docker shim; Debian/Ubuntu via Docker's apt repo)."""
 
 from __future__ import annotations
 
@@ -37,6 +38,23 @@ def _invoking_user() -> str:
     return os.environ.get("SUDO_USER") or os.environ.get("USER") or ""
 
 
+# Docker CE on Fedora, per Docker's official docs (docs.docker.com/engine/install/fedora).
+# Fedora Workstation ships `podman-docker`, which CONFLICTS with docker-ce, so remove it first
+# (a deliberate choice to run real Docker consistently with the Ubuntu VPS). `config-manager
+# addrepo` is dnf5 (Fedora 41+); the `--add-repo` fallback covers older dnf4.
+_DOCKER_CE_FEDORA = (
+    "set -e\n"
+    "dnf -y install dnf-plugins-core\n"
+    "dnf config-manager addrepo --from-repofile"
+    " https://download.docker.com/linux/fedora/docker-ce.repo 2>/dev/null"
+    " || dnf config-manager --add-repo"
+    " https://download.docker.com/linux/fedora/docker-ce.repo\n"
+    "dnf -y remove podman-docker || true\n"  # the shim that conflicts with docker-ce
+    "dnf -y install docker-ce docker-ce-cli containerd.io"
+    " docker-buildx-plugin docker-compose-plugin\n"
+)
+
+
 @register
 class Docker(Module):
     name = "docker"
@@ -44,16 +62,10 @@ class Docker(Module):
     description = "Container engine (daemon enabled; invoking user added to docker group)."
     profiles = ("base",)
 
-    def _podman_path(self, ctx: Ctx) -> bool:
-        # Fedora with NO real Docker daemon. A `dockerd` binary means real Docker (docker-ce /
-        # moby) is installed out-of-band — the podman-docker shim never provides `dockerd` — so
-        # we respect it via the daemon path instead of installing podman (which would conflict).
-        return ctx.os.family != "debian" and not ctx.ex.which("dockerd")
-
     def verify(self, ctx: Ctx) -> bool:
-        if self._podman_path(ctx):
-            return ctx.ex.which("podman") and systemd.is_enabled(ctx, "podman.socket", user=True)
-        # Real Docker daemon (Fedora docker-ce installed out-of-band, or Debian docker-ce).
+        # docker-ce daemon on BOTH Fedora and Debian. On Fedora, the podman-docker shim provides
+        # a `docker` command but no daemon — is-enabled(docker.service) is what proves a real
+        # engine, so a shim-only box correctly verifies False and gets docker-ce installed.
         if not ctx.ex.which("docker"):
             return False
         if not systemd.is_enabled(ctx, "docker.service"):
@@ -66,19 +78,15 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
-        if self._podman_path(ctx):
-            # Fedora Workstation is Podman-native — it ships `podman` + the `podman-docker`
-            # shim, which CONFLICTS with `moby-engine`/`docker-ce`. Don't fight the distro: use
-            # rootless Podman as the engine ddev/Aspire talk to (DOCKER_HOST wired in .bashrc).
-            pkg.install(ctx, "podman", "podman-docker")
-            systemd.enable_user_unit(ctx, "podman.socket", now=True)
-            return
-        # Real Docker daemon: Debian docker-ce, OR a pre-existing docker-ce on Fedora we respect
-        # (we never install podman-docker over it, and never pass --allowerasing, so it's kept).
-        # Debian: add the repo + install only when docker is absent (re-adding
-        # download.docker.com would conflict on an existing docker.asc Signed-By).
-        if ctx.os.family == "debian" and not ctx.ex.which("docker"):
-            pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
+        # docker-ce on both OSes (one engine, consistent with the VPS). `which("dockerd")`
+        # distinguishes a real engine already installed from Fedora's podman-docker shim, so the
+        # repo setup + install runs only when there's no daemon yet.
+        if not ctx.ex.which("dockerd"):
+            if ctx.os.family == "debian":
+                pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
+            else:
+                # Fedora: docker-ce from Docker's official repo (removes the conflicting shim).
+                ctx.ex.run(["sh", "-c", _DOCKER_CE_FEDORA], sudo=True)
         systemd.enable_system_unit(ctx, "docker.service", now=True)
         user = _invoking_user()
         if user:

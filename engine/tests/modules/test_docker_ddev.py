@@ -47,29 +47,35 @@ def _ctx(**kw: object) -> Ctx:
 # ── docker ──────────────────────────────────────────────────────────────────
 
 
-def test_docker_uses_rootless_podman_on_fedora(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fedora is Podman-native (podman-docker conflicts with moby-engine AND docker-ce), so
-    don't install a root Docker daemon — use rootless Podman + its docker-compat socket."""
+def test_docker_installs_ce_on_fedora(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fedora: docker-ce from Docker's OFFICIAL Fedora repo (docs.docker.com/engine/install/
+    fedora), removing the conflicting podman-docker shim — consistent with the Ubuntu VPS,
+    not moby-engine, not podman."""
     monkeypatch.setenv("SUDO_USER", "alice")
-    ctx = _ctx()  # FEDORA
+    ctx = _ctx()  # FEDORA, no dockerd yet
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["sudo", "dnf", "install", "-y", "podman", "podman-docker"] in calls
-    assert ["systemctl", "--user", "enable", "--now", "podman.socket"] in calls
-    # no moby-engine, no root docker.service, no docker group on the podman path
-    assert not any("moby-engine" in " ".join(c) for c in calls)
-    assert not any(c == ["sudo", "systemctl", "enable", "--now", "docker.service"] for c in calls)
-
-
-def test_docker_respects_existing_docker_ce_on_fedora(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A pre-existing real Docker daemon (dockerd present — e.g. docker-ce from Docker's Fedora
-    repo) is respected: NO podman install (would conflict, never --allowerasing), just enable."""
-    monkeypatch.setenv("SUDO_USER", "alice")
-    ctx = _ctx(present={"dockerd", "docker"})  # FEDORA + a real Docker engine already installed
-    Docker().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("podman" in " ".join(c) for c in calls)  # never installed over docker-ce
+    script = next(c for c in calls if c[:3] == ["sudo", "sh", "-c"])[3]
+    assert "download.docker.com/linux/fedora/docker-ce.repo" in script  # official repo
+    assert "docker-ce docker-ce-cli containerd.io" in script  # official package set
+    assert "remove podman-docker" in script  # the conflicting shim is removed
+    assert "moby-engine" not in script
     assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
+    assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
+
+
+def test_docker_skips_repo_setup_when_dockerd_present_on_fedora(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """docker-ce already installed (dockerd present) → don't re-run the repo/install script,
+    just (re)enable the daemon and fix the group."""
+    monkeypatch.setenv("SUDO_USER", "alice")
+    ctx = _ctx(present={"dockerd", "docker"})  # FEDORA + docker-ce already installed
+    Docker().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert not any(c[:3] == ["sudo", "sh", "-c"] for c in calls)  # no repo/install script re-run
+    assert ["sudo", "systemctl", "enable", "--now", "docker.service"] in calls
+    assert ["sudo", "usermod", "-aG", "docker", "alice"] in calls
 
 
 def test_docker_install_uses_official_ce_repo_on_ubuntu(
@@ -110,7 +116,7 @@ def test_docker_install_skips_repo_when_already_present_on_ubuntu(
     — that avoids a conflicting Signed-By against an existing docker.asc entry. Still
     (re)enable the daemon and add the user to the docker group."""
     monkeypatch.setenv("SUDO_USER", "alice")
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"docker"}))  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"docker", "dockerd"}))  # type: ignore[arg-type]
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert not any("docker-ce" in " ".join(c) for c in calls)
@@ -167,11 +173,17 @@ def test_docker_verify_false_when_user_not_in_group_on_ubuntu(
     assert Docker().verify(ctx) is False
 
 
-def test_docker_verify_podman_socket_on_fedora() -> None:
-    """Fedora path: podman present + rootless podman.socket enabled."""
-    assert Docker().verify(_ctx(present={"podman"}, scripts={"systemctl": Result(0)})) is True
-    assert Docker().verify(_ctx(present={"podman"}, scripts={"systemctl": Result(1)})) is False
-    assert Docker().verify(_ctx(scripts={"systemctl": Result(0)})) is False  # podman absent
+def test_docker_verify_on_fedora_checks_daemon_and_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify is unified across OSes: docker present + docker.service enabled + user in group.
+    A shim-only Fedora box (docker command but no daemon) verifies False → docker-ce installs."""
+    monkeypatch.setenv("SUDO_USER", "alice")
+    grp = {"id": Result(0, stdout="alice docker")}
+    ok = _ctx(present={"docker"}, scripts={"systemctl": Result(0), **grp})
+    assert Docker().verify(ok) is True
+    shim_only = _ctx(present={"docker"}, scripts={"systemctl": Result(1), **grp})
+    assert Docker().verify(shim_only) is False
 
 
 def test_invoking_user_prefers_sudo_user(monkeypatch: pytest.MonkeyPatch) -> None:
