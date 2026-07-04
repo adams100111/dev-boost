@@ -30,6 +30,9 @@ system           = ["snapper","snapper-dnf-hook","grub-btrfs","btrfs-assistant",
 hardware-nvidia  = ["nvidia-akmod","cuda","libva-nvidia-driver","secureboot-mok","nvidia-resign-service","nvidia-container-toolkit","nvidia-driver-ubuntu"]
 optional-editors = ["neovim","jetbrains-toolbox"]
 security-cli     = ["pass","pass-store"]
+# `term` — alias so `devboost install term` / `get.sh -- term` match the `devboost term`
+# subcommand (the tier's profile is named `terminal`; the subcommand is `term`).
+term = ["terminal"]
 terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
             "ripgrep","fd","fzf","bat","eza","btop","zoxide","atuin","direnv",
             "delta","lazygit","dust","duf","sd","yq","gh","tealdeer","fastfetch",
