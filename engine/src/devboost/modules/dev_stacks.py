@@ -90,7 +90,12 @@ class Playwright(Module):
         # Browser OS libs: Playwright's dep installer is apt-only. On Debian/Ubuntu it
         # just works; on Fedora install libs via dnf (or run tests in a container).
         if ctx.os.family == "debian":
-            ctx.ex.run(["npx", "--yes", "playwright", "install-deps", "chromium"], sudo=True)
+            # install-deps shells out to apt internally → same needrestart-prompt hang risk.
+            ctx.ex.run(
+                ["npx", "--yes", "playwright", "install-deps", "chromium"],
+                sudo=True,
+                env={"NEEDRESTART_MODE": "a"},
+            )
         else:
             log.warn(
                 "playwright: install Chromium's system libs via dnf (the bundled dep "

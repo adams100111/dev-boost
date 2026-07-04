@@ -347,7 +347,7 @@ class Dust(PackageModule):
     category = "cli"
     profiles = ("cli",)
     cmd = "dust"
-    fedora_pkg = "rust-dust"
+    fedora_pkg = "du-dust"  # Fedora packages du-dust as `du-dust` (not `rust-dust`)
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":

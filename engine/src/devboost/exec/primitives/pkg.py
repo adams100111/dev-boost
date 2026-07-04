@@ -59,13 +59,31 @@ def _apt_slug(list_line: str) -> str:
     return m.group(1).replace(".", "-") if m else "custom-repo"
 
 
+# Ubuntu 24.04's apt post-hook runs needrestart, which pops whiptail prompts that hang a
+# non-interactive (agent / curl|bash) install: a "restart which services?" prompt AND a
+# "pending kernel upgrade" msgbox. NEEDRESTART_MODE=a silences the first, but the kernel
+# hint is only disabled via config — so drop in a conf that turns both off.
+_NEEDRESTART_CONF = "/etc/needrestart/conf.d/99-devboost.conf"
+_NEEDRESTART_BODY = (
+    "# devboost — keep apt's needrestart hook from hanging non-interactive installs.\n"
+    "$nrconf{restart} = 'a';\n"       # auto-restart services, don't ask
+    "$nrconf{kernelhints} = -1;\n"    # no 'pending kernel upgrade' msgbox
+    "$nrconf{ucodehints} = 0;\n"      # no microcode msgbox
+)
+
+
 class Apt:
+    def _quiet_needrestart(self, ctx: Ctx) -> None:
+        ctx.ex.run(["mkdir", "-p", "/etc/needrestart/conf.d"], sudo=True)
+        ctx.ex.run(["tee", _NEEDRESTART_CONF], sudo=True, stdin=_NEEDRESTART_BODY)
+
     def install(self, ctx: Ctx, *pkgs: str) -> None:
         if pkgs:
+            self._quiet_needrestart(ctx)
             result = ctx.ex.run(
                 ["apt-get", "install", "-y", *pkgs],
                 sudo=True,
-                env={"DEBIAN_FRONTEND": "noninteractive"},
+                env={"DEBIAN_FRONTEND": "noninteractive", "NEEDRESTART_MODE": "a"},
             )
             if not result.ok:
                 raise InstallError("apt", f"apt-get install -y {' '.join(pkgs)}", result.code)

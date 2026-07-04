@@ -230,7 +230,8 @@ def test_fedora_third_party_raises_unsupported_on_ubuntu() -> None:
 def test_build_tools_uses_build_essential_on_ubuntu() -> None:
     ctx = _ctx()
     BuildTools().install(ctx)
-    flat = " ".join(ctx.ex.calls[0])  # type: ignore[attr-defined]
+    install_call = next(c for c in ctx.ex.calls if "apt-get" in c)  # type: ignore[attr-defined]
+    flat = " ".join(install_call)
     assert "build-essential" in flat
     assert "gcc-c++" not in flat
 
