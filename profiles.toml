@@ -9,7 +9,7 @@ base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatp
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker"]
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
-        "dust","duf","sd","yq","gh","tealdeer","tpm","fastfetch","claude-code"]
+        "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","fastfetch","claude-code"]
 shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
 gnome-aesthetics = ["gnome-aesthetics-bundle"]
@@ -38,4 +38,4 @@ devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
             "dotnet-lsp","ddev","playwright"]
 # server — headless-VPS hardening + ops (Ubuntu/Debian). Separate entry point, like
 # terminal/devtools; not part of `full` (which is the Fedora workstation aggregate).
-server = ["tailscale","server-firewall","zram"]
+server = ["tailscale","server-firewall","zram","restic-b2","tmux-persist"]

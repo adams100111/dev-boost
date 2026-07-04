@@ -11,6 +11,7 @@ from devboost.model import Ctx
 from devboost.modules import server
 from devboost.modules.dev_stacks import Playwright
 from devboost.modules.server import ResticB2, ServerFirewall, Tailscale, Zram
+from devboost.modules.tpm import TmuxPersist
 
 UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="aarch64")
 UBUNTU_HEADLESS = OsInfo(distro="ubuntu", family="debian", arch="aarch64", headless=True)
@@ -169,3 +170,17 @@ def test_playwright_gui_box_installs_full_chromium(
     Playwright().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["npx", "--yes", "playwright", "install", "chromium", "chromium-headless-shell"] in calls
+
+
+# ── tmux-persist (reboot survival) ────────────────────────────────────────────
+def test_tmux_persist_clones_resurrect_and_continuum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ubuntu()
+    assert TmuxPersist().verify(ctx) is False
+    TmuxPersist().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    cloned = [c[-2] for c in calls if c[:2] == ["git", "clone"]]
+    assert any("tmux-resurrect" in u for u in cloned)
+    assert any("tmux-continuum" in u for u in cloned)
