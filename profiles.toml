@@ -35,7 +35,7 @@ terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
             "tmux","fresh","starship","bash-config","dotfiles","wezterm","nerd-fonts",
             "claude-statusline"]
 devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
-            "dotnet-lsp","ddev"]
+            "dotnet-lsp","ddev","playwright"]
 # server — headless-VPS hardening + ops (Ubuntu/Debian). Separate entry point, like
 # terminal/devtools; not part of `full` (which is the Fedora workstation aggregate).
 server = ["tailscale","server-firewall","zram"]

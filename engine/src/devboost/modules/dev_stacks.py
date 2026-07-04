@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from devboost.core import log
 from devboost.core.registry import register
 from devboost.exec.primitives import mise, pkg
 from devboost.exec.resources import resource_path
@@ -66,6 +67,48 @@ class WebRuntimes(Module):
 
     def install(self, ctx: Ctx) -> None:
         ctx.ex.run(["mise", "use", "-g", *self._SPECS])
+
+
+@register
+class Playwright(Module):
+    name = "playwright"
+    category = "web"
+    description = "Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI."
+    requires = (WebRuntimes,)
+    profiles = ("web",)  # semantic home; installed via the `devtools` aggregate in profiles.toml
+
+    def _marker(self) -> Path:
+        return Path(os.environ["HOME"]) / ".cache" / "ms-playwright" / ".devboost"
+
+    def verify(self, ctx: Ctx) -> bool:
+        return self._marker().exists()
+
+    def install(self, ctx: Ctx) -> None:
+        # Native aarch64 Chromium ships with Playwright (Puppeteer has none) — so this
+        # works unchanged on the Ampere VPS.
+        ctx.ex.run(["npm", "install", "-g", "playwright", "@playwright/mcp"])
+        # Browser OS libs: Playwright's dep installer is apt-only. On Debian/Ubuntu it
+        # just works; on Fedora install libs via dnf (or run tests in a container).
+        if ctx.os.family == "debian":
+            ctx.ex.run(["npx", "--yes", "playwright", "install-deps", "chromium"], sudo=True)
+        else:
+            log.warn(
+                "playwright: install Chromium's system libs via dnf (the bundled dep "
+                "installer is apt-only), or run tests in a container"
+            )
+        # Headless box (VPS) → the small headless-shell for the agent screenshot loop.
+        # GUI box (laptop) → the FULL Chromium too, so you can run tests --headed and
+        # watch them against the VPS app over Tailscale. Same module, both modes.
+        browsers = ["chromium-headless-shell"]
+        if not ctx.os.headless:
+            browsers = ["chromium", "chromium-headless-shell"]
+        ctx.ex.run(["npx", "--yes", "playwright", "install", *browsers])
+        # Wire the Playwright MCP into Claude Code so the agent can drive/screenshot pages.
+        if ctx.ex.which("claude"):
+            ctx.ex.run(["claude", "mcp", "add", "playwright", "npx", "@playwright/mcp@latest"])
+        m = self._marker()
+        m.parent.mkdir(parents=True, exist_ok=True)
+        m.write_text("ok\n", encoding="utf-8")
 
 
 @register

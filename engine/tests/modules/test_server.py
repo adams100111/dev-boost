@@ -9,9 +9,11 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules import server
-from devboost.modules.server import ServerFirewall, Tailscale, Zram
+from devboost.modules.dev_stacks import Playwright
+from devboost.modules.server import ResticB2, ServerFirewall, Tailscale, Zram
 
 UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="aarch64")
+UBUNTU_HEADLESS = OsInfo(distro="ubuntu", family="debian", arch="aarch64", headless=True)
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
 
@@ -105,3 +107,65 @@ def test_zram_verify_checks_conf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert Zram().verify(ctx) is False
     conf.write_text("x")
     assert Zram().verify(ctx) is True
+
+
+# ── restic → b2 ──────────────────────────────────────────────────────────────
+def _b2_secrets(ctx: Ctx, field: str) -> str | None:
+    return {
+        "B2_ACCOUNT_ID": "id",
+        "B2_ACCOUNT_KEY": "key",
+        "RESTIC_REPOSITORY": "b2:bucket:path",
+        "RESTIC_PASSWORD": "pw",
+    }.get(field)
+
+
+def test_restic_b2_skips_timer_without_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No destination → install restic but wire no timer (never point a timer at nowhere)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(server, "_secret", _no_secret)
+    ctx = _ubuntu()
+    ResticB2().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "restic"] in calls
+    assert not any("restic-b2.timer" in c for c in calls)
+
+
+def test_restic_b2_wires_timer_with_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(server, "_secret", _b2_secrets)
+    ctx = _ubuntu(present={"restic"})
+    ResticB2().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["systemctl", "--user", "enable", "--now", "restic-b2.timer"] in calls
+    d = tmp_path / ".config" / "systemd" / "user"
+    assert (d / "restic-b2.service").exists() and (d / "restic-b2.timer").exists()
+    envfile = tmp_path / ".config" / "devboost" / "restic-b2.env"
+    assert "RESTIC_PASSWORD=pw" in envfile.read_text(encoding="utf-8")
+    assert oct(envfile.stat().st_mode)[-3:] == "600"  # secrets stay 0600, off the unit
+
+
+# ── playwright: headless-shell on servers, full Chromium on GUI ───────────────
+def test_playwright_headless_box_installs_shell_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = Ctx(os=UBUNTU_HEADLESS, ex=FakeExecutor())
+    Playwright().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "npx", "--yes", "playwright", "install-deps", "chromium"] in calls
+    assert ["npx", "--yes", "playwright", "install", "chromium-headless-shell"] in calls
+    assert Playwright().verify(ctx) is True  # marker written
+
+
+def test_playwright_gui_box_installs_full_chromium(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ubuntu()  # headless=False → full headed-capable Chromium too
+    Playwright().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["npx", "--yes", "playwright", "install", "chromium", "chromium-headless-shell"] in calls

@@ -133,3 +133,68 @@ class Zram(Module):
             )
             ctx.ex.run(["tee", conf], sudo=True, stdin=body)
             ctx.ex.run(["systemctl", "start", "systemd-zram-setup@zram0.service"], sudo=True)
+
+
+def _devboost_dir() -> Path:
+    return Path(os.environ["HOME"]) / ".config" / "devboost"
+
+
+@register
+class ResticB2(Module):
+    name = "restic-b2"
+    category = "server"
+    description = "Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer."
+    profiles = ("server",)
+    requires = (Secrets,)
+
+    def verify(self, ctx: Ctx) -> bool:
+        d = systemd._user_unit_dir()
+        if not ((d / "restic-b2.service").exists() and (d / "restic-b2.timer").exists()):
+            return False
+        return systemd.is_enabled(ctx, "restic-b2.timer", user=True)
+
+    def install(self, ctx: Ctx) -> None:
+        if not ctx.ex.which("restic"):
+            pkg.install(ctx, "restic")
+        # Destination + credentials come from the age bundle. Without them we can't run an
+        # offsite backup, so install the binary and stop — don't wire a timer to nowhere.
+        b2_id = _secret(ctx, "B2_ACCOUNT_ID")
+        b2_key = _secret(ctx, "B2_ACCOUNT_KEY")
+        repo = _secret(ctx, "RESTIC_REPOSITORY")
+        password = _secret(ctx, "RESTIC_PASSWORD")
+        if not (b2_id and b2_key and repo and password):
+            log.warn(
+                "restic-b2: installed restic, but B2/restic secrets are missing — add "
+                "B2_ACCOUNT_ID, B2_ACCOUNT_KEY, RESTIC_REPOSITORY, RESTIC_PASSWORD to the "
+                "secrets bundle to enable the nightly timer"
+            )
+            return
+        d = _devboost_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        include = d / "restic-include"
+        if not include.exists():  # editable default; keep what the user tuned
+            home = Path(os.environ["HOME"])
+            include.write_text(f"{home}/repos\n{home}/.config\n", encoding="utf-8")
+        # Secrets live in a 0600 EnvironmentFile, never inline in the unit.
+        envfile = d / "restic-b2.env"
+        envfile.write_text(
+            f"B2_ACCOUNT_ID={b2_id}\nB2_ACCOUNT_KEY={b2_key}\n"
+            f"RESTIC_REPOSITORY={repo}\nRESTIC_PASSWORD={password}\n",
+            encoding="utf-8",
+        )
+        envfile.chmod(0o600)
+        service = (
+            "[Unit]\nDescription=devboost restic → B2 backup\n\n[Service]\nType=oneshot\n"
+            f"EnvironmentFile={envfile}\n"
+            "ExecStartPre=-/usr/bin/restic init\n"  # no-op once the repo exists
+            f"ExecStart=/usr/bin/restic backup --files-from {include}\n"
+            "ExecStartPost=/usr/bin/restic forget --keep-daily 7 --keep-weekly 4 "
+            "--keep-monthly 6 --prune\n"
+        )
+        timer = (
+            "[Unit]\nDescription=nightly restic → B2\n\n[Timer]\nOnCalendar=daily\n"
+            "Persistent=true\n\n[Install]\nWantedBy=timers.target\n"
+        )
+        systemd.write_user_unit(ctx, "restic-b2.service", service)
+        systemd.write_user_unit(ctx, "restic-b2.timer", timer)
+        systemd.enable_user_unit(ctx, "restic-b2.timer", now=True)
