@@ -75,11 +75,11 @@ enrollment on NVIDIA when Secure Boot is on.
 |---------|------------------------------|
 | `apps` | bitwarden, bruno, flameshot, localsend, obsidian, obsidian-sync, vlc |
 | `base` | build-tools, chezmoi, chezmoi-repo, coreutils, curl, dnf-tune, docker, fd, fedora-third-party, flatpak, fzf, git, htop, jq, mise, ripgrep, rpmfusion, secrets, ssh-setup, tmux, unzip, wget |
-| `cli` | atuin, bat, btop, claude-code, delta, direnv, duf, dust, eza, fastfetch, gh, lazydocker, lazygit, sd, tealdeer, tpm, yq, zoxide |
+| `cli` | atuin, bat, btop, claude-code, delta, direnv, duf, dust, eza, fastfetch, gh, lazydocker, lazygit, sd, tealdeer, tmux-persist, tpm, yq, zoxide |
 | `data` | data-services |
 | `dev-hygiene` | aspire-gc |
 | `devops` | devops-lsp, devops-tools |
-| `devtools` | aspire, ddev, dotnet-lsp, dotnet-sdk, python-lsp, uv, web-lsp, web-runtimes |
+| `devtools` | aspire, ddev, dotnet-lsp, dotnet-sdk, playwright, python-lsp, uv, web-lsp, web-runtimes |
 | `dotnet` | aspire, dotnet-lsp, dotnet-sdk |
 | `editors` | fresh, fresh-lsp, vscode |
 | `gnome` | gnome-extensions, gnome-manager-apps, gnome-settings |
@@ -92,7 +92,8 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python` | python-lsp, uv |
 | `react-native` | android-sdk, expo, web-runtimes |
 | `security-cli` | pass, pass-store |
-| `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm |
+| `server` | restic-b2, server-firewall, tailscale, tmux-persist, zram |
+| `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm, wl-clipboard |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
 | `terminal` | atuin, bash-config, bat, btop, chezmoi, claude-statusline, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
@@ -171,6 +172,12 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
   Ubuntu/Fedora VPS (auto-skips GUI-only pieces). Verify-guarded: re-running installs
   only what's missing; `--dry-run` previews.
 - `devboost devtools` — language runtimes + frameworks (ddev, Aspire/.NET, Node, uv).
+- `devboost server` — headless-VPS hardening + ops (Ubuntu/Debian): Tailscale + Tailscale
+  SSH, a ufw baseline (deny-in, keep SSH, open `tailscale0`, disable exposed rpcbind),
+  zram swap, restic→B2 nightly offsite backups, and tmux session-persistence. dev-boost's
+  `system` tier is Fedora-desktop-shaped (btrfs/snapper/dnf); `server` is the Ubuntu-server
+  counterpart. Dropping public `:22` and provisioning B2/Tailscale secrets stay deliberate
+  operator steps.
 
 Both resolve the same typed-Python modules + `profiles.toml`, with a distro-package-first,
 pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any-os)
