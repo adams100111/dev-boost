@@ -11,6 +11,7 @@ from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
 from devboost.modules.shell import (
     BashConfig,
+    ClaudeNotify,
     ClaudeStatusline,
     Dotfiles,
     Ghostty,
@@ -177,6 +178,28 @@ def test_claude_statusline_leaves_invalid_json_untouched(
     ctx = _ctx()
     ClaudeStatusline().install(ctx)
     assert settings.read_text(encoding="utf-8") == "{ not valid json "  # untouched
+
+
+def test_claude_notify_wires_hooks_preserving_existing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"model": "opus"}), encoding="utf-8")
+
+    ctx = _ctx()
+    assert ClaudeNotify().verify(ctx) is False
+    ClaudeNotify().install(ctx)
+
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert data["model"] == "opus"  # other settings preserved
+    stop_cmd = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert stop_cmd.endswith("/.claude/hooks/notify.sh done")
+    assert data["hooks"]["Notification"][0]["hooks"][0]["command"].endswith("notify.sh input")
+    assert ClaudeNotify().verify(ctx) is True
 
 
 def test_bash_config_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

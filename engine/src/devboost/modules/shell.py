@@ -272,3 +272,55 @@ class ClaudeStatusline(Module):
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+@register
+class ClaudeNotify(Module):
+    name = "claude-notify"
+    category = "shell"
+    description = "Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks."
+    requires = (Dotfiles,)
+    profiles = ("shell",)
+
+    def _settings_path(self) -> Path:
+        return _home() / ".claude" / "settings.json"
+
+    def _script(self) -> str:
+        # Delivered by the dotfiles module (private_dot_claude/hooks/notify.sh).
+        return str(_home() / ".claude" / "hooks" / "notify.sh")
+
+    def _group(self, arg: str) -> dict[str, object]:
+        return {"hooks": [{"type": "command", "command": f"{self._script()} {arg}"}]}
+
+    def verify(self, ctx: Ctx) -> bool:
+        path = self._settings_path()
+        if not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        return isinstance(hooks, dict) and "notify.sh" in json.dumps(hooks.get("Stop", []))
+
+    def install(self, ctx: Ctx) -> None:
+        # Merge Stop + Notification hooks into ~/.claude/settings.json, preserving other keys
+        # and other hook events (the notify script itself is a no-op until DEVBOOST_NTFY_URL
+        # is set, so wiring the hooks is always safe).
+        path = self._settings_path()
+        data: dict[str, object] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                log.warn("claude-notify: settings.json is not valid JSON — left untouched")
+                return
+            if isinstance(loaded, dict):
+                data = loaded
+        raw = data.get("hooks")
+        hooks: dict[str, object] = raw if isinstance(raw, dict) else {}
+        hooks["Stop"] = [self._group("done")]
+        hooks["Notification"] = [self._group("input")]
+        data["hooks"] = hooks
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

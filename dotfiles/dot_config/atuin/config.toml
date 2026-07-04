@@ -1,9 +1,12 @@
 # ~/.config/atuin/config.toml — dev-boost managed Atuin shell history configuration.
 # # devboost — managed by chezmoi; edit via dotfiles/dot_config/atuin/config.toml in the dev-boost repo.
+#
+# NOTE: Atuin uses TOP-LEVEL keys (its only sections are [sync], [keys], [search], [stats],
+# [preview], [daemon], [tmux], [ui]). There is NO [settings] section — a previous version of
+# this file nested everything under [settings], which Atuin silently ignored (so it ran
+# defaults). All scalar settings below are therefore top-level, and MUST precede any [section].
 
 # Scrub obvious secrets from recorded history (on top of atuin's default secrets_filter).
-# history_filter is a TOP-LEVEL array per atuin schema — it MUST appear BEFORE [settings],
-# otherwise TOML scopes it as settings.history_filter and atuin won't read it as intended.
 # NOTE: these are regex literals — not actual secrets; no real credentials here (FR-014).
 history_filter = [
   "(?i)password",
@@ -12,29 +15,26 @@ history_filter = [
   "--key[= ]",
 ]
 
-[settings]
-# Search mode: fuzzy is more ergonomic for most workflows.
-search_mode = "fuzzy"
-
-# Ctrl-R search scope: all history across sessions and directories.
-filter_mode = "global"
-
-# Display a count of results in the search UI.
-show_preview = true
-
-# Sync key (do NOT add; secrets are never in managed config files per FR-014).
-# To enable sync, set ATUIN_KEY env var or run `atuin login` separately.
-
-# Style
+# ── Search / display ─────────────────────────────────────────────────────────
+search_mode = "fuzzy"              # fuzzy is the most ergonomic default
+filter_mode = "global"            # Ctrl-R searches across all sessions and directories
+show_preview = true               # show a result-count/preview in the search UI
 style = "compact"
-
-# Avoid re-sorting by frequency (keep chronological in interactive mode).
 search_mode_shell_up_key_binding = "fuzzy"
-
-# Pressing Up shows your full history, most-recent first — what people expect.
-# ("directory"/"session" scoping makes Up look empty in dirs with no prior commands,
-# which reads as "atuin lost my history".)
+# Up shows full history, most-recent first (directory/session scoping reads as "lost history").
 filter_mode_shell_up_key_binding = "global"
+enter_accept = true               # Enter runs the selection; Tab edits it in the prompt
 
-# Enter executes the selected command immediately; Tab puts it in the prompt to edit.
-enter_accept = true
+# ── Sync — shared shell history across machines (laptop ↔ VPS) ────────────────
+# atuin's sync is END-TO-END ENCRYPTED (the server never sees plaintext), so the hosted
+# server is safe; no self-hosted Postgres stack is needed for a couple of boxes. auto_sync
+# is a no-op until you run `atuin register` (new) / `atuin login` (existing) once per machine,
+# so it's safe to ship on by default. To self-host, set sync_address to your own server URL.
+# The encryption key is NEVER in this managed file (FR-014) — it's in `atuin key`; save that
+# to Bitwarden so a new machine can decrypt (`atuin login --key …`).
+auto_sync = true
+sync_frequency = "5m"
+# sync_address = "https://api.atuin.sh"   # default hosted (e2e-encrypted); override to self-host
+
+[sync]
+records = true                    # v18+ record store: sync history + aliases + env vars

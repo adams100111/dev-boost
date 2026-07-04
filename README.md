@@ -93,7 +93,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `react-native` | android-sdk, expo, web-runtimes |
 | `security-cli` | pass, pass-store |
 | `server` | agent-sudo, restic-b2, server-firewall, tailscale, tmux-persist, zram |
-| `shell` | bash-config, claude-statusline, dotfiles, nerd-fonts, starship, wezterm, wl-clipboard |
+| `shell` | bash-config, claude-notify, claude-statusline, dotfiles, nerd-fonts, starship, wezterm, wl-clipboard |
 | `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
 | `terminal` | atuin, bash-config, bat, btop, chezmoi, claude-statusline, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
 | `web` | web-lsp, web-runtimes |
@@ -160,7 +160,8 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 | claude-statusline | Claude Code status line: dir · git · RAM/disk (left), model · context% · cost (right); whole row goes red when resources are critical (`private_dot_claude/statusline.sh`) |
 | ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
 | tmux | mouse, true-color, vi copy, **bottom** status bar with RAM/disk gauges + critical badge (visible even while a full-screen app fills the pane), session-persistence via resurrect+continuum (survives a reboot) (`dot_tmux.conf`, `dot_config/tmux/resources.sh`) |
-| atuin | fuzzy history, directory up-key, enter-accept, secret-scrub (recording wired via bash-preexec in the managed `.bashrc`) |
+| atuin | fuzzy history, directory up-key, enter-accept, secret-scrub, e2e-encrypted **sync** across machines (top-level keys — a prior `[settings]` nesting was silently ignored by atuin; recording wired via bash-preexec in the managed `.bashrc`) |
+| claude-notify | phone push (ntfy) on Claude Code task-done / needs-input via Stop/Notification hooks; no-op until `DEVBOOST_NTFY_URL` is set (`private_dot_claude/hooks/notify.sh`) |
 | bat | `--style=full`, Catppuccin theme |
 | ripgrep | glob-ignores (node_modules/dist/build/lockfiles); via `RIPGREP_CONFIG_PATH` |
 | lazygit | delta paging, Nerd Fonts v3 |
