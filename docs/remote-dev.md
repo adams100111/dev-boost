@@ -135,9 +135,9 @@ See [the `dev` reference](#the-dev-helper) below for all the options.
 
 ## Browser testing
 
-Three ways, pick per task — none require `ssh -L` port forwarding.
+None of this needs `ssh -L` port forwarding — the tailnet handles reachability.
 
-**A. See a dev server in your laptop browser** (cleanest):
+### Just view your app in the laptop browser
 
 ```bash
 # on the VPS:
@@ -147,17 +147,62 @@ expose 5173          # → prints https://my-vps.<tailnet>.ts.net  (auto-HTTPS)
 Open that URL on your laptop. `exposed` shows what's published; `unexpose` takes it
 down. (`expose 18888` for the Aspire dashboard.)
 
-**B. Watch a *headed* browser on your laptop, driven by tests on the VPS:**
+### Playwright — two different tools, don't confuse them
+
+The **test runner** runs your `playwright test` suite; the **MCP** is the browser
+Claude Code drives (the `browser_*` tools). They connect differently.
+
+#### Test runner — headed browser on the laptop, suite runs on the VPS
 
 ```bash
 # laptop:
 pw-server            # opens a real browser window on the laptop; prints a pw-connect line
 # VPS:
-pw-connect ws://my-laptop:5000/pw   # your Playwright tests run on the VPS, browser shows locally
+pw-connect ws://my-laptop:5000/pw   # your `playwright test` run on the VPS, shown locally
 ```
 
-**C. Let Claude test headless on the VPS** — it runs Playwright on the box and hands
-you screenshots. Zero laptop involvement.
+#### MCP — three topologies, pick per task
+
+Verified against `@playwright/mcp`: `--headless` defaults to **false** (headed),
+`--cdp-endpoint` connects to an existing browser, and `--port/--host` runs the MCP as an
+HTTP server a remote client attaches to (endpoint path `/mcp`).
+
+**1. Headless on the server (default — zero laptop).** Claude runs the MCP on the VPS
+with no display and hands back screenshots. Best for unattended / bulk runs.
+
+**2. Headed on the laptop, driven from the server** — `pw-mcp` (recommended for *watching*):
+
+```bash
+# laptop — headed browser opens here; the command prints the exact server-side config:
+pw-mcp               # = npx @playwright/mcp --port 8931 --host <tailnet-ip>
+```
+
+Then on the **server**, add the printed line to Claude Code's MCP config:
+
+```json
+{ "mcpServers": { "playwright": { "url": "http://<laptop-tailnet-ip>:8931/mcp" } } }
+```
+
+Claude (on the VPS) drives the browser; the window opens on your laptop. Only a
+browser's worth of RAM stays local — trivial next to the LSP/builds you offloaded.
+
+**3. MCP on the server, browser on the laptop via CDP** (true "MCP on the server", fiddlier):
+
+```bash
+# laptop — a headed Chrome with remote debugging, reverse-tunneled so it looks local to the VPS:
+chromium --remote-debugging-port=9222 &
+ssh -R 9222:localhost:9222 my-vps
+# VPS:
+npx @playwright/mcp@latest --cdp-endpoint ws://localhost:9222
+```
+
+Chrome guards `--remote-debugging-port` to *localhost* and rejects cross-host Host
+headers, so you must **tunnel** the port to appear local on the server (the `ssh -R`
+above) rather than pointing at a raw tailnet IP. Prefer topology 2 for watching; this
+exists for when the MCP itself must live on the server.
+
+> Headed topologies (2 and 3) need a graphical session on the laptop and Playwright's
+> browser installed (`npx playwright install chromium` if the MCP reports it missing).
 
 ## The `dev` helper
 

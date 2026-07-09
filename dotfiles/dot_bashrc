@@ -130,6 +130,23 @@ if command -v npx &>/dev/null; then
     local ws="${1:?usage: pw-connect ws://LAPTOP:5000/pw}"; shift
     PW_TEST_CONNECT_WS_ENDPOINT="$ws" npx playwright test "$@"
   }
+  # pw-mcp [port] — run the Playwright MCP on THIS laptop with a HEADED (visible) browser,
+  # reachable over the tailnet, so Claude Code running ON A SERVER can drive it while the
+  # window opens here. Binds to the Tailscale IP when present (tailnet-only), else 0.0.0.0.
+  # Prints the exact MCP config to add on the server. (For unattended runs, prefer the MCP
+  # headless on the server instead — see docs/remote-dev.md.)
+  pw-mcp() {
+    local port="${1:-8931}" bind
+    command -v tailscale &>/dev/null && bind=$(tailscale ip -4 2>/dev/null | head -1)
+    if [ -z "${bind:-}" ]; then
+      bind=0.0.0.0
+      echo "pw-mcp: no tailnet IP — binding 0.0.0.0 (reachable on all interfaces)" >&2
+    fi
+    echo "pw-mcp: headed browser opens here; on the SERVER add to Claude's MCP config:" >&2
+    echo "        {\"mcpServers\":{\"playwright\":{\"url\":\"http://${bind}:${port}/mcp\"}}}" >&2
+    echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} (Ctrl-C to stop)…" >&2
+    npx @playwright/mcp@latest --port "$port" --host "$bind"
+  }
 fi
 
 # img2ssh — paste a clipboard IMAGE into an SSH'd CLI (e.g. Claude Code) from ANY terminal,

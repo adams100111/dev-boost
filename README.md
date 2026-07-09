@@ -190,9 +190,10 @@ section above for the one-liner.
 `dev <host> [repo]` (laptop) ssh's in and drops you into a persistent per-repo tmux session
 in the repo, ready to work; `ddev-remote` binds ddev's router to the tailnet on servers;
 managed shell helpers make the rest one word — `expose <port>` publishes a VPS port at
-`https://<host>.<tailnet>.ts.net` (auto-TLS), and `pw-server` (laptop) + `pw-connect <ws>`
-(VPS) run Playwright on the VPS while the **headed** browser opens on your laptop. Aspire:
-`expose 18888` for the dashboard. See [docs/remote-dev.md](docs/remote-dev.md).
+`https://<host>.<tailnet>.ts.net` (auto-TLS), `pw-server` (laptop) + `pw-connect <ws>`
+(VPS) run the Playwright **test runner** on the VPS while the headed browser opens on your
+laptop, and `pw-mcp` (laptop) runs the Playwright **MCP** headed here for Claude on the VPS
+to drive. Aspire: `expose 18888` for the dashboard. See [docs/remote-dev.md](docs/remote-dev.md).
 
 ## Requirements & supported OS
 
