@@ -50,6 +50,42 @@ def test_snapper_creates_root_config() -> None:
     assert ["sudo", "snapper", "-c", "root", "create-config", "/"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
+def test_snapper_caps_retention_after_create_config() -> None:
+    """Retention policy is applied so dnf pre/post snapshots can't pile up to ~50 and fill /."""
+    ctx = _ctx()
+    Snapper().install(ctx)
+    assert [
+        "sudo", "snapper", "-c", "root", "set-config",
+        "TIMELINE_CREATE=no", "NUMBER_CLEANUP=yes",
+        "NUMBER_LIMIT=10", "NUMBER_LIMIT_IMPORTANT=5",
+    ] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_snapper_verify_true_when_policy_applied() -> None:
+    out = (
+        "Key                    │ Value\n"
+        "───────────────────────┼───────\n"
+        "TIMELINE_CREATE        │ no\n"
+        "NUMBER_LIMIT           │ 10\n"
+        "NUMBER_LIMIT_IMPORTANT │ 5\n"
+    )
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))  # type: ignore[arg-type]
+    assert Snapper().verify(ctx) is True
+
+
+def test_snapper_verify_false_when_timeline_still_enabled() -> None:
+    # stock (uncapped) config: timeline on, keep-50 — verify must reject it.
+    out = "TIMELINE_CREATE        │ yes\nNUMBER_LIMIT           │ 50\n"
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))  # type: ignore[arg-type]
+    assert Snapper().verify(ctx) is False
+
+
+def test_snapper_verify_false_when_config_missing() -> None:
+    # get-config exits non-zero when the root config doesn't exist yet.
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(1)}))  # type: ignore[arg-type]
+    assert Snapper().verify(ctx) is False
+
+
 def test_dnf_automatic_security_sets_upgrade_type(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

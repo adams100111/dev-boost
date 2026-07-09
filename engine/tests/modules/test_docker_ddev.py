@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules.ddev import Ddev, DdevRemote
-from devboost.modules.docker import Docker, _invoking_user
+from devboost.modules.docker import Docker, DockerBuildCacheGc, _invoking_user
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64", version_id="24.04", codename="noble")
@@ -196,6 +199,59 @@ def test_invoking_user_falls_back_to_user(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("SUDO_USER", raising=False)
     monkeypatch.setenv("USER", "carol")
     assert _invoking_user() == "carol"
+
+
+# ── docker build-cache gc ─────────────────────────────────────────────────────
+
+
+def test_docker_build_gc_writes_cap_and_restarts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Merges builder.gc into daemon.json and restarts the daemon so the cap takes effect."""
+    daemon = tmp_path / "daemon.json"
+    monkeypatch.setenv("DEVBOOST_DOCKER_DAEMON_JSON", str(daemon))
+    ctx = _ctx()
+    DockerBuildCacheGc().install(ctx)
+    data = json.loads(daemon.read_text())
+    assert data["builder"]["gc"] == {"enabled": True, "defaultKeepStorage": "20GB"}
+    assert ["sudo", "systemctl", "restart", "docker.service"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_docker_build_gc_preserves_nvidia_runtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cap must compose with the NVIDIA runtime `nvidia-ctk` writes, not clobber it."""
+    daemon = tmp_path / "daemon.json"
+    daemon.write_text(
+        '{"runtimes": {"nvidia": {"path": "nvidia-container-runtime"}}}\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("DEVBOOST_DOCKER_DAEMON_JSON", str(daemon))
+    DockerBuildCacheGc().install(_ctx())
+    data = json.loads(daemon.read_text())
+    assert data["runtimes"]["nvidia"]["path"] == "nvidia-container-runtime"
+    assert data["builder"]["gc"]["enabled"] is True
+
+
+def test_docker_build_gc_idempotent_no_restart_second_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    daemon = tmp_path / "daemon.json"
+    monkeypatch.setenv("DEVBOOST_DOCKER_DAEMON_JSON", str(daemon))
+    DockerBuildCacheGc().install(_ctx())          # first run writes + restarts
+    second = _ctx()
+    DockerBuildCacheGc().install(second)           # unchanged → no restart
+    assert not any("restart" in " ".join(c) for c in second.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_docker_build_gc_verify_reflects_cap_presence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    daemon = tmp_path / "daemon.json"
+    monkeypatch.setenv("DEVBOOST_DOCKER_DAEMON_JSON", str(daemon))
+    ctx = _ctx()
+    assert DockerBuildCacheGc().verify(ctx) is False   # no daemon.json yet
+    DockerBuildCacheGc().install(ctx)
+    assert DockerBuildCacheGc().verify(ctx) is True     # cap now present
 
 
 # ── ddev ────────────────────────────────────────────────────────────────────

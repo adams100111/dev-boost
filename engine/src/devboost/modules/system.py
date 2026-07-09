@@ -13,6 +13,20 @@ from devboost.exec.primitives import config, gpu, pkg, systemd
 from devboost.model import Ctx, Module
 
 
+def _snapper_config_value(get_config_stdout: str, key: str) -> str | None:
+    """Return the value for `key` in `snapper get-config` table output, or None.
+
+    snapper prints a two-column ``Key │ Value`` table using a box-drawing separator;
+    normalise the separator to whitespace and match the row whose first token is `key`
+    (exact-token match, so ``NUMBER_LIMIT`` never matches ``NUMBER_LIMIT_IMPORTANT``).
+    """
+    for line in get_config_stdout.splitlines():
+        parts = line.replace("│", " ").replace("|", " ").split()
+        if parts and parts[0] == key:
+            return parts[-1] if len(parts) > 1 else ""
+    return None
+
+
 class SystemService(Module):
     """Install a package and enable its system service (verify = is-enabled)."""
 
@@ -81,14 +95,35 @@ class Smartmontools(SystemService):
 class Snapper(Module):
     name = "snapper"
     category = "system"
-    description = "BTRFS snapshots for /."
+    description = "BTRFS snapshots for / (retention-capped)."
     profiles = ("system",)
     families: ClassVar[tuple[str, ...]] = ("fedora",)
+
+    #: Retention policy applied after create-config. Without this, the stock config keeps
+    #: hourly timeline snapshots plus up to 50 number snapshots; paired with the dnf
+    #: pre/post hook (snapper-dnf-hook) that piles up and quietly consumes the disk. The
+    #: useful rollback points on a dev box are the per-transaction number snapshots, so we
+    #: drop the timeline entirely and keep the last 10.
+    _POLICY: ClassVar[tuple[str, ...]] = (
+        "TIMELINE_CREATE=no",
+        "NUMBER_CLEANUP=yes",
+        "NUMBER_LIMIT=10",
+        "NUMBER_LIMIT_IMPORTANT=5",
+    )
+    #: Subset of _POLICY that verify() re-checks (proves the config exists AND is capped).
+    _EXPECTED: ClassVar[dict[str, str]] = {"TIMELINE_CREATE": "no", "NUMBER_LIMIT": "10"}
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
             return False
-        return "root" in ctx.ex.run(["snapper", "list-configs"]).stdout.split()
+        # get-config fails (non-ok) when the root config doesn't exist yet → not satisfied.
+        res = ctx.ex.run(["snapper", "-c", "root", "get-config"])
+        if not res.ok:
+            return False
+        return all(
+            _snapper_config_value(res.stdout, key) == val
+            for key, val in self._EXPECTED.items()
+        )
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family != "fedora":
@@ -97,6 +132,7 @@ class Snapper(Module):
             )
         pkg.install(ctx, "snapper", "python3-dnf-plugin-snapper")
         ctx.ex.run(["snapper", "-c", "root", "create-config", "/"], sudo=True)
+        ctx.ex.run(["snapper", "-c", "root", "set-config", *self._POLICY], sudo=True)
 
 
 @register

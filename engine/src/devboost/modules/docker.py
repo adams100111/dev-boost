@@ -3,11 +3,13 @@ repo, replacing the conflicting podman-docker shim; Debian/Ubuntu via Docker's a
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
-from devboost.exec.primitives import pkg, systemd
+from devboost.exec.primitives import config, pkg, systemd
 from devboost.model import AptRepo, Ctx, Module
 
 #: Docker's official engine package set on Debian/Ubuntu. `docker.io` (Ubuntu's own
@@ -91,3 +93,44 @@ class Docker(Module):
         user = _invoking_user()
         if user:
             ctx.ex.run(["usermod", "-aG", "docker", user], sudo=True)
+
+
+def _daemon_json() -> str:
+    """Path to Docker's daemon config file (overridable for tests)."""
+    return os.environ.get("DEVBOOST_DOCKER_DAEMON_JSON", "/etc/docker/daemon.json")
+
+
+#: Cap the BuildKit build cache so it can't grow without bound — the #1 Docker disk hog on a
+#: dev box (build cache reached tens of GB in the field). Merged into daemon.json so it composes
+#: with other keys — notably the ``runtimes`` block ``nvidia-ctk runtime configure`` adds on
+#: NVIDIA hosts — rather than clobbering them.
+_BUILDER_GC: dict[str, object] = {
+    "builder": {"gc": {"enabled": True, "defaultKeepStorage": "20GB"}},
+}
+
+
+@register
+class DockerBuildCacheGc(Module):
+    name = "docker-build-gc"
+    category = "base"
+    description = "Cap Docker's build cache (daemon.json builder.gc) so it can't fill the disk."
+    requires = (Docker,)
+    profiles = ("base",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        p = Path(_daemon_json())
+        if not p.exists():
+            return False
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        builder = data.get("builder") if isinstance(data, dict) else None
+        gc = builder.get("gc") if isinstance(builder, dict) else None
+        return bool(isinstance(gc, dict) and gc.get("enabled"))
+
+    def install(self, ctx: Ctx) -> None:
+        # Read-modify-write merge preserves any existing daemon.json keys (e.g. the NVIDIA
+        # runtime). Restart only when the file actually changed, so re-runs are no-ops.
+        if config.json_merge(ctx, _daemon_json(), _BUILDER_GC):
+            ctx.ex.run(["systemctl", "restart", "docker.service"], sudo=True)
