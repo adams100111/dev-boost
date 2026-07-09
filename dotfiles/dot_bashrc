@@ -60,6 +60,55 @@ command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 command -v mise &>/dev/null && eval "$(mise activate bash)"
 
 # ---------------------------------------------------------------------------
+# dev — hop onto a server and land in a repo, ready to work. Runs ON THE LAPTOP.
+#   dev my-vps innovation   → ssh my-vps, attach/create the 'innovation' session in the repo
+#   dev my-vps              → a plain 'dev' session in $HOME
+#   dev my-vps /srv/app     → an absolute remote path, used as-is
+# Repo lookup searches $DEV_REPO_ROOTS (set ON THE SERVER, in ~/.bash_profile/~/.profile;
+# default ~/projects:~/repos), first match wins; a named-but-missing repo is a hard error.
+# tmux gives one persistent session per repo (attach-or-create, detaching stale clients so
+# the view always fits your current screen); without tmux it drops you into a plain shell in
+# the repo. Either way you land at a prompt and launch claude/fresh yourself. The resolver
+# runs under a remote login shell (bash -lc) so a server-side DEV_REPO_ROOTS export is honored.
+if command -v ssh &>/dev/null; then
+  dev() {
+    local host="${1:?usage: dev HOST [REPO]}"
+    local repo="${2-}"
+    local script='
+set -u
+repo=${DEV_REPO:-}
+roots=${DEV_REPO_ROOTS:-$HOME/projects:$HOME/repos}
+dir=$HOME
+if [ -n "$repo" ]; then
+  case $repo in
+    /*) dir=$repo ;;
+    "~"/*) dir=$HOME/${repo#"~"/} ;;
+    *)
+      found=
+      old=$IFS; IFS=:
+      for r in $roots; do
+        case $r in "~"/*) r=$HOME/${r#"~"/} ;; esac
+        [ -d "$r/$repo" ] && { found=$r/$repo; break; }
+      done
+      IFS=$old
+      if [ -n "$found" ]; then dir=$found; else
+        printf "dev: repo %s not found in %s\n" "$repo" "$roots" >&2; exit 3
+      fi
+      ;;
+  esac
+fi
+session=${repo:-dev}; session=${session##*/}; session=${session//[.:]/-}
+if command -v tmux >/dev/null 2>&1; then
+  exec tmux new-session -A -D -s "$session" -c "$dir"
+else
+  cd "$dir" || exit 1; exec "${SHELL:-bash}" -i
+fi
+'
+    ssh -t "$host" "DEV_REPO=$(printf '%q' "$repo") bash -lc $(printf '%q' "$script")"
+  }
+fi
+
+# ---------------------------------------------------------------------------
 # Remote dev over Tailscale — publish a VPS port to your other devices, and drive
 # a headed browser on your laptop from tests on the VPS. Zero-config one-liners.
 # ---------------------------------------------------------------------------

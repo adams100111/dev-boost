@@ -187,10 +187,12 @@ pinned-upstream-fallback install ladder. See the [Install (any OS)](#install-any
 section above for the one-liner.
 
 **Remote dev over Tailscale (zero-config).** Develop on the VPS, use it from the laptop:
-`ddev-remote` binds ddev's router to the tailnet on servers; managed shell helpers make
-the rest one word — `expose <port>` publishes a VPS port at `https://<host>.<tailnet>.ts.net`
-(auto-TLS), and `pw-server` (laptop) + `pw-connect <ws>` (VPS) run Playwright on the VPS while
-the **headed** browser opens on your laptop. Aspire: `expose 18888` for the dashboard.
+`dev <host> [repo]` (laptop) ssh's in and drops you into a persistent per-repo tmux session
+in the repo, ready to work; `ddev-remote` binds ddev's router to the tailnet on servers;
+managed shell helpers make the rest one word — `expose <port>` publishes a VPS port at
+`https://<host>.<tailnet>.ts.net` (auto-TLS), and `pw-server` (laptop) + `pw-connect <ws>`
+(VPS) run Playwright on the VPS while the **headed** browser opens on your laptop. Aspire:
+`expose 18888` for the dashboard. See [docs/remote-dev.md](docs/remote-dev.md).
 
 ## Requirements & supported OS
 
@@ -206,7 +208,7 @@ the **headed** browser opens on your laptop. Aspire: `expose 18888` for the dash
 
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
-[obsidian-sync](docs/obsidian-sync.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
+[obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
 
 ## Validate before shipping (in a throwaway Fedora VM)
 
