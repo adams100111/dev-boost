@@ -261,14 +261,24 @@ dev <host> [repo]
 
 ## Helper quick reference
 
+> **These are bare shell functions, not `devboost` subcommands.** You type `pw-mcp` and
+> `dev`, *not* `devboost pw-mcp`. They live in the managed `~/.bashrc` (from
+> `dotfiles/dot_bashrc`), which `devboost install` writes via the `dotfiles` module — so they
+> exist in any interactive shell on a dev-boost box, and nowhere else. After a dev-boost
+> release changes one, `devboost self-update && devboost install` re-applies your `~/.bashrc`
+> to pick it up (open a new shell or `source ~/.bashrc`). Confirm with `type pw-mcp`.
+> The `client-attached` tmux hook that auto-runs `pw-workstation` lives in `~/.tmux.conf` +
+> `~/.config/tmux/pw-autoregister.sh`, applied the same way. (Note: there is an unrelated
+> `devboost dev` *subcommand* for Aspire GC — different from the bare `dev` connect helper.)
+
 | Where | Command | Does |
 |-------|---------|------|
-| laptop | `tsdev-sync` | mirror the tailnet into `~/.ssh/config` (→ `dev`/WezTerm targets) |
-| laptop | `dev <host> [repo]` | ssh in + attach a per-repo tmux session in the repo |
-| laptop | `pw-mcp [--extension] [port]` | run the Playwright MCP here (headed) for a server-side Claude |
+| workstation | `tsdev-sync` | mirror the tailnet into `~/.ssh/config` (→ `dev`/WezTerm targets) |
+| workstation | `dev <host> [repo]` | ssh in + attach a per-repo tmux session in the repo |
+| workstation | `pw-mcp [--extension] [port]` | run the Playwright MCP here (headed) for a server-side Claude |
 | server | `pw-workstation [name] [port]` | register your workstation's headed MCP with Claude (auto-detects the ssh client; also runs automatically via a tmux attach hook) |
 | server | `expose <port>` | publish a VPS port at `https://<host>.<tailnet>.ts.net` |
-| laptop | `img2ssh <host>` | paste a clipboard image into an SSH'd Claude Code |
+| workstation | `img2ssh <host>` | paste a clipboard image into an SSH'd Claude Code |
 
 ## Related pieces
 
