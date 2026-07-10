@@ -92,16 +92,23 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --ssh
 ```
 
-Add each server to `~/.ssh/config` — this gives clean names **and** makes WezTerm
-turn each host into a launcher entry automatically (`LEADER d`):
+Then let dev-boost mirror every tailnet machine into `~/.ssh/config` for you — one command,
+zero hand-editing:
+
+```bash
+tsdev-sync           # writes a managed block of Host entries from `tailscale status`
+```
+
+Every machine on your tailnet becomes a clean `dev <name>` target **and** a WezTerm launcher
+entry (`LEADER d`), using stable MagicDNS names. Re-run it after adding a machine. (Override the
+login user with `DEVBOOST_SSH_USER`; the block is idempotent and lives between `# >>> devboost
+tailnet >>>` markers, so your own `~/.ssh/config` entries are untouched.)
+
+Prefer to do it by hand? A plain entry works too:
 
 ```sshconfig
 Host my-vps            # dev box
     HostName my-vps    # Tailscale MagicDNS name
-    User you
-
-Host my-prod           # production — for deploys/ops only
-    HostName my-prod
     User you
 ```
 
@@ -170,21 +177,29 @@ HTTP server a remote client attaches to (endpoint path `/mcp`).
 **1. Headless on the server (default — zero laptop).** Claude runs the MCP on the VPS
 with no display and hands back screenshots. Best for unattended / bulk runs.
 
-**2. Headed on the laptop, driven from the server** — `pw-mcp` (recommended for *watching*):
+**2. Headed on the laptop, driven from the server** — `pw-mcp` + `pw-laptop` (recommended for *watching*):
 
 ```bash
-# laptop — headed browser opens here; the command prints the exact server-side config:
-pw-mcp               # = npx @playwright/mcp --port 8931 --host <tailnet-ip>
+# laptop — headed browser opens here (a persistent profile: your logins survive across runs).
+# It advertises this laptop's STABLE MagicDNS name, so the server config never changes:
+pw-mcp                       # persistent-profile Chrome
+pw-mcp --extension           # …or drive your REAL open Chrome via the bridge extension
 ```
 
-Then on the **server**, add the printed line to Claude Code's MCP config:
+Then on the **server**, register it once — one word if you've set `DEVBOOST_DEV_LAPTOP`:
 
-```json
-{ "mcpServers": { "playwright": { "url": "http://<laptop-tailnet-ip>:8931/mcp" } } }
+```bash
+pw-laptop                    # = claude mcp add --transport http --scope user \
+                             #     playwright-laptop http://$DEVBOOST_DEV_LAPTOP:8931/mcp
 ```
 
 Claude (on the VPS) drives the browser; the window opens on your laptop. Only a
 browser's worth of RAM stays local — trivial next to the LSP/builds you offloaded.
+
+**Make it automatic on every server:** put your laptop's MagicDNS name in the age secrets
+bundle as `DEVBOOST_DEV_LAPTOP` (alongside the Tailscale key). Every box you provision then
+knows it — `pw-laptop` is a bare one-word command there, and because the URL uses the *stable*
+name, the registration never goes stale. `pw-laptop <name> <port>` overrides it ad-hoc.
 
 **3. MCP on the server, browser on the laptop via CDP** (true "MCP on the server", fiddlier):
 
@@ -232,10 +247,19 @@ dev <host> [repo]
 > Requires a bash-compatible login shell on the remote (the dev-boost fleet uses
 > bash). It's laptop-side and needs only `ssh`.
 
+## Helper quick reference
+
+| Where | Command | Does |
+|-------|---------|------|
+| laptop | `tsdev-sync` | mirror the tailnet into `~/.ssh/config` (→ `dev`/WezTerm targets) |
+| laptop | `dev <host> [repo]` | ssh in + attach a per-repo tmux session in the repo |
+| laptop | `pw-mcp [--extension] [port]` | run the Playwright MCP here (headed) for a server-side Claude |
+| server | `pw-laptop [name] [port]` | register the laptop's headed MCP with Claude (uses `$DEVBOOST_DEV_LAPTOP`) |
+| server | `expose <port>` | publish a VPS port at `https://<host>.<tailnet>.ts.net` |
+| laptop | `img2ssh <host>` | paste a clipboard image into an SSH'd Claude Code |
+
 ## Related pieces
 
-- `img2ssh HOST` — paste a clipboard **image** into an SSH'd Claude Code from any
-  terminal (WezTerm's `Ctrl+V` does this automatically).
 - `ddev-remote` — binds ddev's router to all interfaces so ddev projects are
   reachable over the tailnet.
 - `tmux-persist` — restores your sessions after a reboot.

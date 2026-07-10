@@ -117,6 +117,28 @@ if command -v tailscale &>/dev/null; then
   expose()   { tailscale serve --bg "${1:?usage: expose PORT}" && tailscale serve status; }
   exposed()  { tailscale serve status; }        # what's currently published
   unexpose() { tailscale serve reset; }          # take it all down
+
+  # tsdev-sync — mirror every tailnet machine into ~/.ssh/config (a managed block) so
+  # `dev <name>` and WezTerm SSH domains populate with zero hand-editing. Idempotent; re-run
+  # after adding a machine. Names come from MagicDNS (stable); User defaults to $USER (override
+  # with $DEVBOOST_SSH_USER).
+  tsdev-sync() {
+    command -v jq &>/dev/null || { echo "tsdev-sync: needs jq" >&2; return 1; }
+    local cfg="$HOME/.ssh/config" b="# >>> devboost tailnet >>>" e="# <<< devboost tailnet <<<"
+    local block
+    block=$(tailscale status --json 2>/dev/null | jq -r --arg u "${DEVBOOST_SSH_USER:-$USER}" '
+      [.Peer[]?] | map(select(.DNSName != null and .DNSName != ""))
+      | map({h: (.DNSName|rtrimstr(".")|split(".")[0]), f: (.DNSName|rtrimstr("."))})
+      | unique_by(.h) | map("Host \(.h)\n    HostName \(.f)\n    User \($u)") | .[]') \
+      || { echo "tsdev-sync: tailscale status failed" >&2; return 1; }
+    [ -n "$block" ] || { echo "tsdev-sync: no tailnet peers found" >&2; return 1; }
+    mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$cfg"; chmod 600 "$cfg"
+    local tmp; tmp=$(mktemp) || return 1
+    awk -v b="$b" -v e="$e" 'BEGIN{s=0} $0==b{s=1;next} $0==e{s=0;next} !s{print}' "$cfg" > "$tmp"
+    { cat "$tmp"; printf '%s\n%s\n%s\n' "$b" "$block" "$e"; } > "$cfg"
+    rm -f "$tmp"
+    echo "tsdev-sync: $(grep -c '^Host ' <<<"$block") tailnet host(s) synced to ~/.ssh/config" >&2
+  }
 fi
 
 if command -v npx &>/dev/null; then
@@ -130,22 +152,45 @@ if command -v npx &>/dev/null; then
     local ws="${1:?usage: pw-connect ws://LAPTOP:5000/pw}"; shift
     PW_TEST_CONNECT_WS_ENDPOINT="$ws" npx playwright test "$@"
   }
-  # pw-mcp [port] — run the Playwright MCP on THIS laptop with a HEADED (visible) browser,
-  # reachable over the tailnet, so Claude Code running ON A SERVER can drive it while the
-  # window opens here. Binds to the Tailscale IP when present (tailnet-only), else 0.0.0.0.
-  # Prints the exact MCP config to add on the server. (For unattended runs, prefer the MCP
-  # headless on the server instead — see docs/remote-dev.md.)
+  # pw-mcp [--extension] [port] — run the Playwright MCP on THIS laptop so Claude Code on a
+  # SERVER can drive it over the tailnet while the browser opens here. Default: a dedicated
+  # persistent-profile Chrome (logins/cookies persist across runs). --extension: drive your
+  # REAL open Chrome via the Playwright bridge extension instead. Advertises this laptop's
+  # stable MagicDNS name so the server-side registration never changes — register it there once
+  # with `pw-laptop`. For unattended runs, prefer the MCP headless on the server (docs/remote-dev.md).
   pw-mcp() {
-    local port="${1:-8931}" bind
-    command -v tailscale &>/dev/null && bind=$(tailscale ip -4 2>/dev/null | head -1)
-    if [ -z "${bind:-}" ]; then
-      bind=0.0.0.0
-      echo "pw-mcp: no tailnet IP — binding 0.0.0.0 (reachable on all interfaces)" >&2
+    local ext=0; [ "${1:-}" = "--extension" ] && { ext=1; shift; }
+    local port="${1:-8931}" bind name
+    if command -v tailscale &>/dev/null; then
+      bind=$(tailscale ip -4 2>/dev/null | head -1)
+      command -v jq &>/dev/null && name=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName | rtrimstr(".")')
     fi
-    echo "pw-mcp: headed browser opens here; on the SERVER add to Claude's MCP config:" >&2
-    echo "        {\"mcpServers\":{\"playwright\":{\"url\":\"http://${bind}:${port}/mcp\"}}}" >&2
-    echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} (Ctrl-C to stop)…" >&2
-    npx @playwright/mcp@latest --port "$port" --host "$bind"
+    [ -n "${bind:-}" ] || { bind=0.0.0.0; echo "pw-mcp: no tailnet IP — binding 0.0.0.0" >&2; }
+    { [ -n "${name:-}" ] && [ "$name" != null ]; } || name="$bind"
+    local args
+    if [ "$ext" = 1 ]; then
+      args=(--extension)
+      echo "pw-mcp: driving your REAL Chrome via the bridge extension (install it if prompted)" >&2
+    else
+      args=(--user-data-dir "$HOME/.cache/pw-mcp-profile")
+    fi
+    echo "pw-mcp: on the SERVER register once (or set DEVBOOST_DEV_LAPTOP=$name and run pw-laptop):" >&2
+    echo "        claude mcp add --transport http --scope user playwright-laptop http://${name}:${port}/mcp" >&2
+    echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} as ${name} (Ctrl-C to stop)…" >&2
+    npx @playwright/mcp@latest --port "$port" --host "$bind" "${args[@]}"
+  }
+fi
+
+# pw-laptop [name] [port] — register your laptop's headed Playwright MCP with Claude on THIS
+# server (run `pw-mcp` on the laptop first). Name defaults to $DEVBOOST_DEV_LAPTOP — set that
+# once (e.g. in the age secrets bundle) and this is one word on every server. User-scoped, so
+# it applies to every repo on the box.
+if command -v claude &>/dev/null; then
+  pw-laptop() {
+    local name="${1:-${DEVBOOST_DEV_LAPTOP:-}}" port="${2:-8931}"
+    [ -n "$name" ] || { echo "pw-laptop: pass a laptop name or set DEVBOOST_DEV_LAPTOP=<magicdns>" >&2; return 1; }
+    claude mcp add --transport http --scope user playwright-laptop "http://${name}:${port}/mcp" \
+      && echo "pw-laptop: Claude will drive the headed browser on ${name} — run 'pw-mcp' there" >&2
   }
 fi
 
