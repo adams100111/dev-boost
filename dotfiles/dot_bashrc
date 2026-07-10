@@ -60,7 +60,7 @@ command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 command -v mise &>/dev/null && eval "$(mise activate bash)"
 
 # ---------------------------------------------------------------------------
-# dev — hop onto a server and land in a repo, ready to work. Runs ON THE LAPTOP.
+# dev — hop onto a server and land in a repo, ready to work. Runs ON YOUR WORKSTATION.
 #   dev my-vps innovation   → ssh my-vps, attach/create the 'innovation' session in the repo
 #   dev my-vps              → a plain 'dev' session in $HOME
 #   dev my-vps /srv/app     → an absolute remote path, used as-is
@@ -155,9 +155,9 @@ if command -v npx &>/dev/null; then
   # pw-mcp [--extension] [port] — run the Playwright MCP on THIS laptop so Claude Code on a
   # SERVER can drive it over the tailnet while the browser opens here. Default: a dedicated
   # persistent-profile Chrome (logins/cookies persist across runs). --extension: drive your
-  # REAL open Chrome via the Playwright bridge extension instead. Advertises this laptop's
+  # REAL open Chrome via the Playwright bridge extension instead. Advertises this machine's
   # stable MagicDNS name so the server-side registration never changes — register it there once
-  # with `pw-laptop`. For unattended runs, prefer the MCP headless on the server (docs/remote-dev.md).
+  # with `pw-workstation`. For unattended runs, prefer the MCP headless on the server (docs/remote-dev.md).
   pw-mcp() {
     local ext=0; [ "${1:-}" = "--extension" ] && { ext=1; shift; }
     local port="${1:-8931}" bind name
@@ -174,26 +174,27 @@ if command -v npx &>/dev/null; then
     else
       args=(--user-data-dir "$HOME/.cache/pw-mcp-profile")
     fi
-    echo "pw-mcp: on the SERVER just run:  pw-laptop   (auto-detects this laptop over ssh)" >&2
-    echo "        manual: claude mcp add --transport http --scope user playwright-laptop http://${name}:${port}/mcp" >&2
+    echo "pw-mcp: on the SERVER just run:  pw-workstation   (auto-detects this machine over ssh)" >&2
+    echo "        manual: claude mcp add --transport http --scope user playwright-workstation http://${name}:${port}/mcp" >&2
     echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} as ${name} (Ctrl-C to stop)…" >&2
     npx @playwright/mcp@latest --port "$port" --host "$bind" "${args[@]}"
   }
 fi
 
-# pw-laptop [name] [port] — register your laptop's headed Playwright MCP with Claude on THIS
-# server (run `pw-mcp` on the laptop first). With NO name it auto-detects the laptop you're
-# connected FROM (the active ssh client address), so it works on any server from any laptop and
-# switching laptops is just re-running it. Precedence: arg > current ssh client > $DEVBOOST_DEV_LAPTOP.
-# User-scoped, so it applies to every repo on the box.
+# pw-workstation [name] [port] — register your workstation's headed Playwright MCP with Claude on
+# THIS server (run `pw-mcp` on that machine first). With NO name it auto-detects the machine you're
+# connected FROM (the active ssh client address), so it works on any server from any machine —
+# laptop, desktop, a new PC. Precedence: arg > current ssh client > $DEVBOOST_DEV_WORKSTATION.
+# Remove-then-add so switching machines UPDATES the entry (same name, new address). User-scoped.
 if command -v claude &>/dev/null; then
-  pw-laptop() {
+  pw-workstation() {
     local name="${1:-}" port="${2:-8931}"
     [ -n "$name" ] || name="${SSH_CONNECTION%% *}"          # client IP of the current ssh session
-    [ -n "$name" ] || name="${DEVBOOST_DEV_LAPTOP:-}"
-    [ -n "$name" ] || { echo "pw-laptop: no ssh client detected — pass a laptop name/IP or set DEVBOOST_DEV_LAPTOP" >&2; return 1; }
-    claude mcp add --transport http --scope user playwright-laptop "http://${name}:${port}/mcp" \
-      && echo "pw-laptop: Claude → headed browser on ${name} (run 'pw-mcp' there; re-run after switching laptops)" >&2
+    [ -n "$name" ] || name="${DEVBOOST_DEV_WORKSTATION:-}"
+    [ -n "$name" ] || { echo "pw-workstation: no ssh client detected — pass a name/IP or set DEVBOOST_DEV_WORKSTATION" >&2; return 1; }
+    claude mcp remove --scope user playwright-workstation >/dev/null 2>&1
+    claude mcp add --transport http --scope user playwright-workstation "http://${name}:${port}/mcp" \
+      && echo "pw-workstation: Claude → headed browser on ${name} (run 'pw-mcp' there)" >&2
   }
 fi
 
