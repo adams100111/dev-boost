@@ -186,20 +186,28 @@ pw-mcp                       # persistent-profile Chrome
 pw-mcp --extension           # …or drive your REAL open Chrome via the bridge extension
 ```
 
-Then on the **server**, register it once — one word if you've set `DEVBOOST_DEV_LAPTOP`:
+Then on the **server**, register it with one word — no configuration:
 
 ```bash
-pw-laptop                    # = claude mcp add --transport http --scope user \
-                             #     playwright-laptop http://$DEVBOOST_DEV_LAPTOP:8931/mcp
+pw-laptop                    # auto-detects the laptop you're connected FROM (the ssh client),
+                             # then: claude mcp add --transport http --scope user \
+                             #         playwright-laptop http://<that-laptop>:8931/mcp
 ```
 
 Claude (on the VPS) drives the browser; the window opens on your laptop. Only a
 browser's worth of RAM stays local — trivial next to the LSP/builds you offloaded.
 
-**Make it automatic on every server:** put your laptop's MagicDNS name in the age secrets
-bundle as `DEVBOOST_DEV_LAPTOP` (alongside the Tailscale key). Every box you provision then
-knows it — `pw-laptop` is a bare one-word command there, and because the URL uses the *stable*
-name, the registration never goes stale. `pw-laptop <name> <port>` overrides it ad-hoc.
+### Multiple laptops / switching
+
+`pw-laptop` reads the **ssh client address you connected from** (`$SSH_CONNECTION`), so it
+always points at *the laptop you're actually using* — nothing is hardcoded. Working from a
+different laptop tomorrow needs no per-server setup: `pw-mcp` on that laptop (it advertises
+*itself*), then `pw-laptop` on the server picks up the new client automatically. Switching is
+just re-running `pw-laptop` once on that box.
+
+Precedence is `pw-laptop <name>` (explicit) → current ssh client → `$DEVBOOST_DEV_LAPTOP`
+(an optional fallback env var, e.g. for a non-interactive/preconfigured box — it is **not**
+read from the secrets bundle; export it yourself in `~/.bash_profile` if you want a default).
 
 **3. MCP on the server, browser on the laptop via CDP** (true "MCP on the server", fiddlier):
 
@@ -254,7 +262,7 @@ dev <host> [repo]
 | laptop | `tsdev-sync` | mirror the tailnet into `~/.ssh/config` (→ `dev`/WezTerm targets) |
 | laptop | `dev <host> [repo]` | ssh in + attach a per-repo tmux session in the repo |
 | laptop | `pw-mcp [--extension] [port]` | run the Playwright MCP here (headed) for a server-side Claude |
-| server | `pw-laptop [name] [port]` | register the laptop's headed MCP with Claude (uses `$DEVBOOST_DEV_LAPTOP`) |
+| server | `pw-laptop [name] [port]` | register the laptop's headed MCP with Claude (auto-detects the ssh client) |
 | server | `expose <port>` | publish a VPS port at `https://<host>.<tailnet>.ts.net` |
 | laptop | `img2ssh <host>` | paste a clipboard image into an SSH'd Claude Code |
 

@@ -193,9 +193,9 @@ binds ddev's router to the tailnet on servers; managed shell helpers make the re
 `expose <port>` publishes a VPS port at `https://<host>.<tailnet>.ts.net` (auto-TLS),
 `pw-server` (laptop) + `pw-connect <ws>` (VPS) run the Playwright **test runner** on the VPS
 while the headed browser opens on your laptop, and `pw-mcp` (laptop) + `pw-laptop` (VPS) run the
-Playwright **MCP** headed on the laptop for Claude on the VPS to drive — set once via
-`DEVBOOST_DEV_LAPTOP`, automatic on every server. Aspire: `expose 18888` for the dashboard.
-See [docs/remote-dev.md](docs/remote-dev.md).
+Playwright **MCP** headed on the laptop for Claude on the VPS to drive — `pw-laptop` auto-detects
+the laptop you connected from, so it works on any server from any laptop with no config. Aspire:
+`expose 18888` for the dashboard. See [docs/remote-dev.md](docs/remote-dev.md).
 
 ## Requirements & supported OS
 

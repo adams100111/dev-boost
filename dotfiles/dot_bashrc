@@ -174,23 +174,26 @@ if command -v npx &>/dev/null; then
     else
       args=(--user-data-dir "$HOME/.cache/pw-mcp-profile")
     fi
-    echo "pw-mcp: on the SERVER register once (or set DEVBOOST_DEV_LAPTOP=$name and run pw-laptop):" >&2
-    echo "        claude mcp add --transport http --scope user playwright-laptop http://${name}:${port}/mcp" >&2
+    echo "pw-mcp: on the SERVER just run:  pw-laptop   (auto-detects this laptop over ssh)" >&2
+    echo "        manual: claude mcp add --transport http --scope user playwright-laptop http://${name}:${port}/mcp" >&2
     echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} as ${name} (Ctrl-C to stop)…" >&2
     npx @playwright/mcp@latest --port "$port" --host "$bind" "${args[@]}"
   }
 fi
 
 # pw-laptop [name] [port] — register your laptop's headed Playwright MCP with Claude on THIS
-# server (run `pw-mcp` on the laptop first). Name defaults to $DEVBOOST_DEV_LAPTOP — set that
-# once (e.g. in the age secrets bundle) and this is one word on every server. User-scoped, so
-# it applies to every repo on the box.
+# server (run `pw-mcp` on the laptop first). With NO name it auto-detects the laptop you're
+# connected FROM (the active ssh client address), so it works on any server from any laptop and
+# switching laptops is just re-running it. Precedence: arg > current ssh client > $DEVBOOST_DEV_LAPTOP.
+# User-scoped, so it applies to every repo on the box.
 if command -v claude &>/dev/null; then
   pw-laptop() {
-    local name="${1:-${DEVBOOST_DEV_LAPTOP:-}}" port="${2:-8931}"
-    [ -n "$name" ] || { echo "pw-laptop: pass a laptop name or set DEVBOOST_DEV_LAPTOP=<magicdns>" >&2; return 1; }
+    local name="${1:-}" port="${2:-8931}"
+    [ -n "$name" ] || name="${SSH_CONNECTION%% *}"          # client IP of the current ssh session
+    [ -n "$name" ] || name="${DEVBOOST_DEV_LAPTOP:-}"
+    [ -n "$name" ] || { echo "pw-laptop: no ssh client detected — pass a laptop name/IP or set DEVBOOST_DEV_LAPTOP" >&2; return 1; }
     claude mcp add --transport http --scope user playwright-laptop "http://${name}:${port}/mcp" \
-      && echo "pw-laptop: Claude will drive the headed browser on ${name} — run 'pw-mcp' there" >&2
+      && echo "pw-laptop: Claude → headed browser on ${name} (run 'pw-mcp' there; re-run after switching laptops)" >&2
   }
 fi
 
