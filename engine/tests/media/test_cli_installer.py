@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -117,3 +118,57 @@ def test_usb_unpinned_arch_exits_cleanly(monkeypatch) -> None:  # type: ignore[n
          "--arch", "riscv64", "--dry-run", "--yes"],
     )
     assert result.exit_code == 1  # iso_for raises MediaError → caught → clean exit, not a traceback
+
+
+def test_usb_wizard_honours_the_answered_cache_dir(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The wizard asks "Cache dir for downloads:" — so the answer must be used, and the
+    downloads must survive the build. Checking the --cache-dir *flag* (always None on the
+    wizard path) instead sent every run to a temp dir that was then deleted, silently
+    re-downloading the ISO every time while the prompt implied otherwise.
+    """
+    import devboost.cli.installer as cli_installer
+    from devboost.media import wizard
+    from devboost.media.config import IsoSpec, MediaConfig
+    from devboost.media.probe import DiskState
+
+    answered = tmp_path / "keepme"
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything"),
+        cache_dir=answered,
+        assume_yes=True,
+    )
+    monkeypatch.setattr(wizard, "run", lambda ctx: cfg)  # same module object installer() uses
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    seen: dict[str, object] = {}
+
+    def _build(ctx, c, dl, cache, *, reporter):  # type: ignore[no-untyped-def]
+        seen["cache_dir"] = c.cache_dir
+        (cache.cache_dir / "fedora-44.iso").write_bytes(b"a 2GB ISO, pretend")
+
+    monkeypatch.setattr(cli_installer, "build", _build)
+
+    result = runner.invoke(app, ["installer"])
+    assert result.exit_code == 0
+    assert seen["cache_dir"] == answered  # the answer reaches the stages
+    assert (answered / "fedora-44.iso").exists()  # and is NOT deleted afterwards
+
+
+def test_usb_flags_path_without_cache_dir_stays_ephemeral(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """--device without --cache-dir keeps the documented opt-in behaviour: a temp dir that is
+    cleaned up. Only the wizard, which explicitly asks, implies keeping them."""
+    import devboost.cli.installer as cli_installer
+    from devboost.media.probe import DiskState
+
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+    seen: dict[str, object] = {}
+
+    def _build(ctx, c, dl, cache, *, reporter):  # type: ignore[no-untyped-def]
+        seen["cache_dir"] = c.cache_dir
+
+    monkeypatch.setattr(cli_installer, "build", _build)
+    result = runner.invoke(app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes"])
+    assert result.exit_code == 0
+    assert not Path(str(seen["cache_dir"])).exists()  # cleaned up after the build

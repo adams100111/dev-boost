@@ -87,11 +87,16 @@ def run(ctx: Ctx) -> MediaConfig:
         choices=[questionary.Choice(p, checked=(p == "full")) for p in _PROFILES],
     ).ask() or ["full"]
     secrets = questionary.path("Path to secrets.age (blank to skip):", default="").ask()
+    default_cache = str(Path(gettempdir()) / "devboost-usb")
     cache = questionary.path(
-        "Cache dir for downloads:", default=str(Path(gettempdir()) / "devboost-usb")
+        "Cache dir for downloads (kept, so the ISO is not re-fetched next time):",
+        default=default_cache,
     ).ask()
     if cache is None:
         raise DeviceError("aborted")
+    # A cleared prompt must not resolve to Path("") — i.e. the current directory, which would
+    # quietly fill the user's cwd with multi-GB ISOs.
+    cache = cache.strip() or default_cache
 
     offline_mirror: bool = questionary.confirm(
         "Pre-mirror dnf+flatpak packages for OFFLINE install?"

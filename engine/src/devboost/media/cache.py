@@ -1,8 +1,8 @@
 """Download cache for build artifacts (ISOs, Ventoy tarball, frozen binary).
 
-Caching is **opt-in**: the default workflow uses an ephemeral temp dir that is cleaned up
-after the build.  Pass ``--cache-dir`` on the CLI to persist downloads across runs.  An
-optional TTL (``ttl_days``) evicts files older than N days from a persistent cache.
+Caching is **opt-in**: ``--cache-dir`` or the wizard's cache prompt persist downloads across
+runs; only ``--device`` without ``--cache-dir`` uses an ephemeral temp dir, cleaned up
+after the build. An optional TTL (``ttl_days``) evicts files older than N days.
 """
 
 from __future__ import annotations

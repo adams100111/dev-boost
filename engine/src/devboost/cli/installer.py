@@ -4,8 +4,9 @@ NOTE (frozen binary): the Ventoy injection archive (devboost-<arch>.tar.gz) must
 *alongside* the frozen binary — it is NOT bundled inside the binary.  Build it first via
 ``scripts/build-bundle.sh``; the frozen ``installer`` command locates it next to sys.executable.
 
-Download cache is **opt-in**: by default downloads go to a temporary directory that is
-deleted after the build.  Pass ``--cache-dir`` to persist across runs.
+Download cache is **opt-in**, two ways: pass ``--cache-dir``, or answer the wizard's
+"Cache dir for downloads" prompt (its answer is kept, so the multi-GB ISO is fetched once).
+Only ``--device`` without ``--cache-dir`` is ephemeral — nothing was asked, nothing kept.
 """
 
 from __future__ import annotations
@@ -192,11 +193,19 @@ def installer(
 
     reporter = RichReporter()
 
-    # Cache is opt-in.  When --cache-dir is supplied, use it persistently (and evict stale
-    # files if --cache-ttl-days is set).  Otherwise allocate an ephemeral tmpdir and clean
-    # it up after the build regardless of success or failure.
+    # Cache is opt-in, and there are two ways to opt in:
+    #   --cache-dir            — explicit, persistent (with --cache-ttl-days eviction).
+    #   the wizard's prompt    — it *asks* "Cache dir for downloads:", so the answer has to
+    #                            mean something.  Testing the flag here (always None on the
+    #                            wizard path) silently discarded that answer, sending every
+    #                            run to a temp dir that was then deleted — re-downloading the
+    #                            whole ISO each time while the prompt implied otherwise.
+    # Only --device without --cache-dir is ephemeral: nothing was asked, nothing is kept.
     if cache_dir is not None:
         actual_cache_dir: Path = cache_dir
+        persistent_cache = True
+    elif device is None:
+        actual_cache_dir = cfg.cache_dir  # the wizard's answer
         persistent_cache = True
     else:
         actual_cache_dir = Path(tempfile.mkdtemp(prefix="devboost-usb-"))

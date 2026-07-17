@@ -9,6 +9,8 @@ InquirerControl for that validation — the exact construction that raised in pr
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from pathlib import Path
+from tempfile import gettempdir
 
 import questionary
 from questionary.prompts.common import InquirerControl
@@ -111,3 +113,19 @@ def test_wizard_on_devboost_stick_defaults_to_the_nondestructive_update(monkeypa
 
     # Enter on the update/rebuild prompt must keep the user's ISOs/secrets.
     assert cfg.mode == "update"
+
+
+def test_wizard_blank_cache_answer_never_becomes_the_current_directory(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A cleared cache prompt must fall back to the default, not Path("") — the answer is now
+    honoured as a persistent cache, so an empty string would fill the user's cwd with ISOs."""
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+
+    class _BlankCache(_FakePrompts):
+        def path(self, message: str, default: str = "", **kw: object) -> _Answer:
+            return _Answer("   " if "Cache dir" in message else default)
+
+    _BlankCache(_yes_to_wipe).install(monkeypatch)
+    cfg = wizard.run(_ctx())
+    assert cfg.cache_dir != Path()
+    assert cfg.cache_dir == Path(gettempdir()) / "devboost-usb"
