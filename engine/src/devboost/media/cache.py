@@ -12,6 +12,20 @@ import time
 from pathlib import Path
 
 
+def sha256_of(path: Path) -> str:
+    """The lowercase hex sha256 of *path*, streamed so a multi-GB ISO costs no memory.
+
+    The single definition of "hashed" for the media pipeline: the download cache and the
+    local-ISO downloader must agree byte-for-byte on what verification means. Two copies of
+    that is the shape of bugs this codebase has already shipped twice.
+    """
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 class Cache:
     def __init__(self, cache_dir: Path, *, ttl_days: int | None = None) -> None:
         self.cache_dir = cache_dir
@@ -24,11 +38,7 @@ class Cache:
     def verify(self, path: Path, sha256: str) -> bool:
         if not path.exists():
             return False
-        h = hashlib.sha256()
-        with path.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                h.update(chunk)
-        return h.hexdigest() == sha256
+        return sha256_of(path) == sha256
 
     def has(self, name: str, sha256: str) -> bool:
         return self.verify(self.path_for(name, sha256), sha256)

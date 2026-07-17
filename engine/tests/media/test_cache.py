@@ -58,3 +58,30 @@ def test_evict_stale_ignores_directories(tmp_path: Path) -> None:
     # No files → nothing to evict
     assert cache.evict_stale() == 0
     assert sub.exists()
+
+
+def test_sha256_of_matches_hashlib(tmp_path: Path) -> None:
+    """One definition of "hashed" — Cache.verify and LocalIsoDownloader must agree."""
+    import hashlib
+
+    from devboost.media.cache import sha256_of
+
+    blob = b"fedora" * 100_000  # spans several 1 MiB read chunks
+    f = tmp_path / "x.iso"
+    f.write_bytes(blob)
+    assert sha256_of(f) == hashlib.sha256(blob).hexdigest()
+
+
+def test_cache_verify_delegates_to_sha256_of(tmp_path: Path) -> None:
+    """verify() must not keep a second copy of the loop."""
+    import hashlib
+
+    from devboost.media.cache import Cache
+
+    f = tmp_path / "y.iso"
+    f.write_bytes(b"payload")
+    cache = Cache(tmp_path / "c")
+    good = hashlib.sha256(b"payload").hexdigest()
+    assert cache.verify(f, good) is True
+    assert cache.verify(f, "b" * 64) is False
+    assert cache.verify(tmp_path / "missing.iso", good) is False
