@@ -32,9 +32,12 @@ The device picker lists only removable disks (vendor/size/serial) and requires a
 confirmation — `--yes` skips it in automation; `--rebuild` wipes an existing dev-boost stick (otherwise
 re-running an existing dev-boost stick does a non-destructive **update**).
 
-**Caching:** downloads are **ephemeral by default** (temp dir, cleaned after the build). Pass
-`--cache-dir <path>` to keep them for reuse, optionally with `--cache-ttl-days N` to evict files older
-than N days. **Secrets:** `--secrets secrets.age --secrets-key age-key.txt` (build the bundle with
+**Caching:** the **wizard keeps** what it downloads, in the directory its "Cache dir for downloads"
+prompt asks about (default under `$TMPDIR`, so pick something durable like `~/.cache/devboost` if you
+want it to survive a reboot). On the flags path, pass `--cache-dir <path>` to keep downloads for reuse,
+optionally with `--cache-ttl-days N` to evict files older than N days; `--device` **without**
+`--cache-dir` is ephemeral (temp dir, cleaned after the build). **Secrets:** `--secrets secrets.age
+--secrets-key age-key.txt` (build the bundle with
 `scripts/make-secrets.sh`); both are staged into `Bootstrap/` and copied onto the installed system by the
 Kickstart `%post`. The engine **generates** `ventoy.json`: default boot + `injection` cover the Live ISO,
 `auto_install` binds `ks.cfg` to the **netinst** ISO (injection covers both, so the binary is present on
