@@ -9,7 +9,7 @@ from devboost.media.probe import probe
 from devboost.model import Ctx
 
 OS = OsInfo("fedora", "fedora", "x86_64")
-_VTOY = 'NAME="sdb1" LABEL="VTOY"\nNAME="sdb2" LABEL="boot"\n'
+_VTOY = 'NAME="sdb1" LABEL="Ventoy"\nNAME="sdb2" LABEL="boot"\n'
 _NO_VTOY = 'NAME="sdb1" LABEL="data"\n'
 
 

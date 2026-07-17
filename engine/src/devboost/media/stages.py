@@ -23,7 +23,7 @@ from devboost.media.autoinstall import (
 )
 from devboost.media.cache import Cache
 from devboost.media.config import MediaConfig
-from devboost.media.devices import unmount_children, validate
+from devboost.media.devices import unmount_children, validate, vtoy_partition
 from devboost.media.download import Downloader
 from devboost.media.marker import Marker, write_marker
 from devboost.media.report import Reporter
@@ -75,16 +75,8 @@ def render_ventoy_json(
 
 
 def _find_vtoy_partition(ctx: Ctx, device: str) -> str | None:
-    """Return the /dev path of the child partition labelled VTOY, or None."""
-    out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,LABEL", device]).stdout
-    for line in out.splitlines():
-        fields = dict(_PAIR.findall(line))
-        if fields.get("LABEL") == "VTOY":
-            name = fields.get("NAME", "")
-            if not name:
-                return None
-            return name if name.startswith("/dev/") else f"/dev/{name}"
-    return None
+    """Return the /dev path of *device*'s Ventoy data partition, or None."""
+    return vtoy_partition(ctx, device)
 
 
 @contextmanager

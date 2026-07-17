@@ -5,7 +5,12 @@ import pytest
 from devboost.core.errors import DeviceError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
-from devboost.media.devices import list_removable, unmount_children, validate
+from devboost.media.devices import (
+    list_removable,
+    unmount_children,
+    validate,
+    vtoy_partition,
+)
 from devboost.model import Ctx
 
 OS = OsInfo("fedora", "fedora", "x86_64")
@@ -126,3 +131,38 @@ def test_unmount_children_raises_when_umount_fails() -> None:
     )
     with pytest.raises(DeviceError, match="could not unmount"):
         unmount_children(Ctx(os=OS, ex=ex), "/dev/sdb")
+
+
+# --- Ventoy data-partition discovery ------------------------------------------------------
+
+# Verbatim `lsblk -P -o NAME,LABEL /dev/sdb` from a real SanDisk stick immediately after
+# Ventoy 1.1.16 reported "Install Ventoy to /dev/sdb successfully finished". Grounded in an
+# observed disk on purpose: the code (and its tests) previously agreed on a label — "VTOY" —
+# that Ventoy never writes, so they passed while the real thing could never work.
+_LSBLK_REAL_AFTER_VENTOY_INSTALL = (
+    'NAME="sdb" LABEL=""\n'
+    'NAME="sdb1" LABEL="Ventoy"\n'
+    'NAME="sdb2" LABEL="VTOYEFI"\n'
+)
+
+
+def test_vtoy_partition_finds_the_data_partition_ventoy_actually_creates() -> None:
+    ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK_REAL_AFTER_VENTOY_INSTALL)})
+    # sdb1 (LABEL="Ventoy"), never sdb2 — VTOYEFI is the 32MB ESP, not the data partition.
+    assert vtoy_partition(Ctx(os=OS, ex=ex), "/dev/sdb") == "/dev/sdb1"
+
+
+def test_vtoy_partition_returns_none_on_a_non_ventoy_disk() -> None:
+    """The stick as it arrives: a Fedora live image, no Ventoy anywhere."""
+    live_usb = 'NAME="sdb" LABEL=""\nNAME="sdb1" LABEL="FEDORA-WS-L"\n'
+    ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=live_usb)})
+    assert vtoy_partition(Ctx(os=OS, ex=ex), "/dev/sdb") is None
+
+
+def test_vtoy_partition_does_not_match_the_efi_partition_alone() -> None:
+    """VTOYEFI is not the data partition; matching it would mount the 32MB ESP and stage
+    ISOs into it."""
+    ex = FakeExecutor(
+        scripts={"lsblk": Result(0, stdout='NAME="sdb" LABEL=""\nNAME="sdb2" LABEL="VTOYEFI"\n')}
+    )
+    assert vtoy_partition(Ctx(os=OS, ex=ex), "/dev/sdb") is None

@@ -53,6 +53,30 @@ def validate(ctx: Ctx, path: str) -> None:
         raise DeviceError(f"refusing {path}: partition {part} is mounted ({mnt}) — unmount first")
 
 
+#: The label Ventoy gives its *data* partition (VentoyWorker.sh: ``VTNEW_LABEL='Ventoy'`` ->
+#: ``mkexfatfs -n "$VTNEW_LABEL"``).  Overridable upstream via ``-L``, which dev-boost never
+#: passes.  NOT "VTOY" — that string appears nowhere on a Ventoy disk.  The ESP is labelled
+#: VTOYEFI (hardcoded in ventoy_lib.sh) and is deliberately not what we look for here.
+VTOY_DATA_LABEL = "Ventoy"
+
+
+def vtoy_partition(ctx: Ctx, device: str) -> str | None:
+    """The /dev path of *device*'s Ventoy **data** partition, or None if it has none.
+
+    Single source of truth: probing an existing stick and verifying a fresh install must
+    agree on what a Ventoy disk looks like.
+    """
+    out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,LABEL", device]).stdout
+    for line in out.splitlines():
+        f = dict(_PAIR.findall(line))
+        if f.get("LABEL") == VTOY_DATA_LABEL:
+            name = f.get("NAME", "")
+            if not name:
+                return None
+            return name if name.startswith("/dev/") else f"/dev/{name}"
+    return None
+
+
 def mounted_children(ctx: Ctx, path: str) -> list[tuple[str, str]]:
     """``[(partition, mountpoint)]`` for every mounted child partition of *path*.
 

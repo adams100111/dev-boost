@@ -49,7 +49,7 @@ _LSBLK = (
     ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
     # Post-install children: a VTOY partition exists (the install-landed check reads LABEL)
     # and nothing is mounted (validate() reads MOUNTPOINT).
-    'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="VTOY" MOUNTPOINT=""\n'
+    'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="Ventoy" MOUNTPOINT=""\n'
 )
 
 

@@ -27,7 +27,7 @@ _LSBLK = (
 # Children of /dev/sdb once Ventoy has installed: a VTOY partition exists and nothing is
 # mounted. Serves both lsblk reads — validate() looks at MOUNTPOINT, the VTOY discovery at
 # LABEL — so one canned string satisfies each without distorting either.
-_LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="VTOY" MOUNTPOINT=""\n'
+_LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="Ventoy" MOUNTPOINT=""\n'
 
 # A disk Ventoy installed nothing onto (its tool check failed): no VTOY partition appears.
 _LSBLK_CHILDREN_NO_VTOY = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
@@ -533,7 +533,7 @@ def test_mount_lifecycle_recorded_when_no_override(
     from devboost.media.stages import _mounted_vtoy
 
     # lsblk output showing sdb1 with LABEL=VTOY
-    lsblk_vtoy = 'NAME="sdb" LABEL=""\nNAME="sdb1" LABEL="VTOY"\n'
+    lsblk_vtoy = 'NAME="sdb" LABEL=""\nNAME="sdb1" LABEL="Ventoy"\n'
     ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_vtoy)})
     ctx = Ctx(os=OS, ex=ex)
 

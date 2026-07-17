@@ -10,6 +10,7 @@ from tempfile import mkdtemp
 from typing import Literal
 
 from devboost.core import log
+from devboost.media.devices import vtoy_partition
 from devboost.media.marker import Marker, read_marker
 from devboost.model import Ctx
 
@@ -23,16 +24,8 @@ class DiskState:
 
 
 def _vtoy_partition(ctx: Ctx, device: str) -> str | None:
-    """Return the /dev path of the child partition labelled VTOY, or None."""
-    out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,LABEL", device]).stdout
-    for line in out.splitlines():
-        fields = dict(_PAIR.findall(line))
-        if fields.get("LABEL") == "VTOY":
-            name = fields.get("NAME", "")
-            if not name:
-                return None
-            return name if name.startswith("/dev/") else f"/dev/{name}"
-    return None
+    """Return the /dev path of *device*'s Ventoy data partition, or None."""
+    return vtoy_partition(ctx, device)
 
 
 def probe(ctx: Ctx, device: str) -> DiskState:
