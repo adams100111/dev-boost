@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from devboost.exec.executor import FakeExecutor, RealExecutor, Result, _prepend_mise_dirs
 
@@ -74,3 +75,18 @@ def test_real_executor_run_missing_binary_returns_127_not_raise() -> None:
     assert not result.ok
     assert result.code == 127
     assert "definitely-not-a-real-binary-xyz" in result.stderr
+
+
+def test_real_executor_runs_in_cwd_when_given(tmp_path: Path) -> None:
+    """Some third-party scripts resolve their own helpers relative to the *caller's* cwd
+    (Ventoy2Disk.sh captures `OLDDIR=$(pwd)` before cd'ing to its own directory), so the
+    seam must be able to say where a command runs."""
+    ex = RealExecutor()
+    result = ex.run(["pwd"], cwd=tmp_path)
+    assert result.ok
+    assert result.stdout.strip() == str(tmp_path)
+
+
+def test_real_executor_without_cwd_keeps_the_process_directory() -> None:
+    ex = RealExecutor()
+    assert ex.run(["pwd"]).stdout.strip() == str(Path.cwd())

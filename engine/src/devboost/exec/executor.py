@@ -31,6 +31,7 @@ class Executor(Protocol):
         sudo: bool = False,
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> Result: ...
 
     def which(self, cmd: str) -> bool: ...
@@ -62,6 +63,10 @@ class RealExecutor:
     ``~/.local/share/mise/shims`` and ``~/.local/bin`` prepended to PATH.  This ensures
     mise-managed tools are discoverable immediately after ``mise install`` without waiting
     for a new shell login.
+
+    ``cwd`` runs the command in a directory: some third-party scripts resolve their own
+    helpers relative to the caller's working directory, so it is part of the contract, not
+    a convenience.
     """
 
     def run(
@@ -71,6 +76,7 @@ class RealExecutor:
         sudo: bool = False,
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> Result:
         cmd = (["sudo", *argv]) if sudo else list(argv)
         # Start from the full process environment so that PATH, HOME, USER, etc. are
@@ -93,6 +99,7 @@ class RealExecutor:
                 cmd,
                 input=stdin,
                 env=effective,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -121,6 +128,8 @@ class FakeExecutor:
     calls: list[list[str]] = field(default_factory=list)
     scripts: dict[str, Result] = field(default_factory=dict)
     present: set[str] = field(default_factory=set)
+    #: cwd of each recorded call, index-aligned with ``calls`` (None = caller's directory).
+    cwds: list[Path | None] = field(default_factory=list)
 
     def run(
         self,
@@ -129,9 +138,11 @@ class FakeExecutor:
         sudo: bool = False,
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> Result:
         recorded = (["sudo", *argv]) if sudo else list(argv)
         self.calls.append(recorded)
+        self.cwds.append(cwd)
         return self.scripts.get(argv[0], Result(0)) if argv else Result(0)
 
     def which(self, cmd: str) -> bool:
@@ -158,11 +169,12 @@ class DemotingExecutor:
         sudo: bool = False,
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> Result:
         if sudo:
-            return self._inner.run(argv, sudo=False, stdin=stdin, env=env)
+            return self._inner.run(argv, sudo=False, stdin=stdin, env=env, cwd=cwd)
         wrapped = ["sudo", "-u", self._user, "-H", *argv]
-        return self._inner.run(wrapped, sudo=False, stdin=stdin, env=env)
+        return self._inner.run(wrapped, sudo=False, stdin=stdin, env=env, cwd=cwd)
 
     def which(self, cmd: str) -> bool:
         return self._inner.which(cmd)

@@ -217,15 +217,26 @@ def boot_artifacts(
     validate(ctx, cfg.device)
 
     ventoy2disk = ensure_ventoy(ctx, dl, cache)
-    if (
-        ctx.ex.run(
-            ["sh", str(ventoy2disk), "-i", cfg.device],
-            sudo=True,
-            stdin="y\ny\n",
-        ).code
-        != 0
-    ):
-        raise VentoyError(f"Ventoy install failed on {cfg.device}")
+    # Ventoy2Disk.sh must run from its own directory: it sets PATH from `OLDDIR=$(pwd)`,
+    # captured BEFORE it cd's to that directory, so its bundled mkexfatfs/vtoycli are only
+    # discoverable when the caller's cwd IS the extracted tree.  Invoked from anywhere else
+    # its tool check fails and it installs nothing.
+    res = ctx.ex.run(
+        ["sh", "./Ventoy2Disk.sh", "-i", cfg.device],
+        sudo=True,
+        stdin="y\ny\n",
+        cwd=ventoy2disk.parent,
+    )
+    # Its exit status is a trailing `cd`, not VentoyWorker.sh's, so it reports 0 even when
+    # the install failed outright — the exit code cannot be trusted.  Verify the partition
+    # actually landed, and surface Ventoy's own output when it did not.
+    if _find_vtoy_partition(ctx, cfg.device) is None:
+        detail = (res.stdout + res.stderr).strip()
+        raise VentoyError(
+            f"Ventoy install did not create a VTOY partition on {cfg.device} "
+            f"(Ventoy2Disk.sh exited {res.code}; it exits 0 even on failure)"
+            + (f" — Ventoy said:\n{detail}" if detail else "")
+        )
     reporter.step(f"Ventoy installed on {cfg.device}")
 
     with _mounted_vtoy(ctx, cfg.device, override=vtoy_mount) as mnt:

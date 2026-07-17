@@ -24,13 +24,13 @@ class _Recorder(FakeExecutor):
         self.flatpak: set[str] = set()
 
     def run(self, argv: Sequence[str], *, sudo: bool = False, stdin: str | None = None,
-            env: Mapping[str, str] | None = None) -> Result:
+            env: Mapping[str, str] | None = None, cwd: Path | None = None) -> Result:
         a = list(argv)
         if a[:2] == ["dnf", "install"]:
             self.dnf.update(x for x in a[2:] if not x.startswith("-"))
         elif a[:2] == ["flatpak", "install"]:
             self.flatpak.update(x for x in a[2:] if not x.startswith("-") and x != "flathub")
-        return super().run(argv, sudo=sudo, stdin=stdin, env=env)
+        return super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
 
 
 def package_set(profiles: tuple[str, ...], root: Path) -> tuple[set[str], set[str]]:

@@ -47,7 +47,9 @@ _FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
 _LSBLK = (
     'PATH="/dev/sdb" SIZE="32G" TYPE="disk" RM="1" MOUNTPOINT="" MODEL="Ultra"'
     ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
-    'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
+    # Post-install children: a VTOY partition exists (the install-landed check reads LABEL)
+    # and nothing is mounted (validate() reads MOUNTPOINT).
+    'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="VTOY" MOUNTPOINT=""\n'
 )
 
 

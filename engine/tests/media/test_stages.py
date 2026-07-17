@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import DeviceError
+from devboost.core.errors import DeviceError, VentoyError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.media.cache import Cache
@@ -24,8 +24,13 @@ _LSBLK = (
     ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
 )
 
-# lsblk -P -o NAME,MOUNTPOINT /dev/sdb — no mounted children → validate() passes child check
-_LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
+# Children of /dev/sdb once Ventoy has installed: a VTOY partition exists and nothing is
+# mounted. Serves both lsblk reads — validate() looks at MOUNTPOINT, the VTOY discovery at
+# LABEL — so one canned string satisfies each without distorting either.
+_LSBLK_CHILDREN_CLEAN = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" LABEL="VTOY" MOUNTPOINT=""\n'
+
+# A disk Ventoy installed nothing onto (its tool check failed): no VTOY partition appears.
+_LSBLK_CHILDREN_NO_VTOY = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n'
 
 # Fake path returned by a monkeypatched ensure_ventoy
 _FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
@@ -59,8 +64,9 @@ class _AutomountedExecutor(FakeExecutor):
         sudo: bool = False,
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> Result:
-        result = super().run(argv, sudo=sudo, stdin=stdin, env=env)
+        result = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
         if argv and argv[0] == "umount":
             self.scripts["lsblk"] = Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_CLEAN)
         return result
@@ -116,6 +122,85 @@ def test_boot_artifacts_unmounts_automounts_before_validating(
     umount_at = next(i for i, c in enumerate(flat) if "umount /dev/sdb1" in c)
     ventoy_at = next(i for i, c in enumerate(flat) if "Ventoy2Disk" in c)
     assert umount_at < ventoy_at
+
+
+def test_boot_artifacts_runs_ventoy_from_its_own_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ventoy2Disk.sh sets PATH from `OLDDIR=$(pwd)` — captured BEFORE it cd's to its own
+    directory — so mkexfatfs/vtoycli resolve only when it is invoked from the directory it
+    was extracted into. Run it anywhere else and its tools silently vanish."""
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,
+    )
+    ex = _make_executor()
+    boot_artifacts(
+        Ctx(os=OS, ex=ex),
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
+    )
+    idx = next(i for i, c in enumerate(ex.calls) if "Ventoy2Disk.sh" in " ".join(c))
+    assert ex.cwds[idx] == _FAKE_VENTOY.parent
+
+
+def test_boot_artifacts_rejects_a_ventoy_install_that_silently_did_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ventoy2Disk.sh's exit status is a trailing `cd`, not VentoyWorker.sh's, so it returns
+    0 even when the install fails outright. Verify the partition landed and surface Ventoy's
+    own output — never report a no-op as success."""
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    cache = Cache(tmp_path / "cache")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,
+    )
+    # lsblk reports no VTOY-labelled partition; `sh` exits 0 while printing Ventoy's failure.
+    ex = FakeExecutor(
+        scripts={
+            "lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_NO_VTOY),
+            "sh": Result(0, stdout="Some tools can not run on current system."),
+        }
+    )
+    with pytest.raises(VentoyError, match="Some tools can not run"):
+        boot_artifacts(
+            Ctx(os=OS, ex=ex),
+            cfg,
+            FakeDownloader(cache, blobs={}),
+            cache,
+            reporter=FakeReporter(),
+        )
 
 
 def test_boot_artifacts_does_not_unmount_before_the_wipe_is_confirmed(tmp_path: Path) -> None:

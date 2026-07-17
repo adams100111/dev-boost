@@ -74,8 +74,8 @@ def test_runner_skips_when_verify_passes() -> None:
 def test_runner_installs_then_verifies() -> None:
     # rg absent first; after install, present-set flips via a custom executor.
     class Flipping(FakeExecutor):
-        def run(self, argv, *, sudo=False, stdin=None, env=None):  # type: ignore[no-untyped-def]
-            res = super().run(argv, sudo=sudo, stdin=stdin, env=env)
+        def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None):  # type: ignore[no-untyped-def]
+            res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
             if argv and argv[0] == "dnf":
                 self.present.add("rg")
             return res
