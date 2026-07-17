@@ -7,8 +7,8 @@ import urllib.request
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from devboost.core.errors import DownloadError
-from devboost.media.cache import Cache
+from devboost.core.errors import DownloadError, MediaError
+from devboost.media.cache import Cache, sha256_of
 from devboost.media.report import Reporter
 
 
@@ -67,3 +67,53 @@ class FakeDownloader:
             dest.unlink(missing_ok=True)
             raise DownloadError(url, "checksum mismatch")
         return dest
+
+
+class LocalIsoDownloader:
+    """Serves one user-supplied ISO from disk; delegates every other artifact to *inner*.
+
+    The user's file is used **in place** — never copied into the cache, so
+    ``Cache.evict_stale()`` can never delete it.
+
+    ``check()`` is separate because the primary ISO is fetched from inside ``_mounted_vtoy``,
+    i.e. *after* the stick is wiped and Ventoy installed. Verifying only at fetch time would
+    destroy the stick and then reject the ISO, so callers must call ``check()`` before
+    anything destructive. It is memoised: hashing multiple GB once is enough.
+    """
+
+    def __init__(self, inner: Downloader, name: str, path: Path, sha256: str) -> None:
+        self._inner = inner
+        self._name = name
+        self._path = path
+        self._sha256 = sha256
+        self._checked = False
+
+    def check(self) -> None:
+        """Verify the local ISO against the catalog pin, or raise MediaError."""
+        if not self._path.is_file():
+            raise MediaError(f"--iso-path {self._path}: not a readable file")
+        try:
+            actual = sha256_of(self._path)
+        except OSError as exc:
+            raise MediaError(f"--iso-path {self._path}: cannot read ({exc.strerror})") from exc
+        if actual != self._sha256:
+            raise MediaError(
+                f"{self._path} does not match the pinned {self._name.removesuffix('.iso')} ISO\n"
+                f"  expected {self._sha256}  (catalog.toml)\n"
+                f"  got      {actual}\n"
+                "This is a different release or a corrupt file. "
+                "Omit --iso-path to fetch the pinned ISO."
+            )
+        self._checked = True
+
+    def fetch(self, url: str, name: str, sha256: str) -> Path:
+        if name != self._name:
+            return self._inner.fetch(url, name, sha256)
+        if sha256 != self._sha256:
+            raise MediaError(
+                f"{name} was requested with a different sha256 than --iso-path was verified "
+                f"against (verified {self._sha256}, requested {sha256})"
+            )
+        if not self._checked:
+            self.check()
+        return self._path
