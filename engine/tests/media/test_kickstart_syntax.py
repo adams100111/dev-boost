@@ -109,3 +109,52 @@ def test_post_fstab_rewrite_is_idempotent(tmp_path: Path) -> None:
     """%post can re-run; the second pass must change nothing."""
     once = _rewrite(_FSTAB, tmp_path)
     assert _rewrite(once, tmp_path) == once
+
+
+# --- the secrets bootstrap contract, guarded across all three copies -----------------------
+# secrets.py (runtime) reads DEVBOOST_BOOTSTRAP_DIR (default /opt/dev-boost) + the two secret
+# filenames. autoinstall.py's firstboot unit and ks.cfg's %post both bake that path in. Three
+# copies that must agree — the exact cross-file shape the `blkid -L VTOY` bug lived in, where
+# one copy silently disagreed and secrets never reached the target. Pin them together.
+
+_INSTALL_ROOT = "/opt/dev-boost"
+_SECRETS_FILE = "secrets.age"
+_KEY_FILE = "age-key.txt"
+
+
+def test_secrets_runtime_paths_match_the_contract() -> None:
+    """secrets.py must resolve to the same root + filenames the installers stage into."""
+    import os
+
+    from devboost.modules import secrets
+
+    # Clear any host overrides so we see the baked-in defaults.
+    for var in ("DEVBOOST_BOOTSTRAP_DIR", "DEVBOOST_SECRETS", "DEVBOOST_SECRETS_KEY"):
+        os.environ.pop(var, None)
+    assert str(secrets.bundle_path()) == f"{_INSTALL_ROOT}/{_SECRETS_FILE}"
+    assert str(secrets.key_path()) == f"{_INSTALL_ROOT}/{_KEY_FILE}"
+
+
+def test_firstboot_unit_env_matches_the_runtime_contract() -> None:
+    """autoinstall.py's firstboot unit must set exactly the env vars secrets.py reads, at the
+    contract paths — otherwise firstboot points the runtime at the wrong place."""
+    from devboost.media.autoinstall import _FIRSTBOOT_SVC_LINES
+
+    unit = "\n".join(_FIRSTBOOT_SVC_LINES)
+    assert f"Environment=DEVBOOST_BOOTSTRAP_DIR={_INSTALL_ROOT}" in unit
+    assert f"Environment=DEVBOOST_SECRETS={_INSTALL_ROOT}/{_SECRETS_FILE}" in unit
+    assert f"Environment=DEVBOOST_SECRETS_KEY={_INSTALL_ROOT}/{_KEY_FILE}" in unit
+    assert f"ConditionPathExists={_INSTALL_ROOT}/devboost" in unit
+
+
+def test_kickstart_post_stages_secrets_at_the_contract_path() -> None:
+    """ks.cfg's %post must copy the bundle to the SAME /opt/dev-boost the runtime reads from
+    (as /mnt/sysimage/opt/dev-boost during install)."""
+    code = "\n".join(
+        line for line in KS.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    target = f"/mnt/sysimage{_INSTALL_ROOT}"
+    assert f'DEST={target}' in code or target in code
+    # Both secret filenames must be staged by name.
+    assert _SECRETS_FILE in code and _KEY_FILE in code
