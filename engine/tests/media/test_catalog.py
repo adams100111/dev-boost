@@ -217,8 +217,6 @@ def test_ventoy_pin_is_present_in_live_catalog() -> None:
 
 def test_ventoy_pin_raises_for_missing_section(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """ventoy_pin() must raise MediaError when [ventoy] is absent."""
-    from devboost.media.catalog import MediaError
-
     p = tmp_path / "catalog.toml"
     p.write_text(_VALID, encoding="utf-8")  # no [ventoy] block
 

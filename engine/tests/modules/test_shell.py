@@ -39,7 +39,7 @@ def test_starship_installs_via_official_installer_on_fedora() -> None:
 
 def test_starship_installs_via_official_script_on_ubuntu() -> None:
     """Not in Ubuntu apt — use the official install.sh into ~/.local/bin, no apt."""
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())
     Starship().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     joined = [" ".join(c) for c in calls]
@@ -138,7 +138,7 @@ def test_dotfiles_install_raises_on_apply_failure(
     from devboost.core.errors import InstallError
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"chezmoi": Result(1)}))  # type: ignore[arg-type]
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"chezmoi": Result(1)}))
     with pytest.raises(InstallError):
         Dotfiles().install(ctx)
 

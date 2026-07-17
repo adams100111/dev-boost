@@ -19,9 +19,9 @@ UBUNTU_HEADLESS = OsInfo("ubuntu", "debian", "x86_64", headless=True)
 def test_ddev_debian_uses_canonical_apt_repo() -> None:
     """On Debian, set up ddev's OWN repo (ddev.sources + ddev.asc, per ddev docs) and remove
     the old conflicting file, then install via the Apt primitive — no Signed-By clash."""
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"mkcert"}))  # type: ignore[arg-type]
-    Ddev().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    ex = FakeExecutor(present={"mkcert"})
+    Ddev().install(Ctx(os=UBUNTU, ex=ex))
+    calls = ex.calls
     repo = next(c for c in calls if c[:3] == ["sudo", "sh", "-c"])
     script = repo[3]
     assert "/etc/apt/sources.list.d/ddev.sources" in script
@@ -31,15 +31,16 @@ def test_ddev_debian_uses_canonical_apt_repo() -> None:
 
 
 def test_ddev_remote_binds_all_interfaces_on_a_server() -> None:
-    ctx = Ctx(os=UBUNTU_HEADLESS, ex=FakeExecutor())
-    DdevRemote().install(ctx)
-    assert ["ddev", "config", "global", "--router-bind-all-interfaces"] in ctx.ex.calls
+    ex = FakeExecutor()
+    DdevRemote().install(Ctx(os=UBUNTU_HEADLESS, ex=ex))
+    assert ["ddev", "config", "global", "--router-bind-all-interfaces"] in ex.calls
 
 
 def test_ddev_remote_is_a_noop_on_a_gui_laptop() -> None:
-    ctx = Ctx(os=FEDORA, ex=FakeExecutor())  # headless=False → keep ddev on localhost
+    ex = FakeExecutor()
+    ctx = Ctx(os=FEDORA, ex=ex)  # headless=False → keep ddev on localhost
     DdevRemote().install(ctx)
-    assert ctx.ex.calls == []
+    assert ex.calls == []
     assert DdevRemote().verify(ctx) is True
 
 
@@ -87,7 +88,7 @@ def test_docker_install_uses_official_ce_repo_on_ubuntu(
     """On Ubuntu, install Docker's official docker-ce set — never docker.io (which
     conflicts with docker-ce) nor the Fedora-only moby-engine."""
     monkeypatch.setenv("SUDO_USER", "alice")
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert [
@@ -105,7 +106,7 @@ def test_docker_apt_source_targets_official_ce_repo() -> None:
     from devboost.model import AptRepo
     from devboost.modules.docker import _docker_apt_source
 
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())
     repo = _docker_apt_source(ctx).get(UBUNTU)
     assert isinstance(repo, AptRepo)
     assert "download.docker.com/linux/ubuntu noble stable" in repo.list_line
@@ -119,7 +120,7 @@ def test_docker_install_skips_repo_when_already_present_on_ubuntu(
     — that avoids a conflicting Signed-By against an existing docker.asc entry. Still
     (re)enable the daemon and add the user to the docker group."""
     monkeypatch.setenv("SUDO_USER", "alice")
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"docker", "dockerd"}))  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor(present={"docker", "dockerd"}))
     Docker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert not any("docker-ce" in " ".join(c) for c in calls)

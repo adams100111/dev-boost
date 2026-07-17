@@ -158,7 +158,7 @@ def test_dotnet_sdk_config_deb_url_matches_running_version() -> None:
     ctx = Ctx(
         os=OsInfo(distro="ubuntu", family="debian", arch="x86_64",
                   version_id="22.04", codename="jammy"),
-        ex=FakeExecutor(),  # type: ignore[arg-type]
+        ex=FakeExecutor(),
     )
     DotnetSdk().install(ctx)
     blob = " ".join(" ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]

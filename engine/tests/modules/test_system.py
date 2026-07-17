@@ -69,20 +69,20 @@ def test_snapper_verify_true_when_policy_applied() -> None:
         "NUMBER_LIMIT           │ 10\n"
         "NUMBER_LIMIT_IMPORTANT │ 5\n"
     )
-    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))  # type: ignore[arg-type]
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))
     assert Snapper().verify(ctx) is True
 
 
 def test_snapper_verify_false_when_timeline_still_enabled() -> None:
     # stock (uncapped) config: timeline on, keep-50 — verify must reject it.
     out = "TIMELINE_CREATE        │ yes\nNUMBER_LIMIT           │ 50\n"
-    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))  # type: ignore[arg-type]
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(0, stdout=out)}))
     assert Snapper().verify(ctx) is False
 
 
 def test_snapper_verify_false_when_config_missing() -> None:
     # get-config exits non-zero when the root config doesn't exist yet.
-    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(1)}))  # type: ignore[arg-type]
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"snapper": Result(1)}))
     assert Snapper().verify(ctx) is False
 
 
@@ -230,7 +230,7 @@ def test_swapfile_verify_false_when_inactive(
 
 
 def test_swapfile_is_fedora_only() -> None:
-    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())  # type: ignore[arg-type]
+    ctx = Ctx(os=UBUNTU, ex=FakeExecutor())
     with pytest.raises(UnsupportedOS):
         Swapfile().install(ctx)
     assert Swapfile().verify(ctx) is False

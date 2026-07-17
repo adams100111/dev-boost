@@ -83,9 +83,9 @@ def test_jetbrains_toolbox_verify_checks_bin(
     monkeypatch.setenv("HOME", str(tmp_path))
     tb_bin = tmp_path / ".local" / "bin" / "jetbrains-toolbox"
     tb_bin.parent.mkdir(parents=True)
-    assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is False  # type: ignore[arg-type]
+    assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is False
     tb_bin.write_text("#!/bin/sh", encoding="utf-8")
-    assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is True  # type: ignore[arg-type]
+    assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is True
 
 
 # ---------------------------------------------------------------------------
