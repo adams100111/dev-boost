@@ -25,6 +25,10 @@ dev = [
     "pytest-mock>=3.14",
     "mypy>=1.13",
     "ruff>=0.7",
+    # Parses ventoy/ks.cfg in CI with the same library Anaconda uses. Test-only: the engine
+    # never imports it, and it is not in the frozen binary. Without it, a kickstart syntax
+    # error is only discoverable on real hardware, after the disk has been wiped.
+    "pykickstart>=3.60",
 ]
 
 [build-system]
@@ -34,6 +38,12 @@ build-backend = "uv_build"
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+
+# pykickstart ships no py.typed. It is test-only (parsing ventoy/ks.cfg the way Anaconda
+# does), so silence the missing-stubs error for it alone rather than weakening the gate.
+[[tool.mypy.overrides]]
+module = ["pykickstart.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
