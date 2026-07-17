@@ -156,3 +156,31 @@ def test_wizard_blank_secrets_answer_stays_none(monkeypatch) -> None:  # type: i
     _FakePrompts(_yes_to_wipe).install(monkeypatch)  # path() returns each prompt's default ("")
     cfg = wizard.run(_ctx())
     assert cfg.secrets_path is None
+
+
+def test_wizard_blank_iso_path_means_download(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The new prompt costs one Enter: blank keeps today's behaviour exactly."""
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+    _FakePrompts(_yes_to_wipe).install(monkeypatch)
+
+    cfg = wizard.run(_ctx())
+    assert cfg.iso_path is None
+
+
+def test_wizard_iso_path_answer_is_expanded_and_returned(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A ~ in the answer must expand — nothing in media/ does it by default."""
+    home = tmp_path / "home"
+    (home / "isos").mkdir(parents=True)
+    (home / "isos" / "f.iso").write_bytes(b"x")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+
+    class _WithIso(_FakePrompts):
+        def path(self, message: str, default: str = "", **kw: object) -> _Answer:
+            return _Answer("~/isos/f.iso" if "Local ISO" in message else default)
+
+    _WithIso(_yes_to_wipe).install(monkeypatch)
+    cfg = wizard.run(_ctx())
+    assert cfg.iso_path == (home / "isos" / "f.iso").resolve()

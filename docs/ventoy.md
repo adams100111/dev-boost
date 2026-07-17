@@ -36,8 +36,15 @@ re-running an existing dev-boost stick does a non-destructive **update**).
 prompt asks about (default under `$TMPDIR`, so pick something durable like `~/.cache/devboost` if you
 want it to survive a reboot). On the flags path, pass `--cache-dir <path>` to keep downloads for reuse,
 optionally with `--cache-ttl-days N` to evict files older than N days; `--device` **without**
-`--cache-dir` is ephemeral (temp dir, cleaned after the build). **Secrets:** `--secrets secrets.age
---secrets-key age-key.txt` (build the bundle with
+`--cache-dir` is ephemeral (temp dir, cleaned after the build).
+
+**Already have the ISO?** Pass `--iso-path <file>` (or answer the wizard's "Local ISO" prompt) to use it
+instead of downloading. It must be the ISO pinned in `catalog.toml` for the selected OS + arch: it is
+verified against that pin *before* anything is wiped, and a mismatch stops the build naming both hashes.
+The file is used where it lies — never copied into the cache. The netinst and Ventoy tarball still
+download.
+
+**Secrets:** `--secrets secrets.age --secrets-key age-key.txt` (build the bundle with
 `scripts/make-secrets.sh`); both are staged into `Bootstrap/` and copied onto the installed system by the
 Kickstart `%post`. The engine **generates** `ventoy.json`: default boot + `injection` cover the Live ISO,
 `auto_install` binds `ks.cfg` to the **netinst** ISO (injection covers both, so the binary is present on
@@ -70,8 +77,8 @@ ISO. A blank disk or a foreign Ventoy stick still goes through the explicit wipe
 ## Preview first (`--dry-run`)
 
 `devboost installer --device /dev/sdX --dry-run` resolves everything — catalog OS, detected disk state,
-build-vs-update mode, profiles, optional stages, and the estimated ISO download — and prints the plan
-**without running `ventoy`, downloading, or writing anything**. Use it to rehearse safely.
+build-vs-update mode, profiles, and the ISO source — and prints the plan **without running `ventoy`,
+downloading, or writing anything**. Use it to rehearse safely.
 
 ## Two boot paths
 

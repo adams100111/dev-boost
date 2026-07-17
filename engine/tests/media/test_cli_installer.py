@@ -202,3 +202,81 @@ def test_usb_secrets_paths_expand_a_tilde(monkeypatch, tmp_path) -> None:  # typ
     assert result.exit_code == 0
     assert seen["secrets"] == (home / "secrets.age").resolve()
     assert seen["key"] == (home / "age-key.txt").resolve()
+
+
+def test_usb_iso_path_serves_the_local_file_without_downloading(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """--iso-path supplies the bytes; the catalog still supplies id/url/sha/family."""
+    import devboost.cli.installer as cli_installer
+    from devboost.media.catalog import iso_for
+    from devboost.media.probe import DiskState
+
+    pinned = iso_for("fedora-44", "x86_64")
+    local = tmp_path / "Fedora.iso"
+    local.write_bytes(b"pinned bytes")
+    # Pretend this file IS the pinned release.
+    monkeypatch.setattr("devboost.media.download.sha256_of", lambda p: pinned.sha256)
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    seen: dict[str, object] = {}
+
+    def _build(ctx, cfg, dl, cache, *, reporter):  # type: ignore[no-untyped-def]
+        seen["path"] = dl.fetch(pinned.url, "fedora-44.iso", pinned.sha256)
+
+    monkeypatch.setattr(cli_installer, "build", _build)
+
+    result = runner.invoke(
+        app,
+        ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes", "--iso-path", str(local)],
+    )
+    assert result.exit_code == 0
+    assert seen["path"] == local.resolve()  # served from disk, no network
+
+
+def test_usb_bad_iso_path_fails_before_anything_is_wiped(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The primary ISO is fetched AFTER the wipe and the Ventoy install, so verification must
+    happen before build() is entered — otherwise a wrong ISO costs the stick before it is
+    ever read. Same late-validation shape as the auto-mount refusal."""
+    import devboost.cli.installer as cli_installer
+    from devboost.media.probe import DiskState
+
+    wrong = tmp_path / "wrong.iso"
+    wrong.write_bytes(b"not the pinned release")
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    called = {"build": False}
+    monkeypatch.setattr(cli_installer, "build", lambda *a, **k: called.__setitem__("build", True))
+
+    result = runner.invoke(
+        app,
+        ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes", "--iso-path", str(wrong)],
+    )
+    assert result.exit_code == 1
+    assert called["build"] is False  # nothing was wiped
+
+
+def test_usb_iso_path_expands_a_tilde(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Nothing in media/ expands ~, so Path("~/x.iso") would look for a literal ~ dir."""
+    import devboost.cli.installer as cli_installer
+    from devboost.media.catalog import iso_for
+    from devboost.media.probe import DiskState
+
+    pinned = iso_for("fedora-44", "x86_64")
+    home = tmp_path / "home"
+    (home / "isos").mkdir(parents=True)
+    (home / "isos" / "f.iso").write_bytes(b"x")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr("devboost.media.download.sha256_of", lambda p: pinned.sha256)
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    seen: dict[str, object] = {}
+
+    def _build(ctx, cfg, dl, cache, *, reporter):  # type: ignore[no-untyped-def]
+        seen["iso_path"] = cfg.iso_path
+
+    monkeypatch.setattr(cli_installer, "build", _build)
+    result = runner.invoke(
+        app,
+        ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes", "--iso-path", "~/isos/f.iso"],
+    )
+    assert result.exit_code == 0
+    assert seen["iso_path"] == (home / "isos" / "f.iso").resolve()

@@ -7,6 +7,11 @@ NOTE (frozen binary): the Ventoy injection archive (devboost-<arch>.tar.gz) must
 Download cache is **opt-in**, two ways: pass ``--cache-dir``, or answer the wizard's
 "Cache dir for downloads" prompt (its answer is kept, so the multi-GB ISO is fetched once).
 Only ``--device`` without ``--cache-dir`` is ephemeral — nothing was asked, nothing kept.
+
+Pass ``--iso-path`` (or answer the wizard's "Local ISO" prompt) to use an ISO already on
+disk instead of downloading it.  It must be the ISO pinned in catalog.toml for the selected
+OS + arch: it is verified against that pin *before* anything is wiped, and a mismatch is a
+hard failure.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from devboost.media.builder import build
 from devboost.media.cache import Cache
 from devboost.media.catalog import autoinstall_for, catalog, default_iso, iso_for
 from devboost.media.config import MediaConfig
-from devboost.media.download import UrllibDownloader
+from devboost.media.download import Downloader, LocalIsoDownloader, UrllibDownloader
 from devboost.media.preview import render_plan
 from devboost.media.probe import DiskState, probe
 from devboost.media.report import RichReporter
@@ -66,6 +71,15 @@ def installer(
     ] = None,
     arch: Annotated[str, typer.Option(help="x86_64 | aarch64")] = "",
     iso: Annotated[str, typer.Option(help="Catalog ISO id (default: fedora-44)")] = "",
+    iso_path: Annotated[
+        Path | None,
+        typer.Option(
+            help=(
+                "Use this local ISO instead of downloading it. Must be the ISO pinned in "
+                "catalog.toml for the selected OS + arch; verified before anything is wiped."
+            )
+        ),
+    ] = None,
     profile: Annotated[list[str], typer.Option(help="Profiles for firstboot (repeatable)")] = [],
     secrets: Annotated[Path | None, typer.Option(help="Path to secrets.age")] = None,
     secrets_key: Annotated[
@@ -135,6 +149,7 @@ def installer(
                 arch=resolved_arch,
                 iso=iso_for(os_id, resolved_arch),
                 autoinstall_iso=autoinstall_for(os_id, resolved_arch),
+                iso_path=iso_path.expanduser().resolve() if iso_path else None,
                 os_family=family_of(catalog()[os_id].distro),
                 profiles=tuple(profile) or ("full",),
                 secrets_path=secrets.expanduser().resolve() if secrets else None,
@@ -186,7 +201,15 @@ def installer(
         cache = Cache(actual_cache_dir, ttl_days=cache_ttl_days)
         if persistent_cache:
             cache.evict_stale()
-        build(ctx, cfg, UrllibDownloader(cache, reporter), cache, reporter=reporter)
+        dl: Downloader = UrllibDownloader(cache, reporter)
+        if cfg.iso_path is not None:
+            local = LocalIsoDownloader(dl, f"{cfg.iso.id}.iso", cfg.iso_path, cfg.iso.sha256)
+            # Verify BEFORE build(): the primary ISO is fetched from inside _mounted_vtoy,
+            # i.e. after the wipe and the Ventoy install, so a bad ISO would otherwise cost
+            # the stick before it was ever read.
+            local.check()
+            dl = local
+        build(ctx, cfg, dl, cache, reporter=reporter)
     except MediaError as exc:
         # A refusal (unsafe device, failed download/verify, …) is a user-facing message,
         # not a crash: exit cleanly instead of surfacing a traceback.

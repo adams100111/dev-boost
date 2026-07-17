@@ -22,6 +22,10 @@ def render_plan(cfg: MediaConfig, state: DiskState, *, download_note: str = "") 
         f"OS            : {cfg.iso.id} ({cfg.arch})",
         f"Profiles      : {', '.join(cfg.profiles)}",
     ]
+    if cfg.iso_path is not None:
+        # No hash here: --dry-run resolves and prints the plan and touches nothing. A wrong
+        # hash is caught on the real run, before the wipe.
+        lines.append(f"ISO source    : local ISO {cfg.iso_path} (verified before any wipe)")
     if cfg.autoinstall_iso is not None:
         lines.append("Zero-touch    : netinst auto-install staged")
     if cfg.mode == "update":

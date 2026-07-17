@@ -43,6 +43,10 @@ class MediaConfig(BaseModel):
     arch: str
     iso: IsoSpec
     autoinstall_iso: IsoSpec | None = None
+    # A user-supplied copy of the *primary* install ISO, used instead of downloading
+    # it. Read only by cli/installer.py to build the downloader; stages.py never
+    # sees it — the sourcing decision stays in one place.
+    iso_path: Path | None = None
     profiles: tuple[str, ...] = ("full",)
     secrets_path: Path | None = None
     # Path to the age private key file (age-key.txt) to stage alongside secrets.age.

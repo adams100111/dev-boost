@@ -40,3 +40,15 @@ def test_render_plan_update_shows_detected_marker_and_iso_policy() -> None:
 def test_render_plan_notes_autoinstall_media() -> None:
     out = render_plan(_cfg(autoinstall_iso=_ISO), DiskState("blank"))
     assert "Zero-touch" in out
+
+
+def test_render_plan_shows_a_local_iso(tmp_path: Path) -> None:
+    """--dry-run must say the ISO comes from disk, and must not hash it: dry-run's contract
+    is 'resolve and print the plan; touch nothing'."""
+    from devboost.media.preview import render_plan
+    from devboost.media.probe import DiskState
+
+    local = tmp_path / "f.iso"
+    local.write_bytes(b"x")
+    out = render_plan(_cfg(iso_path=local), DiskState("blank"))
+    assert "local ISO" in out and str(local) in out

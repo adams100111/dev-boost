@@ -82,6 +82,15 @@ def run(ctx: Ctx) -> MediaConfig:
     if os_id is None:
         raise DeviceError("aborted")
 
+    # Right after the OS pick, because it is that OS's ISO. Blank = download, so this costs
+    # one Enter for everyone who does not already hold the file.
+    iso_answer = questionary.path(
+        f"Local ISO for {catalog()[os_id].name} (blank to download):", default=""
+    ).ask()
+    iso_path = (
+        Path(iso_answer).expanduser().resolve() if (iso_answer or "").strip() else None
+    )
+
     profiles = questionary.checkbox(
         "Profiles to install on first boot:",
         choices=[questionary.Choice(p, checked=(p == "full")) for p in _PROFILES],
@@ -103,6 +112,7 @@ def run(ctx: Ctx) -> MediaConfig:
         arch=arch,
         iso=iso_for(os_id, arch),
         autoinstall_iso=autoinstall_for(os_id, arch),
+        iso_path=iso_path,
         os_family=family_of(catalog()[os_id].distro),
         profiles=tuple(profiles),
         secrets_path=Path(secrets).expanduser().resolve() if secrets.strip() else None,
