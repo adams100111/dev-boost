@@ -31,7 +31,12 @@ def _pre_body() -> str:
 
 
 def _run_pre(
-    tmp_path: Path, *, lsblk_out: str, real_disks: list[str], vtoyefi: str = ""
+    tmp_path: Path,
+    *,
+    lsblk_out: str,
+    real_disks: list[str],
+    vtoyefi: str = "",
+    cmdline: str = "",
 ) -> tuple[int, str, str]:
     """Run the %pre body with a faked lsblk/blkid and a faked /sys/block.
 
@@ -68,6 +73,7 @@ def _run_pre(
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "DEVBOOST_SYSBLOCK": str(sysblock),
         "DEVBOOST_KS_OUT": str(out),
+        "DEVBOOST_CMDLINE": cmdline,
     }
     proc = subprocess.run(
         ["sh", "-c", _pre_body()], env=env, capture_output=True, text=True, check=False
@@ -149,3 +155,54 @@ def test_kickstart_looks_up_the_label_ventoy_actually_writes() -> None:
     # `blkid -L VTOYEFI` is correct and required (%pre uses the ESP to find the boot disk),
     # so match the bad label exactly rather than as a prefix.
     assert re.search(r"blkid -L VTOY(?!EFI)", code) is None
+
+
+def test_pre_refuses_when_two_real_disks_are_candidates(tmp_path: Path) -> None:
+    """A workstation with two internal disks must not have one wiped by lsblk enumeration
+    order — which is not stable. With no explicit choice, refuse rather than guess."""
+    _, written, stderr = _run_pre(
+        tmp_path,
+        lsblk_out="/dev/nvme0n1 disk 0\n/dev/nvme1n1 disk 0\n",
+        real_disks=["nvme0n1", "nvme1n1"],
+    )
+    assert "clearpart" not in written, f"wiped a disk despite ambiguity:\n{written}"
+    low = (written + stderr).lower()
+    assert "more than one" in low or "ambiguous" in low
+    assert "devboost.disk=" in (written + stderr)  # tells the operator how to choose
+
+
+def test_pre_honours_devboost_disk_when_two_disks_exist(tmp_path: Path) -> None:
+    """An explicit `devboost.disk=` boot arg resolves the ambiguity to exactly that disk."""
+    _, written, _ = _run_pre(
+        tmp_path,
+        lsblk_out="/dev/nvme0n1 disk 0\n/dev/nvme1n1 disk 0\n",
+        real_disks=["nvme0n1", "nvme1n1"],
+        cmdline="ro rd.luks=0 devboost.disk=nvme1n1 quiet",
+    )
+    assert "ignoredisk --only-use=nvme1n1" in written
+    assert "clearpart --all --initlabel --drives=nvme1n1" in written
+
+
+def test_pre_rejects_a_devboost_disk_that_is_not_a_candidate(tmp_path: Path) -> None:
+    """`devboost.disk=` naming a disk that does not exist (or is the boot media / virtual)
+    must refuse, not fall back to guessing."""
+    _, written, stderr = _run_pre(
+        tmp_path,
+        lsblk_out="/dev/nvme0n1 disk 0\n/dev/nvme1n1 disk 0\n",
+        real_disks=["nvme0n1", "nvme1n1"],
+        cmdline="devboost.disk=sdX",
+    )
+    assert "clearpart" not in written
+    assert "sdx" in (written + stderr).lower() or "not a" in (written + stderr).lower()
+
+
+def test_pre_single_disk_ignores_a_stale_devboost_disk_mismatch(tmp_path: Path) -> None:
+    """With exactly one candidate and a devboost.disk= that names something else, refuse —
+    an explicit choice that cannot be honoured must never silently target the other disk."""
+    _, written, stderr = _run_pre(
+        tmp_path,
+        lsblk_out="/dev/sda disk 0\n",
+        real_disks=["sda"],
+        cmdline="devboost.disk=nvme9n9",
+    )
+    assert "clearpart" not in written

@@ -105,8 +105,11 @@ provisions is *not* the default — pick deliberately:
 
 **There is no middle option**: no disk picker, no "install alongside", no dual-boot on the
 zero-touch path — that is what "zero-touch" costs. Automation *or* partition control, not both.
-Boot the netinst only on a machine whose disk is expendable, and check it has one internal disk
-(with two, `%pre` takes whichever `lsblk` lists first, and does not ask).
+Boot the netinst only on a machine whose disk is expendable. With **two or more** internal disks
+`%pre` refuses rather than guess (enumeration order is not stable) — name the target explicitly by
+adding a **`devboost.disk=<name>`** kernel argument to the boot entry (e.g. `devboost.disk=nvme0n1`;
+edit the entry in the Ventoy menu with `e`). On a single-disk box it is auto-detected and the arg is
+optional, but if given it must match.
 
 Ventoy's own **"Check the file checksum"** entry (SHA-256) verifies an ISO against the
 `catalog.toml` pin before you commit — worth the two minutes, since a truncated ISO fails
