@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,111 @@ def _make_executor(
 ) -> FakeExecutor:
     """FakeExecutor handling both lsblk variants: validate() + _find_vtoy_partition()."""
     return FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_out + child_out)})
+
+
+# lsblk -P -o NAME,MOUNTPOINT /dev/sdb — GNOME/udisks2 auto-mounted the stick on plug-in
+_LSBLK_CHILDREN_AUTOMOUNTED = (
+    'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT="/run/media/dev/FEDORA-WS-L"\n'
+)
+
+
+class _AutomountedExecutor(FakeExecutor):
+    """Models a real auto-mounted stick: lsblk reports sdb1 mounted until `umount` runs.
+
+    The plain FakeExecutor replays one canned lsblk forever, so it cannot express the state
+    change an unmount causes — and a validate() that follows the unmount would still see the
+    stale mount.
+    """
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        sudo: bool = False,
+        stdin: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> Result:
+        result = super().run(argv, sudo=sudo, stdin=stdin, env=env)
+        if argv and argv[0] == "umount":
+            self.scripts["lsblk"] = Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_CLEAN)
+        return result
+
+
+def test_boot_artifacts_unmounts_automounts_before_validating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reported failure: GNOME auto-mounts the target, so validate() refused the wipe
+    *after* the user had already confirmed it. Once confirmed, clear the auto-mount instead."""
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy tarball bytes")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,  # the wipe IS confirmed — so the auto-mount may be cleared
+    )
+    ex = _AutomountedExecutor(
+        scripts={"lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_AUTOMOUNTED)}
+    )
+    ctx = Ctx(os=OS, ex=ex)
+
+    boot_artifacts(
+        ctx,
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
+    )
+
+    assert ["sudo", "umount", "/dev/sdb1"] in ex.calls
+    # ...and the unmount must precede the Ventoy install, not trail it.
+    flat = [" ".join(c) for c in ex.calls]
+    umount_at = next(i for i, c in enumerate(flat) if "umount /dev/sdb1" in c)
+    ventoy_at = next(i for i, c in enumerate(flat) if "Ventoy2Disk" in c)
+    assert umount_at < ventoy_at
+
+
+def test_boot_artifacts_does_not_unmount_before_the_wipe_is_confirmed(tmp_path: Path) -> None:
+    """Consent gates the unmount: no confirmation → touch nothing at all."""
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    cache = Cache(tmp_path / "cache")
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=False,
+    )
+    ex = _make_executor(child_out=_LSBLK_CHILDREN_AUTOMOUNTED)
+    with pytest.raises(DeviceError, match="not confirmed"):
+        boot_artifacts(
+            Ctx(os=OS, ex=ex),
+            cfg,
+            FakeDownloader(cache, blobs={}),
+            cache,
+            vtoy_mount=tmp_path / "VTOY",
+            reporter=FakeReporter(),
+        )
+    assert not [c for c in ex.calls if "umount" in c]
 
 
 def test_render_ventoy_json_default_only_omits_auto_install() -> None:

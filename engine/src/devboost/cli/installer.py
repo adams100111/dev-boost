@@ -210,6 +210,11 @@ def installer(
         if persistent_cache:
             cache.evict_stale()
         build(ctx, cfg, UrllibDownloader(cache, reporter), cache, reporter=reporter)
+    except MediaError as exc:
+        # A refusal (unsafe device, failed download/verify, …) is a user-facing message,
+        # not a crash: exit cleanly instead of surfacing a traceback.
+        log.error(str(exc))
+        raise typer.Exit(code=1) from exc
     finally:
         if not persistent_cache:
             shutil.rmtree(actual_cache_dir, ignore_errors=True)

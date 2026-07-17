@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from devboost.core import log
 from devboost.core.errors import DeviceError
 from devboost.media.config import Device
 from devboost.model import Ctx
@@ -47,15 +48,42 @@ def validate(ctx: Ctx, path: str) -> None:
     if match.mounted:
         raise DeviceError(f"refusing {path}: mounted — unmount first")
     # lsblk -d only shows the disk itself, not child partitions.  A USB with a mounted
-    # partition (e.g. the VTOY FAT32 filesystem) would slip past the check above.  Run a
-    # second lsblk without -d and reject any child with a non-empty mountpoint.
+    # partition (e.g. the VTOY FAT32 filesystem) would slip past the check above.
+    for part, mnt in mounted_children(ctx, path):
+        raise DeviceError(f"refusing {path}: partition {part} is mounted ({mnt}) — unmount first")
+
+
+def mounted_children(ctx: Ctx, path: str) -> list[tuple[str, str]]:
+    """``[(partition, mountpoint)]`` for every mounted child partition of *path*.
+
+    ``lsblk -d`` reports only the disk, whose own MOUNTPOINT is empty even while a partition
+    on it is mounted — so the disk-level check alone cannot see this.
+    """
     disk_name = path.rsplit("/", 1)[-1]  # e.g. "sdb" from "/dev/sdb"
-    child_out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,MOUNTPOINT", path]).stdout
-    for line in child_out.splitlines():
+    out = ctx.ex.run(["lsblk", "-P", "-o", "NAME,MOUNTPOINT", path]).stdout
+    found: list[tuple[str, str]] = []
+    for line in out.splitlines():
         f = dict(_PAIR.findall(line))
         name = f.get("NAME", "")
         mnt = f.get("MOUNTPOINT", "").strip()
         if name and name != disk_name and mnt:
+            found.append((name if name.startswith("/dev/") else f"/dev/{name}", mnt))
+    return found
+
+
+def unmount_children(ctx: Ctx, path: str) -> None:
+    """Unmount every mounted child partition of *path*.
+
+    Plugging in any USB carrying a filesystem makes udisks2 (GNOME) mount it under
+    /run/media/<user>/<LABEL> immediately, which would otherwise make ``validate`` refuse the
+    very device the user just confirmed — on essentially every run.
+
+    ONLY children of *path* are ever touched, and callers must confirm the wipe first: this
+    unmounts strictly less than the destruction the user has already authorised for *path*.
+    """
+    for part, mnt in mounted_children(ctx, path):
+        log.info(f"unmounting {part} ({mnt})")
+        if ctx.ex.run(["umount", part], sudo=True).code != 0:
             raise DeviceError(
-                f"refusing {path}: partition /dev/{name} is mounted ({mnt}) — unmount first"
+                f"could not unmount {part} ({mnt}) — close anything using it and retry"
             )

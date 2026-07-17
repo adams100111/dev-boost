@@ -82,6 +82,30 @@ def test_usb_rebuild_flag_forces_build_on_devboost_stick(monkeypatch) -> None:  
     assert "build" in _strip_ansi(result.stdout)
 
 
+def test_usb_build_failure_exits_cleanly_without_a_traceback(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A MediaError out of build() is a user-facing refusal, not a crash: clean exit 1.
+
+    DeviceError subclasses MediaError; installer() only guarded MediaConfig construction, so
+    a refusal from build() escaped as a PyInstaller traceback.
+    """
+    import devboost.cli.installer as cli_installer
+    from devboost.core.errors import DeviceError
+    from devboost.media.probe import DiskState
+
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    def _boom(*a, **k):  # type: ignore[no-untyped-def]
+        raise DeviceError("refusing /dev/sdb: partition /dev/sdb1 is mounted (/run/media/x)")
+
+    monkeypatch.setattr(cli_installer, "build", _boom)
+
+    result = runner.invoke(
+        app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes"]
+    )
+    assert result.exit_code == 1
+    assert not isinstance(result.exception, DeviceError)  # handled, not propagated
+
+
 def test_usb_unpinned_arch_exits_cleanly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     import devboost.cli.installer as cli_installer
     from devboost.media.probe import DiskState

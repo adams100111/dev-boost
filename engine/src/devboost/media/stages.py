@@ -23,7 +23,7 @@ from devboost.media.autoinstall import (
 )
 from devboost.media.cache import Cache
 from devboost.media.config import MediaConfig
-from devboost.media.devices import validate
+from devboost.media.devices import unmount_children, validate
 from devboost.media.download import Downloader
 from devboost.media.marker import Marker, write_marker
 from devboost.media.report import Reporter
@@ -213,6 +213,7 @@ def boot_artifacts(
     """
     if not cfg.assume_yes:
         raise DeviceError(f"refusing to wipe {cfg.device}: not confirmed")
+    unmount_children(ctx, cfg.device)  # the wipe is confirmed → clear udisks2 auto-mounts
     validate(ctx, cfg.device)
 
     ventoy2disk = ensure_ventoy(ctx, dl, cache)
@@ -252,6 +253,10 @@ def update_stage(
     reporter: Reporter,
 ) -> None:
     """Non-destructive refresh: Ventoy2Disk.sh -u + re-stage payload; ISO only when refresh_iso."""
+    # Reaching here means this device was chosen for an update (Ventoy2Disk.sh -u rewrites its
+    # boot area), so its own auto-mounted VTOY partition may be cleared — GNOME mounts it the
+    # moment a finished dev-boost stick is plugged in.
+    unmount_children(ctx, cfg.device)
     validate(ctx, cfg.device)
 
     ventoy2disk = ensure_ventoy(ctx, dl, cache)
