@@ -29,7 +29,7 @@ jobs:
             echo "::error::tag v${tag} must match pyproject (${pyproject}) and __version__ (${init})"
             exit 1
           fi
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v7
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
       - uses: actions/upload-artifact@v7
@@ -57,7 +57,7 @@ jobs:
           ( cd out && sha256sum devboost-x86_64 devboost-aarch64 \
               devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             out/devboost-x86_64
