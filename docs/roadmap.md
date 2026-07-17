@@ -53,3 +53,38 @@ toward the full `production` set; spec 12 finalizes docs (drafted alongside each
 - `devboost verify --profile full` fully green; re-running install is a no-op.
 - "Fedora snapshots" entry in GRUB; bad update recoverable by reboot.
 - Adding a tool = one file; adding an OS = one key.
+
+## Verification status (proven vs. seam vs. unverified)
+
+Honest coverage as of the 0.1.62 line — what is *proven working* versus *implemented but
+unexercised*. This distinction was expensive to learn: the whole USB→install chain was a
+stack of individually-buggy layers, each of which hid the next, so "the code is written" did
+not mean "it works". Keep this current.
+
+**Proven (exercised end-to-end this cycle):**
+- `devboost installer` builds a correct Ventoy USB on Fedora/x86_64: Ventoy installs, the
+  data partition mounts, both ISOs + payload + `ks.cfg` + `ventoy.json` are staged, marker
+  written. Verified on real SanDisk hardware.
+- `ks.cfg` parses under Anaconda's own F44 pykickstart handler (CI gate).
+- `%pre` disk selection: skips zram/loop/dm and the boot media, refuses on zero or multiple
+  candidates, honours `devboost.disk=` (executed tests against faked lsblk/sysfs/cmdline).
+
+**Implemented but NOT yet verified on real hardware (the remaining risk):**
+- **Zero-touch install to a booted, provisioned desktop.** Has never completed once —
+  Anaconda only started getting *past* kickstart parsing at 0.1.62. The next failure, if any,
+  is new (partitioning / `%post` / firstboot).
+- **`devboost install full` to green + no-op re-run.** The 100+ modules and the five DoD
+  build targets (Laravel/ddev, .NET+Aspire, Python/uv, Next.js, RN+Expo Android) have not
+  been watched to completion on a fresh box this cycle.
+- **GPU auto-detect → `hardware-nvidia` injection.** Mechanism verified in code
+  (`gpu-detect` marker → `plan.build_plan`); never run on real NVIDIA hardware.
+- **Secrets end-to-end** (build `--secrets` → `%post` stage → firstboot decrypt → Obsidian
+  sync). Every leg was individually buggy at some point; the whole chain is unproven.
+
+**Seam only — deliberately not implemented, do not mistake for working:**
+- **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
+  `autoinstall.py` renders subiquity `user-data`, and modules carry `Apt`/`debian` branches —
+  but the Ubuntu install path is a per-OS *seam* (Spec 014: Fedora reference, OS-dispatch
+  seams for later OSes). Several module branches are literally `# seam — not implemented`.
+- **aarch64.** The release builds and publishes a `devboost-aarch64` binary and the catalog
+  pins aarch64 ISOs, but no aarch64 build or install has been exercised.
