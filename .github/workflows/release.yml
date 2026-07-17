@@ -7,7 +7,27 @@ permissions:
   contents: write
 
 jobs:
+  # Gate the whole release on the same checks CI runs. ci.yml was red for 20+ runs while
+  # releases shipped regardless, because release.yml never ran the tests — it only built the
+  # binary. Run them here too, and make everything downstream need them, so a tag can never
+  # publish a tree that would fail CI.
+  checks:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - run: uv sync
+      - run: uv run ruff check
+      - run: uv run mypy
+      - run: uv run pytest
+
   binary:
+    needs: [checks]
     strategy:
       fail-fast: false
       matrix:
