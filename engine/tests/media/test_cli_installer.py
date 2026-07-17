@@ -35,8 +35,6 @@ def test_usb_dry_run_previews_without_building(monkeypatch) -> None:  # type: ig
 
     called = {"build": False}
     monkeypatch.setattr(cli_installer, "build", lambda *a, **k: called.__setitem__("build", True))
-    # Avoid a real HEAD request for the size note.
-    monkeypatch.setattr(cli_installer, "_iso_note", lambda cfg: "≈2.0 GB")
 
     result = runner.invoke(
         app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--dry-run", "--yes"]
@@ -57,7 +55,6 @@ def test_usb_yes_on_devboost_stick_updates_not_wipes(monkeypatch) -> None:  # ty
                     built_at="2026-06-26T00:00:00+00:00")
     monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("devboost", marker))
     monkeypatch.setattr(cli_installer, "build", lambda *a, **k: None)
-    monkeypatch.setattr(cli_installer, "_iso_note", lambda cfg: "cached")
     result = runner.invoke(
         app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--dry-run", "--yes"]
     )
@@ -75,7 +72,6 @@ def test_usb_rebuild_flag_forces_build_on_devboost_stick(monkeypatch) -> None:  
                     built_at="2026-06-26T00:00:00+00:00")
     monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("devboost", marker))
     monkeypatch.setattr(cli_installer, "build", lambda *a, **k: None)
-    monkeypatch.setattr(cli_installer, "_iso_note", lambda cfg: "cached")
     result = runner.invoke(
         app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--dry-run", "--rebuild"]
     )
@@ -172,3 +168,37 @@ def test_usb_flags_path_without_cache_dir_stays_ephemeral(monkeypatch, tmp_path)
     result = runner.invoke(app, ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes"])
     assert result.exit_code == 0
     assert not Path(str(seen["cache_dir"])).exists()  # cleaned up after the build
+
+
+def test_usb_secrets_paths_expand_a_tilde(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`--secrets ~/secrets.age` must not look for a literal `~` directory.
+
+    Nothing in media/ or cli/installer.py expanded ~, so a tilde path was staged as-is and
+    then silently failed to exist — compounding the ks.cfg `blkid -L VTOY` bug, which meant
+    the age bundle never reached the target even when the path was correct.
+    """
+    import devboost.cli.installer as cli_installer
+    from devboost.media.probe import DiskState
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "secrets.age").write_bytes(b"age")
+    (home / "age-key.txt").write_bytes(b"key")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(cli_installer, "probe", lambda ctx, device: DiskState("blank"))
+
+    seen: dict[str, object] = {}
+
+    def _build(ctx, c, dl, cache, *, reporter):  # type: ignore[no-untyped-def]
+        seen["secrets"] = c.secrets_path
+        seen["key"] = c.secrets_key_path
+
+    monkeypatch.setattr(cli_installer, "build", _build)
+    result = runner.invoke(
+        app,
+        ["installer", "--device", "/dev/sdb", "--no-wizard", "--yes",
+         "--secrets", "~/secrets.age", "--secrets-key", "~/age-key.txt"],
+    )
+    assert result.exit_code == 0
+    assert seen["secrets"] == (home / "secrets.age").resolve()
+    assert seen["key"] == (home / "age-key.txt").resolve()

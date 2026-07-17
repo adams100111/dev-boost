@@ -105,7 +105,7 @@ def run(ctx: Ctx) -> MediaConfig:
         autoinstall_iso=autoinstall_for(os_id, arch),
         os_family=family_of(catalog()[os_id].distro),
         profiles=tuple(profiles),
-        secrets_path=Path(secrets) if secrets else None,
+        secrets_path=Path(secrets).expanduser().resolve() if secrets.strip() else None,
         cache_dir=Path(cache),
         mode=mode,  # type: ignore[arg-type]
         refresh_iso=refresh_iso,

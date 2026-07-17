@@ -129,3 +129,30 @@ def test_wizard_blank_cache_answer_never_becomes_the_current_directory(monkeypat
     cfg = wizard.run(_ctx())
     assert cfg.cache_dir != Path()
     assert cfg.cache_dir == Path(gettempdir()) / "devboost-usb"
+
+
+def test_wizard_secrets_answer_expands_a_tilde(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The wizard's "Path to secrets.age" answer needs the same expansion as --secrets."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "s.age").write_bytes(b"age")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+
+    class _WithSecrets(_FakePrompts):
+        def path(self, message: str, default: str = "", **kw: object) -> _Answer:
+            return _Answer("~/s.age" if "secrets.age" in message else default)
+
+    _WithSecrets(_yes_to_wipe).install(monkeypatch)
+    cfg = wizard.run(_ctx())
+    assert cfg.secrets_path == (home / "s.age").resolve()
+
+
+def test_wizard_blank_secrets_answer_stays_none(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Blank means skip — it must not become Path(".") once expansion is applied."""
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+    _FakePrompts(_yes_to_wipe).install(monkeypatch)  # path() returns each prompt's default ("")
+    cfg = wizard.run(_ctx())
+    assert cfg.secrets_path is None

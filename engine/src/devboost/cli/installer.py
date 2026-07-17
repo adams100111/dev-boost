@@ -35,36 +35,6 @@ from devboost.media.report import RichReporter
 from devboost.model import Ctx
 
 
-def _iso_note(cfg: MediaConfig) -> str:
-    """Best-effort combined ISO download size note (for the plan preview; never raises).
-
-    This must NOT fire real network requests or create a cache dir in --dry-run mode.
-    Callers in dry-run must pass ``cfg.cache_dir`` pointing to an existing dir (e.g. a
-    tmpdir) or call ``_iso_note`` only when not in dry-run.
-    """
-    specs = [cfg.iso] + ([cfg.autoinstall_iso] if cfg.autoinstall_iso is not None else [])
-    try:
-        if not cfg.cache_dir.exists():
-            return "unknown"
-        import urllib.request
-
-        cache = Cache(cfg.cache_dir)
-        total = 0
-        all_cached = True
-        for spec in specs:
-            if cache.has(f"{spec.id}.iso", spec.sha256):
-                continue
-            all_cached = False
-            req = urllib.request.Request(spec.url, method="HEAD")
-            with urllib.request.urlopen(req) as resp:
-                total += int(resp.headers.get("Content-Length", 0) or 0)
-        if all_cached:
-            return "cached"
-        return f"≈{total / 1e9:.1f} GB" if total else "unknown"
-    except OSError:
-        return "unknown"
-
-
 def _summary_text(cfg: MediaConfig) -> str:
     verb = "Updated" if cfg.mode == "update" else "Built"
     extras: list[str] = []
@@ -167,8 +137,10 @@ def installer(
                 autoinstall_iso=autoinstall_for(os_id, resolved_arch),
                 os_family=family_of(catalog()[os_id].distro),
                 profiles=tuple(profile) or ("full",),
-                secrets_path=secrets,
-                secrets_key_path=secrets_key,
+                secrets_path=secrets.expanduser().resolve() if secrets else None,
+                secrets_key_path=(
+                    secrets_key.expanduser().resolve() if secrets_key else None
+                ),
                 # cache_dir is filled below (after dry-run check)
                 cache_dir=cache_dir or Path(tempfile.gettempdir()) / "devboost-usb-tmp",
                 cache_ttl_days=cache_ttl_days,
