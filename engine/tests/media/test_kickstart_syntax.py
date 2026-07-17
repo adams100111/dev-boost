@@ -158,3 +158,16 @@ def test_kickstart_post_stages_secrets_at_the_contract_path() -> None:
     assert f'DEST={target}' in code or target in code
     # Both secret filenames must be staged by name.
     assert _SECRETS_FILE in code and _KEY_FILE in code
+
+
+def test_kickstart_partitions_boot_on_both_bios_and_uefi() -> None:
+    """A GPT disk needs an ESP (UEFI) AND a biosboot partition (BIOS). Without biosboot,
+    Anaconda refuses a BIOS/legacy install — "needs a special partition to boot from a GPT
+    disk label ... Kickstart insufficient" — and drops to an interactive prompt that hangs
+    the unattended install. Verified against a real Anaconda boot, not just pykickstart."""
+    part_lines = [
+        ln for ln in KS.read_text(encoding="utf-8").splitlines() if ln.startswith("part ")
+    ]
+    joined = "\n".join(part_lines)
+    assert "--fstype=biosboot" in joined, "no biosboot partition — BIOS install will hang"
+    assert "--fstype=efi" in joined, "no ESP — UEFI install cannot boot"
