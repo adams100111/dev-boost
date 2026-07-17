@@ -11,8 +11,8 @@ jobs:
       run:
         working-directory: engine
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: '3.12'
       - run: uv sync
@@ -26,8 +26,8 @@ jobs:
   frozen-smoke:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
       - name: Verify it runs without a Python runtime

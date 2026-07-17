@@ -18,7 +18,7 @@ jobs:
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check tag matches version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -29,10 +29,10 @@ jobs:
             echo "::error::tag v${tag} must match pyproject (${pyproject}) and __version__ (${init})"
             exit 1
           fi
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v8
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: devboost-${{ matrix.arch }}
           path: |
@@ -44,7 +44,7 @@ jobs:
     needs: [binary]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Collect assets + checksums
