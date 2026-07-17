@@ -68,10 +68,6 @@ def _iso_note(cfg: MediaConfig) -> str:
 def _summary_text(cfg: MediaConfig) -> str:
     verb = "Updated" if cfg.mode == "update" else "Built"
     extras: list[str] = []
-    if cfg.offline_mirror:
-        extras.append("offline-mirror: yes")
-    if cfg.extra_isos:
-        extras.append(f"+{len(cfg.extra_isos)} extra ISO")
     tail = (" · " + " · ".join(extras)) if extras else ""
     media = "Workstation Live" + (
         " + netinst (zero-touch)" if cfg.autoinstall_iso is not None else ""

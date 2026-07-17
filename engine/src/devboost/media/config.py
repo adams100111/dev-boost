@@ -47,9 +47,6 @@ class MediaConfig(BaseModel):
     secrets_path: Path | None = None
     # Path to the age private key file (age-key.txt) to stage alongside secrets.age.
     secrets_key_path: Path | None = None
-    extra_isos: tuple[Path, ...] = ()
-    installers: tuple[Path, ...] = ()
-    offline_mirror: bool = False
     cache_dir: Path
     # TTL for the download cache in days; None = keep forever (only applies to persistent cache).
     cache_ttl_days: int | None = None

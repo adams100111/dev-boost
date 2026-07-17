@@ -232,7 +232,7 @@ def _stage_payload(cfg: MediaConfig, *, vtoy_mount: Path, reporter: Reporter) ->
         )
         kscfg = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
         (boot / "ks.cfg").write_text(
-            render_kscfg(kscfg, cfg.profiles, offline=cfg.offline_mirror), encoding="utf-8"
+            render_kscfg(kscfg, cfg.profiles), encoding="utf-8"
         )
     # Resolve the injection tarball correctly in both source and frozen-binary mode.
     tarball = injection_archive_path(cfg.arch)
@@ -307,12 +307,6 @@ def boot_artifacts(
         _os_label = "Ubuntu" if cfg.os_family == "debian" else "Fedora"
         reporter.step(f"{_os_label} ISO staged ({cfg.iso.id})")
         _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
-        extra_isos(cfg, vtoy_mount=mnt)
-        if cfg.extra_isos:
-            reporter.step(f"Staged {len(cfg.extra_isos)} extra ISO(s)")
-        installers(cfg, vtoy_mount=mnt)
-        if cfg.installers:
-            reporter.step(f"Staged {len(cfg.installers)} installer(s)")
 
 
 def update_stage(
@@ -343,28 +337,7 @@ def update_stage(
             _os_label = "Ubuntu" if cfg.os_family == "debian" else "Fedora"
             reporter.step(f"{_os_label} ISO refreshed ({cfg.iso.id})")
             _stage_autoinstall_iso(cfg, dl, vtoy_mount=mnt, reporter=reporter)
-        extra_isos(cfg, vtoy_mount=mnt)
-        if cfg.extra_isos:
-            reporter.step(f"Staged {len(cfg.extra_isos)} extra ISO(s)")
-        installers(cfg, vtoy_mount=mnt)
-        if cfg.installers:
-            reporter.step(f"Staged {len(cfg.installers)} installer(s)")
 
 
-def extra_isos(cfg: MediaConfig, *, vtoy_mount: Path) -> None:
-    for src in cfg.extra_isos:
-        shutil.copyfile(src, vtoy_mount / "ISO" / src.name)
 
 
-def installers(cfg: MediaConfig, *, vtoy_mount: Path) -> None:
-    for src in cfg.installers:
-        shutil.copyfile(src, vtoy_mount / "Installers" / src.name)
-
-
-def mirror(ctx: Ctx, cfg: MediaConfig, *, vtoy_mount: Path) -> None:
-    from devboost.core.settings import settings
-    from devboost.media.mirror import mirror_dnf, mirror_flatpak, package_set
-
-    dnf, flat = package_set(cfg.profiles, settings.root)
-    mirror_dnf(ctx, dnf, vtoy_mount / "Bootstrap" / "repo" / "dnf")
-    mirror_flatpak(ctx, flat, vtoy_mount / "Bootstrap" / "repo" / "flatpak")

@@ -37,12 +37,6 @@ def test_render_plan_update_shows_detected_marker_and_iso_policy() -> None:
     assert "payload only" in out
 
 
-def test_render_plan_offline_note() -> None:
-    out = render_plan(_cfg(offline_mirror=True), DiskState("ventoy-other"))
-    assert "Offline mirror: yes" in out
-    assert "non-dev-boost Ventoy" in out
-
-
 def test_render_plan_notes_autoinstall_media() -> None:
     out = render_plan(_cfg(autoinstall_iso=_ISO), DiskState("blank"))
     assert "Zero-touch" in out

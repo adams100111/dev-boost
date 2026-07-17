@@ -61,16 +61,26 @@ def _order(tokens: list[str], root: Path) -> tuple[list[str], dict[str, type[Mod
     return toposort(expanded, modules), modules
 
 
+def _offline_installable(cls: type[Module]) -> bool:
+    """True if a module installs from packages alone, with no network of its own.
+
+    dnf/flatpak modules can be satisfied by a local repo or an already-populated cache;
+    everything else (mise, npm, GitHub releases, curl|sh installers) reaches out itself.
+    """
+    from devboost.modules._pkgmodule import PackageModule
+    from devboost.modules.apps import FlatpakApp
+
+    return issubclass(cls, (PackageModule, FlatpakApp))
+
+
 def _apply_offline_filter(
     plan: list[PlannedModule],
     modules: Mapping[str, type[Module]],
 ) -> list[PlannedModule]:
     """Replace network-only modules with a needs-network skip; leave already-skipped ones alone."""
-    from devboost.media.mirror import offline_installable
-
     return [
         pm
-        if pm.skip_reason is not None or offline_installable(modules[pm.name])
+        if pm.skip_reason is not None or _offline_installable(modules[pm.name])
         else PlannedModule(name=pm.name, skip_reason="needs-network")
         for pm in plan
     ]

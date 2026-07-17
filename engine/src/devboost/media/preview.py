@@ -24,11 +24,6 @@ def render_plan(cfg: MediaConfig, state: DiskState, *, download_note: str = "") 
     ]
     if cfg.autoinstall_iso is not None:
         lines.append("Zero-touch    : netinst auto-install staged")
-    if cfg.extra_isos:
-        lines.append(f"Extra ISOs    : {len(cfg.extra_isos)}")
-    if cfg.installers:
-        lines.append(f"Installers    : {len(cfg.installers)}")
-    lines.append(f"Offline mirror: {'yes' if cfg.offline_mirror else 'no'}")
     if cfg.mode == "update":
         lines.append(f"ISO refresh   : {'yes' if cfg.refresh_iso else 'no (payload only)'}")
     if download_note:

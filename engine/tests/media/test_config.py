@@ -20,7 +20,6 @@ def test_config_defaults() -> None:
     iso = IsoSpec(id="fedora-44", url="https://x/f44.iso", sha256="abc", edition="Everything")
     cfg = MediaConfig(device="/dev/sdb", arch="x86_64", iso=iso, cache_dir=Path("/tmp/c"))
     assert cfg.profiles == ("full",)
-    assert cfg.offline_mirror is False
     assert cfg.secrets_path is None
     assert cfg.mode == "build"
     assert cfg.refresh_iso is False

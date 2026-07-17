@@ -27,18 +27,13 @@ EMPTY_META_DATA: str = ""
 # ---------------------------------------------------------------------------
 
 
-def render_kscfg(
-    template: str, profiles: tuple[str, ...], *, offline: bool = False
-) -> str:
+def render_kscfg(template: str, profiles: tuple[str, ...]) -> str:
     """Substitute the install command in a Kickstart template.
 
     Replaces the literal ``devboost install full`` placeholder with the actual
-    profile list (e.g. ``devboost install cli shell``).  When *offline* is True
-    ``--offline`` is appended.
+    profile list (e.g. ``devboost install cli shell``).
     """
     install_cmd = "devboost install " + " ".join(profiles)
-    if offline:
-        install_cmd += " --offline"
     return template.replace("devboost install full", install_cmd)
 
 
@@ -185,7 +180,7 @@ def autoinstall_for_os(
             from devboost.exec.resources import resource_path
 
             tmpl = resource_path("ventoy", "ks.cfg").read_text(encoding="utf-8")
-        rendered_ks = render_kscfg(tmpl, cfg.profiles, offline=cfg.offline_mirror)
+        rendered_ks = render_kscfg(tmpl, cfg.profiles)
         return AutoinstallPlan(
             files={"ks.cfg": rendered_ks},
             boot_iso=cfg.autoinstall_iso,

@@ -98,20 +98,6 @@ def run(ctx: Ctx) -> MediaConfig:
     # quietly fill the user's cwd with multi-GB ISOs.
     cache = cache.strip() or default_cache
 
-    # The offline-mirror prompt is deliberately NOT asked: the feature is unfinished, and
-    # answering yes was strictly worse than answering no.
-    #   * builder.py writes the mirror to `<cache>/vtoy-scratch`, never to the stick — and
-    #     it runs after boot_artifacts has already unmounted it, so it could not write there
-    #     anyway. With an ephemeral cache the whole thing was then deleted.
-    #   * Nothing has ever read `Bootstrap/repo`. The half of the 2026-06-26 plan that would
-    #     point dnf/flatpak at it ("add an --offline flag ... that points dnf/flatpak at
-    #     /run/media/.../Bootstrap/repo") was never built.
-    #   * The `--offline` it baked into ks.cfg only makes firstboot rewrite every
-    #     non-dnf/flatpak module to skip_reason="needs-network" — i.e. it installs FEWER
-    #     tools, in exchange for a mirror that is not there.
-    # The plumbing (MediaConfig.offline_mirror, stages.mirror, media/mirror.py) is left in
-    # place for the spec that finishes it; until then the question must not be asked.
-
     return MediaConfig(
         device=device,
         arch=arch,
@@ -121,7 +107,6 @@ def run(ctx: Ctx) -> MediaConfig:
         profiles=tuple(profiles),
         secrets_path=Path(secrets) if secrets else None,
         cache_dir=Path(cache),
-        # offline_mirror deliberately left at its default (False) — see above.
         mode=mode,  # type: ignore[arg-type]
         refresh_iso=refresh_iso,
         assume_yes=True,

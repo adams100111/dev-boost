@@ -518,19 +518,6 @@ def test_boot_artifacts_stages_secrets_key(
     assert (vtoy / "Bootstrap" / "age-key.txt").read_text() == "AGE-SECRET-KEY-1..."
 
 
-def test_render_kscfg_offline_appends_flag() -> None:
-    tmpl = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/x 2>&1'"
-    out = render_kscfg(tmpl, ("full",), offline=True)
-    assert "devboost install full --offline" in out
-
-
-def test_render_kscfg_offline_default_unchanged() -> None:
-    tmpl = "ExecStart=/bin/sh -c '/opt/dev-boost/devboost install full >> /var/log/x 2>&1'"
-    out = render_kscfg(tmpl, ("full",))
-    assert "--offline" not in out
-    assert "devboost install full" in out
-
-
 def test_update_stage_restages_without_wipe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -612,33 +599,6 @@ def test_update_stage_refreshes_iso_when_requested(
     update_stage(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
     assert (vtoy / "ISO" / "fedora-44.iso").read_bytes() == iso_bytes
     assert dl.fetched == ["https://x/f.iso"]
-
-
-def test_extra_isos_and_installers_are_staged(tmp_path: Path) -> None:
-    from devboost.media.config import IsoSpec, MediaConfig
-    from devboost.media.stages import extra_isos, installers
-
-    extra = tmp_path / "win.iso"
-    extra.write_bytes(b"win")
-    inst = tmp_path / "tool.run"
-    inst.write_bytes(b"run")
-    iso = IsoSpec(id="fedora-44", url="u", sha256="s", edition="E")
-    cfg = MediaConfig(
-        device="/dev/sdb",
-        arch="x86_64",
-        iso=iso,
-        cache_dir=tmp_path,
-        extra_isos=(extra,),
-        installers=(inst,),
-    )
-    vtoy = tmp_path / "VTOY"
-    (vtoy / "ISO").mkdir(parents=True)
-    (vtoy / "Installers").mkdir()
-    extra_isos(cfg, vtoy_mount=vtoy)
-    installers(cfg, vtoy_mount=vtoy)
-    assert (vtoy / "ISO" / "win.iso").exists() and (
-        vtoy / "Installers" / "tool.run"
-    ).exists()
 
 
 def test_mount_lifecycle_recorded_when_no_override(
