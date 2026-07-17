@@ -129,3 +129,23 @@ def test_wizard_blank_cache_answer_never_becomes_the_current_directory(monkeypat
     cfg = wizard.run(_ctx())
     assert cfg.cache_dir != Path()
     assert cfg.cache_dir == Path(gettempdir()) / "devboost-usb"
+
+
+def test_wizard_does_not_offer_the_unfinished_offline_mirror(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Saying yes was strictly worse than saying no.
+
+    The mirror was written to `<cache>/vtoy-scratch` — never the stick, and after
+    boot_artifacts had already unmounted it — then deleted with the cache. Nothing has ever
+    read `Bootstrap/repo`: the half of the old plan that would point dnf at it was never
+    built. And the `--offline` it bakes into ks.cfg only makes firstboot rewrite every
+    non-dnf/flatpak module to skip_reason="needs-network", so the box installs FEWER tools.
+    Until it is actually implemented, do not ask the question.
+    """
+    monkeypatch.setattr(wizard, "list_removable", lambda ctx: [_DEVICE])
+    monkeypatch.setattr(wizard, "probe", lambda ctx, device: DiskState("blank"))
+    # Answer YES to every confirm: the wizard must still not enable it.
+    _FakePrompts(lambda message, default: True).install(monkeypatch)
+
+    cfg = wizard.run(_ctx())
+
+    assert cfg.offline_mirror is False
