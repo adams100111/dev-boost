@@ -52,7 +52,7 @@ def run(ctx: Ctx) -> MediaConfig:
                 questionary.Choice("Update (keep ISOs/secrets, no wipe)", value="update"),
                 questionary.Choice("Rebuild (wipe everything)", value="build"),
             ],
-            default="Update (keep ISOs/secrets, no wipe)",
+            default="update",
         ).ask() or "update"
         mode = action
         if mode == "update":
@@ -77,7 +77,7 @@ def run(ctx: Ctx) -> MediaConfig:
     os_id = questionary.select(
         "Operating system:",
         choices=[questionary.Choice(o.name, value=o.id) for o in supported()],
-        default=default_os().name,
+        default=default_os().id,
     ).ask()
     if os_id is None:
         raise DeviceError("aborted")
