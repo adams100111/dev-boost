@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
@@ -12,7 +13,9 @@ from pathlib import Path
 from tempfile import mkdtemp
 
 from devboost import __version__
+from devboost.core import log
 from devboost.core.errors import DeviceError, VentoyError
+from devboost.exec.executor import Result
 from devboost.exec.resources import injection_archive_path, resource_path
 from devboost.media.autoinstall import (
     EMPTY_META_DATA,
@@ -116,6 +119,30 @@ def _run_ventoy(ctx: Ctx, script: Path, flag: str, device: str, *, what: str) ->
         )
 
 
+#: A fresh Ventoy install leaves udev re-probing the disk and udisks2 free to auto-mount the
+#: new volume at any moment, so the first mount can lose a race it will win a second later.
+#: Bounded: a device that is genuinely unmountable must still fail, and say why.
+_MOUNT_ATTEMPTS = 5
+_MOUNT_RETRY_DELAY = 1.0
+
+
+def _mount_with_retry(ctx: Ctx, device: str, part: str, mnt: Path, opts: str) -> Result:
+    """Mount *part* at *mnt*, retrying while the post-install churn settles.
+
+    Between attempts the target's mounts are cleared again: udisks2 can auto-mount the new
+    volume *after* the first attempt, which is exactly what makes that attempt fail.
+    """
+    res = ctx.ex.run(["mount", "-o", opts, part, str(mnt)], sudo=True)
+    for _ in range(_MOUNT_ATTEMPTS - 1):
+        if res.code == 0:
+            return res
+        log.warn(f"mount {part} failed ({(res.stderr or res.stdout).strip()}) — retrying")
+        unmount_children(ctx, device)
+        time.sleep(_MOUNT_RETRY_DELAY)
+        res = ctx.ex.run(["mount", "-o", opts, part, str(mnt)], sudo=True)
+    return res
+
+
 @contextmanager
 def _mounted_vtoy(
     ctx: Ctx, device: str, *, override: Path | None = None
@@ -129,6 +156,17 @@ def _mounted_vtoy(
         yield override
         return
 
+    # Ventoy has just rewritten the partition table and reformatted the data partition, so
+    # udev is still re-probing the device — and on a desktop udisks2 auto-mounts each new
+    # volume the moment it appears (GNOME's automount is on by default). Mounting into that
+    # window fails. Wait for udev to go quiet, then clear whatever it mounted, and only then
+    # look for the partition.
+    # settle needs no privileges (it only waits on the udev queue), so it must not sudo —
+    # that would prompt for a password on any host whose sudo timestamp has expired. Absent
+    # udevadm (non-systemd host) the Executor reports 127 and we simply carry on.
+    ctx.ex.run(["udevadm", "settle"])
+    unmount_children(ctx, device)
+
     part = _find_vtoy_partition(ctx, device)
     if part is None:
         raise VentoyError(
@@ -139,10 +177,15 @@ def _mounted_vtoy(
     try:
         # uid=/gid= so _stage_payload's stdlib writes land as the invoking user: mounting
         # needs sudo, and exfat takes its ownership from the mounting process.
-        if ctx.ex.run(
-            ["mount", "-o", owner_mount_opts(), part, str(mnt)], sudo=True
-        ).code != 0:
-            raise VentoyError(f"could not mount VTOY partition {part} on {mnt}")
+        opts = owner_mount_opts()
+        res = _mount_with_retry(ctx, device, part, mnt, opts)
+        if res.code != 0:
+            detail = (res.stderr + res.stdout).strip()
+            raise VentoyError(
+                f"could not mount VTOY partition {part} on {mnt} "
+                f"(mount -o {opts} exited {res.code} after {_MOUNT_ATTEMPTS} attempts)"
+                + (f" — mount said:\n{detail}" if detail else " — and said nothing")
+            )
         try:
             yield mnt
         finally:

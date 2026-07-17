@@ -702,3 +702,140 @@ def test_update_stage_rejects_a_ventoy_update_that_silently_did_nothing(
     ctx = Ctx(os=OS, ex=_make_executor(ventoy_out="Some tools can not run on current system."))
     with pytest.raises(VentoyError, match="Some tools can not run"):
         update_stage(ctx, cfg, dl, cache, vtoy_mount=tmp_path / "VTOY", reporter=FakeReporter())
+
+
+def test_boot_artifacts_surfaces_why_the_mount_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare "could not mount" is undiagnosable — mount's own stderr says whether the
+    partition was busy, the options were rejected, or the fs was unrecognised."""
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    cache = Cache(tmp_path / "cache")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
+        cache_dir=cache.cache_dir, assume_yes=True,
+    )
+    ex = _make_executor()
+    ex.scripts["mount"] = Result(
+        32, stderr="mount: /tmp/x: /dev/sdb1 already mounted or mount point busy."
+    )
+    with pytest.raises(VentoyError, match="already mounted or mount point busy"):
+        boot_artifacts(
+            Ctx(os=OS, ex=ex),
+            cfg,
+            FakeDownloader(cache, blobs={}),
+            cache,
+            reporter=FakeReporter(),
+        )
+
+
+class _FlakyMountExecutor(FakeExecutor):
+    """Models the post-install window: the first mount loses to udev/udisks2 churn, the
+    next one wins — exactly what a real stick does after Ventoy rewrites its partitions."""
+
+    fail_first: int = 1
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        sudo: bool = False,
+        stdin: str | None = None,
+        env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> Result:
+        result = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
+        if argv and argv[0] == "mount":
+            if self.fail_first > 0:
+                self.fail_first -= 1
+                return Result(
+                    32, stderr="mount: /dev/sdb1 already mounted or mount point busy."
+                )
+            return Result(0)
+        return result
+
+
+def test_boot_artifacts_retries_a_mount_that_loses_the_post_install_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ventoy has just recreated the partition and udisks2 auto-mounts new volumes on sight
+    (GNOME automount is on by default), so the first mount can lose a race it wins moments
+    later. A transient loss must not abort a confirmed build."""
+    monkeypatch.setattr("devboost.media.stages._MOUNT_RETRY_DELAY", 0)
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
+        cache_dir=cache.cache_dir, assume_yes=True,
+    )
+    ex = _FlakyMountExecutor(
+        scripts={
+            "lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_CLEAN),
+            "sh": Result(0, stdout=_VENTOY_OK),
+        }
+    )
+    # Must complete despite the first mount failing.
+    boot_artifacts(
+        Ctx(os=OS, ex=ex),
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        reporter=FakeReporter(),
+    )
+    assert len([c for c in ex.calls if c[:2] == ["sudo", "mount"]]) == 2  # retried once
+
+
+def test_boot_artifacts_settles_udev_before_looking_for_the_partition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """udev is still re-probing the disk Ventoy just repartitioned; settle before trusting
+    lsblk or mounting."""
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
+        cache_dir=cache.cache_dir, assume_yes=True,
+    )
+    ex = _make_executor()
+    boot_artifacts(
+        Ctx(os=OS, ex=ex),
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        reporter=FakeReporter(),
+    )
+    flat = [" ".join(c) for c in ex.calls]
+    settle_at = next(i for i, c in enumerate(flat) if c == "udevadm settle")  # no sudo
+    mount_at = next(i for i, c in enumerate(flat) if c.startswith("sudo mount "))
+    assert settle_at < mount_at
