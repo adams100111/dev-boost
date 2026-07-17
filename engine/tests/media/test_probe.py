@@ -61,3 +61,49 @@ def test_probe_always_unmounts(tmp_path: Path, monkeypatch) -> None:  # type: ig
     ctx = _ctx(_VTOY)
     probe(ctx, "/dev/sdb")
     assert any("umount" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+# lsblk reporting the stick as udisks2/GNOME leaves it the moment it is plugged in: the
+# Ventoy data partition already mounted under /run/media/<user>/Ventoy.
+def _automounted(mountpoint: str) -> str:
+    return (
+        'NAME="sdb" LABEL="" MOUNTPOINT=""\n'
+        f'NAME="sdb1" LABEL="Ventoy" MOUNTPOINT="{mountpoint}"\n'
+    )
+
+
+def test_probe_reads_the_marker_through_an_existing_automount(tmp_path: Path) -> None:
+    """A replugged dev-boost stick is already mounted by udisks2. Mounting it again with
+    different options fails EBUSY, so probe degraded to "blank" — and the wizard then offered
+    a WIPE instead of an update, destroying the ISOs it should have kept.
+
+    Read through the mount that is already there: a read-only probe must not need its own.
+    """
+    marker = Marker(
+        version="0.1.60", os_id="fedora-44", arch="x86_64", built_at="2026-07-17T00:00:00+00:00"
+    )
+    write_marker(tmp_path, marker)
+    ex = FakeExecutor(
+        scripts={
+            "lsblk": Result(0, stdout=_automounted(str(tmp_path))),
+            # Any mount WE attempt would lose to the existing one; make that explicit.
+            "mount": Result(32, stderr="mount: /dev/sdb1 already mounted or mount point busy."),
+        }
+    )
+    state = probe(Ctx(os=OS, ex=ex), "/dev/sdb")
+    assert state.kind == "devboost"
+    assert state.marker is not None and state.marker.os_id == "fedora-44"
+    assert not [c for c in ex.calls if c[:2] == ["sudo", "mount"]]  # never mounted it itself
+    assert not [c for c in ex.calls if "umount" in c]  # a read-only probe unmounts nothing
+
+
+def test_probe_automounted_ventoy_without_a_marker_is_ventoy_other(tmp_path: Path) -> None:
+    """Same path, no marker: a foreign Ventoy stick, not a blank disk."""
+    ex = FakeExecutor(
+        scripts={
+            "lsblk": Result(0, stdout=_automounted(str(tmp_path))),
+            "mount": Result(32),
+        }
+    )
+    state = probe(Ctx(os=OS, ex=ex), "/dev/sdb")
+    assert state.kind == "ventoy-other"
