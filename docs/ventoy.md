@@ -74,15 +74,46 @@ build-vs-update mode, profiles, optional stages, and the estimated ISO download 
 **without running `ventoy`, downloading, or writing anything**. Use it to rehearse safely.
 
 ## Two boot paths
-1. **Manual (primary):** boot Fedora ISO → installer → reboot → run `devboost install full`.
-2. **Zero-touch (Kickstart):** auto-install entry → `ks.cfg` installs Fedora with the §10c BTRFS
-   subvolume layout (root, home, mandatory `var/lib/gdm`, non-snapshot high-churn subvols, `/boot` in
-   root, **no swap / zram-only**, `compress=zstd:1`) → `devboost-firstboot.service` runs
-   `devboost install full` once (the injected binary at `/opt/dev-boost/devboost`), then disables itself.
+
+The Ventoy menu lists **both** ISOs. They behave completely differently, and the one that
+provisions is *not* the default — pick deliberately:
+
+| Menu entry | What it does to the target's disk | Do you get dev-boost? |
+|---|---|---|
+| `fedora-44.iso` (Workstation Live) — **the menu default**, auto-boots after `VTOY_MENU_TIMEOUT` (10s) | Nothing until you tell Anaconda to. You choose the disk, partitioning, dual-boot, shrink. | **No.** |
+| `fedora-44-netinst.iso` → *Boot in normal mode* → **`/Bootstrap/ks.cfg`** | **Erases the entire first internal disk. No prompt, no confirmation, then reboots.** | Yes — fully. |
+
+1. **Manual (Live ISO).** The stock Fedora installer: full control over disks and partitions.
+   You get plain Fedora, because `ks.cfg`'s `%post` is what copies the injected binary to the
+   target and enables the firstboot service — and `%post` only runs on the Kickstart path.
+   Provision afterwards with the online installer (`get.sh`), or `devboost install full`.
+2. **Zero-touch (Kickstart).** `%pre` picks the target itself: the first **real**, non-removable
+   disk that is not the boot media (virtual devices like zram/loop/dm are skipped — `/dev/zram0`
+   is `TYPE=disk RM=0` and `lsblk` cannot tell it from an internal disk; if nothing qualifies it
+   refuses rather than guessing). Then `clearpart --all` and the §10c BTRFS subvolume layout
+   (root, home, mandatory `var/lib/gdm`, non-snapshot high-churn subvols, `/boot` in root,
+   **no swap / zram-only**, `compress=zstd:1`) → `devboost-firstboot.service` runs
+   `devboost install full` once (the injected binary at `/opt/dev-boost/devboost`), then
+   disables itself.
+
+**There is no middle option**: no disk picker, no "install alongside", no dual-boot on the
+zero-touch path — that is what "zero-touch" costs. Automation *or* partition control, not both.
+Boot the netinst only on a machine whose disk is expendable, and check it has one internal disk
+(with two, `%pre` takes whichever `lsblk` lists first, and does not ask).
+
+Ventoy's own **"Check the file checksum"** entry (SHA-256) verifies an ISO against the
+`catalog.toml` pin before you commit — worth the two minutes, since a truncated ISO fails
+*after* the disk is already gone.
 
 ## Safety
-`devboost installer` only accepts a whole, removable, unmounted disk (`lsblk` guards) and requires an
-explicit wipe confirmation before installing Ventoy — the single destructive step.
+Two different disks are at risk, at two different times:
+
+- **The USB, at build time.** `devboost installer` only accepts a whole, removable, unmounted
+  disk (`lsblk` guards), and requires an explicit wipe confirmation before installing Ventoy.
+  Mounted partitions on the target are unmounted only *after* you confirm.
+- **The target's internal disk, at boot time.** The zero-touch entry erases it with **no
+  confirmation at all** — the kickstart runs unattended by design (`text`, `reboot`,
+  `rootpw --lock`). The build-time confirmation protects the stick, not the laptop.
 
 ## Test it first (no hardware)
 Validate both boot paths in a throwaway VM before touching a real stick — see
