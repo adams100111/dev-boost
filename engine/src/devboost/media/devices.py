@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 from devboost.core import log
@@ -58,6 +59,18 @@ def validate(ctx: Ctx, path: str) -> None:
 #: passes.  NOT "VTOY" — that string appears nowhere on a Ventoy disk.  The ESP is labelled
 #: VTOYEFI (hardcoded in ventoy_lib.sh) and is deliberately not what we look for here.
 VTOY_DATA_LABEL = "Ventoy"
+
+
+def owner_mount_opts() -> str:
+    """``uid=,gid=`` mount options granting *this* process ownership of a FAT-family mount.
+
+    exfat/vfat carry no on-disk ownership: the kernel assigns uid/gid at mount time from
+    these options, defaulting to the mounting process — which is root, because mounting
+    needs sudo.  The engine stages files with the stdlib as the invoking (unprivileged)
+    user, so without this every write into the mount fails with EACCES.  Running as root
+    (firstboot) yields uid=0 — the previous behaviour.
+    """
+    return f"uid={os.getuid()},gid={os.getgid()}"
 
 
 def vtoy_partition(ctx: Ctx, device: str) -> str | None:

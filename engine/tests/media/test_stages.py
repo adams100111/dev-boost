@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -165,6 +166,53 @@ def test_boot_artifacts_runs_ventoy_from_its_own_directory(
     )
     idx = next(i for i, c in enumerate(ex.calls) if "Ventoy2Disk.sh" in " ".join(c))
     assert ex.cwds[idx] == _FAKE_VENTOY.parent
+
+
+def test_boot_artifacts_mounts_vtoy_as_the_invoking_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """exfat carries no on-disk ownership: the kernel assigns uid/gid from the mount options,
+    defaulting to the mounting process — which is root, since mounting needs sudo. The engine
+    then stages files with the stdlib as the *invoking* user, so without uid=/gid= every write
+    into the mount is EACCES."""
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,
+    )
+    ex = _make_executor()
+    # No vtoy_mount override: exercise the real discover -> mount -> stage -> umount path.
+    boot_artifacts(
+        Ctx(os=OS, ex=ex),
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        reporter=FakeReporter(),
+    )
+    mount_call = next(
+        c for c in ex.calls if "mount" in c and not any(p == "umount" for p in c)
+    )
+    assert f"uid={os.getuid()},gid={os.getgid()}" in " ".join(mount_call)
+    assert "/dev/sdb1" in mount_call  # the Ventoy data partition, not the VTOYEFI ESP
 
 
 def test_boot_artifacts_rejects_a_ventoy_install_that_silently_did_nothing(

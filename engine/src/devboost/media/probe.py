@@ -10,7 +10,7 @@ from tempfile import mkdtemp
 from typing import Literal
 
 from devboost.core import log
-from devboost.media.devices import vtoy_partition
+from devboost.media.devices import owner_mount_opts, vtoy_partition
 from devboost.media.marker import Marker, read_marker
 from devboost.model import Ctx
 
@@ -39,7 +39,8 @@ def probe(ctx: Ctx, device: str) -> DiskState:
             return DiskState("blank")
         mnt = Path(mkdtemp(prefix="devboost-probe-"))
         try:
-            if ctx.ex.run(["mount", "-o", "ro", part, str(mnt)], sudo=True).code != 0:
+            opts = f"ro,{owner_mount_opts()}"  # readable by us regardless of root's umask
+            if ctx.ex.run(["mount", "-o", opts, part, str(mnt)], sudo=True).code != 0:
                 log.warn(f"probe: could not mount {part} read-only; treating {device} as blank")
                 return DiskState("blank")
             marker = read_marker(mnt)

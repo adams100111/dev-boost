@@ -23,7 +23,12 @@ from devboost.media.autoinstall import (
 )
 from devboost.media.cache import Cache
 from devboost.media.config import MediaConfig
-from devboost.media.devices import unmount_children, validate, vtoy_partition
+from devboost.media.devices import (
+    owner_mount_opts,
+    unmount_children,
+    validate,
+    vtoy_partition,
+)
 from devboost.media.download import Downloader
 from devboost.media.marker import Marker, write_marker
 from devboost.media.report import Reporter
@@ -100,7 +105,11 @@ def _mounted_vtoy(
         )
     mnt = Path(mkdtemp(prefix="devboost-build-"))
     try:
-        if ctx.ex.run(["mount", part, str(mnt)], sudo=True).code != 0:
+        # uid=/gid= so _stage_payload's stdlib writes land as the invoking user: mounting
+        # needs sudo, and exfat takes its ownership from the mounting process.
+        if ctx.ex.run(
+            ["mount", "-o", owner_mount_opts(), part, str(mnt)], sudo=True
+        ).code != 0:
             raise VentoyError(f"could not mount VTOY partition {part} on {mnt}")
         try:
             yield mnt
