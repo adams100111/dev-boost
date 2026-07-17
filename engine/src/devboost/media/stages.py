@@ -84,6 +84,38 @@ def _find_vtoy_partition(ctx: Ctx, device: str) -> str | None:
     return vtoy_partition(ctx, device)
 
 
+def _run_ventoy(ctx: Ctx, script: Path, flag: str, device: str, *, what: str) -> None:
+    """Run ``Ventoy2Disk.sh <flag> <device>`` and verify it actually did the work.
+
+    Both of these are load-bearing, and neither is obvious:
+
+    * **cwd must be the extracted tree.** Ventoy2Disk.sh builds its tool PATH from
+      ``OLDDIR=$(pwd)``, captured *before* it cd's to its own directory.  Invoked from
+      anywhere else its bundled mkexfatfs/vtoycli are unreachable, its tool check fails and
+      it installs nothing.
+    * **Its exit status is meaningless.** The script ends on a trailing ``cd "$OLDDIR"``
+      block, so it reports 0 even when VentoyWorker.sh refused or failed outright.  Ventoy's
+      own "successfully finished" line is the only trustworthy signal, and it is printed by
+      every mode (install / non-destructive install / update).
+
+    Verifying the effect on the disk instead is not enough: an install that refuses leaves
+    the *previous* install's partitions in place, which look exactly like success.
+    """
+    res = ctx.ex.run(
+        ["sh", "./Ventoy2Disk.sh", flag, device],
+        sudo=True,
+        stdin="y\ny\n",
+        cwd=script.parent,
+    )
+    out = (res.stdout + res.stderr).strip()
+    if "successfully finished" not in out:
+        raise VentoyError(
+            f"Ventoy {what} did not complete on {device} (Ventoy2Disk.sh exited "
+            f"{res.code}; it exits 0 even on failure)"
+            + (f" — Ventoy said:\n{out}" if out else "")
+        )
+
+
 @contextmanager
 def _mounted_vtoy(
     ctx: Ctx, device: str, *, override: Path | None = None
@@ -218,26 +250,11 @@ def boot_artifacts(
     validate(ctx, cfg.device)
 
     ventoy2disk = ensure_ventoy(ctx, dl, cache)
-    # Ventoy2Disk.sh must run from its own directory: it sets PATH from `OLDDIR=$(pwd)`,
-    # captured BEFORE it cd's to that directory, so its bundled mkexfatfs/vtoycli are only
-    # discoverable when the caller's cwd IS the extracted tree.  Invoked from anywhere else
-    # its tool check fails and it installs nothing.
-    res = ctx.ex.run(
-        ["sh", "./Ventoy2Disk.sh", "-i", cfg.device],
-        sudo=True,
-        stdin="y\ny\n",
-        cwd=ventoy2disk.parent,
-    )
-    # Its exit status is a trailing `cd`, not VentoyWorker.sh's, so it reports 0 even when
-    # the install failed outright — the exit code cannot be trusted.  Verify the partition
-    # actually landed, and surface Ventoy's own output when it did not.
-    if _find_vtoy_partition(ctx, cfg.device) is None:
-        detail = (res.stdout + res.stderr).strip()
-        raise VentoyError(
-            f"Ventoy install did not create a VTOY partition on {cfg.device} "
-            f"(Ventoy2Disk.sh exited {res.code}; it exits 0 even on failure)"
-            + (f" — Ventoy said:\n{detail}" if detail else "")
-        )
+    # -I (force), not -i: `-i` refuses outright when the disk already contains Ventoy
+    # ("please use -I option" — VentoyWorker.sh), which is every rebuild and every stick that
+    # has ever been a Ventoy drive. The wipe is confirmed by this point, so forcing is what
+    # the user asked for.
+    _run_ventoy(ctx, ventoy2disk, "-I", cfg.device, what="install")
     reporter.step(f"Ventoy installed on {cfg.device}")
 
     with _mounted_vtoy(ctx, cfg.device, override=vtoy_mount) as mnt:
@@ -272,15 +289,7 @@ def update_stage(
     validate(ctx, cfg.device)
 
     ventoy2disk = ensure_ventoy(ctx, dl, cache)
-    if (
-        ctx.ex.run(
-            ["sh", str(ventoy2disk), "-u", cfg.device],
-            sudo=True,
-            stdin="y\ny\n",
-        ).code
-        != 0
-    ):
-        raise VentoyError(f"Ventoy update failed on {cfg.device}")
+    _run_ventoy(ctx, ventoy2disk, "-u", cfg.device, what="update")
     reporter.step(f"Ventoy updated on {cfg.device}")
 
     with _mounted_vtoy(ctx, cfg.device, override=vtoy_mount) as mnt:

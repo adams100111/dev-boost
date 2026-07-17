@@ -37,11 +37,26 @@ _LSBLK_CHILDREN_NO_VTOY = 'NAME="sdb" MOUNTPOINT=""\nNAME="sdb1" MOUNTPOINT=""\n
 _FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
 
 
+# Ventoy's own success line — the only trustworthy signal that it did anything, since
+# Ventoy2Disk.sh exits 0 regardless. Every mode prints "... successfully finished."
+_VENTOY_OK = "Install Ventoy to /dev/sdb successfully finished."
+_VENTOY_UPDATE_OK = "Update Ventoy on /dev/sdb successfully finished."
+
+
 def _make_executor(
-    *, lsblk_out: str = _LSBLK, child_out: str = _LSBLK_CHILDREN_CLEAN
+    *,
+    lsblk_out: str = _LSBLK,
+    child_out: str = _LSBLK_CHILDREN_CLEAN,
+    ventoy_out: str = _VENTOY_OK,
 ) -> FakeExecutor:
-    """FakeExecutor handling both lsblk variants: validate() + _find_vtoy_partition()."""
-    return FakeExecutor(scripts={"lsblk": Result(0, stdout=lsblk_out + child_out)})
+    """FakeExecutor handling both lsblk variants: validate() + _find_vtoy_partition(),
+    and Ventoy2Disk.sh reporting its success line the way the real script does."""
+    return FakeExecutor(
+        scripts={
+            "lsblk": Result(0, stdout=lsblk_out + child_out),
+            "sh": Result(0, stdout=ventoy_out),
+        }
+    )
 
 
 # lsblk -P -o NAME,MOUNTPOINT /dev/sdb — GNOME/udisks2 auto-mounted the stick on plug-in
@@ -104,7 +119,10 @@ def test_boot_artifacts_unmounts_automounts_before_validating(
         assume_yes=True,  # the wipe IS confirmed — so the auto-mount may be cleared
     )
     ex = _AutomountedExecutor(
-        scripts={"lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_AUTOMOUNTED)}
+        scripts={
+            "lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_AUTOMOUNTED),
+            "sh": Result(0, stdout=_VENTOY_OK),
+        }
     )
     ctx = Ctx(os=OS, ex=ex)
 
@@ -215,6 +233,50 @@ def test_boot_artifacts_mounts_vtoy_as_the_invoking_user(
     assert "/dev/sdb1" in mount_call  # the Ventoy data partition, not the VTOYEFI ESP
 
 
+def test_boot_artifacts_force_installs_over_an_existing_ventoy_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`-i` refuses any disk that already contains Ventoy ("please use -I option") and
+    installs nothing — that is every rebuild, and any stick that has ever been a Ventoy
+    drive. The refusal is invisible: the exit code is 0 and the previous install's partitions
+    are still there, so it looks exactly like success. The wipe is confirmed by this point."""
+    iso_bytes = b"fedora-iso"
+    iso = IsoSpec(
+        id="fedora-44",
+        url="https://x/f.iso",
+        sha256=hashlib.sha256(iso_bytes).hexdigest(),
+        edition="Everything",
+    )
+    cache = Cache(tmp_path / "cache")
+    fake_tarball = tmp_path / "devboost-x86_64.tar.gz"
+    fake_tarball.write_bytes(b"dummy")
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.injection_archive_path", lambda arch: fake_tarball
+    )
+    cfg = MediaConfig(
+        device="/dev/sdb",
+        arch="x86_64",
+        iso=iso,
+        profiles=("cli",),
+        cache_dir=cache.cache_dir,
+        assume_yes=True,
+    )
+    ex = _make_executor()
+    boot_artifacts(
+        Ctx(os=OS, ex=ex),
+        cfg,
+        FakeDownloader(cache, blobs={"https://x/f.iso": iso_bytes}),
+        cache,
+        vtoy_mount=tmp_path / "VTOY",
+        reporter=FakeReporter(),
+    )
+    ventoy = next(c for c in ex.calls if "Ventoy2Disk.sh" in " ".join(c))
+    assert "-I" in ventoy and "-i" not in ventoy
+
+
 def test_boot_artifacts_rejects_a_ventoy_install_that_silently_did_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -234,7 +296,7 @@ def test_boot_artifacts_rejects_a_ventoy_install_that_silently_did_nothing(
         cache_dir=cache.cache_dir,
         assume_yes=True,
     )
-    # lsblk reports no VTOY-labelled partition; `sh` exits 0 while printing Ventoy's failure.
+    # `sh` exits 0 while printing Ventoy's failure and NO "successfully finished" line.
     ex = FakeExecutor(
         scripts={
             "lsblk": Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_NO_VTOY),
@@ -399,9 +461,10 @@ def test_boot_artifacts_installs_ventoy_and_stages_files(
     boot_artifacts(ctx, cfg, dl, cache, vtoy_mount=vtoy, reporter=FakeReporter())
 
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    # Should have called sh .../Ventoy2Disk.sh -i /dev/sdb (via sudo)
+    # Should have called sh ./Ventoy2Disk.sh -I /dev/sdb (via sudo). -I, not -i: the wipe is
+    # confirmed, and -i refuses any disk that already contains Ventoy.
     assert any(
-        "Ventoy2Disk.sh" in " ".join(c) and "-i" in c and "/dev/sdb" in c for c in calls
+        "Ventoy2Disk.sh" in " ".join(c) and "-I" in c and "/dev/sdb" in c for c in calls
     )
     assert (vtoy / "Bootstrap" / "ks.cfg").read_text().count("devboost install cli") == 1
     # both ISOs staged
@@ -504,6 +567,10 @@ def test_update_stage_restages_without_wipe(
     flat = [" ".join(c) for c in calls]
     assert any("Ventoy2Disk.sh" in c and "-u" in c and "/dev/sdb" in c for c in flat)
     assert not any("Ventoy2Disk.sh" in c and "-i" in c for c in flat)  # never wipes
+    # The update path needs the same cwd as the install path: Ventoy2Disk.sh finds its tools
+    # relative to the caller's directory, whichever flag it is given.
+    idx = next(i for i, c in enumerate(flat) if "Ventoy2Disk.sh" in c)
+    assert ctx.ex.cwds[idx] == _FAKE_VENTOY.parent  # type: ignore[attr-defined]
     assert (vtoy / "Bootstrap" / "devboost.tar.gz").exists()
     assert (vtoy / "Bootstrap" / ".devboost-usb.json").exists()
     assert not (vtoy / "ISO" / "fedora-44.iso").exists()  # payload-only by default
@@ -612,3 +679,26 @@ def test_mounted_vtoy_yields_override_without_syscalls(tmp_path: Path) -> None:
         assert mnt == override
 
     assert ex.calls == []  # no system calls at all
+
+
+def test_update_stage_rejects_a_ventoy_update_that_silently_did_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The update path shares every trap of the install path: Ventoy2Disk.sh exits 0 even
+    when it did nothing, and the VTOY partition it would have refreshed is already there —
+    so only Ventoy's own success line can tell an update from a no-op."""
+    from devboost.media.stages import update_stage
+
+    iso = IsoSpec(id="fedora-44", url="https://x/f.iso", sha256="a" * 64, edition="Everything")
+    cache = Cache(tmp_path / "cache")
+    dl = FakeDownloader(cache, blobs={})
+    cfg = MediaConfig(
+        device="/dev/sdb", arch="x86_64", iso=iso, profiles=("cli",),
+        cache_dir=cache.cache_dir, mode="update", assume_yes=True,
+    )
+    monkeypatch.setattr(
+        "devboost.media.stages.ensure_ventoy", lambda ctx, dl, cache: _FAKE_VENTOY
+    )
+    ctx = Ctx(os=OS, ex=_make_executor(ventoy_out="Some tools can not run on current system."))
+    with pytest.raises(VentoyError, match="Some tools can not run"):
+        update_stage(ctx, cfg, dl, cache, vtoy_mount=tmp_path / "VTOY", reporter=FakeReporter())

@@ -44,6 +44,9 @@ _FEDORA_ISO = IsoSpec(
 )
 _FAKE_VENTOY = Path("/fake/ventoy-1.1.16/Ventoy2Disk.sh")
 
+# Ventoy2Disk.sh exits 0 regardless; its "successfully finished" line is the real signal.
+_VENTOY_OK = "Install Ventoy to /dev/sdb successfully finished."
+
 _LSBLK = (
     'PATH="/dev/sdb" SIZE="32G" TYPE="disk" RM="1" MOUNTPOINT="" MODEL="Ultra"'
     ' VENDOR="SanDisk" SERIAL="4C53" TRAN="usb"\n'
@@ -296,7 +299,9 @@ def test_boot_artifacts_ubuntu_stages_user_data_and_meta_data(
         os_family="debian",
     )
     vtoy = tmp_path / "VTOY"
-    ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)})
+    ex = FakeExecutor(
+        scripts={"lsblk": Result(0, stdout=_LSBLK), "sh": Result(0, stdout=_VENTOY_OK)}
+    )
     ctx = Ctx(os=UBUNTU_OS, ex=ex)
 
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
@@ -356,7 +361,9 @@ def test_boot_artifacts_ubuntu_no_netinst_iso_staged(
         os_family="debian",
     )
     vtoy = tmp_path / "VTOY"
-    ex = FakeExecutor(scripts={"lsblk": Result(0, stdout=_LSBLK)})
+    ex = FakeExecutor(
+        scripts={"lsblk": Result(0, stdout=_LSBLK), "sh": Result(0, stdout=_VENTOY_OK)}
+    )
     ctx = Ctx(os=UBUNTU_OS, ex=ex)
 
     fake_tar = tmp_path / "devboost-x86_64.tar.gz"
