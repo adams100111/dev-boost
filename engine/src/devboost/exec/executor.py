@@ -38,10 +38,11 @@ class Executor(Protocol):
 
 
 def _prepend_mise_dirs(path: str) -> str:
-    """Return *path* with mise shims and ~/.local/bin prepended (if not already present).
+    """Return *path* with the user tool dirs prepended (if not already present).
 
-    Ensures tools installed via ``mise`` (node, pnpm, bun, …) are found in subprocesses
-    even on a fresh firstboot where the user's shell profile has not been sourced.
+    Ensures tools found in subprocesses even on a fresh firstboot where the user's shell
+    profile has not been sourced: ``mise`` shims (node, pnpm, bun, …), ``~/.local/bin``, and
+    ``~/.dotnet/tools`` (where ``dotnet tool install -g`` puts aspire, csharp-ls, csharpier).
     """
     try:
         home = Path.home()
@@ -50,6 +51,7 @@ def _prepend_mise_dirs(path: str) -> str:
     prepend = [
         str(home / ".local" / "share" / "mise" / "shims"),
         str(home / ".local" / "bin"),
+        str(home / ".dotnet" / "tools"),
     ]
     existing = path.split(os.pathsep) if path else []
     new_parts = [p for p in prepend if p not in existing]

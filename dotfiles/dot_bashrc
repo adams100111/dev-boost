@@ -16,9 +16,12 @@ shopt -s checkwinsize
 shopt -s globstar
 
 # ---------------------------------------------------------------------------
-# Path additions (user local bin)
+# Path additions (user local bin + dotnet global tools)
 # ---------------------------------------------------------------------------
 [[ -d "${HOME}/.local/bin" ]] && export PATH="${HOME}/.local/bin:${PATH}"
+# `dotnet tool install -g` (aspire, csharp-ls, csharpier) installs here; without this on
+# PATH the tools install but are "not found" in an interactive shell.
+[[ -d "${HOME}/.dotnet/tools" ]] && export PATH="${HOME}/.dotnet/tools:${PATH}"
 
 # ---------------------------------------------------------------------------
 # ripgrep — load the managed config (rg reads config only from this env var)

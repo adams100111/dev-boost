@@ -219,3 +219,16 @@ def test_bash_config_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         "eval \"$(starship init bash)\"  # devboost\n", encoding="utf-8"
     )
     assert BashConfig().verify(ctx) is True
+
+
+def test_bashrc_puts_dotnet_tools_on_path() -> None:
+    """`dotnet tool install -g` (aspire, csharp-ls, csharpier) installs into ~/.dotnet/tools.
+    dot_bashrc must add it to PATH or those tools are "not found" in an interactive shell —
+    which is exactly what happened to `aspire` after `devboost install full`."""
+    from pathlib import Path
+
+    bashrc = (Path(__file__).resolve().parents[3] / "dotfiles" / "dot_bashrc").read_text(
+        encoding="utf-8"
+    )
+    assert ".dotnet/tools" in bashrc
+    assert 'PATH="${HOME}/.dotnet/tools:${PATH}"' in bashrc

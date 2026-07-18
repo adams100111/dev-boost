@@ -90,3 +90,15 @@ def test_real_executor_runs_in_cwd_when_given(tmp_path: Path) -> None:
 def test_real_executor_without_cwd_keeps_the_process_directory() -> None:
     ex = RealExecutor()
     assert ex.run(["pwd"]).stdout.strip() == str(Path.cwd())
+
+
+def test_prepend_mise_dirs_includes_dotnet_tools() -> None:
+    """`dotnet tool install -g` (aspire, csharp-ls, csharpier) lands in ~/.dotnet/tools;
+    dev-boost must find those in-session, not just via the interactive shell."""
+    from pathlib import Path
+
+    augmented = _prepend_mise_dirs("/usr/bin")
+    parts = augmented.split(os.pathsep)
+    dotnet = str(Path.home() / ".dotnet" / "tools")
+    assert dotnet in parts
+    assert parts.index(dotnet) < parts.index("/usr/bin")
