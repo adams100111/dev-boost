@@ -60,14 +60,20 @@ class GnomeExtensions(Module):
         return all(uuid in enabled for uuid in _FUNCTIONAL_UUIDS)
 
     def install(self, ctx: Ctx) -> None:
+        # gext (gnome-extensions-cli) is NOT packaged for any distro — the old Fedora branch
+        # ran `dnf install python3-gnome-extensions-cli`, which does not exist in Fedora repos,
+        # so it failed and none of the extensions installed. It ships only on PyPI.
+        #
+        # Install with pipx (PEP-668-safe on both Fedora and Ubuntu; a plain `pip install
+        # --user` is rejected on an externally-managed Python) into ~/.local/bin, which the
+        # executor already has on PATH. --system-site-packages is REQUIRED, not optional: gext
+        # talks to GNOME Shell over D-Bus through the system PyGObject (gi/GLib) bindings, which
+        # an isolated pipx venv cannot see — without it gext installs but fails at runtime with
+        # a `gi` import error. This is the tool's own documented install line.
         if not ctx.ex.which("gext"):
-            if ctx.os.family == "fedora":
-                pkg.install(ctx, "python3-gnome-extensions-cli")
-            else:
-                # Ubuntu/Debian: no apt package for gext; install via pip3
-                if not ctx.ex.which("pip3"):
-                    pkg.install(ctx, "python3-pip")
-                ctx.ex.run(["pip3", "install", "--user", "gnome-extensions-cli"])
+            if not ctx.ex.which("pipx"):
+                pkg.install(ctx, "pipx")
+            ctx.ex.run(["pipx", "install", "gnome-extensions-cli", "--system-site-packages"])
         for uuid in _FUNCTIONAL_UUIDS:
             ctx.ex.run(["gext", "install", uuid])
             ctx.ex.run(["gext", "enable", uuid])

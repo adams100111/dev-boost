@@ -198,7 +198,11 @@ class Aspire(Module):
     profiles = ("dotnet",)
 
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.which("aspire")
+        # `dotnet tool install -g` lands in ~/.dotnet/tools, which is NOT on PATH in the
+        # install session, so which("aspire") returned False right after a successful install
+        # ("verify failed after install"). Check the path directly — the same way the sibling
+        # DotnetLsp verifies its own global tools.
+        return (_home() / ".dotnet" / "tools" / "aspire").exists()
 
     def install(self, ctx: Ctx) -> None:
         ctx.ex.run(["dotnet", "tool", "install", "-g", "Aspire.Cli"])

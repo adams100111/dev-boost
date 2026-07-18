@@ -53,6 +53,19 @@ def test_aspire_installs_tool() -> None:
     assert ["dotnet", "tool", "install", "-g", "Aspire.Cli"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
+def test_aspire_verify_checks_the_tools_path_not_which(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """`dotnet tool install -g` lands in ~/.dotnet/tools, which is not on PATH in the install
+    session — which("aspire") returned False right after a successful install ("verify failed
+    after install"). verify() must check the path, like the sibling DotnetLsp."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx()
+    assert Aspire().verify(ctx) is False           # tool not present yet
+    tools = tmp_path / ".dotnet" / "tools"
+    tools.mkdir(parents=True)
+    (tools / "aspire").write_text("#!/bin/sh\n")
+    assert Aspire().verify(ctx) is True             # present on disk, even if not on PATH
+
+
 def test_dotnet_lsp_installs_csharp_tools() -> None:
     ctx = _ctx()
     DotnetLsp().install(ctx)

@@ -109,50 +109,43 @@ def test_gnome_settings_headless_dbus_on_ubuntu(
 # ---------------------------------------------------------------------------
 
 
-def test_gnome_extensions_installs_via_pip_on_ubuntu() -> None:
-    """When gext is missing on Ubuntu, install via pip3 (no apt package for gext)."""
-    ctx = _ubuntu_ctx()  # gext not present → which("gext") returns False
+def test_gnome_extensions_never_installs_the_nonexistent_fedora_package() -> None:
+    """Regression: `dnf install python3-gnome-extensions-cli` failed on real Fedora 44 — that
+    package does not exist in any Fedora repo (verified via dnf repoquery), so NONE of the
+    extensions installed. gext ships only on PyPI. It must never be requested from dnf."""
+    ctx = _ctx()  # Fedora, gext absent
+    GnomeExtensions().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert not any("python3-gnome-extensions-cli" in c for c in joined)
+
+
+def test_gnome_extensions_installs_gext_via_pipx_with_system_site_packages() -> None:
+    """gext is installed with pipx (PEP-668-safe on Fedora + Ubuntu) and MUST pass
+    --system-site-packages: gext reaches GNOME Shell over D-Bus through the system PyGObject
+    (gi/GLib) bindings, which an isolated pipx venv cannot import. This is the tool's own
+    documented install line; without the flag gext installs but fails at runtime."""
+    for ctx in (_ctx(), _ubuntu_ctx()):  # both families, gext absent
+        GnomeExtensions().install(ctx)
+        calls = ctx.ex.calls  # type: ignore[attr-defined]
+        assert ["pipx", "install", "gnome-extensions-cli", "--system-site-packages"] in calls
+
+
+def test_gnome_extensions_installs_pipx_when_absent() -> None:
+    """pipx itself may be missing on a fresh box — install it via the package manager first."""
+    ctx = _ctx()  # Fedora, neither gext nor pipx present
     GnomeExtensions().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["pip3", "install", "--user", "gnome-extensions-cli"] in calls
-    # No Fedora rpm package must be used
-    assert not any("python3-gnome-extensions-cli" in " ".join(c) for c in calls)
+    assert ["sudo", "dnf", "install", "-y", "pipx"] in calls
 
 
-def test_gnome_extensions_installs_python3_pip_if_missing_on_ubuntu() -> None:
-    """If pip3 itself is absent, install python3-pip via apt first."""
-    ctx = _ubuntu_ctx()  # pip3 not present either
+def test_gnome_extensions_skips_gext_install_when_present() -> None:
+    """If gext is already on PATH, skip pipx entirely and go straight to install+enable."""
+    ctx = _ctx(present={"gext"})
     GnomeExtensions().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["sudo", "apt-get", "install", "-y", "python3-pip"] in calls
-    assert ["pip3", "install", "--user", "gnome-extensions-cli"] in calls
-
-
-def test_gnome_extensions_skips_pip_when_pip3_present_on_ubuntu() -> None:
-    """If pip3 is already on PATH, skip the python3-pip apt install."""
-    ctx = _ubuntu_ctx(present={"pip3"})
-    GnomeExtensions().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("python3-pip" in " ".join(c) for c in calls)
-    assert ["pip3", "install", "--user", "gnome-extensions-cli"] in calls
-
-
-def test_gnome_extensions_skips_gext_install_when_present_on_ubuntu() -> None:
-    """If gext is already present, skip all install steps and go straight to enable."""
-    ctx = _ubuntu_ctx(present={"gext"})
-    GnomeExtensions().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("pip3" in " ".join(c) for c in calls)
-    assert not any("apt-get" in " ".join(c) for c in calls)
+    assert not any("pipx" in " ".join(c) for c in calls)
     for uuid in _FUNCTIONAL_UUIDS:
         assert ["gext", "install", uuid] in calls
-
-
-def test_gnome_extensions_enables_all_uuids_on_ubuntu() -> None:
-    ctx = _ubuntu_ctx(present={"gext"})
-    GnomeExtensions().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    for uuid in _FUNCTIONAL_UUIDS:
         assert ["gext", "enable", uuid] in calls
 
 
