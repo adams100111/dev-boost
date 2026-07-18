@@ -9,7 +9,7 @@ from typing import ClassVar
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
 from devboost.core.registry import register
-from devboost.exec.primitives import config, gpu, pkg, systemd
+from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
 
 
@@ -56,6 +56,10 @@ class GrubBtrfs(SystemService):
             raise UnsupportedOS(
                 f"grub-btrfs is Fedora/btrfs-only; detected {ctx.os.distro!r}"
             )
+        # grub-btrfs is NOT in Fedora's own repos — `dnf install grub-btrfs` fails with
+        # "No match for argument: grub-btrfs". Its canonical source is the kylegospo/grub-btrfs
+        # COPR (verified to build for fedora-44). Enable it first (idempotent).
+        copr.enable(ctx, "kylegospo/grub-btrfs")
         super().install(ctx)
 
 
@@ -136,9 +140,13 @@ class Snapper(Module):
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family != "fedora":
             return False
-        # get-config fails (non-ok) when the root config doesn't exist yet → not satisfied.
-        res = ctx.ex.run(["snapper", "-c", "root", "get-config"])
+        # sudo=True is REQUIRED: `snapper get-config` is root-only, so without it snapper
+        # prints "No permissions." and exits non-zero — making verify ALWAYS fail for the
+        # unprivileged install user, even when the config exists and is correct ("snapper:
+        # verify failed after install"). install() already runs create-config with sudo.
+        res = ctx.ex.run(["snapper", "-c", "root", "get-config"], sudo=True)
         if not res.ok:
+            # get-config also fails when the root config genuinely does not exist yet.
             return False
         return all(
             _snapper_config_value(res.stdout, key) == val

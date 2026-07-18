@@ -401,3 +401,31 @@ def test_power_profiles_daemon_installs_when_nothing_provides_ppd_service() -> N
     PowerProfilesDaemon().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     assert any("dnf install -y power-profiles-daemon" in c for c in joined)
+
+
+def test_snapper_verify_reads_config_with_sudo() -> None:
+    """`snapper get-config` is root-only; without sudo it prints "No permissions." and exits
+    non-zero, so verify always failed for the unprivileged install user ("verify failed after
+    install") even when the config was correct."""
+    from devboost.modules.system import Snapper
+
+    out = "TIMELINE_CREATE        │ no\nNUMBER_LIMIT           │ 10\n"
+    ctx = _ctx(scripts={"snapper": Result(0, stdout=out)})
+    assert Snapper().verify(ctx) is True
+    # the get-config call must have gone through sudo
+    assert ["sudo", "snapper", "-c", "root", "get-config"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_grub_btrfs_enables_the_copr_before_installing() -> None:
+    """grub-btrfs is not in Fedora repos (`dnf install` → "No match for argument"); it comes
+    from the kylegospo/grub-btrfs COPR, which must be enabled first."""
+    from devboost.modules.system import GrubBtrfs
+
+    ctx = _ctx()
+    GrubBtrfs().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    copr_i = next(
+        i for i, c in enumerate(joined) if "copr enable" in c and "kylegospo/grub-btrfs" in c
+    )
+    inst_i = next(i for i, c in enumerate(joined) if "dnf install -y grub-btrfs" in c)
+    assert copr_i < inst_i  # COPR enabled before the install
