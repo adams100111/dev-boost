@@ -70,9 +70,29 @@ class Fwupd(SystemService):
 @register
 class PowerProfilesDaemon(SystemService):
     name = "power-profiles-daemon"
-    description = "Power profile switching."
+    description = "Power profile switching (D-Bus)."
     svc_pkg = "power-profiles-daemon"
     service = "power-profiles-daemon"
+
+    def _ppd_already_provided(self, ctx: Ctx) -> bool:
+        # power-profiles-daemon and tuned-ppd both Provide AND Conflict on `ppd-service`, so
+        # exactly one may be installed. Fedora 44 ships tuned-ppd by default, which already
+        # gives GNOME the power-profiles D-Bus API — so `dnf install power-profiles-daemon`
+        # FAILS on the conflict (exit 1). rpm-only probe; non-Fedora falls through to install.
+        return ctx.os.family == "fedora" and ctx.ex.run(
+            ["rpm", "-q", "--whatprovides", "ppd-service"]
+        ).ok
+
+    def verify(self, ctx: Ctx) -> bool:
+        # Satisfied if either implementation provides it: tuned-ppd on modern Fedora, or the
+        # power-profiles-daemon service where we installed it ourselves.
+        return self._ppd_already_provided(ctx) or systemd.is_enabled(ctx, self.service)
+
+    def install(self, ctx: Ctx) -> None:
+        if self._ppd_already_provided(ctx):
+            return  # tuned-ppd already provides the ppd D-Bus API; forcing the pkg conflicts
+        pkg.install(ctx, self.svc_pkg)
+        systemd.enable_system_unit(ctx, self.service, now=True)
 
 
 @register

@@ -377,3 +377,27 @@ def test_restic_backup_installs_via_apt_on_ubuntu(
     ResticBackup().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["sudo", "apt-get", "install", "-y", "restic"] in calls
+
+
+def test_power_profiles_daemon_skips_install_when_tuned_ppd_provides_it() -> None:
+    """Fedora 44 ships tuned-ppd, which Provides+Conflicts `ppd-service` — so
+    `dnf install power-profiles-daemon` fails on the conflict. When ppd-service is already
+    provided, the module must be satisfied and NOT try to install the conflicting package."""
+    from devboost.modules.system import PowerProfilesDaemon
+
+    # rpm -q --whatprovides ppd-service returns 0 (tuned-ppd provides it).
+    ctx = _ctx(scripts={"rpm": Result(0, stdout="tuned-ppd-2.27.0-1.fc44.noarch")})
+    assert PowerProfilesDaemon().verify(ctx) is True
+    PowerProfilesDaemon().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert not any("dnf install" in c and "power-profiles-daemon" in c for c in joined)
+
+
+def test_power_profiles_daemon_installs_when_nothing_provides_ppd_service() -> None:
+    """Where ppd-service is not yet provided (rpm -q fails), install normally."""
+    from devboost.modules.system import PowerProfilesDaemon
+
+    ctx = _ctx(scripts={"rpm": Result(1)})  # nothing provides ppd-service
+    PowerProfilesDaemon().install(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    assert any("dnf install -y power-profiles-daemon" in c for c in joined)
