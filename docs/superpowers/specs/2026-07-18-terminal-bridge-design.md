@@ -248,3 +248,7 @@ reload:
 - **Native wezterm-mux panes** (persistent native panes) via `wezterm-mux-server` on the VPS.
 - **On-demand clipboard push** (VPS→laptop write beyond OSC 52 selection).
 - **Confirmation/allowlist toggle** for open-URL, for a stricter posture.
+- **Agent session-events notifier** — extend the OSC 777 notify into an emitter on the four
+  agent events (approval / input / completion / failure), attention-first, deep-linking back to the
+  session, and routed to a phone via ntfy / Web Push. Adopted from T3 Code's mobile agent-awareness
+  model; see `2026-07-18-t3code-adoption-notes.md` and task #10.
