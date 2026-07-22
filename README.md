@@ -82,7 +82,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `devtools` | `web-runtimes`, `uv`, `python-lsp`, `web-lsp`, `dotnet-sdk`, `aspire`, `dotnet-lsp`, `ddev`, `playwright` |
 | `dotnet` | `dotnet-sdk`, `aspire`, `dotnet-lsp` |
 | `editors` | `vscode`, `fresh`, `fresh-lsp` |
-| `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene` |
+| `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote` |
 | `gnome` | `gnome-settings`, `gnome-extensions`, `gnome-manager-apps` |
 | `gnome-aesthetics` | `gnome-aesthetics-bundle` |
 | `gnome-theme` | `gnome-theme-bundle` |
@@ -93,6 +93,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `optional-editors` | `neovim`, `jetbrains-toolbox` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
+| `remote` | `tailscale`, `mosh` |
 | `security-cli` | `pass`, `pass-store` |
 | `server` | `agent-sudo`, `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `wezterm`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
@@ -178,6 +179,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `libva-nvidia-driver` | hardware-nvidia | VA-API bridge for NVIDIA (Fedora-only via RPM Fusion). |
 | `localsend` | apps | LocalSend file sharing. |
 | `mise` | base | Install mise runtime version manager; migrate nvm/sdkman init blocks. |
+| `mosh` | remote | Mosh — roaming-resilient terminal transport (client + mosh-server). |
 | `neovim` | optional-editors | Neovim editor. |
 | `nerd-fonts` | shell | JetBrainsMono Nerd Font. |
 | `nvidia-akmod` | hardware-nvidia | akmod-nvidia driver (RPM Fusion, Fedora-only). |

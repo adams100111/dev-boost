@@ -85,6 +85,8 @@ not mean "it works". Keep this current.
 - herdr optional agent-multiplexer — pinned binary + 3 vetted pinned plugins + chezmoi config,
   under the opt-in `optional-agents` profile (runs alongside tmux). Spec:
   `docs/superpowers/specs/2026-07-22-herdr-optional-app-design.md`.
+- **Remote fleet — M1 (tailnet reach):** laptops (`full`) now join the tailnet and ship
+  Mosh via the new `remote` spine profile. (M2 brain overlay + M3 DX/docs to follow.)
 
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
