@@ -81,6 +81,11 @@ not mean "it works". Keep this current.
 - **Secrets end-to-end** (build `--secrets` → `%post` stage → firstboot decrypt → Obsidian
   sync). Every leg was individually buggy at some point; the whole chain is unproven.
 
+**Shipped, opt-in:**
+- herdr optional agent-multiplexer — pinned binary + 3 vetted pinned plugins + chezmoi config,
+  under the opt-in `optional-agents` profile (runs alongside tmux). Spec:
+  `docs/superpowers/specs/2026-07-22-herdr-optional-app-design.md`.
+
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
   `autoinstall.py` renders subiquity `user-data`, and modules carry `Apt`/`debian` branches —

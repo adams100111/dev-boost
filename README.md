@@ -71,36 +71,166 @@ enrollment on NVIDIA when Secure Boot is on.
 ## Profiles
 
 <!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
-| Profile | Installs (resolved modules) |
-|---------|------------------------------|
-| `apps` | bitwarden, bruno, flameshot, localsend, obsidian, obsidian-sync, vlc |
-| `base` | build-tools, chezmoi, chezmoi-repo, coreutils, curl, dnf-tune, docker, fd, fedora-third-party, flatpak, fzf, git, htop, jq, mise, ripgrep, rpmfusion, secrets, ssh-setup, tmux, unzip, wget |
-| `cli` | atuin, bat, btop, claude-code, delta, direnv, duf, dust, eza, fastfetch, gh, lazydocker, lazygit, sd, tealdeer, tmux-persist, tpm, yq, zoxide |
-| `data` | data-services |
-| `dev-hygiene` | aspire-gc |
-| `devops` | devops-lsp, devops-tools |
-| `devtools` | aspire, ddev, dotnet-lsp, dotnet-sdk, playwright, python-lsp, uv, web-lsp, web-runtimes |
-| `dotnet` | aspire, dotnet-lsp, dotnet-sdk |
-| `editors` | fresh, fresh-lsp, vscode |
-| `gnome` | gnome-extensions, gnome-manager-apps, gnome-settings |
-| `gnome-aesthetics` | gnome-aesthetics-bundle |
-| `gnome-theme` | gnome-theme-bundle |
-| `hardware-nvidia` | cuda, libva-nvidia-driver, nvidia-akmod, nvidia-container-toolkit, nvidia-resign-service, secureboot-mok |
-| `laravel` | ddev, ddev-remote, laravel-lsp |
-| `multimedia` | codecs, ffmpeg-full, openh264, va-hwaccel |
-| `optional-editors` | jetbrains-toolbox, neovim |
-| `python` | python-lsp, uv |
-| `react-native` | android-sdk, expo, web-runtimes |
-| `security-cli` | pass, pass-store |
-| `server` | agent-sudo, restic-b2, server-firewall, tailscale, tmux-persist, zram |
-| `shell` | bash-config, claude-notify, claude-statusline, dotfiles, nerd-fonts, starship, wezterm, wl-clipboard |
-| `system` | btrfs-assistant, btrfsmaintenance, dnf-automatic-security, earlyoom, fwupd, gpu-detect, grub-btrfs, power-profiles-daemon, restic-backup, smartmontools, snapper, snapper-dnf-hook, swapfile, thermald |
-| `terminal` | atuin, bash-config, bat, btop, chezmoi, claude-statusline, coreutils, curl, delta, direnv, dotfiles, duf, dust, eza, fastfetch, fd, fresh, fzf, gh, git, jq, lazygit, mise, nerd-fonts, ripgrep, sd, starship, tealdeer, tmux, unzip, wezterm, wget, yq, zoxide |
-| `web` | web-lsp, web-runtimes |
+| Profile | Modules |
+|---|---|
+| `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `obsidian-sync` |
+| `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
+| `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `fastfetch`, `claude-code` |
+| `data` | `data-services` |
+| `dev-hygiene` | `aspire-gc` |
+| `devops` | `devops-tools`, `devops-lsp` |
+| `devtools` | `web-runtimes`, `uv`, `python-lsp`, `web-lsp`, `dotnet-sdk`, `aspire`, `dotnet-lsp`, `ddev`, `playwright` |
+| `dotnet` | `dotnet-sdk`, `aspire`, `dotnet-lsp` |
+| `editors` | `vscode`, `fresh`, `fresh-lsp` |
+| `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene` |
+| `gnome` | `gnome-settings`, `gnome-extensions`, `gnome-manager-apps` |
+| `gnome-aesthetics` | `gnome-aesthetics-bundle` |
+| `gnome-theme` | `gnome-theme-bundle` |
+| `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
+| `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
+| `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
+| `optional-agents` | `herdr`, `herdr-plugins` |
+| `optional-editors` | `neovim`, `jetbrains-toolbox` |
+| `python` | `uv`, `python-lsp` |
+| `react-native` | `web-runtimes`, `android-sdk`, `expo` |
+| `security-cli` | `pass`, `pass-store` |
+| `server` | `agent-sudo`, `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
+| `shell` | `starship`, `bash-config`, `wezterm`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
+| `system` | `snapper`, `snapper-dnf-hook`, `grub-btrfs`, `btrfs-assistant`, `btrfsmaintenance`, `fwupd`, `power-profiles-daemon`, `thermald`, `smartmontools`, `dnf-automatic-security`, `restic-backup`, `earlyoom`, `swapfile`, `gpu-detect` |
+| `term` | `terminal` |
+| `terminal` | `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `mise`, `chezmoi`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `fastfetch`, `tmux`, `fresh`, `starship`, `bash-config`, `dotfiles`, `wezterm`, `nerd-fonts`, `claude-statusline` |
+| `web` | `web-runtimes`, `web-lsp` |
+
+| Module | Category | Description |
+|---|---|---|
+| `agent-sudo` | server | Passwordless sudo for your user — so agents/automation never hang on a prompt. |
+| `android-sdk` | react-native | Android SDK (cmdline-tools + platform/build-tools) + JDK via mise. |
+| `aspire` | dotnet | Aspire CLI (dotnet global tool). |
+| `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd --user timer). |
+| `atuin` | cli |  |
+| `bash-config` | shell | Verify the dotfiles-applied bash init (starship + devboost markers). |
+| `bat` | cli |  |
+| `bitwarden` | apps | Bitwarden desktop. |
+| `bruno` | apps | Bruno API client. |
+| `btop` | cli |  |
+| `btrfs-assistant` | system | GUI for snapshots/subvolumes. |
+| `btrfsmaintenance` | system | Scheduled BTRFS balance/scrub/trim. |
+| `build-tools` | base | Compiler toolchain + common build dependencies. |
+| `chezmoi` | base | Install the chezmoi dotfiles manager. |
+| `chezmoi-repo` | base | Clone + apply the managed dotfiles repo via the credential store. |
+| `claude-code` | cli | Claude Code CLI (npm; node via mise). |
+| `claude-notify` | shell | Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks. |
+| `claude-statusline` | shell | Point Claude Code's statusLine at the managed ~/.claude/statusline.sh. |
+| `codecs` | multimedia | Install the @multimedia codec group (Fedora-only via RPM Fusion). |
+| `codecs-ubuntu` | multimedia | ubuntu-restricted-extras + libavcodec-extra (Ubuntu-only). |
+| `coreutils` | base |  |
+| `cuda` | hardware-nvidia | CUDA toolkit (Fedora-only via RPM Fusion). |
+| `curl` | base |  |
+| `data-services` | data | Containerized data services (postgres/valkey/dbgate) compose template. |
+| `ddev` | dev-stacks | Container-based Laravel/PHP dev orchestrator (no host php/composer). |
+| `ddev-remote` | dev-stacks | On a server, bind ddev's router to all interfaces (tailnet-reachable projects). |
+| `delta` | cli |  |
+| `devops-lsp` | editors | tofu-ls for Terraform/OpenTofu (fresh). |
+| `devops-tools` | devops | OpenTofu/kubectl/helm/k9s via mise. |
+| `direnv` | cli |  |
+| `dnf-automatic-security` | system | Automatic security-only dnf updates. |
+| `dnf-tune` | base | Tune dnf.conf (parallel downloads, fastest mirror). |
+| `docker` | base | Container engine (daemon enabled; invoking user added to docker group). |
+| `docker-build-gc` | base | Cap Docker's build cache (daemon.json builder.gc) so it can't fill the disk. |
+| `dotfiles` | shell | Apply the in-repo chezmoi dotfiles source. |
+| `dotnet-lsp` | dotnet | csharp-ls + csharpier (dotnet global tools). |
+| `dotnet-sdk` | dotnet | .NET 10 LTS SDK. |
+| `duf` | cli |  |
+| `dust` | cli |  |
+| `earlyoom` | system | Userspace OOM killer (dev-protecting). |
+| `expo` | react-native | React Native / Expo project template (npx-only; no global expo-cli). |
+| `eza` | cli |  |
+| `fastfetch` | cli |  |
+| `fd` | base |  |
+| `fedora-third-party` | base | Enable Fedora third-party repositories. |
+| `ffmpeg-full` | multimedia | Swap ffmpeg-free for the full ffmpeg from RPM Fusion (Fedora-only). |
+| `ffmpeg-ubuntu` | multimedia | ffmpeg from Ubuntu universe (Ubuntu/Debian-only). |
+| `flameshot` | apps | Flameshot screenshots. |
+| `flatpak` | base | Configure the (unfiltered) Flathub remote. |
+| `fresh` | editors | The fresh terminal editor. |
+| `fresh-lsp` | editors | Provision fresh's base LSP servers (mise-pinned) + config. |
+| `fwupd` | system | Firmware updates. |
+| `fzf` | base |  |
+| `gh` | cli |  |
+| `ghostty` | shell | GPU-accelerated terminal (optional; WezTerm is the default). |
+| `git` | base |  |
+| `gnome-aesthetics-bundle` | gnome | Opt-in aesthetic extras (fonts + theming helpers). |
+| `gnome-extensions` | gnome | Install + enable the functional GNOME extension set (session-free via gext). |
+| `gnome-manager-apps` | gnome | GNOME Tweaks + Extensions app + Extension Manager (flatpak). |
+| `gnome-settings` | gnome | Apply the reference GNOME look-and-feel via a dconf dump. |
+| `gnome-theme-bundle` | gnome | Opt-in reproducible GTK theme + icons (adw-gtk3 + papirus). |
+| `gpu-detect` | system | Auto-detect the GPU vendor and record it for driver selection. |
+| `grub-btrfs` | system | Boot into BTRFS snapshots from GRUB. |
+| `herdr` | optional-agents | herdr — agent-aware terminal multiplexer (pinned binary). |
+| `herdr-plugins` | optional-agents | Curated, pinned herdr plugin set. |
+| `htop` | base |  |
+| `jetbrains-toolbox` | optional-editors | JetBrains Toolbox app. |
+| `jq` | base |  |
+| `laravel-lsp` | editors | intelephense for Laravel/PHP (fresh). |
+| `lazydocker` | cli |  |
+| `lazygit` | cli |  |
+| `libva-nvidia-driver` | hardware-nvidia | VA-API bridge for NVIDIA (Fedora-only via RPM Fusion). |
+| `localsend` | apps | LocalSend file sharing. |
+| `mise` | base | Install mise runtime version manager; migrate nvm/sdkman init blocks. |
+| `neovim` | optional-editors | Neovim editor. |
+| `nerd-fonts` | shell | JetBrainsMono Nerd Font. |
+| `nvidia-akmod` | hardware-nvidia | akmod-nvidia driver (RPM Fusion, Fedora-only). |
+| `nvidia-container-toolkit` | hardware-nvidia | GPU access for containers (Fedora-only via akmod deps). |
+| `nvidia-driver-ubuntu` | hardware-nvidia | NVIDIA driver via ubuntu-drivers autoinstall (Ubuntu-only). |
+| `nvidia-resign-service` | hardware-nvidia | Re-sign NVIDIA modules after a kernel/akmod rebuild (Fedora-only). |
+| `obsidian` | apps | Obsidian notes. |
+| `obsidian-sync` | apps | Provision the Obsidian vault: deploy key, clone, daily push backstop. |
+| `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
+| `pass` | security-cli | pass password-store CLI. |
+| `pass-store` | security-cli | Initialize the GPG-backed password store (optionally cloned). |
+| `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
+| `power-profiles-daemon` | system | Power profile switching (D-Bus). |
+| `python-lsp` | editors | basedpyright + ruff for Python (fresh). |
+| `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer. |
+| `restic-backup` | system | Restic backup user service + timer. |
+| `ripgrep` | cli | Fast recursive search (rg). |
+| `rpmfusion` | base | Enable RPM Fusion free + nonfree + AppStream metadata. |
+| `sd` | cli |  |
+| `secrets` | base | Decrypt provisioned secrets; configure git identity + HTTPS credentials. |
+| `secureboot-mok` | hardware-nvidia | Enroll a MOK so the signed NVIDIA modules load under Secure Boot (Fedora-only). |
+| `server-firewall` | server | ufw baseline: deny incoming, allow SSH + tailscale0; disable exposed rpcbind. |
+| `smartmontools` | system | Disk SMART monitoring. |
+| `snapper` | system | BTRFS snapshots for / (retention-capped). |
+| `snapper-dnf-hook` | system | dnf plugin: snapshot before/after transactions. |
+| `ssh-setup` | base | Generate ed25519 key and register it with GitHub (non-blocking). |
+| `starship` | shell | Cross-shell prompt. |
+| `swapfile` | system | Disk swapfile sized to RAM for OOM headroom (page-out overflow above zram). |
+| `tailscale` | server | Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key). |
+| `tealdeer` | cli |  |
+| `thermald` | system | Thermal management. |
+| `tmux` | base |  |
+| `tmux-persist` | cli | tmux-resurrect + tmux-continuum — restore tmux sessions across a reboot. |
+| `tpm` | cli | tmux plugin manager. |
+| `unzip` | base |  |
+| `uv` | python | uv — fast Python package/project manager. |
+| `va-hwaccel` | multimedia | GPU-aware VA-API hardware acceleration (Intel/AMD/NVIDIA); cross-distro. |
+| `vlc` | apps | VLC media player. |
+| `vscode` | editors | Visual Studio Code (Microsoft repo). |
+| `web-lsp` | editors | ts/eslint/tailwind/prettier servers (fresh). |
+| `web-runtimes` | web | node/pnpm/bun via mise. |
+| `wezterm` | shell | GPU-accelerated terminal + multiplexer (nightly); default terminal. |
+| `wget` | base |  |
+| `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste) — powers the image-paste bridge. |
+| `yq` | cli |  |
+| `zoxide` | cli |  |
+| `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
 <!-- END generated profiles table -->
 
 Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are opt-in per project;
 `hardware-nvidia` is auto-selected by `gpu-detect` on NVIDIA hardware; `optional-editors` is opt-in.
+
+**`optional-agents`** — herdr (agent-aware terminal multiplexer) + a curated, pinned plugin set.
+Opt-in; not part of `full`. Runs alongside tmux.
 
 ## Commands
 
