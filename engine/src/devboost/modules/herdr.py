@@ -47,7 +47,7 @@ class Herdr(Module):
 # herdr-plugin.toml; ref = newest stable tag (or default-branch commit). Each repo is
 # skimmed before its ref is pinned (plugins run unsandboxed as the user).
 #
-# Originally vetted 11 slugs; 6 were dropped:
+# Originally vetted 9 slugs; 6 were dropped (leaving 3):
 # - Four (nickmaglowsch/herdr-session-restore, ridho9/switchr, eugeneb50/herdr-mcp,
 #   Taeyoung96/herdr-dotfiles) ship no herdr-plugin.toml (confirmed via GitHub trees API
 #   at the resolved commit), so `herdr plugin install` has no manifest to install —
@@ -55,7 +55,7 @@ class Herdr(Module):
 # - Two dropped by decision: andrewchng/herdr-sessionizer (macOS-only, no-op on Fedora),
 #   dcolinmorgan/herdr-remote (repo hygiene concerns: bundles unrelated credential script
 #   + unsigned .dmg unsuitable for unattended provisioning USB).
-# Final 3 entries vetted clean. See task-3-report.md.
+# Final 3 entries vetted clean.
 _PLUGINS: tuple[tuple[str, str, str], ...] = (
     (
         "examples.agent-telegram-notify",
