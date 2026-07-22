@@ -62,8 +62,16 @@ _PLUGINS: tuple[tuple[str, str, str], ...] = (
         "ogulcancelik/herdr-plugin-examples/agent-telegram-notify",
         "18709cdc851dd63ed0543eb8388343a5446fd8d8",
     ),
-    ("herdr-file-viewer", "smarzban/herdr-file-viewer", "v1.14.0"),
-    ("cloudmanic.herdr-plus", "cloudmanic/herdr-plus", "v0.1.16"),
+    (
+        "herdr-file-viewer",
+        "smarzban/herdr-file-viewer",
+        "21fd39000a6ef1375f3c394ca84d4beeee5eb930",  # v1.14.0
+    ),
+    (
+        "cloudmanic.herdr-plus",
+        "cloudmanic/herdr-plus",
+        "c29440c9d8b98f385353d0452a59259e8e367235",  # v0.1.16
+    ),
 )
 
 

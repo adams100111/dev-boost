@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -102,6 +103,33 @@ def test_herdr_plugins_verify_checks_listing() -> None:
     ids = " ".join(pid for pid, _, _ in _PLUGINS)
     assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout=ids)})) is True
     assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout="none")})) is False
+
+
+def test_herdr_plugins_configure_notify_writes_env_secrets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_TOKEN", "test-token")
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_CHAT_ID", "test-chat")
+    cfg_dir = tmp_path / "cfg"
+    ctx = _ctx(scripts={"herdr": Result(0, stdout=str(cfg_dir))})
+    HerdrPlugins()._configure_notify(ctx)
+    env_file = cfg_dir / ".env"
+    assert env_file.exists()
+    text = env_file.read_text(encoding="utf-8")
+    assert "TELEGRAM_BOT_TOKEN=test-token" in text
+    assert "TELEGRAM_CHAT_ID=test-chat" in text
+
+
+def test_herdr_plugins_configure_notify_skips_when_env_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("DEVBOOST_HERDR_TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("DEVBOOST_HERDR_TELEGRAM_CHAT_ID", raising=False)
+    cfg_dir = tmp_path / "cfg"
+    ctx = _ctx(scripts={"herdr": Result(0, stdout=str(cfg_dir))})
+    HerdrPlugins()._configure_notify(ctx)  # no exception
+    assert not (cfg_dir / ".env").exists()
+    assert not cfg_dir.exists()
 
 
 def test_herdr_config_parses_and_sets_prefix() -> None:
