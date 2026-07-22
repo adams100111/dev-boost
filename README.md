@@ -73,7 +73,7 @@ enrollment on NVIDIA when Secure Boot is on.
 <!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
 | Profile | Modules |
 |---|---|
-| `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `obsidian-sync` |
+| `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
 | `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `fastfetch`, `claude-code` |
 | `data` | `data-services` |
@@ -156,6 +156,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `fresh-lsp` | editors | Provision fresh's base LSP servers (mise-pinned) + config. |
 | `fwupd` | system | Firmware updates. |
 | `fzf` | base |  |
+| `gearlever` | apps | Gear Lever — integrate & update AppImages (LM Studio, WezTerm, …). |
 | `gh` | cli |  |
 | `ghostty` | shell | GPU-accelerated terminal (optional; WezTerm is the default). |
 | `git` | base |  |
