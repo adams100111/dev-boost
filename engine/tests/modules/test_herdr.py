@@ -102,3 +102,10 @@ def test_herdr_plugins_verify_checks_listing() -> None:
     ids = " ".join(pid for pid, _, _ in _PLUGINS)
     assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout=ids)})) is True
     assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout="none")})) is False
+
+
+def test_herdr_config_parses_and_sets_prefix() -> None:
+    cfg = settings.root / "dotfiles" / "dot_config" / "herdr" / "config.toml"
+    data = tomllib.loads(cfg.read_text(encoding="utf-8"))
+    assert data["keys"]["prefix"] == "ctrl+b"
+    assert "theme" in data

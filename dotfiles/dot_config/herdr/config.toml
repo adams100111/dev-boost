@@ -1,0 +1,17 @@
+# herdr — agent-aware terminal multiplexer. Managed by chezmoi (dev-boost).
+# Invalid values revert to safe defaults with a startup warning; run `herdr` once
+# after apply and confirm no config warnings. Docs: https://herdr.dev/docs/configuration/
+
+[keys]
+prefix = "ctrl+b"          # tmux-style prefix — muscle memory carries over
+new_tab = "prefix+c"
+next_tab = "prefix+n"
+previous_tab = "prefix+p"
+split_horizontal = "prefix+minus"
+focus_pane_left = "prefix+h"
+
+[theme]
+palette = "tokyo-night"    # matches the wezterm/terminal aesthetic
+
+[ui.toast]
+enabled = true
