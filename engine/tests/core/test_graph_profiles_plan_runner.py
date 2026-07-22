@@ -61,17 +61,19 @@ def test_plan_gui_modules_installed_when_graphical() -> None:
     assert plan[0].skip_reason is None
 
 
-def test_runner_skips_when_verify_passes() -> None:
+def test_runner_skips_when_verify_passes(tmp_path: Path) -> None:
     ex = FakeExecutor(present={"rg"})
     modules = load()
     ctx = Ctx(os=FEDORA, ex=ex)
-    plan = build_plan(["ripgrep"], modules, FEDORA)
+    # Isolate the gpu-vendor marker: a real marker (~/.local/state/devboost/gpu-vendor)
+    # would auto-inject the hardware-nvidia closure and blow up the ripgrep-only plan.
+    plan = build_plan(["ripgrep"], modules, FEDORA, gpu_marker=tmp_path / "no-such-file")
     results = run_plan(plan, modules, ctx)
     assert results[0].status == "skip"
     assert all(c[0] != "dnf" for c in ex.calls)  # nothing installed
 
 
-def test_runner_installs_then_verifies() -> None:
+def test_runner_installs_then_verifies(tmp_path: Path) -> None:
     # rg absent first; after install, present-set flips via a custom executor.
     class Flipping(FakeExecutor):
         def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None):  # type: ignore[no-untyped-def]
@@ -83,7 +85,8 @@ def test_runner_installs_then_verifies() -> None:
     ex = Flipping()
     modules = load()
     ctx = Ctx(os=FEDORA, ex=ex)
-    plan = build_plan(["ripgrep"], modules, FEDORA)
+    # Isolate the gpu-vendor marker (see test_runner_skips_when_verify_passes).
+    plan = build_plan(["ripgrep"], modules, FEDORA, gpu_marker=tmp_path / "no-such-file")
     results = run_plan(plan, modules, ctx)
     assert results[0].status == "ok"
     assert ["sudo", "dnf", "install", "-y", "ripgrep"] in ex.calls
