@@ -234,3 +234,49 @@ def test_ventoy_pin_raises_for_missing_section(tmp_path: Path, monkeypatch) -> N
             ventoy_pin()
     finally:
         ventoy_pin.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# herdr pin
+# ---------------------------------------------------------------------------
+
+def test_load_catalog_ignores_herdr_section_in_os_validation(tmp_path: Path) -> None:
+    toml = _VALID + (
+        "\n[herdr]\nversion = \"0.7.5\"\n"
+        "[herdr.assets.x86_64]\n"
+        'url = "https://x/herdr-linux-x86_64"\n'
+        f'sha256 = "{"a" * 64}"\n'
+    )
+    p = tmp_path / "catalog.toml"
+    p.write_text(toml, encoding="utf-8")
+    cat = load_catalog(p)
+    assert "herdr" not in cat and "fedora-99" in cat
+
+
+def test_herdr_pin_is_present_in_live_catalog() -> None:
+    from devboost.media.catalog import HerdrSpec, herdr_pin
+
+    pin = herdr_pin()
+    assert isinstance(pin, HerdrSpec)
+    assert pin.version
+    assert "x86_64" in pin.assets and "aarch64" in pin.assets
+    for asset in pin.assets.values():
+        assert asset.url.startswith("https://github.com/ogulcancelik/herdr/")
+        assert re.fullmatch(r"[0-9a-f]{64}", asset.sha256)
+
+
+def test_herdr_pin_raises_for_missing_section(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    p = tmp_path / "catalog.toml"
+    p.write_text(_VALID, encoding="utf-8")  # no [herdr] block
+
+    class _FakeSettings:
+        catalog_path = p
+
+    monkeypatch.setattr("devboost.media.catalog.settings", _FakeSettings())
+    from devboost.media.catalog import herdr_pin
+    herdr_pin.cache_clear()
+    try:
+        with pytest.raises(MediaError, match="herdr"):
+            herdr_pin()
+    finally:
+        herdr_pin.cache_clear()

@@ -24,7 +24,7 @@ from devboost.core.settings import settings
 from devboost.media.config import IsoSpec
 
 # Keys in catalog.toml that are not OS entries and must be stripped before OS validation.
-_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy"})
+_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy", "herdr"})
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,20 @@ class VentoySpec:
     sha256: str
 
 
+@dataclass(frozen=True)
+class HerdrAsset:
+    url: str
+    sha256: str
+
+
+@dataclass(frozen=True)
+class HerdrSpec:
+    """Pinned herdr release (from the ``[herdr]`` block in catalog.toml)."""
+
+    version: str
+    assets: dict[str, HerdrAsset]  # arch ("x86_64"|"aarch64") -> asset
+
+
 class _IsoRow(BaseModel):
     url: str
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -65,6 +79,16 @@ class _VentoyRow(BaseModel):
     version: str
     url: str
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class _HerdrAssetRow(BaseModel):
+    url: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class _HerdrRow(BaseModel):
+    version: str
+    assets: dict[str, _HerdrAssetRow] = Field(min_length=1)
 
 
 _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
@@ -122,6 +146,21 @@ def ventoy_pin() -> VentoySpec:
     except (OSError, KeyError, ValueError) as exc:
         raise MediaError(f"[ventoy] pin missing or invalid in {path}: {exc}") from exc
     return VentoySpec(version=row.version, url=row.url, sha256=row.sha256)
+
+
+@cache
+def herdr_pin() -> HerdrSpec:
+    """The pinned herdr release (cached). Read from the ``[herdr]`` block in catalog.toml."""
+    path = settings.catalog_path
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        row = _HerdrRow.model_validate(raw["herdr"])
+    except (OSError, KeyError, ValueError) as exc:
+        raise MediaError(f"[herdr] pin missing or invalid in {path}: {exc}") from exc
+    return HerdrSpec(
+        version=row.version,
+        assets={a: HerdrAsset(url=r.url, sha256=r.sha256) for a, r in row.assets.items()},
+    )
 
 
 def supported() -> list[Os]:
