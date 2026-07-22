@@ -36,6 +36,7 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'hardware-nvidia = ["nvidia-akmod"]\n'
         'optional-editors = ["neovim"]\n'
         'security-cli = ["pass"]\n'
+        'optional-agents = ["herdr"]\n'
         'server = ["zram"]\n'
         'laravel = ["ddev"]\n',
         encoding="utf-8",

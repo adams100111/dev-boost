@@ -58,6 +58,7 @@ def profiles_file(tmp_path: Path) -> Path:
         'hardware-nvidia = ["nvidia-akmod"]\n'
         'optional-editors = ["neovim"]\n'
         'security-cli = ["pass"]\n'
+        'optional-agents = ["herdr"]\n'
         'laravel = ["ddev"]\n'
         'full = ["cli", "base", "laravel"]\n'
         'terminal = ["ripgrep"]\n'

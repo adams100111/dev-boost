@@ -1,7 +1,8 @@
 [profiles]
 # `full` — the production workstation aggregate (the default install target).
 # Union of the default-on profiles; opt-in/aesthetic/hardware profiles are excluded
-# (gnome-aesthetics, gnome-theme, hardware-nvidia, optional-editors, security-cli) and
+# (gnome-aesthetics, gnome-theme, hardware-nvidia, optional-editors, optional-agents,
+# security-cli) and
 # the portable subsets terminal/devtools are alternative entry points, not part of full.
 full = ["base","cli","shell","gnome","multimedia","editors","python","web","laravel",
         "dotnet","data","devops","react-native","apps","system","dev-hygiene"]
@@ -30,6 +31,7 @@ system           = ["snapper","snapper-dnf-hook","grub-btrfs","btrfs-assistant",
 hardware-nvidia  = ["nvidia-akmod","cuda","libva-nvidia-driver","secureboot-mok","nvidia-resign-service","nvidia-container-toolkit","nvidia-driver-ubuntu"]
 optional-editors = ["neovim","jetbrains-toolbox"]
 security-cli     = ["pass","pass-store"]
+optional-agents  = ["herdr"]
 # `term` — alias so `devboost install term` / `get.sh -- term` match the `devboost term`
 # subcommand (the tier's profile is named `terminal`; the subcommand is `term`).
 term = ["terminal"]
