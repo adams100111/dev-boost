@@ -66,3 +66,39 @@ def test_herdr_install_raises_on_unknown_arch(monkeypatch: pytest.MonkeyPatch) -
 def test_optional_agents_profile_registered() -> None:
     data = tomllib.loads(settings.profiles_path.read_text(encoding="utf-8"))
     assert "herdr" in data["profiles"]["optional-agents"]
+
+
+from devboost.modules.herdr import _PLUGINS, HerdrPlugins  # noqa: E402
+
+
+def test_herdr_plugins_requires_herdr() -> None:
+    assert Herdr in HerdrPlugins.requires
+    assert HerdrPlugins.profiles == ("optional-agents",)
+
+
+def test_herdr_plugins_pins_a_ref_for_every_entry() -> None:
+    assert _PLUGINS  # non-empty curated set
+    for pid, source, ref in _PLUGINS:
+        assert pid and "/" in source and ref  # id, owner/repo, and a pinned ref
+
+
+def test_herdr_plugins_install_pins_each_plugin() -> None:
+    ctx = _ctx()
+    HerdrPlugins().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    for _pid, source, ref in _PLUGINS:
+        assert ["herdr", "plugin", "install", source, "--ref", ref, "--yes"] in calls
+
+
+def test_herdr_plugins_install_is_non_blocking() -> None:
+    # Every `herdr` call fails, yet install must not raise and must attempt them all.
+    ctx = _ctx(scripts={"herdr": Result(1, stderr="boom")})
+    HerdrPlugins().install(ctx)  # no exception
+    install_calls = [c for c in ctx.ex.calls if c[:3] == ["herdr", "plugin", "install"]]  # type: ignore[attr-defined]
+    assert len(install_calls) == len(_PLUGINS)
+
+
+def test_herdr_plugins_verify_checks_listing() -> None:
+    ids = " ".join(pid for pid, _, _ in _PLUGINS)
+    assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout=ids)})) is True
+    assert HerdrPlugins().verify(_ctx(scripts={"herdr": Result(0, stdout="none")})) is False

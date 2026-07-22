@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.registry import register
 from devboost.media.catalog import herdr_pin
@@ -40,3 +41,70 @@ class Herdr(Module):
         res = ctx.ex.run(["sh", "-c", script])
         if not res.ok:
             raise InstallError("herdr", "download or checksum verification failed", res.code)
+
+
+# Curated, pinned plugin set. (id, "owner/repo[/subdir]", ref) — id from each repo's
+# herdr-plugin.toml; ref = newest stable tag (or default-branch commit). Each repo is
+# skimmed before its ref is pinned (plugins run unsandboxed as the user).
+#
+# Four of the originally vetted slugs (nickmaglowsch/herdr-session-restore,
+# ridho9/switchr, eugeneb50/herdr-mcp, Taeyoung96/herdr-dotfiles) were dropped: none
+# ships a herdr-plugin.toml anywhere in its tree (confirmed via the GitHub trees API
+# at the resolved commit), so `herdr plugin install` has no manifest to install —
+# they are standalone tools/dotfiles, not herdr plugins. See task-3-report.md.
+_PLUGINS: tuple[tuple[str, str, str], ...] = (
+    ("sessionizer", "andrewchng/herdr-sessionizer", "v0.6.1"),
+    ("herdr-remote.relay", "dcolinmorgan/herdr-remote", "v0.7.0"),
+    (
+        "examples.agent-telegram-notify",
+        "ogulcancelik/herdr-plugin-examples/agent-telegram-notify",
+        "18709cdc851dd63ed0543eb8388343a5446fd8d8",
+    ),
+    ("herdr-file-viewer", "smarzban/herdr-file-viewer", "v1.14.0"),
+    ("cloudmanic.herdr-plus", "cloudmanic/herdr-plus", "v0.1.16"),
+)
+
+
+@register
+class HerdrPlugins(Module):
+    name = "herdr-plugins"
+    category = "optional-agents"
+    description = "Curated, pinned herdr plugin set."
+    requires = (Herdr,)
+    profiles = ("optional-agents",)
+
+    def verify(self, ctx: Ctx) -> bool:
+        listed = ctx.ex.run(["herdr", "plugin", "list"]).stdout
+        return all(pid in listed for pid, _, _ in _PLUGINS)
+
+    def install(self, ctx: Ctx) -> None:
+        for pid, source, ref in _PLUGINS:
+            res = ctx.ex.run(["herdr", "plugin", "install", source, "--ref", ref, "--yes"])
+            if not res.ok:
+                log.warn(f"herdr-plugins: {pid} install failed (non-blocking)")
+        self._configure_notify(ctx)
+
+    def _configure_notify(self, ctx: Ctx) -> None:
+        """Provision the Telegram notify plugin from env, or skip with a warning.
+
+        Var names (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) confirmed against the
+        agent-telegram-notify README during the skim step; they match verbatim.
+        """
+        token = os.environ.get("DEVBOOST_HERDR_TELEGRAM_TOKEN")
+        chat = os.environ.get("DEVBOOST_HERDR_TELEGRAM_CHAT_ID")
+        if not (token and chat):
+            log.warn(
+                "herdr-plugins: Telegram token/chat unset — notify unconfigured (non-blocking)"
+            )
+            return
+        cfg = ctx.ex.run(
+            ["herdr", "plugin", "config-dir", "examples.agent-telegram-notify"]
+        ).stdout.strip()
+        if not cfg:
+            log.warn("herdr-plugins: notify config dir unavailable (non-blocking)")
+            return
+        env_file = Path(cfg) / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        env_file.write_text(
+            f"TELEGRAM_BOT_TOKEN={token}\nTELEGRAM_CHAT_ID={chat}\n", encoding="utf-8"
+        )
