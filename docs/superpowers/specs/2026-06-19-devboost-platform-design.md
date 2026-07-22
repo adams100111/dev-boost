@@ -619,7 +619,7 @@ Four Fedora-44 setup guides were analyzed; the following are folded in.
      `verify`: `vainfo` reports a working driver. On the reference machine VA-API runs on the **Intel iGPU** (`intel-media-driver`).
   4. **OpenH264 / Cisco (Firefox H.264, was missing)** — `sudo dnf config-manager setopt fedora-cisco-openh264.enabled=1` then `sudo dnf install -y openh264 gstreamer1-plugin-openh264 mozilla-openh264`.
 - **`base`/`build-tools`** (exact bundle from source) — `make automake gcc gcc-c++ kernel-devel cmake git wget perl vim nano unzip gnupg fastfetch unrar android-tools fuse-libs ripgrep` (node/python/java intentionally **excluded** — those come via mise/uv). `android-tools` (adb/fastboot) also feeds `react-native`.
-- **`apps`** additions seen in source — **GIMP**, **AppImageLauncher** (AppImage integration; pairs with LM Studio), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
+- **`apps`** additions seen in source — **GIMP**, **Gear Lever** (`it.mijorus.gearlever`, Flathub — AppImage integration **and in-place updates**; supersedes AppImageLauncher, which is Qt/stale and update-less; pairs with LM Studio & the WezTerm AppImage), **OBS Studio**, **GParted** (all optional Flatpak/dnf).
 - **`gnome`** profile — declarative desktop setup. **Extension tooling (note the
   relocation):** the official Extensions manager app is now a **gnome-shell
   subproject** — `org.gnome.Extensions` / `gnome-extensions-app` (ships with GNOME

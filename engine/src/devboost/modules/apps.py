@@ -75,6 +75,13 @@ class Vlc(FlatpakApp):
     app_id = "org.videolan.VLC"
 
 
+@register
+class Gearlever(FlatpakApp):
+    name = "gearlever"
+    description = "Gear Lever — integrate & update AppImages (LM Studio, WezTerm, …)."
+    app_id = "it.mijorus.gearlever"
+
+
 def _home() -> Path:
     return Path(os.environ["HOME"])
 

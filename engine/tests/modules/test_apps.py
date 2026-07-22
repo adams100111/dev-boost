@@ -13,6 +13,7 @@ from devboost.modules.apps import (
     Bitwarden,
     Bruno,
     Flameshot,
+    Gearlever,
     Localsend,
     Obsidian,
     ObsidianSync,
@@ -94,7 +95,7 @@ def test_aspire_gc_writes_timer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 def test_flatpak_apps_install_on_ubuntu() -> None:
     """All FlatpakApp subclasses use flatpak install — fully cross-distro."""
-    apps = [Obsidian, Bruno, Bitwarden, Flameshot, Localsend, Vlc]
+    apps = [Obsidian, Bruno, Bitwarden, Flameshot, Localsend, Vlc, Gearlever]
     for app_cls in apps:
         ctx = _ubuntu_ctx()
         app_cls().install(ctx)

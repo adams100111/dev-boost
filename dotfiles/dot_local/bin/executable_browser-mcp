@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# browser-mcp — one always-on Playwright MCP server on THIS laptop, bound to the
+# Tailscale interface, so remote Claude Code sessions can each drive their OWN
+# visible browser here — as if it were running locally.
+#
+# Why one server serves many sessions: the Playwright MCP HTTP transport gives
+# every client connection its own browser context by default, and --isolated
+# stops concurrent sessions from fighting over one persistent profile. So N
+# Claude sessions → N independent, headed Chromiums, no per-session ports.
+# (microsoft/playwright-mcp: "each MCP client connection operates with its own
+# browser context"; "run several clients in parallel [with] --isolated".)
+#
+# Remote Claude connects via one user-scope MCP entry:
+#     http://<this-laptop-tailscale-ip>:8931/mcp
+# The Tailscale IP is auto-detected, so this script is portable across machines.
+#
+# Normally started by the systemd user unit (see ../../config/systemd/user/).
+# Run by hand to watch/debug: `browser-mcp`  (Ctrl-C to stop).
+set -euo pipefail
+
+# mise-managed toolchains put node/npx on shims, which a systemd unit's minimal
+# PATH won't have — prepend them defensively so this works under systemd or a shell.
+export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
+
+PORT="${PORT:-8931}"
+TS_IP="${TS_IP:-$(tailscale ip -4 2>/dev/null | head -n1 || true)}"
+
+if [ -z "${TS_IP}" ]; then
+  echo "browser-mcp: no Tailscale IPv4 address (is tailscaled up? try 'tailscale up')." >&2
+  exit 1
+fi
+
+# Prefer the machine's Google Chrome (the `chrome` channel) when it's installed,
+# else fall back to Playwright's bundled Chromium (always available). Override
+# with BROWSER_CHANNEL=chrome|chromium|msedge. --isolated means each session gets
+# an ephemeral profile either way, so a `chrome` browser never touches your real
+# logged-in profile.
+BROWSER_CHANNEL="${BROWSER_CHANNEL:-}"
+if [ -z "${BROWSER_CHANNEL}" ]; then
+  if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; then
+    BROWSER_CHANNEL=chrome
+  else
+    BROWSER_CHANNEL=chromium
+  fi
+fi
+
+# Bind ONLY to the tailnet interface (never 0.0.0.0) and pin the host allowlist to
+# this exact address:port — reachable from your tailnet, not from local/cafe wifi.
+exec npx -y @playwright/mcp@latest \
+  --port "${PORT}" \
+  --host "${TS_IP}" \
+  --allowed-hosts "${TS_IP}:${PORT}" \
+  --isolated \
+  --browser "${BROWSER_CHANNEL}" \
+  "$@"

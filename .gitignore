@@ -31,3 +31,6 @@ workstation-config/exports/
 dist/
 build/
 *.spec
+
+# Playwright MCP page-snapshot scratch output
+.playwright-mcp/
