@@ -25,9 +25,18 @@ def test_crossarch_installs_podman_and_qemu_on_fedora() -> None:
     assert ["sudo", "dnf", "install", "-y", "podman", "qemu-user-static"] in calls
 
 
-def test_crossarch_verify_uses_which_podman() -> None:
-    ex = FakeExecutor(present={"podman"})
-    assert CrossArchBuild().verify(Ctx(os=OsInfo("ubuntu", "debian", "x86_64"), ex=ex)) is True
+def test_crossarch_verify_requires_podman_and_binfmt() -> None:
+    from devboost.exec.executor import Result
+
+    ex_ok = FakeExecutor(present={"podman"})
+    assert CrossArchBuild().verify(Ctx(os=OsInfo("ubuntu", "debian", "x86_64"), ex=ex_ok)) is True
+
+    ex_no_binfmt = FakeExecutor(present={"podman"}, scripts={"test": Result(1)})
+    assert (
+        CrossArchBuild().verify(Ctx(os=OsInfo("ubuntu", "debian", "x86_64"), ex=ex_no_binfmt))
+        is False
+    )
+
     assert CrossArchBuild().verify(_ctx("ubuntu", "debian")) is False
 
 

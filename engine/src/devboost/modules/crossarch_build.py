@@ -22,7 +22,12 @@ class CrossArchBuild(Module):
     profiles = ("brain-host",)
 
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.which("podman")
+        if not ctx.ex.which("podman"):
+            return False
+        # The module exists to enable arm64 emulation; confirm qemu registered the binfmt
+        # handler, not just that podman is present (a partial/failed qemu setup otherwise
+        # verifies True and masks a broken multi-arch build path).
+        return ctx.ex.run(["test", "-e", "/proc/sys/fs/binfmt_misc/qemu-aarch64"]).ok
 
     def install(self, ctx: Ctx) -> None:
         pkg.install(ctx, "podman", "qemu-user-static")
