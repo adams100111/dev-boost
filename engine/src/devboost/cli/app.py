@@ -163,6 +163,52 @@ def install(
     _run(profiles, root, dry_run, force, offline, all_=all_, apps=app)
 
 
+@app.command()
+def brain(
+    root: RootOpt = settings.root,
+    ram: Annotated[str, typer.Option("--ram", help="devbrain RAM cap")] = "8G",
+    cpu: Annotated[str, typer.Option("--cpu", help="devbrain CPU cap")] = "200%",
+    disk: Annotated[str, typer.Option("--disk", help="devbrain disk quota")] = "50G",
+    tasks: Annotated[int, typer.Option("--tasks", help="devbrain max processes")] = 4096,
+    ssh_key: Annotated[
+        list[str], typer.Option("--ssh-key", help="authorized key for devbrain (repeatable)")
+    ] = [],  # noqa: B006
+    dry_run: DryOpt = False,
+    force: ForceOpt = False,
+    apply_: Annotated[bool, typer.Option("--apply/--no-apply")] = True,
+) -> None:
+    """Provision the sandboxed brain: install brain-host tools + the capped devbrain account."""
+    from devboost.accounts import bootstrap as bs
+    from devboost.accounts import reconcile
+    from devboost.accounts.config import load_users
+    from devboost.cli.brain import default_ssh_keys, devbrain_user
+
+    # 1) host-level brain tools (sudo): mosh, caddy, crossarch-build.
+    _run(["brain-host"], root, dry_run, force)
+
+    # 2) the capped, sudo-less devbrain account (bootstraps brain-tools into its home).
+    keys = tuple(ssh_key) or default_ssh_keys()
+    if not keys:
+        log.warn(
+            "brain: no --ssh-key given and no ~/.ssh/*.pub found — add an authorized key "
+            "before you can `mosh devbrain@this-host`"
+        )
+    user = devbrain_user(ssh_keys=keys, ram=ram, cpu=cpu, disk=disk, tasks=tasks)
+    ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
+    users = load_users()
+    users["devbrain"] = user
+    if not dry_run:
+        reconcile.save(ctx, users)
+        if apply_:
+            reconcile.apply_user(
+                ctx, user, bootstrap=lambda c, u: bs.bootstrap_user(c, u, root=root)
+            )
+    log.info(
+        "review devbrain caps for this box (ram/cpu/disk/tasks) — production headroom "
+        "matters: devboost accounts edit devbrain"
+    )
+
+
 @app.command(name="list")
 def list_(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
     """Print the resolved install order."""
