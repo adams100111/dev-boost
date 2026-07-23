@@ -97,6 +97,10 @@ not mean "it works". Keep this current.
   `brain-host`; front with `tailscale serve` to edit the brain from an iPad/phone/any browser.
 - **Remote fleet — P2-b (watch agent browsers):** `browser-view` (Xvfb + x11vnc + noVNC) in
   `brain-host`; run headful browsers on DISPLAY=:99 and `fleet expose 6080` to watch them live.
+- **Remote fleet — P2-c (ddev in sandbox): closed by decision.** Docker-dependent tools
+  (ddev) run as the docker-capable login user, not the sudo-less `devbrain` sandbox; the
+  sandbox is for agent/build work. Rootless-Docker-for-ddev deferred (real caveats). See
+  docs/remote-fleet.md §3.
 
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
