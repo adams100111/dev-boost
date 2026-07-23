@@ -15,6 +15,7 @@ shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-stat
          "claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]
 brain-host = ["mosh","caddy","crossarch-build"]
+brain-tools = ["herdr","herdr-plugins"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
 gnome-aesthetics = ["gnome-aesthetics-bundle"]
 gnome-theme      = ["gnome-theme-bundle"]

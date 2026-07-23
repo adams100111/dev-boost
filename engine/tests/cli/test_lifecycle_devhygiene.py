@@ -40,6 +40,7 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'server = ["zram"]\n'
         'remote = ["tailscale","mosh"]\n'
         'brain-host = ["mosh","caddy","crossarch-build"]\n'
+        'brain-tools = ["herdr","herdr-plugins"]\n'
         'laravel = ["ddev"]\n',
         encoding="utf-8",
     )
