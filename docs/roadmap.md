@@ -87,6 +87,9 @@ not mean "it works". Keep this current.
   `docs/superpowers/specs/2026-07-22-herdr-optional-app-design.md`.
 - **Remote fleet — M1 (tailnet reach):** laptops (`full`) now join the tailnet and ship
   Mosh via the new `remote` spine profile. (M2 brain overlay + M3 DX/docs to follow.)
+- **Remote fleet — M2 pt1 (brain tooling):** `caddy` + `crossarch-build` modules and the
+  `brain-host`/`brain-tools` opt-in profiles; `agent-sudo` removed from the default `server`
+  profile (now explicit opt-in). (M2 pt2: `devbrain` account + `devboost brain` wrapper.)
 
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
