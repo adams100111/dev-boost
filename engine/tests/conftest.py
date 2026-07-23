@@ -65,7 +65,7 @@ def profiles_file(tmp_path: Path) -> Path:
         'devtools = ["ddev"]\n'
         'server = ["zram"]\n'
         'remote = ["tailscale","mosh"]\n'
-        'brain-host = ["mosh","caddy"]\n',
+        'brain-host = ["mosh","caddy","crossarch-build"]\n',
         encoding="utf-8",
     )
     return p

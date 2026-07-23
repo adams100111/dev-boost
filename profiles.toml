@@ -14,7 +14,7 @@ cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydock
 shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline",
          "claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]
-brain-host = ["mosh","caddy"]
+brain-host = ["mosh","caddy","crossarch-build"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
 gnome-aesthetics = ["gnome-aesthetics-bundle"]
 gnome-theme      = ["gnome-theme-bundle"]
