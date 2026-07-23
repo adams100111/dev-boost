@@ -76,7 +76,7 @@ enrollment on NVIDIA when Secure Boot is on.
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
-| `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server` |
+| `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server`, `browser-view` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
 | `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code` |
 | `data` | `data-services` |
@@ -115,6 +115,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `bash-config` | shell | Verify the dotfiles-applied bash init (starship + devboost markers). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
+| `browser-view` | brain-host | Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device. |
 | `bruno` | apps | Bruno API client. |
 | `btop` | cli |  |
 | `btrfs-assistant` | system | GUI for snapshots/subvolumes. |
