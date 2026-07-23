@@ -239,8 +239,16 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 **`optional-agents`** — herdr (agent-aware terminal multiplexer) + a curated, pinned plugin set.
 Opt-in; not part of `full`. Runs alongside tmux.
 
-`devboost brain` provisions a sandboxed **devbrain** brain on a chosen server (installs the
-`brain-host` tools + a capped, sudo-less account that runs herdr and cross-arch builds).
+## Remote fleet
+
+Turn a laptop + always-on Linux servers into one machine for agentic dev: laptops join a
+private Tailscale tailnet with resilient Mosh terminals (`full`), servers are hardened
+(`server`), and `devboost brain` provisions a **sandboxed, sudo-less `devbrain`** brain on a
+chosen server (herdr + capped rootless multi-arch builds) that shares a box with production
+safely. Drive it with one-word `fleet` verbs — `fleet dev` (attach the brain), `fleet ship`
+(multi-arch build), `fleet expose`, `fleet edge`, `fleet status`.
+
+See **[docs/remote-fleet.md](docs/remote-fleet.md)** for the full operator guide.
 
 ## Commands
 
@@ -351,7 +359,8 @@ the laptop you connected from, so it works on any server from any laptop with no
 
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
-[obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
+[obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
+[remote-fleet](docs/remote-fleet.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
 
 ## Validate before shipping (in a throwaway Fedora VM)
 
