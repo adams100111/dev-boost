@@ -95,6 +95,8 @@ not mean "it works". Keep this current.
   installs the `brain-host` tools in one command. (M3: `fleet` DX verbs + operator guide.)
 - **Remote fleet — P2-a (any-device editing):** `code-server` (VS Code in the browser) in
   `brain-host`; front with `tailscale serve` to edit the brain from an iPad/phone/any browser.
+- **Remote fleet — P2-b (watch agent browsers):** `browser-view` (Xvfb + x11vnc + noVNC) in
+  `brain-host`; run headful browsers on DISPLAY=:99 and `fleet expose 6080` to watch them live.
 
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,
