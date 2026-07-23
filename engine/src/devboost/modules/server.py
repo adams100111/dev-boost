@@ -39,7 +39,7 @@ class Tailscale(Module):
     name = "tailscale"
     category = "server"
     description = "Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key)."
-    profiles = ("server",)
+    profiles = ("server", "remote")
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.

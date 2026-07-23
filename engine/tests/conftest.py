@@ -63,7 +63,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'full = ["cli", "base", "laravel"]\n'
         'terminal = ["ripgrep"]\n'
         'devtools = ["ddev"]\n'
-        'server = ["zram"]\n',
+        'server = ["zram"]\n'
+        'remote = ["tailscale","mosh"]\n',
         encoding="utf-8",
     )
     return p
