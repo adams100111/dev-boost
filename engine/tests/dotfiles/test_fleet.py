@@ -48,3 +48,9 @@ def test_fleet_edge_without_edge_env_errors_cleanly() -> None:
     result = _run(["edge"])
     assert result.returncode != 0
     assert "DEVBOOST_EDGE" in (result.stdout + result.stderr)
+
+
+def test_fleet_expose_rejects_non_numeric_port() -> None:
+    result = _run(["expose", "8080; touch /tmp/pwned"], env={"DEVBOOST_BRAIN": "brain"})
+    assert result.returncode != 0
+    assert "number" in (result.stdout + result.stderr).lower()

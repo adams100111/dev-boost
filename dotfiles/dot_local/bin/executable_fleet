@@ -53,7 +53,12 @@ ship)
 expose)
 	need DEVBOOST_BRAIN
 	port="${1:-}"
-	[ -n "$port" ] || { echo "fleet expose: usage: fleet expose <port> [--pub]" >&2; exit 2; }
+	case "$port" in
+	'' | *[!0-9]*)
+		echo "fleet expose: port must be a number: '${port}'" >&2
+		exit 2
+		;;
+	esac
 	if [ "${2:-}" = "--pub" ]; then
 		exec ssh "${DEVBOOST_BRAIN}" tailscale funnel "$port"
 	fi
