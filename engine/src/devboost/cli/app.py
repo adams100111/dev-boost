@@ -197,11 +197,12 @@ def brain(
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     users = load_users()
     users["devbrain"] = user
-    reconcile.save(ctx, users)
-    if apply_ and not dry_run:
-        reconcile.apply_user(
-            ctx, user, bootstrap=lambda c, u: bs.bootstrap_user(c, u, root=root)
-        )
+    if not dry_run:
+        reconcile.save(ctx, users)
+        if apply_:
+            reconcile.apply_user(
+                ctx, user, bootstrap=lambda c, u: bs.bootstrap_user(c, u, root=root)
+            )
     log.info(
         "review devbrain caps for this box (ram/cpu/disk/tasks) — production headroom "
         "matters: devboost accounts edit devbrain"
