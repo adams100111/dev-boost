@@ -1,3 +1,3 @@
 """dev-boost — typed-Python workstation bootstrap engine."""
 
-__version__ = "0.1.74"
+__version__ = "0.1.75"
