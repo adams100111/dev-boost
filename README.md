@@ -76,7 +76,7 @@ enrollment on NVIDIA when Secure Boot is on.
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
-| `brain-host` | `mosh`, `caddy`, `crossarch-build` |
+| `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
 | `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code` |
 | `data` | `data-services` |
@@ -126,6 +126,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `claude-code` | cli | Claude Code CLI (npm; node via mise). |
 | `claude-notify` | shell | Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks. |
 | `claude-statusline` | shell | Point Claude Code's statusLine at the managed ~/.claude/statusline.sh. |
+| `code-server` | brain-host | code-server — VS Code in the browser (front with tailscale serve; any device). |
 | `codecs` | multimedia | Install the @multimedia codec group (Fedora-only via RPM Fusion). |
 | `codecs-ubuntu` | multimedia | ubuntu-restricted-extras + libavcodec-extra (Ubuntu-only). |
 | `coreutils` | base |  |
