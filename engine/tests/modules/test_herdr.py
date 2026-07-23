@@ -21,8 +21,8 @@ def _ctx(os_: OsInfo = FEDORA_X86, **kw: object) -> Ctx:
 
 
 def test_herdr_is_optional_agents_profile() -> None:
-    assert Herdr.profiles == ("optional-agents", "brain-tools")
-    assert Herdr.category == "optional-agents"
+    assert Herdr.profiles == ("cli", "brain-tools")
+    assert Herdr.category == "cli"
 
 
 def test_herdr_verify_uses_which() -> None:
@@ -66,7 +66,7 @@ def test_herdr_install_raises_on_unknown_arch(monkeypatch: pytest.MonkeyPatch) -
 
 def test_optional_agents_profile_registered() -> None:
     data = tomllib.loads(settings.profiles_path.read_text(encoding="utf-8"))
-    assert "herdr" in data["profiles"]["optional-agents"]
+    assert "herdr" in data["profiles"]["cli"]
 
 
 from devboost.modules.herdr import _PLUGINS, HerdrPlugins  # noqa: E402
