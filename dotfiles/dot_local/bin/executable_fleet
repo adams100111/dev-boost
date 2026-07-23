@@ -24,12 +24,20 @@ EOF
 	exit 2
 }
 
-need() { # need VAR — fail cleanly if a required host target is unset
+need() { # need VAR — fail cleanly if a required host target is unset or looks like an ssh option
 	local name="$1"
 	if [ -z "${!name:-}" ]; then
 		echo "fleet: $name is not set — add it to ~/.config/fleet/config" >&2
 		exit 1
 	fi
+	case "${!name}" in
+	-*)
+		# A value starting with '-' would be parsed by ssh/mosh as an option (e.g.
+		# -oProxyCommand=...), so refuse it rather than forward it to the command.
+		echo "fleet: $name value '${!name}' looks like an option (starts with '-') — refused" >&2
+		exit 1
+		;;
+	esac
 }
 
 cmd="${1:-}"

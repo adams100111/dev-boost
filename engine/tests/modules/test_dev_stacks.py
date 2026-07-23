@@ -135,3 +135,19 @@ def test_android_sdk_writes_profile_d_android(
     AndroidSdk().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert any("devboost-android.sh" in " ".join(c) for c in calls)
+
+
+def test_playwright_wires_mcp_with_chromium_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # arm64/headless: the MCP must be wired with `--browser chromium` (the default Chrome
+    # channel has no ARM64 Linux build and fails to launch on the brain).
+    from devboost.modules.dev_stacks import Playwright
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ex = FakeExecutor(present={"claude"})
+    Playwright().install(Ctx(os=OsInfo("ubuntu", "debian", "aarch64"), ex=ex))
+    assert [
+        "claude", "mcp", "add", "playwright", "--",
+        "npx", "@playwright/mcp@latest", "--browser", "chromium",
+    ] in ex.calls

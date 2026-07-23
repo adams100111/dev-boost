@@ -125,7 +125,14 @@ class Playwright(Module):
         ctx.ex.run(["npx", "--yes", "playwright", "install", *browsers])
         # Wire the Playwright MCP into Claude Code so the agent can drive/screenshot pages.
         if ctx.ex.which("claude"):
-            ctx.ex.run(["claude", "mcp", "add", "playwright", "npx", "@playwright/mcp@latest"])
+            # `--browser chromium` is REQUIRED on arm64/headless: @playwright/mcp defaults to
+            # the Google Chrome channel, which has no ARM64 Linux build, so the MCP fails to
+            # launch a browser on the brain. Chromium (Playwright's own build, installed above)
+            # works on every arch. `--` separates the MCP command from `claude mcp add`'s flags.
+            ctx.ex.run(
+                ["claude", "mcp", "add", "playwright", "--",
+                 "npx", "@playwright/mcp@latest", "--browser", "chromium"]
+            )
         m = self._marker()
         m.parent.mkdir(parents=True, exist_ok=True)
         m.write_text("ok\n", encoding="utf-8")
