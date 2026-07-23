@@ -192,6 +192,19 @@ There is no password login and no sudo — if you ever find yourself wanting
 `fleet edge` / a direct SSH to your own login) instead, not a reason to loosen the
 sandbox.
 
+### Docker-dependent tools (ddev) & the sandbox — the deliberate split
+
+`devbrain` has **no Docker access** by design: Docker-group membership is root-equivalent,
+so handing it to a sudo-less sandbox would defeat the whole point. **Docker-dependent dev
+tools — notably ddev (Laravel/PHP) — therefore run as your normal, Docker-capable login
+user, *not* inside `devbrain`.** The sandbox is for the agent/build workload (herdr, Claude
+Code, capped cross-arch builds); ddev and its containers live on your host account.
+
+This is a deliberate decision, not a gap: running ddev *inside* the sandbox would need
+rootless Docker/podman, which ddev supports only with real caveats. Unless you have a
+specific reason to isolate ddev itself, keep the split — it's simpler and it's what works.
+`.NET`/Aspire (which only needs containers for some resources) runs fine as `devbrain`.
+
 ---
 
 ## 4. Daily DX flow
