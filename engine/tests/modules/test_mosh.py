@@ -25,4 +25,4 @@ def test_mosh_verify_uses_which() -> None:
 
 
 def test_mosh_profiles() -> None:
-    assert Mosh.profiles == ("remote", "brain-host")
+    assert Mosh.profiles == ("cli", "remote", "brain-host")

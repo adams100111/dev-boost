@@ -71,13 +71,14 @@ enrollment on NVIDIA when Secure Boot is on.
 ## Profiles
 
 <!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
+
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
 | `brain-host` | `mosh`, `caddy`, `crossarch-build` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
-| `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `fastfetch`, `claude-code` |
+| `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code` |
 | `data` | `data-services` |
 | `dev-hygiene` | `aspire-gc` |
 | `devops` | `devops-tools`, `devops-lsp` |
@@ -91,7 +92,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
 | `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
-| `optional-agents` | `herdr`, `herdr-plugins` |
+| `optional-agents` | `herdr-plugins` |
 | `optional-editors` | `neovim`, `jetbrains-toolbox` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
@@ -172,7 +173,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-theme-bundle` | gnome | Opt-in reproducible GTK theme + icons (adw-gtk3 + papirus). |
 | `gpu-detect` | system | Auto-detect the GPU vendor and record it for driver selection. |
 | `grub-btrfs` | system | Boot into BTRFS snapshots from GRUB. |
-| `herdr` | optional-agents | herdr — agent-aware terminal multiplexer (pinned binary). |
+| `herdr` | cli | herdr — agent-aware terminal multiplexer (pinned binary). |
 | `herdr-plugins` | optional-agents | Curated, pinned herdr plugin set. |
 | `htop` | base |  |
 | `jetbrains-toolbox` | optional-editors | JetBrains Toolbox app. |
@@ -231,6 +232,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `yq` | cli |  |
 | `zoxide` | cli |  |
 | `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
+
 <!-- END generated profiles table -->
 
 Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are opt-in per project;

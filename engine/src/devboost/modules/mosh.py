@@ -12,7 +12,7 @@ class Mosh(Module):
     name = "mosh"
     category = "remote"
     description = "Mosh — roaming-resilient terminal transport (client + mosh-server)."
-    profiles = ("remote", "brain-host")
+    profiles = ("cli", "remote", "brain-host")
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("mosh")

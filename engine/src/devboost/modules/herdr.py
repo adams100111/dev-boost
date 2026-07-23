@@ -15,9 +15,9 @@ from devboost.model import Ctx, Module
 @register
 class Herdr(Module):
     name = "herdr"
-    category = "optional-agents"
+    category = "cli"
     description = "herdr — agent-aware terminal multiplexer (pinned binary)."
-    profiles = ("optional-agents", "brain-tools")
+    profiles = ("cli", "brain-tools")
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("herdr")
