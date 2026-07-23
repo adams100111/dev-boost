@@ -39,6 +39,7 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'optional-agents = ["herdr"]\n'
         'server = ["zram"]\n'
         'remote = ["tailscale","mosh"]\n'
+        'brain-host = ["mosh","caddy"]\n'
         'laravel = ["ddev"]\n',
         encoding="utf-8",
     )

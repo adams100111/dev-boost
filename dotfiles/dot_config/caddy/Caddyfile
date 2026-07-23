@@ -1,0 +1,13 @@
+# dev-boost starter Caddyfile for the brain box.
+# *.localhost resolves to 127.0.0.1 (RFC 6761); `tls internal` mints a locally-trusted cert.
+# Front these with `tailscale serve` to reach them from a laptop over the tailnet.
+
+app.localhost {
+	tls internal
+	reverse_proxy localhost:3000
+}
+
+aspire.localhost {
+	tls internal
+	reverse_proxy localhost:18888
+}

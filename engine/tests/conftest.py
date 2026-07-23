@@ -64,7 +64,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'terminal = ["ripgrep"]\n'
         'devtools = ["ddev"]\n'
         'server = ["zram"]\n'
-        'remote = ["tailscale","mosh"]\n',
+        'remote = ["tailscale","mosh"]\n'
+        'brain-host = ["mosh","caddy"]\n',
         encoding="utf-8",
     )
     return p

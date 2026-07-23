@@ -24,5 +24,5 @@ def test_mosh_verify_uses_which() -> None:
     assert Mosh().verify(Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor())) is False
 
 
-def test_mosh_is_in_remote_profile_only() -> None:
-    assert Mosh.profiles == ("remote",)
+def test_mosh_profiles() -> None:
+    assert Mosh.profiles == ("remote", "brain-host")
