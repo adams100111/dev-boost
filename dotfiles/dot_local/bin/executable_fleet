@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# fleet — one-word cross-box verbs for the dev-boost remote fleet.
+# Host targets come from ~/.config/fleet/config (DEVBOOST_BRAIN / _BUILDER / _EDGE).
+# These verbs are thin convenience wrappers over mosh/ssh/tailscale/podman — tune to taste.
+set -euo pipefail
+
+CONFIG="${XDG_CONFIG_HOME:-${HOME:-}/.config}/fleet/config"
+# shellcheck source=/dev/null
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+usage() {
+	cat >&2 <<'EOF'
+usage: fleet <command> [args]
+
+  dev                 mosh into the brain (devbrain@$DEVBOOST_BRAIN) and attach herdr
+  ship <img> [dir]    build a multi-arch image on $DEVBOOST_BUILDER (rootless podman) and push
+  expose <port> [--pub]   tailscale serve (tailnet) $port on the brain; --pub -> tailscale funnel
+  edge                ssh into $DEVBOOST_EDGE (the public-facing / prod box)
+  status              herdr agent snapshot on the brain (working / blocked / done)
+
+hosts are read from ~/.config/fleet/config:
+  DEVBOOST_BRAIN, DEVBOOST_BUILDER, DEVBOOST_EDGE
+EOF
+	exit 2
+}
+
+need() { # need VAR — fail cleanly if a required host target is unset
+	local name="$1"
+	if [ -z "${!name:-}" ]; then
+		echo "fleet: $name is not set — add it to ~/.config/fleet/config" >&2
+		exit 1
+	fi
+}
+
+cmd="${1:-}"
+[ -n "$cmd" ] || usage
+shift || true
+
+case "$cmd" in
+dev)
+	need DEVBOOST_BRAIN
+	exec mosh "devbrain@${DEVBOOST_BRAIN}" -- herdr
+	;;
+ship)
+	need DEVBOOST_BUILDER
+	img="${1:-}"
+	[ -n "$img" ] || { echo "fleet ship: usage: fleet ship <img> [dir]" >&2; exit 2; }
+	dir="${2:-.}"
+	exec ssh "devbrain@${DEVBOOST_BUILDER}" \
+		"cd $(printf %q "$dir") && podman build --platform linux/amd64,linux/arm64 \
+		 --manifest $(printf %q "$img") . && podman manifest push $(printf %q "$img")"
+	;;
+expose)
+	need DEVBOOST_BRAIN
+	port="${1:-}"
+	[ -n "$port" ] || { echo "fleet expose: usage: fleet expose <port> [--pub]" >&2; exit 2; }
+	if [ "${2:-}" = "--pub" ]; then
+		exec ssh "${DEVBOOST_BRAIN}" tailscale funnel "$port"
+	fi
+	exec ssh "${DEVBOOST_BRAIN}" tailscale serve --https=443 "localhost:${port}"
+	;;
+edge)
+	need DEVBOOST_EDGE
+	exec ssh "${DEVBOOST_EDGE}"
+	;;
+status)
+	need DEVBOOST_BRAIN
+	exec ssh "devbrain@${DEVBOOST_BRAIN}" herdr status
+	;;
+*)
+	echo "fleet: unknown command '$cmd'" >&2
+	usage
+	;;
+esac
