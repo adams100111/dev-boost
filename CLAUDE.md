@@ -18,6 +18,9 @@ The roadmap of remaining specs is `docs/roadmap.md`; the canonical design is
 `docs/superpowers/specs/2026-06-19-devboost-platform-design.md`; principles are in
 `.specify/memory/constitution.md`. Every spec cycle must serve this mission.
 
+The **remote-fleet** capability (tailnet + Mosh + a sandboxed `devbrain` brain + the `fleet`
+DX verbs) is documented in `docs/remote-fleet.md`.
+
 <!-- SPECKIT START -->
 Active feature plan: `specs/014-python-engine-core/plan.md`
 (spec `specs/014-python-engine-core/spec.md`; design `docs/superpowers/specs/2026-06-26-python-engine-migration-design.md`).

@@ -1,0 +1,4 @@
+# dev-boost fleet host targets — sourced by `fleet`. Set to your tailnet (MagicDNS) names.
+# export DEVBOOST_BRAIN=my-dev        # the box hosting the sandboxed devbrain brain
+# export DEVBOOST_BUILDER=mod-sol     # the box that runs multi-arch `fleet ship` builds
+# export DEVBOOST_EDGE=my-dev         # the public-facing / production box for `fleet edge`
