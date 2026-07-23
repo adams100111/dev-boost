@@ -208,6 +208,12 @@ def test_agent_sudo_installs_via_visudo(monkeypatch: pytest.MonkeyPatch) -> None
     ] in calls
 
 
+def test_agent_sudo_not_in_default_server_profile() -> None:
+    from devboost.modules.server import AgentSudo
+
+    assert AgentSudo.profiles == ()
+
+
 # ── tmux-persist (reboot survival) ────────────────────────────────────────────
 def test_tmux_persist_clones_resurrect_and_continuum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

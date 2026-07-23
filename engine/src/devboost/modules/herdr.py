@@ -17,7 +17,7 @@ class Herdr(Module):
     name = "herdr"
     category = "optional-agents"
     description = "herdr — agent-aware terminal multiplexer (pinned binary)."
-    profiles = ("optional-agents",)
+    profiles = ("optional-agents", "brain-tools")
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("herdr")
@@ -81,7 +81,7 @@ class HerdrPlugins(Module):
     category = "optional-agents"
     description = "Curated, pinned herdr plugin set."
     requires = (Herdr,)
-    profiles = ("optional-agents",)
+    profiles = ("optional-agents", "brain-tools")
 
     def verify(self, ctx: Ctx) -> bool:
         listed = ctx.ex.run(["herdr", "plugin", "list"]).stdout

@@ -150,7 +150,7 @@ class AgentSudo(Module):
     name = "agent-sudo"
     category = "server"
     description = "Passwordless sudo for your user — so agents/automation never hang on a prompt."
-    profiles = ("server",)
+    profiles = ()
 
     def verify(self, ctx: Ctx) -> bool:
         # True only if sudo works non-interactively AND our drop-in is what enables it.

@@ -75,6 +75,8 @@ enrollment on NVIDIA when Secure Boot is on.
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
+| `brain-host` | `mosh`, `caddy`, `crossarch-build` |
+| `brain-tools` | `herdr`, `herdr-plugins` |
 | `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `fastfetch`, `claude-code` |
 | `data` | `data-services` |
 | `dev-hygiene` | `aspire-gc` |
@@ -95,7 +97,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
 | `remote` | `tailscale`, `mosh` |
 | `security-cli` | `pass`, `pass-store` |
-| `server` | `agent-sudo`, `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
+| `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `wezterm`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
 | `system` | `snapper`, `snapper-dnf-hook`, `grub-btrfs`, `btrfs-assistant`, `btrfsmaintenance`, `fwupd`, `power-profiles-daemon`, `thermald`, `smartmontools`, `dnf-automatic-security`, `restic-backup`, `earlyoom`, `swapfile`, `gpu-detect` |
 | `term` | `terminal` |
@@ -117,6 +119,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `btrfs-assistant` | system | GUI for snapshots/subvolumes. |
 | `btrfsmaintenance` | system | Scheduled BTRFS balance/scrub/trim. |
 | `build-tools` | base | Compiler toolchain + common build dependencies. |
+| `caddy` | brain-host | Caddy — locally-trusted reverse proxy (tls internal) for brain dev UIs. |
 | `chezmoi` | base | Install the chezmoi dotfiles manager. |
 | `chezmoi-repo` | base | Clone + apply the managed dotfiles repo via the credential store. |
 | `claude-code` | cli | Claude Code CLI (npm; node via mise). |
@@ -125,6 +128,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `codecs` | multimedia | Install the @multimedia codec group (Fedora-only via RPM Fusion). |
 | `codecs-ubuntu` | multimedia | ubuntu-restricted-extras + libavcodec-extra (Ubuntu-only). |
 | `coreutils` | base |  |
+| `crossarch-build` | brain-host | Rootless podman + qemu binfmt for capped multi-arch (amd64+arm64) builds. |
 | `cuda` | hardware-nvidia | CUDA toolkit (Fedora-only via RPM Fusion). |
 | `curl` | base |  |
 | `data-services` | data | Containerized data services (postgres/valkey/dbgate) compose template. |

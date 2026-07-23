@@ -21,7 +21,7 @@ def _ctx(os_: OsInfo = FEDORA_X86, **kw: object) -> Ctx:
 
 
 def test_herdr_is_optional_agents_profile() -> None:
-    assert Herdr.profiles == ("optional-agents",)
+    assert Herdr.profiles == ("optional-agents", "brain-tools")
     assert Herdr.category == "optional-agents"
 
 
@@ -74,7 +74,7 @@ from devboost.modules.herdr import _PLUGINS, HerdrPlugins  # noqa: E402
 
 def test_herdr_plugins_requires_herdr() -> None:
     assert Herdr in HerdrPlugins.requires
-    assert HerdrPlugins.profiles == ("optional-agents",)
+    assert HerdrPlugins.profiles == ("optional-agents", "brain-tools")
 
 
 def test_herdr_plugins_pins_a_ref_for_every_entry() -> None:
