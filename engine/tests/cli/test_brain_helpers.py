@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from devboost.cli.brain import DEVBRAIN_DEFAULTS, default_ssh_keys, devbrain_user
+from devboost.cli.brain import default_ssh_keys, devbrain_user
 
 
 def test_devbrain_user_is_capped_sudoless_and_bootstraps_brain_tools() -> None:
@@ -37,7 +37,3 @@ def test_default_ssh_keys_empty_when_no_ssh_dir(
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     assert default_ssh_keys() == ()
-
-
-def test_devbrain_defaults() -> None:
-    assert DEVBRAIN_DEFAULTS == {"ram": "8G", "cpu": "200%", "disk": "50G", "tasks": 4096}

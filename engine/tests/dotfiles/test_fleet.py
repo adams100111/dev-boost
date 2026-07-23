@@ -54,3 +54,10 @@ def test_fleet_expose_rejects_non_numeric_port() -> None:
     result = _run(["expose", "8080; touch /tmp/pwned"], env={"DEVBOOST_BRAIN": "brain"})
     assert result.returncode != 0
     assert "number" in (result.stdout + result.stderr).lower()
+
+
+def test_fleet_rejects_dash_prefixed_host() -> None:
+    # A host value starting with '-' would be parsed by ssh as an option — must be refused.
+    result = _run(["dev"], env={"DEVBOOST_BRAIN": "-oProxyCommand=evil"})
+    assert result.returncode != 0
+    assert "refused" in (result.stdout + result.stderr).lower()

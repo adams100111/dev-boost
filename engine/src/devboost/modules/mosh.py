@@ -19,6 +19,7 @@ class Mosh(Module):
 
     def install(self, ctx: Ctx) -> None:
         # One package ships both the `mosh` client and `mosh-server`. Its UDP range
-        # (60000-61000) rides tailscale0, already allowed by server-firewall — no new
-        # firewall rules are required.
+        # (60000-61000) needs no new firewall rules: a laptop runs no restrictive host
+        # firewall, and on a server the traffic rides tailscale0, which server-firewall
+        # already allows.
         pkg.install(ctx, "mosh")

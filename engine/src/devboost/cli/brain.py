@@ -12,15 +12,6 @@ from pathlib import Path
 from devboost.accounts.config import ManagedUser
 from devboost.accounts.form import merge_flags
 
-#: Conservative default resource caps for the devbrain slice. Overridable via `devboost brain`
-#: flags — the right values depend on how much headroom the (often production) host needs.
-DEVBRAIN_DEFAULTS: dict[str, object] = {
-    "ram": "8G",
-    "cpu": "200%",
-    "disk": "50G",
-    "tasks": 4096,
-}
-
 
 def default_ssh_keys() -> tuple[str, ...]:
     """Best-effort: the invoking user's public keys, so `mosh devbrain@brain` works.

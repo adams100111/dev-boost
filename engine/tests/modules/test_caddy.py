@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
@@ -50,3 +54,24 @@ def test_caddy_verify_uses_which() -> None:
 
 def test_caddy_profiles() -> None:
     assert Caddy.profiles == ("brain-host",)
+
+
+def test_caddy_install_writes_starter_caddyfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    Caddy().install(_ubuntu())
+    cf = tmp_path / ".config" / "caddy" / "Caddyfile"
+    assert cf.exists()
+    assert "tls internal" in cf.read_text(encoding="utf-8")
+
+
+def test_caddy_install_preserves_existing_caddyfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cf = tmp_path / ".config" / "caddy" / "Caddyfile"
+    cf.parent.mkdir(parents=True)
+    cf.write_text("# operator edits", encoding="utf-8")
+    Caddy().install(_ubuntu())
+    assert cf.read_text(encoding="utf-8") == "# operator edits"
