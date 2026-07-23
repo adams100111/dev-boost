@@ -90,6 +90,9 @@ not mean "it works". Keep this current.
 - **Remote fleet — M2 pt1 (brain tooling):** `caddy` + `crossarch-build` modules and the
   `brain-host`/`brain-tools` opt-in profiles; `agent-sudo` removed from the default `server`
   profile (now explicit opt-in). (M2 pt2: `devbrain` account + `devboost brain` wrapper.)
+- **Remote fleet — M2 pt2 (sandboxed brain):** `devboost brain` provisions the capped,
+  sudo-less `devbrain` account (privilege=none + cgroup caps, bootstraps `brain-tools`) and
+  installs the `brain-host` tools in one command. (M3: `fleet` DX verbs + operator guide.)
 
 **Seam only — deliberately not implemented, do not mistake for working:**
 - **Ubuntu/Debian.** The catalog offers `ubuntu-26.04`, the wizard lets you pick it,

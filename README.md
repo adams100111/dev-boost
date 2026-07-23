@@ -239,6 +239,9 @@ Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are op
 **`optional-agents`** — herdr (agent-aware terminal multiplexer) + a curated, pinned plugin set.
 Opt-in; not part of `full`. Runs alongside tmux.
 
+`devboost brain` provisions a sandboxed **devbrain** brain on a chosen server (installs the
+`brain-host` tools + a capped, sudo-less account that runs herdr and cross-arch builds).
+
 ## Commands
 
 | Command | Description |
