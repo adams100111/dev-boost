@@ -24,10 +24,12 @@ class CrossArchBuild(Module):
     def verify(self, ctx: Ctx) -> bool:
         if not ctx.ex.which("podman"):
             return False
-        # The module exists to enable arm64 emulation; confirm qemu registered the binfmt
-        # handler, not just that podman is present (a partial/failed qemu setup otherwise
-        # verifies True and masks a broken multi-arch build path).
-        return ctx.ex.run(["test", "-e", "/proc/sys/fs/binfmt_misc/qemu-aarch64"]).ok
+        # Confirm qemu registered a binfmt handler for the NON-native arch (a partial/failed
+        # qemu setup otherwise verifies True and masks a broken multi-arch path). The emulated
+        # arch is the opposite of the host: an x86_64 host emulates arm64 (qemu-aarch64); an
+        # aarch64 host emulates amd64 (qemu-x86_64). Its own arch is native — no handler.
+        handler = "qemu-x86_64" if ctx.os.arch == "aarch64" else "qemu-aarch64"
+        return ctx.ex.run(["test", "-e", f"/proc/sys/fs/binfmt_misc/{handler}"]).ok
 
     def install(self, ctx: Ctx) -> None:
         pkg.install(ctx, "podman", "qemu-user-static")
