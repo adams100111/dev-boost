@@ -40,5 +40,16 @@ def test_crossarch_verify_requires_podman_and_binfmt() -> None:
     assert CrossArchBuild().verify(_ctx("ubuntu", "debian")) is False
 
 
+def test_crossarch_verify_checks_the_non_native_arch_handler() -> None:
+    # x86_64 host emulates arm64 -> checks qemu-aarch64
+    ex = FakeExecutor(present={"podman"})
+    CrossArchBuild().verify(Ctx(os=OsInfo("ubuntu", "debian", "x86_64"), ex=ex))
+    assert ["test", "-e", "/proc/sys/fs/binfmt_misc/qemu-aarch64"] in ex.calls
+    # aarch64 host emulates amd64 -> checks qemu-x86_64 (the my-dev brain case)
+    ex2 = FakeExecutor(present={"podman"})
+    CrossArchBuild().verify(Ctx(os=OsInfo("ubuntu", "debian", "aarch64"), ex=ex2))
+    assert ["test", "-e", "/proc/sys/fs/binfmt_misc/qemu-x86_64"] in ex2.calls
+
+
 def test_crossarch_profiles() -> None:
     assert CrossArchBuild.profiles == ("brain-host",)
