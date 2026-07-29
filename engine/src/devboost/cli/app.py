@@ -354,7 +354,12 @@ def diff(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
 
 @app.command()
 def update(root: RootOpt = settings.root) -> None:
-    """Regenerate the deterministic devboost.lock (no commit)."""
+    """Regenerate the deterministic devboost.lock (no commit).
+
+    This only rewrites devboost.lock — it installs nothing. To upgrade installed
+    software, use `devboost install --update` (CLI tools) or `devboost self-update`
+    (the engine binary).
+    """
     log.ok(f"wrote {lc.write_lock(root)}")
 
 

@@ -80,3 +80,9 @@ def test_install_force_and_update_are_mutually_exclusive() -> None:
     result = runner.invoke(app, ["install", "--force", "--update"])
     assert result.exit_code == 2
     assert "mutually exclusive" in result.output
+
+
+def test_update_help_points_to_install_update() -> None:
+    result = runner.invoke(app, ["update", "--help"])
+    assert result.exit_code == 0
+    assert "install --update" in result.output
