@@ -145,7 +145,7 @@ wheels = [
 
 [[package]]
 name = "devboost"
-version = "0.1.72"
+version = "0.1.77"
 source = { editable = "." }
 dependencies = [
     { name = "loguru" },
