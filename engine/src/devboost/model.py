@@ -62,6 +62,7 @@ class Module:
     description: ClassVar[str] = ""
     requires: ClassVar[tuple[type[Module], ...]] = ()
     profiles: ClassVar[tuple[str, ...]] = ()
+    self_updating: ClassVar[bool] = False
     families: ClassVar[tuple[str, ...]] = ()
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()

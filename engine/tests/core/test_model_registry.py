@@ -66,3 +66,26 @@ def test_check_cycles_detects_cycle() -> None:
 def test_load_discovers_tracer_modules() -> None:
     modules = load()
     assert {"ripgrep", "docker", "ddev"} <= set(modules)
+
+
+def test_self_updating_defaults() -> None:
+    """A plain Module is not self-updating; a PackageModule is (single package = safe to
+    refresh).
+    """
+    from devboost.model import Module
+    from devboost.modules._pkgmodule import PackageModule
+    from devboost.modules.cli_tools import Git
+    from devboost.modules.docker import Docker
+
+    class HeavyThing(Module):
+        name = "heavy-thing"
+
+    class PkgThing(PackageModule):
+        name = "pkg-thing"
+        cmd = "pkg-thing"
+        fedora_pkg = "pkg-thing"
+
+    assert HeavyThing.self_updating is False        # root default
+    assert PkgThing.self_updating is True           # PackageModule override
+    assert Git.self_updating is True                # a real base package — broad semantics
+    assert Docker.self_updating is False            # a real heavy module stays out

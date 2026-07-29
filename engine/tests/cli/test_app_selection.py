@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from devboost.cli.app import app
@@ -44,3 +45,64 @@ def test_term_unknown_app_exits_nonzero_with_suggestion() -> None:
     result = runner.invoke(app, ["term", "--app", "gti", "--dry-run"])
     assert result.exit_code == 2
     assert "unknown app 'gti'" in (result.output + str(result.stderr_bytes or b""))
+
+
+def test_apply_update_filter_keeps_only_self_updating() -> None:
+    from devboost.cli.app import _apply_update_filter
+    from devboost.core.plan import PlannedModule
+    from devboost.model import Module
+
+    class Refreshable(Module):
+        name = "refreshable"
+        self_updating = True
+
+    class Heavy(Module):
+        name = "heavy"
+        self_updating = False
+
+    modules = {"refreshable": Refreshable, "heavy": Heavy}
+    plan = [PlannedModule(name="refreshable"), PlannedModule(name="heavy")]
+
+    kept = _apply_update_filter(plan, modules)
+
+    assert [pm.name for pm in kept] == ["refreshable"]
+
+
+def test_install_update_dry_run_filters_to_self_updating() -> None:
+    # --dry-run lists "would install <name>" for the filtered plan only.
+    result = runner.invoke(app, ["install", "--update", "--dry-run"])
+    assert result.exit_code == 0
+    assert "would install lazydocker" in result.output      # a self_updating tool: kept
+    assert "would install git" in result.output             # a base package: kept (broad)
+    assert "would install docker" not in result.output      # a heavy Module: dropped
+
+
+def test_install_force_and_update_are_mutually_exclusive() -> None:
+    result = runner.invoke(app, ["install", "--force", "--update"])
+    assert result.exit_code == 2
+    assert "mutually exclusive" in result.output
+
+
+def test_update_help_points_to_install_update() -> None:
+    result = runner.invoke(app, ["update", "--help"])
+    assert result.exit_code == 0
+    assert "install --update" in result.output
+
+
+def test_install_update_forces_run_over_filtered_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--update forces the run (bypassing verify) over a plan filtered to self_updating tools."""
+    captured: dict[str, object] = {}
+
+    def fake_run_plan(plan, modules, ctx):  # type: ignore[no-untyped-def]
+        captured["force"] = ctx.force
+        captured["names"] = [pm.name for pm in plan]
+        return []
+
+    monkeypatch.setattr("devboost.cli.app.run_plan", fake_run_plan)
+    result = runner.invoke(app, ["install", "--update"])
+    assert result.exit_code == 0
+    assert captured["force"] is True                # --update forces the kept tools
+    assert "lazydocker" in captured["names"]        # a self_updating tool is kept
+    assert "docker" not in captured["names"]        # a heavy Module is filtered out
