@@ -84,9 +84,14 @@ def test_install_force_and_update_are_mutually_exclusive() -> None:
 
 
 def test_update_help_points_to_install_update() -> None:
-    result = runner.invoke(app, ["update", "--help"])
-    assert result.exit_code == 0
-    assert "install --update" in result.output
+    # Assert against the command's help text (the docstring contract), NOT the rendered
+    # --help panel: Rich word-wraps at the terminal width, so grepping the panel is flaky
+    # in CI (see test_term_exposes_all_and_app_flags for the same lesson).
+    import typer.main
+
+    click_group = typer.main.get_command(app)
+    update_cmd = click_group.commands["update"]  # type: ignore[attr-defined]
+    assert "install --update" in (update_cmd.help or "")
 
 
 def test_install_update_forces_run_over_filtered_plan(
