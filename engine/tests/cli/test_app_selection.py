@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from devboost.cli.app import app
@@ -86,3 +87,22 @@ def test_update_help_points_to_install_update() -> None:
     result = runner.invoke(app, ["update", "--help"])
     assert result.exit_code == 0
     assert "install --update" in result.output
+
+
+def test_install_update_forces_run_over_filtered_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--update forces the run (bypassing verify) over a plan filtered to self_updating tools."""
+    captured: dict[str, object] = {}
+
+    def fake_run_plan(plan, modules, ctx):  # type: ignore[no-untyped-def]
+        captured["force"] = ctx.force
+        captured["names"] = [pm.name for pm in plan]
+        return []
+
+    monkeypatch.setattr("devboost.cli.app.run_plan", fake_run_plan)
+    result = runner.invoke(app, ["install", "--update"])
+    assert result.exit_code == 0
+    assert captured["force"] is True                # --update forces the kept tools
+    assert "lazydocker" in captured["names"]        # a self_updating tool is kept
+    assert "docker" not in captured["names"]        # a heavy Module is filtered out

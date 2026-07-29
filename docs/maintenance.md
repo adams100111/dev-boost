@@ -26,11 +26,14 @@ Three separate "update" surfaces — do not confuse them:
 the refreshable tools, `--force` re-runs *every* module. `--update` lives on `install` only —
 "update my terminal tier" is `devboost install --update terminal`.
 
-**Why some tools need `install --update`:** `lazydocker` and `lazygit` install via their
-upstream scripts to `~/.local/bin` (no `dnf`/COPR), so they ride neither `dnf upgrade` nor the
-`dnf-automatic` security timer. `install --update` re-runs their install-and-update scripts to
-pull the latest release. The same applies to the GitHub-release binary tools (eza, atuin, dust,
-sd, yq, fastfetch, gh, …).
+**Why some tools need `install --update`:** `lazydocker` always installs via its upstream
+`install_update_linux.sh` script to `~/.local/bin` on every OS (no `dnf`/COPR). `lazygit` and the
+other GitHub-release binary tools (eza, atuin, dust, sd, yq, fastfetch, gh, …) install the same
+way on Debian/Ubuntu, but on Fedora `lazygit` (and friends) come from `dnf`/COPR instead. Either
+way, none of them ride the security-only `dnf-automatic` timer, so a plain re-run never bumps them
+to a newer non-security release. `install --update` force-refreshes them: it re-runs the
+binary-drop scripts on Debian/Ubuntu, and re-runs `dnf`/`apt` install on Fedora, which upgrades
+the package in place.
 
 ## Quarterly checklist
 1. Refresh the Fedora ISO on the Ventoy USB (`devboost installer --update` (re-stage Ventoy + newest ISO)).

@@ -24,9 +24,11 @@ But `--force` re-runs **every** module, including the heavy, side-effecting ones
 So the only existing "update" is a blunt instrument that is disruptive for a routine
 "bump my CLI tools" action. The gap is a *lightweight, non-destructive* tool refresh.
 
-This is especially visible for **lazydocker** and **lazygit**, which install via their upstream
-scripts / GitHub-release binaries to `~/.local/bin` (no `dnf`/COPR — see the 2026-07-29 installer
-unification). They are outside the `dnf-automatic` security-update timer entirely, so *nothing*
+This is especially visible for **lazydocker**, which always installs via its upstream
+`install_update_linux.sh` script to `~/.local/bin` (no `dnf`/COPR on any OS — see the 2026-07-29
+installer unification), and for **lazygit** and the other GitHub-release binary tools, which
+install the same script/binary-drop way on Debian/Ubuntu but come from `dnf`/COPR on Fedora. In
+every case they are outside the `dnf-automatic` security-update timer entirely, so *nothing*
 updates them automatically.
 
 ## Goal
@@ -117,9 +119,11 @@ update` and get a silent lockfile rewrite):
 | `devboost install --update` | the **CLI tools** in place | the `self_updating` set |
 | `dnf-automatic` timer | **OS security** patches only | provisioned by `dnf-automatic-security` |
 
-The section also documents that **lazydocker and lazygit install via their upstream scripts to
-`~/.local/bin`** (no `dnf`/COPR), which is exactly why they rely on `install --update` to upgrade
-rather than riding OS package updates — install method and update path as one coherent story. Any
+The section also documents that **lazydocker installs via its upstream `install_update_linux.sh`
+script to `~/.local/bin` on every OS** (no `dnf`/COPR), and that **lazygit** and the other
+GitHub-release binary tools follow the same script/binary-drop path on Debian/Ubuntu but come from
+`dnf`/COPR on Fedora — which is exactly why none of them ride OS package updates and all rely on
+`install --update` to upgrade instead — install method and update path as one coherent story. Any
 stale reference implying lazydocker comes from the `atim/lazydocker` COPR is corrected.
 
 Two more doc touch-points:
