@@ -82,12 +82,14 @@ def test_mise_migrates_nvm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert "migrated nvm init to mise" in bashrc
 
 
-def test_lazydocker_uses_correct_copr_repo() -> None:
+def test_lazydocker_uses_curl_installer_on_fedora() -> None:
+    """No official Fedora package upstream — install via the distro-agnostic script
+    on Fedora too (unified with Debian), not the third-party atim/lazydocker COPR."""
     ctx = _ctx()
     Lazydocker().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["sudo", "dnf", "copr", "enable", "-y", "atim/lazydocker"] in calls
-    assert ["sudo", "dnf", "install", "-y", "lazydocker"] in calls
+    assert not any("copr" in " ".join(c) for c in calls)
+    assert any("lazydocker" in " ".join(c) and "curl" in " ".join(c) for c in calls)
 
 
 def test_chezmoi_repo_raises_when_no_repo_url(

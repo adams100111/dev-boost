@@ -41,6 +41,12 @@ _LAZYGIT_DEBIAN = (
     'rm -rf "$tmp"\n'
 )
 
+_LAZYDOCKER_INSTALL = (
+    'export DIR="$HOME/.local/bin"\n'
+    "curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker"
+    "/master/scripts/install_update_linux.sh | bash"
+)
+
 _EZA_DEBIAN = (
     "set -e\n"
     'case "$(uname -m)" in\n'
@@ -326,19 +332,12 @@ class Lazydocker(PackageModule):
     profiles = ("cli",)
     cmd = "lazydocker"
     fedora_pkg = "lazydocker"
-    copr_repo = "atim/lazydocker"
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.os.family == "fedora":
-            copr.enable(ctx, "atim/lazydocker")
-            pkg.install(ctx, "lazydocker")
-        else:
-            # No native apt package — use the upstream cross-distro installer.
-            ctx.ex.run(
-                ["sh", "-c",
-                 "curl https://raw.githubusercontent.com/jesseduffield/lazydocker"
-                 "/master/scripts/install_update_linux.sh | bash"]
-            )
+        # No official Fedora/Debian package upstream — use the one distro-agnostic
+        # installer on every OS (avoids the third-party atim/lazydocker COPR). DIR
+        # installs to ~/.local/bin so no sudo is needed, matching Lazygit above.
+        ctx.ex.run(["sh", "-c", _LAZYDOCKER_INSTALL])
 
 
 @register
