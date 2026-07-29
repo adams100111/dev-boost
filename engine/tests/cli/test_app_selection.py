@@ -93,16 +93,18 @@ def test_install_update_forces_run_over_filtered_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """--update forces the run (bypassing verify) over a plan filtered to self_updating tools."""
-    captured: dict[str, object] = {}
+    captured_force = False
+    captured_names: list[str] = []
 
     def fake_run_plan(plan, modules, ctx):  # type: ignore[no-untyped-def]
-        captured["force"] = ctx.force
-        captured["names"] = [pm.name for pm in plan]
+        nonlocal captured_force, captured_names
+        captured_force = ctx.force
+        captured_names = [pm.name for pm in plan]
         return []
 
     monkeypatch.setattr("devboost.cli.app.run_plan", fake_run_plan)
     result = runner.invoke(app, ["install", "--update"])
     assert result.exit_code == 0
-    assert captured["force"] is True                # --update forces the kept tools
-    assert "lazydocker" in captured["names"]        # a self_updating tool is kept
-    assert "docker" not in captured["names"]        # a heavy Module is filtered out
+    assert captured_force is True                # --update forces the kept tools
+    assert "lazydocker" in captured_names        # a self_updating tool is kept
+    assert "docker" not in captured_names        # a heavy Module is filtered out
