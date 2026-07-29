@@ -86,6 +86,18 @@ def _apply_offline_filter(
     ]
 
 
+def _apply_update_filter(
+    plan: list[PlannedModule],
+    modules: Mapping[str, type[Module]],
+) -> list[PlannedModule]:
+    """Keep only self-updating modules (single-package/binary tools safe to force-refresh).
+
+    Non-self-updating modules are dropped from the plan entirely — `--update` must not
+    install a heavy provisioning module, only refresh the CLI tools.
+    """
+    return [pm for pm in plan if modules[pm.name].self_updating]
+
+
 def _run(
     tokens: list[str],
     root: Path,

@@ -44,3 +44,24 @@ def test_term_unknown_app_exits_nonzero_with_suggestion() -> None:
     result = runner.invoke(app, ["term", "--app", "gti", "--dry-run"])
     assert result.exit_code == 2
     assert "unknown app 'gti'" in (result.output + str(result.stderr_bytes or b""))
+
+
+def test_apply_update_filter_keeps_only_self_updating() -> None:
+    from devboost.cli.app import _apply_update_filter
+    from devboost.core.plan import PlannedModule
+    from devboost.model import Module
+
+    class Refreshable(Module):
+        name = "refreshable"
+        self_updating = True
+
+    class Heavy(Module):
+        name = "heavy"
+        self_updating = False
+
+    modules = {"refreshable": Refreshable, "heavy": Heavy}
+    plan = [PlannedModule(name="refreshable"), PlannedModule(name="heavy")]
+
+    kept = _apply_update_filter(plan, modules)
+
+    assert [pm.name for pm in kept] == ["refreshable"]
