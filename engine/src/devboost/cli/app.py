@@ -32,6 +32,13 @@ ProfilesArg = Annotated[list[str], typer.Argument(help="profiles/modules (defaul
 RootOpt = Annotated[Path, typer.Option(help="repo root with profiles.toml + modules")]
 DryOpt = Annotated[bool, typer.Option("--dry-run", help="preview without executing")]
 ForceOpt = Annotated[bool, typer.Option("--force", help="reinstall even if verify passes")]
+UpdateOpt = Annotated[
+    bool,
+    typer.Option(
+        "--update",
+        help="force-refresh only self-updating tools (CLI tools); mutually exclusive with --force",
+    ),
+]
 AllOpt = Annotated[
     bool,
     typer.Option(
@@ -107,6 +114,7 @@ def _run(
     *,
     all_: bool = True,
     apps: list[str] | None = None,
+    update: bool = False,
 ) -> list[RunResult]:
     modules, expanded = _resolve(tokens, root)
     selected = select_modules(expanded, modules, all_=all_, apps=apps or [])
@@ -116,6 +124,11 @@ def _run(
         log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
+    if update:
+        plan = _apply_update_filter(plan, modules)
+        if not plan:
+            log.info("no self-updating tools in selection")
+        ctx = Ctx(os=ctx.os, ex=ctx.ex, force=True, dry_run=dry_run)  # force-refresh the kept tools
     if offline:
         plan = _apply_offline_filter(plan, modules)
     elif not dry_run:
@@ -170,9 +183,12 @@ def install(
     ] = False,
     all_: AllOpt = True,
     app: AppOpt = [],
+    update: UpdateOpt = False,
 ) -> None:
     """Install one or more profiles/modules (default: full)."""
-    _run(profiles, root, dry_run, force, offline, all_=all_, apps=app)
+    if force and update:
+        raise typer.BadParameter("--force and --update are mutually exclusive")
+    _run(profiles, root, dry_run, force, offline, all_=all_, apps=app, update=update)
 
 
 @app.command()

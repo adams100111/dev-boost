@@ -65,3 +65,18 @@ def test_apply_update_filter_keeps_only_self_updating() -> None:
     kept = _apply_update_filter(plan, modules)
 
     assert [pm.name for pm in kept] == ["refreshable"]
+
+
+def test_install_update_dry_run_filters_to_self_updating() -> None:
+    # --dry-run lists "would install <name>" for the filtered plan only.
+    result = runner.invoke(app, ["install", "--update", "--dry-run"])
+    assert result.exit_code == 0
+    assert "would install lazydocker" in result.output      # a self_updating tool: kept
+    assert "would install git" in result.output             # a base package: kept (broad)
+    assert "would install docker" not in result.output      # a heavy Module: dropped
+
+
+def test_install_force_and_update_are_mutually_exclusive() -> None:
+    result = runner.invoke(app, ["install", "--force", "--update"])
+    assert result.exit_code == 2
+    assert "mutually exclusive" in result.output
