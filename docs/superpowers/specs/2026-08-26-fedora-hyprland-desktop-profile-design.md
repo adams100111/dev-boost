@@ -1,11 +1,26 @@
 # dev-boost — Fedora Hyprland desktop profile (design)
 
 **Date:** 2026-08-26
-**Status:** Design — pending user review before writing the implementation plan
+**Status:** Design — decisions locked (grilled 2026-08-26); pending final user review before the implementation plan
 **Scope:** One opt-in `hyprland` desktop profile (plus `hyprland-theme` and opt-in
 `hyprland-matugen`) for the dev-boost spec-014 typed-Python engine. A curated Hyprland
 (Wayland tiling) **side session** that coexists with the existing GNOME desktop; GNOME
 remains the default `full` desktop and the always-available fallback.
+
+## 0. Decisions locked (grilling, 2026-08-26)
+
+| # | Decision | Choice |
+|---|---|---|
+| Q1 | Palette scope across sessions | **Unified** — one palette themes shared apps (wezterm/starship/btop/tmux) in both GNOME and Hyprland sessions |
+| Q2 | GTK / cursor theming under Hyprland | **Minimal** — fixed dark GTK (`adw-gtk3`) + cursor theme; not palette-linked |
+| Q3 | HiDPI / monitor scaling | **Auto default** (`monitor = ,preferred,auto,1`) + a per-machine `monitors.conf` override seam (chezmoi-ignored, `source`d) |
+| Q4 | Default wallpaper | **Ship one** bundled wallpaper asset in `data/hyprland/` |
+| Q5 | COPR module update behavior | **`self_updating = False`** on the `hypr*`-core/COPR modules; official-repo peripherals stay `True` |
+| Q6 | Testing | **Both** — scripted config-parse smoke gate + manual VM acceptance checklist |
+| Q7 | GDM dependency | **Verify-only** — assume Fedora Workstation base provides GDM; fail loudly if absent |
+| Q8 | Screen-share portal routing | **Ship** a chezmoi-managed `~/.config/xdg-desktop-portal/hyprland-portals.conf` |
+| Q9 | Palette schema | **base16** (`base00..base0F` + `accent`/`bg`/`fg` aliases) |
+| Q10 | Hyprland package source on F44 | **`copr:eddievs/hyprland`** (covers F44 x86_64 + aarch64); ship now, pin + re-verify |
 
 ## 1. Motivation & non-goals
 
@@ -16,8 +31,8 @@ tiling ergonomics, a single-palette theming system, and sensible curated default
 **aesthetic/ergonomic, not performance** (idle-RAM savings of ~0.5–1.2 GB are a 3–7%
 rounding error against this platform's real Docker/Aspire/emulator memory pressure, and
 there is no evidence Hyprland is faster under load). Those parts can be delivered on
-Fedora without re-platforming dev-boost onto Arch/pacman and without inheriting Arch's
-rolling-release risk or Omarchy's `~/.config`-ownership conflict with chezmoi.
+Fedora without re-platforming dev-boost onto Arch/pacman, without inheriting Arch's
+rolling-release risk, and without Omarchy's `~/.config`-ownership conflict with chezmoi.
 
 This profile brings the Omarchy "feel" to dev-boost's existing Fedora/dnf/chezmoi
 foundation as an **opt-in profile**, exactly like the existing `gnome-aesthetics` and
@@ -26,54 +41,64 @@ foundation as an **opt-in profile**, exactly like the existing `gnome-aesthetics
 ### Non-goals (YAGNI / scope guard)
 - **No `full-hyprland` aggregate.** `full` stays GNOME. Hyprland is a session you pick at
   the GDM login screen, not the default workstation desktop.
-- **No display-manager swap.** GDM (already installed with GNOME) launches both sessions.
+- **No display-manager swap.** GDM (already in the Fedora Workstation base) launches both.
 - **No GNOME removal or degradation.** GNOME is the guaranteed fallback.
 - **No Quickshell / plugin runtime.** Omarchy's Quattro plugin system is QML shell
   chrome; it has no analog or value in a chezmoi/dnf provisioning model.
-- **No Arch/pacman/AUR.** Fedora dnf + one named COPR only (see §4).
+- **No Arch/pacman/AUR.** Fedora dnf + one named COPR only (§4).
+- **No palette-driven GTK recoloring** (libadwaita recolor is brittle; see Q2).
 
 ## 2. Grounding facts (verified 2026-08-26)
 
-- **Fedora 44 does not package Hyprland core.** On a live F44 box with official repos +
-  RPM Fusion enabled, only `hyprcursor` (a dependency lib) is available. `hyprland`,
-  `hyprlock`, `hypridle`, `hyprpaper`, `hyprpolkitagent`, `xdg-desktop-portal-hyprland`,
-  and `swaync` are **absent**. → Hyprland core must come from **COPR `solopasha/hyprland`**
-  (the de-facto standard Fedora Hyprland COPR).
+- **Fedora 44 does not package Hyprland core**, and the largest community COPR
+  **`solopasha/hyprland` is rawhide-only — it does NOT build for F44** (its only active
+  chroot is `fedora-rawhide-x86_64`; `fedora-44-*` results dirs and the `dnf copr enable`
+  `.repo` endpoint 404). → Core must come from **`copr:eddievs/hyprland`**, verified to
+  build **F44 x86_64 + aarch64** (dev-boost ships both arches). `eli-xciv/hyprland` is an
+  equivalent fallback. This is a **smaller-maintainer supply-chain dependency** and is
+  the profile's single largest risk (§9).
 - **Peripherals are in official Fedora 44 repos:** `waybar` (0.15), `fuzzel` (1.14),
-  `wofi` (1.5), `mako` (1.11), `grim` (1.5), `slurp` (1.5), `matugen` (3.1), `blueman`
-  (2.4), `network-manager-applet` (1.36).
-- **chezmoi** (`/websites/chezmoi_io`, context7): `.chezmoidata/*.toml` holds static data
-  consumed by `.tmpl` templates; `dot_` prefix maps to `~/.<name>`. **`.chezmoidata`
-  files cannot themselves be templates** — they must be static and exist before the
-  template engine runs. Our palette is static data → compatible.
-- **Hyprland** (`/hyprwm/hyprland-wiki`, context7): `source = ~/.config/hypr/*.conf`
-  includes are confirmed and parsed linearly; environment variables set via the
-  hyprlang INI form `env = KEY,VALUE` (a newer Lua `hl.env("KEY","VALUE")` form also
-  exists — this design uses the mainstream INI form the COPR default ships).
-- **matugen** (`/iniox/matugen`, context7): `matugen image <wallpaper>` generates a
-  Material palette; a `[templates]` section renders `input_path → output_path` with
-  `{{colors.<color>.<scheme>.<format>}}` keywords and optional `post_hook`. **Native
-  matugen writes directly into its configured output paths** — see §5 for how we contain
-  this to preserve chezmoi's sole ownership of `~/.config`.
+  `mako` (1.11), `grim` (1.5), `slurp` (1.5), `matugen` (3.1), `blueman` (2.4),
+  `network-manager-applet` (1.36), `adw-gtk3-theme`, `papirus-icon-theme`.
+- **Wayland session file is shipped by the `hyprland` package**
+  (`/usr/share/wayland-sessions/hyprland.desktop`), so GDM lists "Hyprland" out of the
+  box; `hyprland-session` only verifies it (Q7).
+- **GDM is in the base Fedora 44 Workstation install** and reads
+  `/usr/share/wayland-sessions/`, so the profile assumes a DM already exists (Q7).
+- **chezmoi** (`/websites/chezmoi_io`, context7): `.chezmoidata/*.toml` merges into the
+  template data **root** — a flat `palette.toml` with `accent = "…"` is `{{ .accent }}`,
+  **not** `{{ .palette.accent }}`. To namespace, the file needs an explicit `[palette]`
+  table. `.chezmoidata` files **cannot be templates** (must be static). This design uses a
+  `[palette]` table so templates read `{{ .palette.base00 }}` etc.
+- **Hyprland config** (`/hyprwm/hyprland-wiki`): `source = ~/.config/hypr/*.conf`
+  includes parsed linearly; env via hyprlang INI `env = KEY,VALUE`.
+- **matugen** (`/iniox/matugen`): emits Material-3 roles (`primary`, `surface`,
+  `on_surface`, …) but templates are pure string substitution with author-controlled
+  output keys, so a matugen template can emit our base16 schema
+  (`base00 = "{{colors.background.default.hex}}"`, etc.).
+- **Portal routing**: the `xdg-desktop-portal-hyprland` package ships `hyprland.portal`
+  (`UseIn=…Hyprland…`, `Interfaces=…ScreenCast;Screenshot…`) but **no**
+  `hyprland-portals.conf`. With GNOME's portal also installed, backend selection falls
+  back to `UseIn` matching (works, but non-deterministic and warns on newer
+  xdg-desktop-portal). → we ship an explicit user-level `hyprland-portals.conf` (Q8).
 
 ## 3. Profiles
 
-Added to `profiles.toml`. `full` is unchanged.
+Added to `profiles.toml`. `full` is unchanged. No profile name collides with a module
+name (per the profile/module-collision rule): profile `hyprland` vs modules
+`hyprland-*`; profile `hyprland-theme` vs module `hyprland-theme-bundle`.
 
 ```toml
 hyprland = ["hyprland-core","hyprland-portal","hyprland-bar","hyprland-launcher",
             "hyprland-notify","hyprland-lock","hyprland-idle","hyprland-wallpaper",
-            "hyprland-polkit","hyprland-shot","hyprland-tray","hyprland-session",
-            "hyprland-env"]
-hyprland-theme    = ["hyprland-theme-bundle"]   # pinned deterministic palette (default)
+            "hyprland-polkit","hyprland-shot","hyprland-tray","hyprland-gtk",
+            "hyprland-session","hyprland-env"]
+hyprland-theme    = ["hyprland-theme-bundle"]   # pinned base16 palette (default)
 hyprland-matugen  = ["hyprland-matugen"]         # opt-in wallpaper-driven regeneration
 ```
 
-- `hyprland` depends on the existing `shell` profile (wezterm, starship, nerd-fonts,
-  `wl-clipboard`, dotfiles) being present for a complete experience, but does not
-  re-declare those modules; it is intended to be installed alongside `shell`/`cli`.
-- `hyprland-theme` is recommended-alongside but kept separate so the compositor can be
-  installed without committing to the theming layer.
+`hyprland` is intended to be installed alongside `shell`/`cli` (wezterm, starship,
+nerd-fonts, `wl-clipboard`, dotfiles); it does not re-declare those modules.
 
 ## 4. Modules
 
@@ -83,29 +108,32 @@ All in a new `engine/src/devboost/modules/hyprland.py` (mirrors `gnome.py`). Eac
 
 | Module | name | Base | Source | Purpose |
 |---|---|---|---|---|
-| Compositor | `hyprland-core` | `PackageModule` (`copr_repo="solopasha/hyprland"`) | COPR | `hyprland` compositor |
-| Portal | `hyprland-portal` | `Module` | COPR | `xdg-desktop-portal-hyprland` (+ `xdg-desktop-portal-gtk`) — screen-share/screenshot backend |
+| Compositor | `hyprland-core` | `PackageModule` (`copr_repo="eddievs/hyprland"`, `self_updating=False`) | COPR | `hyprland` compositor |
+| Portal | `hyprland-portal` | `Module` (`self_updating=False`) | COPR + chezmoi | `xdg-desktop-portal-hyprland` (+`-gtk`) and verify the chezmoi `hyprland-portals.conf` |
 | Bar | `hyprland-bar` | `PackageModule` | official | `waybar` |
 | Launcher | `hyprland-launcher` | `PackageModule` | official | `fuzzel` |
 | Notify | `hyprland-notify` | `PackageModule` | official | `mako` |
-| Lock | `hyprland-lock` | `PackageModule` (COPR) | COPR | `hyprlock` |
-| Idle | `hyprland-idle` | `PackageModule` (COPR) | COPR | `hypridle` |
-| Wallpaper | `hyprland-wallpaper` | `PackageModule` (COPR) | COPR | `hyprpaper` |
-| Polkit | `hyprland-polkit` | `PackageModule` (COPR) | COPR | `hyprpolkitagent` (auth dialogs) |
+| Lock | `hyprland-lock` | `PackageModule` (COPR, `self_updating=False`) | COPR | `hyprlock` |
+| Idle | `hyprland-idle` | `PackageModule` (COPR, `self_updating=False`) | COPR | `hypridle` |
+| Wallpaper | `hyprland-wallpaper` | `Module` (COPR, `self_updating=False`) | COPR + `data/` | `hyprpaper` + install bundled default wallpaper |
+| Polkit | `hyprland-polkit` | `PackageModule` (COPR, `self_updating=False`) | COPR | `hyprpolkitagent` |
 | Screenshot | `hyprland-shot` | `Module` | official | `grim` + `slurp` |
 | Tray | `hyprland-tray` | `Module` | official | `network-manager-applet` + `blueman` |
+| GTK/cursor | `hyprland-gtk` | `Module` | official | `adw-gtk3-theme` + `papirus-icon-theme` + cursor; set via `gsettings` (Q2, minimal) |
 | Session | `hyprland-session` | `Module` | — | verify GDM present + wayland-session `.desktop` exists |
 | Env | `hyprland-env` | `Module` | — | ensure chezmoi-managed `~/.config/hypr/env.conf` applied |
-| Theme | `hyprland-theme-bundle` | `Module` | — | pinned palette + templates (no packages) |
+| Theme | `hyprland-theme-bundle` | `Module` | — | pinned base16 palette + templates (no packages) |
 | Matugen | `hyprland-matugen` | `Module` | official | `matugen` + `devboost hyprland retheme` path |
 
-### COPR containment
-Exactly the `hypr*` core + `xdg-desktop-portal-hyprland` (7 packages) come from
-`solopasha/hyprland`. Everything else is official Fedora. This is the profile's **single
-external supply-chain dependency**, isolated to the named modules above and enabled via
-the existing `copr` primitive (`copr.enable(ctx, "solopasha/hyprland")`), matching how
-other COPR-sourced modules already work in the engine. This is a deliberate, documented
-tradeoff: GNOME is 100% official-repo; the Hyprland profile is not.
+### COPR containment & pinning
+Exactly the `hypr*` core + `xdg-desktop-portal-hyprland` come from **`eddievs/hyprland`**,
+enabled via the existing `copr` primitive (`copr.enable(ctx, "eddievs/hyprland")`) on the
+fedora family only. The COPR is recorded in **`catalog.toml`** (the existing pin
+mechanism) with a re-verification note, not hardcoded across modules. All COPR-sourced
+modules set **`self_updating = False`** so `devboost install --update` never silently
+jumps the compositor (Q5); official-repo peripherals keep the `PackageModule` default
+`True`. This is a deliberate, documented tradeoff: GNOME is 100% official-repo; the
+Hyprland profile depends on a small third-party maintainer (§9).
 
 ### Representative module shapes
 
@@ -122,30 +150,14 @@ from devboost.modules._pkgmodule import PackageModule
 class HyprlandCore(PackageModule):
     name = "hyprland-core"
     category = "hyprland"
-    description = "Hyprland Wayland compositor (from solopasha/hyprland COPR on Fedora)."
+    description = "Hyprland Wayland compositor (from eddievs/hyprland COPR on Fedora)."
     gui = True
     profiles = ("hyprland",)
     cmd = "Hyprland"
     fedora_pkg = "hyprland"
     debian_pkg = "hyprland"           # in Debian/Ubuntu repos; no COPR there
-    copr_repo = "solopasha/hyprland"  # Fedora-only; ignored on debian family
-    self_updating = True
-
-
-@register
-class HyprlandPortal(Module):
-    name = "hyprland-portal"
-    category = "hyprland"
-    description = "xdg-desktop-portal-hyprland — screen-share/screenshot backend."
-    gui = True
-    requires = (HyprlandCore,)
-    profiles = ("hyprland",)
-
-    def verify(self, ctx: Ctx) -> bool:
-        return pkg.installed(ctx, "xdg-desktop-portal-hyprland")
-
-    def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, "xdg-desktop-portal-hyprland", "xdg-desktop-portal-gtk")
+    copr_repo = "eddievs/hyprland"    # Fedora-only; ignored on debian family
+    self_updating = False             # rolling compositor — no silent --update bumps
 
 
 @register
@@ -158,8 +170,6 @@ class HyprlandSession(Module):
     profiles = ("hyprland",)
 
     def verify(self, ctx: Ctx) -> bool:
-        # session file is shipped by the hyprland package; we only confirm it is present
-        # and that GDM (already installed by the gnome path) is the display manager.
         return ctx.ex.exists("/usr/share/wayland-sessions/hyprland.desktop")
 
     def install(self, ctx: Ctx) -> None:
@@ -169,63 +179,73 @@ class HyprlandSession(Module):
 ```
 
 `NVIDIA` env values in `hyprland-env` are emitted only when the existing `gpu-detect`
-reports an NVIDIA GPU — reusing the same detection the `hardware-nvidia` profile relies
-on; no new GPU logic is introduced.
+reports an NVIDIA GPU — reusing the detection the `hardware-nvidia` profile relies on.
 
-## 5. Theming architecture
+## 5. Theming architecture (base16, chezmoi-native)
 
-Omarchy's best idea — **one palette → many apps** — implemented the chezmoi-native way so
-that **chezmoi remains the sole writer of `~/.config`** (the property that avoids
-Omarchy's conflict).
+Omarchy's best idea — **one palette → many apps** — implemented so **chezmoi remains the
+sole writer of `~/.config`** (the property that avoids Omarchy's conflict). Schema is
+**base16** (`base00..base0F`) plus convenience aliases (`accent`, `bg`, `fg`), so any
+existing base16 scheme drops in as the pinned default and matugen maps cleanly onto it.
 
 ### Source layout (in the chezmoi source repo, `dotfiles/`)
 
 ```
 dotfiles/
-├── .chezmoidata/palette.toml            # THE pinned palette — static data (accent, bg,
-│                                         #   fg, muted, color0..color15). Not a template.
-├── dot_config/hypr/hyprland.conf         # static: keybinds, window rules; `source`s the below
-├── dot_config/hypr/colors.conf.tmpl      # ← palette
-├── dot_config/hypr/env.conf.tmpl         # Wayland/Electron/NVIDIA env (see §6)
+├── .chezmoidata/palette.toml            # static; contains a [palette] table:
+│                                         #   [palette]
+│                                         #   base00="#…" … base0F="#…"
+│                                         #   accent="#…"  bg="#…"  fg="#…"
+├── dot_config/hypr/hyprland.conf         # static: keybinds, window rules, exec-once
+│                                         #   autostart, monitor default; `source`s below
+├── dot_config/hypr/colors.conf.tmpl      # ← {{ .palette.* }}
+├── dot_config/hypr/env.conf.tmpl         # Wayland/Electron/NVIDIA env (§6)
+├── dot_config/hypr/hyprlock.conf.tmpl    # ← palette (lock screen)
+├── dot_config/hypr/hypridle.conf         # static: idle → lock/dpms timings
+├── dot_config/hypr/monitors.conf         # per-machine override seam; chezmoi-ignored*
 ├── dot_config/waybar/config              # static
 ├── dot_config/waybar/style.css.tmpl      # ← palette
 ├── dot_config/fuzzel/fuzzel.ini.tmpl     # ← palette
 ├── dot_config/mako/config.tmpl           # ← palette
 ├── dot_config/wezterm/colors.lua.tmpl    # existing wezterm config, now palette-driven
-└── dot_config/btop/themes/devboost.theme.tmpl  # ← palette
+├── dot_config/btop/themes/devboost.theme.tmpl   # ← palette
+└── dot_config/xdg-desktop-portal/hyprland-portals.conf  # static (Q8, §2)
 ```
 
-Templates reference `{{ .palette.accent }}` etc. Editing `palette.toml` and running
-`chezmoi apply` retints the entire desktop in one step. Fully reproducible and
-git-diffable (Constitution Principle III).
+\* `monitors.conf` is listed in the chezmoi source but excluded from management on apply
+(via `.chezmoiignore` or a `private_`/local convention) so a machine's display scaling
+never gets clobbered; `hyprland.conf` `source`s it if present.
+
+`hyprland.conf` includes an `exec-once` autostart block for the full session:
+`waybar`, `mako`, `hyprpaper`, `hypridle`, `hyprpolkitagent`, `nm-applet`, `blueman-applet`.
+
+### Unified palette (Q1)
+Shared apps (`wezterm`, `btop`, `starship`, `tmux`) read the same palette, so a palette
+change retints them in **both** the GNOME and Hyprland sessions — one consistent look,
+no session-conditional branching.
 
 ### Default: `hyprland-theme-bundle` (profile `hyprland-theme`)
-Installs no packages. It ensures the palette + templates are present in the chezmoi
-source and applied. Deterministic and pinned.
+Installs no packages; ensures the pinned base16 palette + templates are present in the
+chezmoi source and applied. Deterministic, pinned, git-diffable (Constitution Principle III).
 
 ### Opt-in: `hyprland-matugen` (profile `hyprland-matugen`)
-Installs `matugen` (official F44) and provides a `devboost hyprland retheme <wallpaper>`
-path. **Containment rule (resolves the matugen↔chezmoi ownership conflict):** matugen is
-configured with a **single** template whose `output_path` is the **chezmoi source**
-`.chezmoidata/palette.toml` (NOT any `~/.config` path). The flow is:
+Installs `matugen` (official F44) and provides `devboost hyprland retheme <wallpaper>`.
+**Containment rule (preserves chezmoi ownership):** matugen is configured with a **single**
+template whose `output_path` is the **chezmoi source** `.chezmoidata/palette.toml` (a
+`[palette]` table mapping Material-3 roles → base16), NOT any `~/.config` path. Flow:
 
 ```
-wallpaper.jpg
-  → matugen image wallpaper.jpg        (Material palette)
-  → renders ONE template → <chezmoi-source>/.chezmoidata/palette.toml
-  → chezmoi apply                       (re-renders every *.tmpl above)
+wallpaper.jpg → matugen image … → renders ONE template → <chezmoi-source>/.chezmoidata/palette.toml
+             → chezmoi apply → re-renders every *.tmpl above
 ```
 
-matugen never writes into `~/.config`; it only produces palette *data*. chezmoi remains
-the sole renderer/owner of `~/.config`. Off by default — the user chooses pinned
-stability or per-wallpaper dynamism.
+matugen never writes into `~/.config`; it produces palette *data* only. Off by default.
 
 ## 6. Wayland / Electron / NVIDIA environment
 
 `hyprland-env` guarantees a chezmoi-managed `~/.config/hypr/env.conf`, `source`d from
-`hyprland.conf`, pre-setting the variables Omarchy sets so Electron/GTK apps (VS Code,
-Bruno, dbgate, Bitwarden, Obsidian) render natively on Wayland instead of blurry under
-XWayland fractional scaling:
+`hyprland.conf`, so Electron/GTK apps (VS Code, Bruno, dbgate, Bitwarden, Obsidian) render
+natively on Wayland instead of blurry under XWayland fractional scaling:
 
 ```ini
 # ~/.config/hypr/env.conf  (hyprlang INI form)
@@ -238,12 +258,10 @@ env = __GLX_VENDOR_LIBRARY_NAME,nvidia
 env = NVD_BACKEND,direct
 ```
 
-The NVIDIA lines are guarded by a chezmoi template conditional keyed on the existing
-GPU-detection output, so an AMD/Intel machine never receives NVIDIA env.
+The NVIDIA lines are guarded by a chezmoi template conditional keyed on GPU-detection
+output, so AMD/Intel machines never receive NVIDIA env.
 
 ## 7. Keybindings (curated defaults, static in `hyprland.conf`)
-
-Chosen to match existing muscle memory and stay close to Omarchy defaults:
 
 | Bind | Action |
 |---|---|
@@ -258,51 +276,57 @@ Chosen to match existing muscle memory and stay close to Omarchy defaults:
 | `Print` / `Shift+Print` | region / full screenshot via `grim`+`slurp` |
 | `Super+Escape` | `hyprlock` |
 
-Documented here so the set is deliberate, not accidental.
+## 8. Testing (Q6 — both)
 
-## 8. Testing
-
-Consistent with the existing module test pattern (`engine/tests/modules/`), all unit
-tests run against a fake `Executor` — no live Hyprland required:
-
-- Each `PackageModule` asserts the correct `pkg.install` package names and, for COPR
-  modules, that `copr.enable(ctx, "solopasha/hyprland")` is called on the fedora family
-  and **not** on the debian family.
-- `hyprland-portal` / `-shot` / `-tray` assert their multi-package installs and
-  `verify()` truthiness against faked `pkg.installed` / `which`.
-- `hyprland-env` asserts the NVIDIA env branch is present only when GPU-detect is faked to
-  `nvidia`, absent otherwise.
+Unit tests (fake `Executor`, no live Hyprland), consistent with `engine/tests/modules/`:
+- COPR modules assert `copr.enable(ctx, "eddievs/hyprland")` on fedora family and **not**
+  on debian; and assert `self_updating is False` on the `hypr*`-core/COPR modules.
+- multi-package modules (`hyprland-portal`/`-shot`/`-tray`/`-gtk`) assert package sets and
+  `verify()` truthiness against faked `pkg.installed`/`which`.
+- `hyprland-env` asserts the NVIDIA env branch present only when GPU-detect is `nvidia`.
 - `hyprland-matugen` asserts matugen's configured output path is the chezmoi source
   `.chezmoidata/palette.toml` and never a `~/.config` path (guards the ownership rule).
-- `mypy --strict` + ruff clean; these are merge gates per the constitution.
+- `hyprland-portal` asserts the chezmoi `hyprland-portals.conf` is present.
+- `mypy --strict` + ruff clean (merge gates).
 
-### Manual VM acceptance checklist (goes in the plan as the sign-off gate)
+**Scripted smoke gate (new):** after `chezmoi apply` renders the templates, run a
+Hyprland **config-parse check** (`hyprland --config <rendered hyprland.conf> --verify`-style
+dry parse, no session) so a template typo fails loudly in CI/VM. This catches the most
+likely regression — a broken `.tmpl`.
+
+### Manual VM acceptance checklist (sign-off gate)
 1. Install `hyprland hyprland-theme` on a Fedora 44 VM; reboot.
-2. GDM shows both "GNOME" and "Hyprland"; log into Hyprland.
-3. wezterm (`Super+Return`) and fuzzel (`Super+Space`) work; keybinds behave.
+2. GDM shows "GNOME" and "Hyprland"; log into Hyprland.
+3. wezterm (`Super+Return`), fuzzel (`Super+Space`), keybinds work; autostart (waybar,
+   mako, wallpaper, polkit, tray) all come up.
 4. VS Code + Bruno render sharp (no XWayland blur) — confirms `env.conf`.
-5. Screen-share a window/screen in Google Meet (Chromium) — confirms the portal.
-6. `chezmoi apply` after editing `palette.toml` retints waybar + wezterm + mako.
-7. (If `hyprland-matugen` installed) `devboost hyprland retheme <wallpaper>` updates the
-   palette and re-themes, with no writes to `~/.config` outside chezmoi.
-8. Log out → log into GNOME to confirm the fallback is intact.
+5. Screen-share a window/screen in Google Meet (Chromium) — confirms portal + `portals.conf`.
+6. `chezmoi apply` after editing `palette.toml` retints waybar + wezterm + mako (and,
+   per Q1, wezterm/btop under GNOME too).
+7. (If `hyprland-matugen`) `devboost hyprland retheme <wallpaper>` updates the palette and
+   re-themes, with no writes to `~/.config` outside chezmoi.
+8. Log out → into GNOME to confirm the fallback is intact.
 
 ## 9. Risks & tradeoffs
 
-- **COPR dependency (`solopasha/hyprland`)** for Hyprland core — single-maintainer supply
-  chain, unlike the all-official GNOME path. Accepted and documented; contained to §4
-  modules. Mitigation: the profile is opt-in and GNOME remains the default/fallback.
-- **Rolling-ish desktop on a stable base** — the COPR tracks Hyprland closely; a Hyprland
-  release can shift config semantics. Mitigation: session coexistence means a broken
-  Hyprland update never blocks work (log into GNOME); dev-boost pins nothing here beyond
-  what the COPR provides.
-- **Screen-share / multi-monitor** under Hyprland is less turnkey than GNOME's portal.
-  Mitigation: `hyprland-portal` installs the correct backend; acceptance step 5 gates it.
-- **Maintenance surface** — 15 new modules + a template set. Mitigation: 9 are trivial
+- **Third-party COPR (`eddievs/hyprland`)** for Hyprland core — a *small-maintainer*
+  supply chain, and the larger `solopasha` COPR does not even cover F44. This is the
+  profile's biggest risk and a real dent in the "Fedora-is-more-stable-than-Omarchy"
+  thesis. **Mitigations:** opt-in profile; GNOME is the default/fallback; COPR pinned in
+  `catalog.toml` with a re-verify note; `self_updating=False` so no silent bumps;
+  `eli-xciv/hyprland` documented as a drop-in fallback. Revisit if Hyprland lands in
+  official Fedora repos or a Fedora SIG COPR appears.
+- **Rolling-ish desktop on a stable base** — a Hyprland release can shift config
+  semantics. Mitigation: session coexistence means a broken update never blocks work
+  (log into GNOME); config-parse smoke gate catches template breakage early.
+- **Screen-share / multi-monitor** less turnkey than GNOME. Mitigation: `hyprland-portal`
+  + shipped `hyprland-portals.conf`; acceptance step 5 gates it.
+- **Maintenance surface** — 16 modules + a template set. Mitigation: most are trivial
   `PackageModule`s; theming templates are static text; all covered by fake-Executor tests.
 
 ## 10. Out of scope / future
-- Ubuntu/Debian Hyprland parity (modules dispatch on `ctx.os.family` already, but the
-  debian path is untested here and not a goal for this spec).
+- Ubuntu/Debian Hyprland parity (modules dispatch on `ctx.os.family`, but the debian path
+  is untested here and not a goal).
 - A `full-hyprland` aggregate profile (explicitly rejected in §1).
-- Wallpaper management daemon choices beyond `hyprpaper`.
+- Palette-driven GTK/libadwaita recoloring (rejected in Q2 as brittle).
+- Wallpaper daemons beyond `hyprpaper`.
