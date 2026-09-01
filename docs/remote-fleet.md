@@ -45,7 +45,7 @@ The shape this guide assumes (adjust names to your own tailnet):
 
 | Box | Install | Role |
 |-----|---------|------|
-| Laptop(s) — Fedora, e.g. `mate-dev`, `hp-dev` | `full` | dev seats — thin, interchangeable clients |
+| Laptop(s) — Fedora, e.g. `mate-fedora`, `hp-dev` | `full` | dev seats — thin, interchangeable clients |
 | Production server #1 — Ubuntu, e.g. `mod-sol` | `server` (+ `devboost brain`) | real apps **and** the x86 build/brain host |
 | Production server #2 — Ubuntu, e.g. `my-dev` | `server` | real apps (an optional second/arm64 brain) |
 
