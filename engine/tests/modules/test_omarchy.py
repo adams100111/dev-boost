@@ -331,3 +331,42 @@ def test_verify_reports_the_plan_not_the_raw_profile_expansion() -> None:
     assert dict((p.name, p.skip_reason) for p in plan)["herdr"] == "provided-by-omarchy"
     # Only `uv` is left to actually check on this host.
     assert [p.name for p in plan if p.skip_reason is None] == ["uv"]
+
+
+# ---------------------------------------------------------------------------
+# Profiles beyond `omarchy` (brain-host / server) must resolve on Arch too
+# ---------------------------------------------------------------------------
+
+
+def test_browser_view_uses_arch_package_names() -> None:
+    """Arch splits Xvfb into its own package and ships neither noVNC nor websockify."""
+    from devboost.modules.browser_view import BrowserView
+
+    ex = FakeExecutor(present={"yay"})
+    BrowserView().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm",
+            "xorg-server-xvfb", "x11vnc"] in ex.calls
+    assert ["yay", "-S", "--needed", "--noconfirm", "novnc", "websockify"] in ex.calls
+    # The Fedora/Debian spellings must not leak through.
+    flat = [tok for call in ex.calls for tok in call]
+    assert "xvfb" not in flat and "xorg-x11-server-Xvfb" not in flat
+
+
+def test_caddy_installs_from_arch_extra() -> None:
+    """Caddy is packaged on Arch — no vendor apt repo and no COPR needed."""
+    from devboost.modules.caddy import Caddy
+
+    ex = FakeExecutor()
+    Caddy().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "caddy"] in ex.calls
+
+
+def test_crossarch_build_skips_the_debian_only_binfmt_package() -> None:
+    """`binfmt-support` is a Debian package; Arch registers handlers via systemd-binfmt."""
+    from devboost.modules.crossarch_build import CrossArchBuild
+
+    ex = FakeExecutor()
+    CrossArchBuild().install(Ctx(os=OMARCHY, ex=ex))
+    flat = [tok for call in ex.calls for tok in call]
+    assert "qemu-user-static" in flat
+    assert "binfmt-support" not in flat

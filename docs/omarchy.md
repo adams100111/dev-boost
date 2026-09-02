@@ -103,52 +103,15 @@ Everything without an Omarchy counterpart — `atuin`, `ripgrep`, `bat`, `fresh`
 
 ## Credentials without a USB
 
-`secrets` bootstraps git identity + GitHub access. On the zero-touch path an
-`age`-encrypted bundle (`secrets.age` + `age-key.txt`) is pre-provisioned on the USB and
-decrypted at firstboot — there is nobody at the keyboard, so it has to be.
+`secrets` normally reads an `age`-encrypted bundle provisioned on the USB — right for the
+zero-touch path, pointless friction on a box you installed yourself. It now falls back to
+an authenticated GitHub CLI (offered by name, never silently adopted) or an interactive
+prompt, so no bundle is required. Unattended runs still never block.
 
-That is the wrong demand to make of someone who installed Omarchy themselves: there is no
-USB, no `/opt/dev-boost`, and no reason to build an encrypted bundle just to supply an
-email address. Previously that produced a hard `SecretsError` and blocked `ssh-setup`,
-`chezmoi-repo` and `obsidian-sync`.
+This is **not Omarchy-specific** — see **[credentials.md](credentials.md)** for the full
+resolution order, the interactive menu, and what `verify()` accepts.
 
-Credentials now resolve in order of decreasing automation:
-
-| # | Source | When |
-|---|---|---|
-| 1 | The age bundle | If provisioned — **unchanged**, still wins outright, zero-touch is untouched |
-| 2 | A signed-in `gh` | Offered as the default choice at a terminal; used directly when unattended |
-| 3 | An interactive choice | Only with a real TTY attached |
-| 4 | `SecretsError` naming the options | Nothing available and nobody to ask |
-
-At a terminal with `gh` already signed in you get:
-
-```
-? GitHub CLI is already signed in as octocat. How should dev-boost set up git + GitHub?
-❯ Use the signed-in GitHub account (octocat)
-  Sign in as a different GitHub account
-  Enter name, email and a personal access token myself
-  Skip — configure git credentials later
-```
-
-The signed-in session is **offered, never assumed**. The `gh` account on a machine is
-often not the one that box should commit as, and silently adopting it would write the
-wrong name and email into every commit — invisible until someone read the git log.
-Choosing *Skip* is respected; it is not quietly overridden by the session just offered.
-
-Signing in through this menu runs `gh auth setup-git`, so git authenticates through `gh`
-rather than a plaintext token in `~/.git-credentials`.
-
-Two guarantees hold regardless:
-
-- **An unattended run never blocks on a prompt.** Interactivity requires both stdin and
-  stdout to be a TTY, and `DEVBOOST_NONINTERACTIVE=1` forces it off. A firstboot service or
-  `curl … | bash` reaches step 4 and fails with an actionable message rather than hanging.
-- **`verify()` accepts either source.** A box configured through `gh auth setup-git` has no
-  `~/.git-credentials` line; demanding one would report a correctly configured machine as
-  broken and reinstall over it on every run.
-
-If you would rather keep the bundle (it is still the most reproducible option):
+The only Omarchy-flavoured detail: if you do want the reproducible bundle,
 
 ```bash
 omarchy pkg add age jq
@@ -187,6 +150,9 @@ On vanilla Arch there is no `omarchy` CLI and the module is a clean no-op.
 - **AUR is unreviewed third-party build scripts.** `ddev-bin`, `visual-studio-code-bin`,
   `bruno-bin` and `gearlever` are all AUR. Aspire deliberately stays on
   `dotnet tool install -g` rather than the four-day-old `aspire-cli` AUR package.
+- **`brain-host` on Arch is implemented but unexercised.** `browser-view` and `caddy`
+  gained Arch branches (noVNC/websockify come from the AUR); no one has run
+  `devboost brain` on an Arch box yet.
 - **`devboost usb` does not build Omarchy media.** Omarchy has its own installer ISO and
   first-run provisioning; duplicating it in `catalog.toml` would add risk, not capability.
 - **Rolling release.** Arch moves faster than pinned package names. The verify-first

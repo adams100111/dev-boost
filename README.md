@@ -207,7 +207,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `ripgrep` | cli | Fast recursive search (rg). |
 | `rpmfusion` | base | Enable RPM Fusion free + nonfree + AppStream metadata. |
 | `sd` | cli |  |
-| `secrets` | base | Decrypt provisioned secrets; configure git identity + HTTPS credentials. |
+| `secrets` | base | Configure git identity + GitHub access (age bundle, gh, or prompt). |
 | `secureboot-mok` | hardware-nvidia | Enroll a MOK so the signed NVIDIA modules load under Secure Boot (Fedora-only). |
 | `server-firewall` | server | ufw baseline: deny incoming, allow SSH + tailscale0; disable exposed rpcbind. |
 | `smartmontools` | system | Disk SMART monitoring. |
@@ -364,7 +364,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
-[remote-fleet](docs/remote-fleet.md) · [omarchy](docs/omarchy.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
+[remote-fleet](docs/remote-fleet.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
 
 ## Validate before shipping (in a throwaway Fedora VM)
 

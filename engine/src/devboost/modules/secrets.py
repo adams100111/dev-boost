@@ -1,4 +1,8 @@
-"""secrets — decrypt the provisioned bundle, configure git identity + HTTPS credentials."""
+"""secrets — configure git identity + GitHub access.
+
+Credentials come from the provisioned age bundle, an authenticated `gh`, or an
+interactive prompt — see modules/_credentials.py and docs/credentials.md.
+"""
 
 from __future__ import annotations
 
@@ -47,7 +51,7 @@ def key_path() -> Path:
 class Secrets(Module):
     name = "secrets"
     category = "base"
-    description = "Decrypt provisioned secrets; configure git identity + HTTPS credentials."
+    description = "Configure git identity + GitHub access (age bundle, gh, or prompt)."
     profiles = ("base",)
 
     def verify(self, ctx: Ctx) -> bool:
