@@ -370,3 +370,57 @@ def test_crossarch_build_skips_the_debian_only_binfmt_package() -> None:
     flat = [tok for call in ex.calls for tok in call]
     assert "qemu-user-static" in flat
     assert "binfmt-support" not in flat
+
+
+# ---------------------------------------------------------------------------
+# `list --json` — the machine-readable feed a UI consumes
+# ---------------------------------------------------------------------------
+
+
+def test_list_json_emits_plan_rows_for_a_ui(tmp_path: Path) -> None:
+    """A GUI/TUI needs category + description + skip reason without parsing log output,
+    and needs the PLAN (what install would really do here), not the raw expansion."""
+    import json as _json
+
+    from typer.testing import CliRunner
+
+    from devboost.cli.app import app
+
+    result = CliRunner().invoke(app, ["list", "--json", "cli"])
+    assert result.exit_code == 0, result.output
+    rows = _json.loads(result.stdout)
+    assert rows, "expected rows"
+    by_name = {r["name"]: r for r in rows}
+    for row in rows:
+        assert set(row) == {
+            "name", "category", "description", "profiles", "gui", "skip_reason", "installed"
+        }
+    # Category is what a UI groups by, so it must actually be populated.
+    assert by_name["bat"]["category"] == "cli"
+    # Without --status the live probe is skipped entirely (it costs a verify per module).
+    assert all(r["installed"] is None for r in rows)
+
+
+def test_list_json_reports_platform_provided_modules(tmp_path: Path) -> None:
+    """A UI must be able to show WHY a row is not actionable, not silently omit it."""
+    import json as _json
+
+    from typer.testing import CliRunner
+
+    from devboost.cli.app import app
+
+    result = CliRunner().invoke(app, ["list", "--json", "cli"])
+    rows = {r["name"]: r for r in _json.loads(result.stdout)}
+    if "herdr" in rows:  # present only when the host resolves to Omarchy
+        assert rows["herdr"]["skip_reason"] in (None, "provided-by-omarchy")
+
+
+def test_list_without_json_still_prints_plain_names() -> None:
+    from typer.testing import CliRunner
+
+    from devboost.cli.app import app
+
+    result = CliRunner().invoke(app, ["list", "cli"])
+    assert result.exit_code == 0
+    assert "bat" in result.stdout.split()
+    assert "{" not in result.stdout

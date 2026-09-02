@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
@@ -250,11 +251,51 @@ def brain(
 
 
 @app.command(name="list")
-def list_(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
-    """Print the resolved install order."""
-    order, _ = _order(profiles, root)
-    for name in order:
-        typer.echo(name)
+def list_(
+    profiles: ProfilesArg = [],
+    root: RootOpt = settings.root,
+    json_out: Annotated[
+        bool, typer.Option("--json", help="machine-readable rows (name/category/…)")
+    ] = False,
+    status: Annotated[
+        bool, typer.Option("--status", help="with --json, also run each module's verify()")
+    ] = False,
+) -> None:
+    """Print the resolved install order (or `--json` rows for a UI to consume)."""
+    order, modules = _order(profiles, root)
+    if not json_out:
+        for name in order:
+            typer.echo(name)
+        return
+
+    # The plan, so a UI shows exactly what `install` would do on THIS host — wrong-OS
+    # modules are absent and platform-provided ones carry their skip reason.
+    os_info = osinfo.detect()
+    plan = build_plan(order, modules, os_info)
+    ctx = Ctx(os=os_info, ex=RealExecutor()) if status else None
+    rows: list[dict[str, object]] = []
+    for pm in plan:
+        cls = modules[pm.name]
+        installed: bool | None = None
+        if ctx is not None and pm.skip_reason is None:
+            # One process for the whole catalog: a UI that shelled out per module would
+            # pay the interpreter start-up cost ~100 times over.
+            try:
+                installed = cls().verify(ctx)
+            except Exception:  # noqa: BLE001 — a probe must never break the listing
+                installed = None
+        rows.append(
+            {
+                "name": pm.name,
+                "category": cls.category,
+                "description": cls.description,
+                "profiles": list(cls.profiles),
+                "gui": cls.gui,
+                "skip_reason": pm.skip_reason,
+                "installed": installed,
+            }
+        )
+    typer.echo(json.dumps(rows, indent=2))
 
 
 @app.command()
