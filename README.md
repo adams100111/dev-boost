@@ -71,7 +71,6 @@ enrollment on NVIDIA when Secure Boot is on.
 ## Profiles
 
 <!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
-
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |

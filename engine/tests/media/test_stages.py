@@ -81,8 +81,11 @@ class _AutomountedExecutor(FakeExecutor):
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result:
-        result = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
+        result = super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+        )
         if argv and argv[0] == "umount":
             self.scripts["lsblk"] = Result(0, stdout=_LSBLK + _LSBLK_CHILDREN_CLEAN)
         return result
@@ -706,8 +709,11 @@ class _FlakyMountExecutor(FakeExecutor):
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result:
-        result = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd)
+        result = super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+        )
         if argv and argv[0] == "mount":
             if self.fail_first > 0:
                 self.fail_first -= 1

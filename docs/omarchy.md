@@ -101,6 +101,65 @@ So dev-boost:
 Everything without an Omarchy counterpart — `atuin`, `ripgrep`, `bat`, `fresh`, `caddy`,
 `fleet`, `systemd` user units, `~/.claude`, `~/.local/bin` — applies unchanged.
 
+## Credentials without a USB
+
+`secrets` bootstraps git identity + GitHub access. On the zero-touch path an
+`age`-encrypted bundle (`secrets.age` + `age-key.txt`) is pre-provisioned on the USB and
+decrypted at firstboot — there is nobody at the keyboard, so it has to be.
+
+That is the wrong demand to make of someone who installed Omarchy themselves: there is no
+USB, no `/opt/dev-boost`, and no reason to build an encrypted bundle just to supply an
+email address. Previously that produced a hard `SecretsError` and blocked `ssh-setup`,
+`chezmoi-repo` and `obsidian-sync`.
+
+Credentials now resolve in order of decreasing automation:
+
+| # | Source | When |
+|---|---|---|
+| 1 | The age bundle | If provisioned — **unchanged**, still wins outright, zero-touch is untouched |
+| 2 | A signed-in `gh` | Offered as the default choice at a terminal; used directly when unattended |
+| 3 | An interactive choice | Only with a real TTY attached |
+| 4 | `SecretsError` naming the options | Nothing available and nobody to ask |
+
+At a terminal with `gh` already signed in you get:
+
+```
+? GitHub CLI is already signed in as octocat. How should dev-boost set up git + GitHub?
+❯ Use the signed-in GitHub account (octocat)
+  Sign in as a different GitHub account
+  Enter name, email and a personal access token myself
+  Skip — configure git credentials later
+```
+
+The signed-in session is **offered, never assumed**. The `gh` account on a machine is
+often not the one that box should commit as, and silently adopting it would write the
+wrong name and email into every commit — invisible until someone read the git log.
+Choosing *Skip* is respected; it is not quietly overridden by the session just offered.
+
+Signing in through this menu runs `gh auth setup-git`, so git authenticates through `gh`
+rather than a plaintext token in `~/.git-credentials`.
+
+Two guarantees hold regardless:
+
+- **An unattended run never blocks on a prompt.** Interactivity requires both stdin and
+  stdout to be a TTY, and `DEVBOOST_NONINTERACTIVE=1` forces it off. A firstboot service or
+  `curl … | bash` reaches step 4 and fails with an actionable message rather than hanging.
+- **`verify()` accepts either source.** A box configured through `gh auth setup-git` has no
+  `~/.git-credentials` line; demanding one would report a correctly configured machine as
+  broken and reinstall over it on every run.
+
+If you would rather keep the bundle (it is still the most reproducible option):
+
+```bash
+omarchy pkg add age jq
+./scripts/make-secrets.sh --out ~/.config/devboost/bootstrap
+export DEVBOOST_BOOTSTRAP_DIR=~/.config/devboost/bootstrap
+```
+
+Keep it under `$HOME`, not `/opt`: the Kickstart path uses `/opt/dev-boost` because
+firstboot runs as root, but you run `devboost` as yourself and a root-owned `0600` private
+key would be unreadable.
+
 ## Updating: delegate, don't duplicate
 
 Building a second update path next to `omarchy update` would be the worst outcome of this
