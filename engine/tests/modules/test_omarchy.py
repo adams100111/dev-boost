@@ -1,0 +1,248 @@
+"""Omarchy (Arch + Hyprland) support — detection, gating, and native-package routing.
+
+Omarchy is an opinionated platform, not just "Arch with Hyprland": it already ships the
+desktop, system-resilience, multimedia and NVIDIA layers dev-boost installs on Fedora, and
+it packages several tools dev-boost otherwise pins itself. These tests pin down the two
+things that make support correct rather than merely present — that Omarchy resolves to the
+`arch` family at all, and that dev-boost declines to install what the platform owns.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from devboost.cli.app import default_profile
+from devboost.core.graph import toposort
+from devboost.core.osinfo import OsInfo, OsMap, detect, family_of
+from devboost.core.plan import build_plan
+from devboost.core.profiles import expand, load_profiles
+from devboost.core.registry import load, validate_profiles
+from devboost.exec.executor import FakeExecutor
+from devboost.model import Ctx
+from devboost.modules.apps import Bruno, Localsend, Obsidian
+from devboost.modules.editors import Vscode
+from devboost.modules.herdr import Herdr
+from devboost.modules.omarchy import OmarchyUpdateHook
+
+OMARCHY = OsInfo("omarchy", "arch", "x86_64", id_like=("arch",))
+ARCH = OsInfo("arch", "arch", "x86_64")
+FEDORA = OsInfo("fedora", "fedora", "x86_64")
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+# ---------------------------------------------------------------------------
+# Detection — the unlock. Everything else is dead code without it.
+# ---------------------------------------------------------------------------
+
+
+def test_omarchy_resolves_to_the_arch_family_via_id_like() -> None:
+    assert family_of("omarchy", ("arch",)) == "arch"
+
+
+def test_unknown_derivative_follows_id_like() -> None:
+    """Any Arch/Debian/Fedora derivative gets the right family for free."""
+    assert family_of("some-new-spin", ("arch",)) == "arch"
+    assert family_of("another-spin", ("ubuntu", "debian")) == "debian"
+
+
+def test_known_distro_ignores_id_like() -> None:
+    """A distro we know about is never overridden by its ID_LIKE."""
+    assert family_of("ubuntu", ("debian",)) == "debian"
+    assert family_of("fedora", ("rhel",)) == "fedora"
+
+
+def test_unrelated_distro_still_resolves_to_itself() -> None:
+    assert family_of("plan9") == "plan9"
+    assert family_of("plan9", ("inferno",)) == "plan9"
+
+
+def test_detect_parses_id_like(tmp_path: Path) -> None:
+    release = tmp_path / "os-release"
+    release.write_text(
+        'NAME="Omarchy"\nID=omarchy\nID_LIKE=arch\nVERSION_ID="4.0.2"\n', encoding="utf-8"
+    )
+    info = detect(os_release_path=str(release), machine="x86_64", env={"DISPLAY": ":0"})
+    assert info.distro == "omarchy"
+    assert info.family == "arch"
+    assert info.id_like == ("arch",)
+
+
+def test_per_os_strategy_selects_the_arch_entry_on_omarchy() -> None:
+    """The bug this whole seam exists to fix: an `arch=` strategy must actually resolve."""
+    strategies: OsMap[str] = OsMap(fedora="dnf", debian="apt", arch="pacman")
+    assert strategies.get(OMARCHY) == "pacman"
+
+
+# ---------------------------------------------------------------------------
+# Platform-provided modules are REPORTED, not silently dropped
+# ---------------------------------------------------------------------------
+
+
+def test_provided_by_reports_a_skip_reason_rather_than_installing() -> None:
+    modules = load()
+    plan = build_plan(["herdr"], modules, OMARCHY)
+    assert [(p.name, p.skip_reason) for p in plan] == [("herdr", "provided-by-omarchy")]
+
+
+def test_provided_by_is_scoped_to_omarchy_not_the_whole_arch_family() -> None:
+    """Vanilla Arch has no packaged herdr, so it must still be installed there."""
+    assert Herdr.provided_by == ("omarchy",)
+    plan = build_plan(["herdr"], load(), ARCH)
+    assert plan[0].skip_reason is None
+
+
+def test_fedora_only_modules_are_dropped_on_omarchy() -> None:
+    modules = load()
+    names = ["rpmfusion", "dnf-tune", "grub-btrfs", "snapper", "flatpak"]
+    assert build_plan(names, modules, OMARCHY) == []
+    # …and still install on Fedora.
+    assert [p.name for p in build_plan(names, modules, FEDORA)] == names
+
+
+# ---------------------------------------------------------------------------
+# Native packages instead of Flathub
+# ---------------------------------------------------------------------------
+
+
+def test_gui_apps_install_natively_on_arch_not_via_flatpak() -> None:
+    ex = FakeExecutor()
+    Obsidian().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "obsidian"] in ex.calls
+    assert not any("flatpak" in c for c in ex.calls)
+
+
+def test_gui_app_absent_from_official_repos_uses_the_aur() -> None:
+    ex = FakeExecutor(present={"yay"})
+    Bruno().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["yay", "-S", "--needed", "--noconfirm", "bruno-bin"] in ex.calls
+
+
+def test_gui_app_from_the_omarchy_repo_uses_plain_pacman() -> None:
+    """localsend ships in Omarchy's own pacman repo — no AUR build needed."""
+    ex = FakeExecutor(present={"omarchy-pkg-add"})
+    Localsend().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["omarchy-pkg-add", "localsend"] in ex.calls
+
+
+def test_gui_app_verify_uses_pacman_query_on_arch() -> None:
+    ex = FakeExecutor()
+    assert Obsidian().verify(Ctx(os=OMARCHY, ex=ex)) is True
+    assert ["pacman", "-Q", "obsidian"] in ex.calls
+
+
+def test_vscode_uses_the_microsoft_branded_aur_build_on_arch() -> None:
+    """Arch's own `code` package is the OSS rebuild — no Marketplace, no MS branding."""
+    ex = FakeExecutor(present={"yay"})
+    Vscode().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["yay", "-S", "--needed", "--noconfirm", "visual-studio-code-bin"] in ex.calls
+
+
+# ---------------------------------------------------------------------------
+# One-click: the default target
+# ---------------------------------------------------------------------------
+
+
+def test_install_defaults_to_the_omarchy_profile_on_omarchy() -> None:
+    assert default_profile(OMARCHY) == "omarchy"
+
+
+def test_install_still_defaults_to_full_elsewhere() -> None:
+    assert default_profile(FEDORA) == "full"
+    assert default_profile(ARCH) == "full"
+
+
+@pytest.fixture
+def real_profiles() -> dict[str, list[str]]:
+    return load_profiles(REPO_ROOT / "profiles.toml")
+
+
+def test_omarchy_profile_excludes_the_layers_omarchy_owns(
+    real_profiles: dict[str, list[str]],
+) -> None:
+    omarchy = real_profiles["omarchy"]
+    assert "gnome" not in omarchy, "Omarchy is Hyprland; the GNOME group has no analog"
+    assert "multimedia" not in omarchy, "Arch ships codecs unencumbered — nothing to swap"
+    # …but the dev stacks — dev-boost's actual contribution here — are all present.
+    for stack in ("python", "web", "laravel", "dotnet", "data", "devops", "react-native"):
+        assert stack in omarchy
+
+
+def test_omarchy_profile_resolves_and_plans_cleanly(
+    real_profiles: dict[str, list[str]],
+) -> None:
+    """End-to-end: the profile expands, sorts, and produces a plan with no NVIDIA/dnf work."""
+    modules = load()
+    validate_profiles(modules, set(real_profiles))
+    order = toposort(expand(["omarchy"], real_profiles, modules), modules)
+    plan = build_plan(order, modules, OMARCHY)
+    planned = {p.name for p in plan}
+
+    assert planned, "the omarchy profile must plan something"
+    # Nothing dnf-, GRUB- or Flatpak-shaped survives to the plan.
+    for gone in ("rpmfusion", "dnf-tune", "grub-btrfs", "flatpak", "snapper", "openh264"):
+        assert gone not in planned, gone
+    # The NVIDIA akmod/MOK state machine is RPM Fusion machinery — never on Arch.
+    assert not any(
+        modules[p.name].category == "hardware-nvidia" for p in plan
+    ), "Fedora's NVIDIA stack must not be planned on Omarchy"
+    # The things only dev-boost provides are planned.
+    for wanted in ("ddev", "aspire", "uv", "fresh", "secrets", "obsidian-sync"):
+        assert wanted in planned, wanted
+    # And what the platform owns is reported rather than reinstalled.
+    reasons = {p.name: p.skip_reason for p in plan}
+    assert reasons.get("herdr") == "provided-by-omarchy"
+    assert reasons.get("wezterm") == "provided-by-omarchy"
+
+
+# ---------------------------------------------------------------------------
+# One-click update: delegate to `omarchy update`, don't duplicate it
+# ---------------------------------------------------------------------------
+
+
+def test_update_hook_is_installed_into_omarchys_post_update_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = Ctx(os=OMARCHY, ex=FakeExecutor(present={"omarchy-hook-install"}))
+    mod = OmarchyUpdateHook()
+
+    assert mod.verify(ctx) is False
+    mod.install(ctx)
+
+    hook = tmp_path / ".config" / "omarchy" / "hooks" / "post-update.d" / "devboost-update"
+    assert hook.is_file()
+    body = hook.read_text(encoding="utf-8")
+    assert "devboost install --update" in body
+    # The OS update already succeeded by the time this runs; a failed dev-layer refresh
+    # must not be reported as a broken system update.
+    assert body.rstrip().endswith("exit 0")
+    assert hook.stat().st_mode & 0o111, "hook must be executable"
+    assert mod.verify(ctx) is True
+
+
+def test_update_hook_is_a_clean_no_op_on_vanilla_arch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No omarchy CLI to integrate with — that is not a failure."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = Ctx(os=ARCH, ex=FakeExecutor())
+    mod = OmarchyUpdateHook()
+
+    assert mod.verify(ctx) is True
+    mod.install(ctx)
+    assert not (tmp_path / ".config" / "omarchy").exists()
+
+
+def test_update_hook_install_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = Ctx(os=OMARCHY, ex=FakeExecutor(present={"omarchy-hook-install"}))
+    OmarchyUpdateHook().install(ctx)
+    hook = tmp_path / ".config" / "omarchy" / "hooks" / "post-update.d" / "devboost-update"
+    first = hook.read_text(encoding="utf-8")
+    OmarchyUpdateHook().install(ctx)
+    assert hook.read_text(encoding="utf-8") == first

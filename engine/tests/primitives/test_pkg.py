@@ -11,6 +11,8 @@ from devboost.model import AptRepo, Ctx, DnfRepo
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
 ARCH = OsInfo("arch", "arch", "x86_64")
+OMARCHY = OsInfo("omarchy", "arch", "x86_64", id_like=("arch",))
+UNKNOWN = OsInfo("plan9", "plan9", "x86_64")
 
 
 # ---------------------------------------------------------------------------
@@ -195,4 +197,92 @@ def test_install_per_os_name_resolves_on_ubuntu() -> None:
 def test_unsupported_os_raises() -> None:
     ex = FakeExecutor()
     with pytest.raises(UnsupportedOS):
-        pkg.install(Ctx(os=ARCH, ex=ex), "git")
+        pkg.install(Ctx(os=UNKNOWN, ex=ex), "git")
+
+
+# ---------------------------------------------------------------------------
+# Arch / Omarchy / Pacman paths
+# ---------------------------------------------------------------------------
+
+
+def test_install_uses_pacman_on_arch() -> None:
+    ex = FakeExecutor()
+    pkg.install(Ctx(os=ARCH, ex=ex), "git", "curl")
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "git", "curl"] in ex.calls
+
+
+def test_install_prefers_omarchy_helper_when_present() -> None:
+    """On Omarchy, delegate to the platform's own idempotent, root-aware helper."""
+    ex = FakeExecutor(present={"omarchy-pkg-add"})
+    pkg.install(Ctx(os=OMARCHY, ex=ex), "git")
+    assert ["omarchy-pkg-add", "git"] in ex.calls
+    # Never wrapped in sudo — the helper elevates itself; nesting would double-prompt.
+    assert not any(c[:2] == ["sudo", "omarchy-pkg-add"] for c in ex.calls)
+    assert not any("pacman" in c for c in ex.calls)
+
+
+def test_pacman_install_failure_raises_install_error() -> None:
+    ex = FakeExecutor(scripts={"pacman": Result(1, stderr="target not found")})
+    with pytest.raises(InstallError) as exc_info:
+        pkg.install(Ctx(os=ARCH, ex=ex), "nonexistent-pkg")
+    assert exc_info.value.code == 1
+
+
+def test_installed_uses_pacman_query() -> None:
+    ex = FakeExecutor()
+    assert pkg.installed(Ctx(os=ARCH, ex=ex), "git") is True
+    assert ["pacman", "-Q", "git"] in ex.calls
+
+
+def test_arch_resolves_per_os_package_name() -> None:
+    ex = FakeExecutor()
+    name: OsMap[str] = OsMap(fedora="fd-find", arch="fd", default="fd-find")
+    pkg.install(Ctx(os=OMARCHY, ex=ex), name)
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "fd"] in ex.calls
+
+
+def test_add_repo_on_arch_raises_rather_than_no_op() -> None:
+    """A per-OS Source that does not apply to Arch must fail loudly, not silently pass."""
+    ex = FakeExecutor()
+    src: pkg.Source = OsMap[DnfRepo | AptRepo](
+        fedora=DnfRepo("ddev", "https://pkg.ddev.com/yum/", gpgcheck=False),
+        default=DnfRepo("ddev", "https://pkg.ddev.com/yum/", gpgcheck=False),
+    )
+    with pytest.raises(UnsupportedOS):
+        pkg.install(Ctx(os=ARCH, ex=ex), "ddev", source=src)
+
+
+# --- AUR --------------------------------------------------------------------
+
+
+def test_install_aur_prefers_omarchy_helper() -> None:
+    ex = FakeExecutor(present={"omarchy-pkg-aur-add", "yay"})
+    pkg.install_aur(Ctx(os=OMARCHY, ex=ex), "ddev-bin")
+    assert ["omarchy-pkg-aur-add", "ddev-bin"] in ex.calls
+
+
+def test_install_aur_falls_back_to_yay_never_as_root() -> None:
+    ex = FakeExecutor(present={"yay"})
+    pkg.install_aur(Ctx(os=ARCH, ex=ex), "ddev-bin")
+    assert ["yay", "-S", "--needed", "--noconfirm", "ddev-bin"] in ex.calls
+    # yay refuses to run as root; a sudo-wrapped call would abort the install.
+    assert not any(c and c[0] == "sudo" for c in ex.calls)
+
+
+def test_install_aur_without_a_helper_raises() -> None:
+    ex = FakeExecutor()
+    with pytest.raises(UnsupportedOS):
+        pkg.install_aur(Ctx(os=ARCH, ex=ex), "ddev-bin")
+
+
+def test_install_aur_off_arch_raises() -> None:
+    ex = FakeExecutor()
+    with pytest.raises(UnsupportedOS):
+        pkg.install_aur(Ctx(os=FEDORA, ex=ex), "ddev-bin")
+
+
+def test_refresh_index_never_partial_syncs_on_arch() -> None:
+    """`pacman -Sy` without -u is a partial upgrade — the classic way to break Arch."""
+    ex = FakeExecutor()
+    pkg.refresh_index(Ctx(os=OMARCHY, ex=ex))
+    assert ex.calls == []

@@ -92,6 +92,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
 | `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
+| `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
 | `optional-editors` | `neovim`, `jetbrains-toolbox` |
 | `python` | `uv`, `python-lsp` |
@@ -112,7 +113,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `aspire` | dotnet | Aspire CLI (dotnet global tool). |
 | `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd --user timer). |
 | `atuin` | cli |  |
-| `bash-config` | shell | Verify the dotfiles-applied bash init (starship + devboost markers). |
+| `bash-config` | shell | Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
 | `browser-view` | brain-host | Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device. |
@@ -195,6 +196,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `nvidia-resign-service` | hardware-nvidia | Re-sign NVIDIA modules after a kernel/akmod rebuild (Fedora-only). |
 | `obsidian` | apps | Obsidian notes. |
 | `obsidian-sync` | apps | Provision the Obsidian vault: deploy key, clone, daily push backstop. |
+| `omarchy-update-hook` | omarchy | Refresh dev-boost's tooling as part of `omarchy update` (post-update hook). |
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `pass` | security-cli | pass password-store CLI. |
 | `pass-store` | security-cli | Initialize the GPG-backed password store (optionally cloned). |
@@ -234,7 +236,6 @@ enrollment on NVIDIA when Secure Boot is on.
 | `yq` | cli |  |
 | `zoxide` | cli |  |
 | `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
-
 <!-- END generated profiles table -->
 
 Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are opt-in per project;
@@ -364,7 +365,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
-[remote-fleet](docs/remote-fleet.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
+[remote-fleet](docs/remote-fleet.md) · [omarchy](docs/omarchy.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md)
 
 ## Validate before shipping (in a throwaway Fedora VM)
 

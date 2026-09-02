@@ -53,13 +53,25 @@ AppOpt = Annotated[
 ]
 
 
+#: Per-distro default install target. `full` is the Fedora/Ubuntu workstation aggregate;
+#: an OS that already ships its own desktop, system and multimedia layers gets an
+#: aggregate scoped to what dev-boost actually adds there.
+_DEFAULT_PROFILE = {"omarchy": "omarchy"}
+
+
+def default_profile(os_info: osinfo.OsInfo | None = None) -> str:
+    """The profile `devboost install` uses when the operator names none."""
+    info = os_info if os_info is not None else osinfo.detect()
+    return _DEFAULT_PROFILE.get(info.distro, "full")
+
+
 def _resolve(
     tokens: list[str], root: Path
 ) -> tuple[dict[str, type[Module]], list[str]]:
     modules = load()
     profiles = load_profiles(root / "profiles.toml")
     validate_profiles(modules, set(profiles))
-    expanded = expand(tokens or ["full"], profiles, modules)
+    expanded = expand(tokens or [default_profile()], profiles, modules)
     return modules, expanded
 
 
@@ -185,7 +197,7 @@ def install(
     app: AppOpt = [],
     update: UpdateOpt = False,
 ) -> None:
-    """Install one or more profiles/modules (default: full)."""
+    """Install one or more profiles/modules (default: `full`; `omarchy` on Omarchy)."""
     if force and update:
         raise typer.BadParameter("--force and --update are mutually exclusive")
     _run(profiles, root, dry_run, force, offline, all_=all_, apps=app, update=update)

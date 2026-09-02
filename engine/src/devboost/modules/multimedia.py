@@ -132,6 +132,10 @@ class VaHwaccel(Module):
     # (which requires Rpmfusion) earlier in the run.  Standalone installs on Fedora with
     # AMD GPU must ensure Rpmfusion is enabled first.
     profiles = ("multimedia",)
+    # Omarchy installs the vendor VA-API/Vulkan drivers itself, matched to detected
+    # hardware (`omarchy-hw-*`), so re-deriving the vendor from lspci here would only
+    # duplicate that work. Vanilla Arch still gets the branch below.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["vainfo"]).ok
@@ -162,6 +166,15 @@ class VaHwaccel(Module):
                     ["dnf", "swap", "-y", "mesa-vdpau-drivers", "mesa-vdpau-drivers-freeworld"],
                     sudo=True,
                 )
+            if has_nvidia:
+                pkg.install(ctx, "libva-nvidia-driver")
+        elif ctx.os.family == "arch":
+            if has_intel:
+                # Gen 8+ (Broadwell and newer); the legacy driver covers older parts.
+                pkg.install(ctx, "intel-media-driver")
+            if has_amd:
+                # Mesa on Arch is already unencumbered — no freeworld swap exists here.
+                pkg.install(ctx, "libva-mesa-driver")
             if has_nvidia:
                 pkg.install(ctx, "libva-nvidia-driver")
         elif ctx.os.family == "debian":
