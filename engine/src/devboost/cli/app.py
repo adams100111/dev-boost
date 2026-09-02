@@ -261,13 +261,22 @@ def list_(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
 def verify(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
     """Report which modules are installed."""
     order, modules = _order(profiles, root)
-    ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
+    os_info = osinfo.detect()
+    # Verify what `install` would actually run — i.e. the PLAN, not the raw profile
+    # expansion. Without this, a module scoped to another OS (rpmfusion on Arch,
+    # ffmpeg-ubuntu on Fedora) or one the platform provides is reported "missing", so
+    # `devboost verify` can never go green on a correctly provisioned non-Fedora box.
+    plan = build_plan(order, modules, os_info)
+    ctx = Ctx(os=os_info, ex=RealExecutor())
     failed = False
-    for name in order:
-        if modules[name]().verify(ctx):
-            log.ok(f"{name}: installed")
+    for pm in plan:
+        if pm.skip_reason is not None:
+            log.skip(f"{pm.name} ({pm.skip_reason})")
+            continue
+        if modules[pm.name]().verify(ctx):
+            log.ok(f"{pm.name}: installed")
         else:
-            log.error(f"{name}: missing")
+            log.error(f"{pm.name}: missing")
             failed = True
     if failed:
         raise typer.Exit(code=1)

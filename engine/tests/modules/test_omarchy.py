@@ -313,3 +313,21 @@ def test_tools_packaged_on_arch_use_pacman_not_a_github_binary() -> None:
         module().install(Ctx(os=OMARCHY, ex=ex))
         assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", arch_pkg] in ex.calls
         assert not any(c[0] == "sh" for c in ex.calls), f"{module.name} shelled out on Arch"
+
+
+def test_verify_reports_the_plan_not_the_raw_profile_expansion() -> None:
+    """`devboost verify` must judge what `install` would actually run.
+
+    Verifying the raw expansion instead reports every wrong-OS module as "missing"
+    (rpmfusion on Arch, ffmpeg-ubuntu on Fedora), so verify could never go green on a
+    correctly provisioned non-Fedora box — it always exited 1.
+    """
+    modules = load()
+    order = ["rpmfusion", "dnf-tune", "herdr", "uv"]
+    plan = build_plan(order, modules, OMARCHY)
+    names = [p.name for p in plan]
+
+    assert "rpmfusion" not in names and "dnf-tune" not in names  # dropped: wrong OS
+    assert dict((p.name, p.skip_reason) for p in plan)["herdr"] == "provided-by-omarchy"
+    # Only `uv` is left to actually check on this host.
+    assert [p.name for p in plan if p.skip_reason is None] == ["uv"]
