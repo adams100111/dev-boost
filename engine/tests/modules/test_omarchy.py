@@ -22,6 +22,9 @@ from devboost.core.registry import load, validate_profiles
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
 from devboost.modules.apps import Bruno, Localsend, Obsidian
+from devboost.modules.cli_tools import Dust, Fd, Gh, Yq
+from devboost.modules.ddev import Ddev
+from devboost.modules.dev_stacks import DotnetSdk
 from devboost.modules.editors import Vscode
 from devboost.modules.herdr import Herdr
 from devboost.modules.omarchy import OmarchyUpdateHook
@@ -246,3 +249,67 @@ def test_update_hook_install_is_idempotent(
     first = hook.read_text(encoding="utf-8")
     OmarchyUpdateHook().install(ctx)
     assert hook.read_text(encoding="utf-8") == first
+
+
+# ---------------------------------------------------------------------------
+# Package names: a Fedora name must never leak through to pacman
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("module", "arch_pkg"),
+    [
+        # Arch keeps upstream names where Fedora/Debian rename.
+        (Fd, "fd"),                 # not fd-find
+        (Dust, "dust"),             # not du-dust
+        (Gh, "github-cli"),         # not gh — that name does not exist on Arch
+        # Arch's own `yq` is a DIFFERENT tool (a Python jq wrapper) that Conflicts With
+        # go-yq. Installing it would quietly give a `yq` with different semantics.
+        (Yq, "go-yq"),
+    ],
+)
+def test_divergent_package_names_resolve_to_the_arch_package(
+    module: type, arch_pkg: str
+) -> None:
+    ex = FakeExecutor()
+    module().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", arch_pkg] in ex.calls
+
+
+def test_package_modules_never_fall_back_to_a_fedora_only_name_on_arch() -> None:
+    """Guard for the whole class of bug: `_resolve_pkg` defaults to `fedora_pkg`, so any
+    module whose Arch name differs MUST declare `arch_pkg`. These are the known
+    divergences — verified against Arch's repos."""
+    ex = FakeExecutor()
+    ctx = Ctx(os=OMARCHY, ex=ex)
+    for module, forbidden in ((Fd, "fd-find"), (Dust, "du-dust"), (Gh, "gh"), (Yq, "yq")):
+        assert module()._resolve_pkg(ctx) != forbidden, module.name
+
+
+def test_dotnet_sdk_uses_arch_unversioned_package_name() -> None:
+    """Arch ships the current SDK as `dotnet-sdk`; `dotnet-sdk-10.0` does not exist."""
+    ex = FakeExecutor()
+    DotnetSdk().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "dotnet-sdk"] in ex.calls
+    assert not any("dotnet-sdk-10.0" in c for c in ex.calls)
+
+
+def test_ddev_uses_the_aur_since_no_pacman_repo_exists() -> None:
+    ex = FakeExecutor(present={"yay", "mkcert"})
+    Ddev().install(Ctx(os=OMARCHY, ex=ex))
+    assert ["yay", "-S", "--needed", "--noconfirm", "ddev-bin"] in ex.calls
+    # The Fedora/Debian repo setup must not run here.
+    assert not any("yum.repos.d" in " ".join(c) for c in ex.calls)
+
+
+def test_tools_packaged_on_arch_use_pacman_not_a_github_binary() -> None:
+    """`sd` and `lazydocker` fall back to a ~/.local/bin binary drop on Fedora/Debian
+    because neither packages them. Arch does — so pacman owns the file there and
+    `omarchy update` keeps it current."""
+    from devboost.modules.cli_tools import Lazydocker, Sd
+
+    for module, arch_pkg in ((Sd, "sd"), (Lazydocker, "lazydocker")):
+        ex = FakeExecutor()
+        module().install(Ctx(os=OMARCHY, ex=ex))
+        assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", arch_pkg] in ex.calls
+        assert not any(c[0] == "sh" for c in ex.calls), f"{module.name} shelled out on Arch"

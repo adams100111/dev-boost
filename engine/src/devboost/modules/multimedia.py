@@ -174,7 +174,10 @@ class VaHwaccel(Module):
                 pkg.install(ctx, "intel-media-driver")
             if has_amd:
                 # Mesa on Arch is already unencumbered — no freeworld swap exists here.
-                pkg.install(ctx, "libva-mesa-driver")
+                # Arch merged the old `libva-mesa-driver` package INTO `mesa`, which now
+                # ships radeonsi_drv_video.so itself; `--needed` makes this a no-op on a
+                # box that already has it (i.e. any graphical Arch install).
+                pkg.install(ctx, "mesa")
             if has_nvidia:
                 pkg.install(ctx, "libva-nvidia-driver")
         elif ctx.os.family == "debian":
