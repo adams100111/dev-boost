@@ -196,6 +196,7 @@ class Fd(PackageModule):
     profiles = ("base",)
     cmd = "fd"
     fedora_pkg = "fd-find"
+    arch_pkg = "fd"  # Arch keeps the upstream name; `fd-find` is Fedora/Debian-only
     debian_cmd = "fdfind"   # Ubuntu binary is fdfind; apt package fd-find is same
 
 
@@ -230,7 +231,7 @@ class Eza(PackageModule):
             # Not in Ubuntu 24.04 apt — install the latest GitHub release binary.
             ctx.ex.run(["sh", "-c", _EZA_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -274,7 +275,7 @@ class Atuin(PackageModule):
             # Not in Ubuntu apt — official installer (→ ~/.atuin/bin, symlinked onto PATH).
             ctx.ex.run(["sh", "-c", _ATUIN_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -322,7 +323,7 @@ class Lazygit(PackageModule):
             ctx.ex.run(["sh", "-c", _LAZYGIT_DEBIAN])
         else:
             copr.enable(ctx, self.copr_repo)
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -334,6 +335,12 @@ class Lazydocker(PackageModule):
     fedora_pkg = "lazydocker"
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "arch":
+            # Unlike Fedora/Debian, Arch packages lazydocker properly (and Omarchy
+            # preinstalls it) — let pacman own the binary so `omarchy update` keeps it
+            # current, instead of a self-updating drop into ~/.local/bin.
+            pkg.install(ctx, self._resolve_pkg(ctx))
+            return
         # No official Fedora/Debian package upstream — use the one distro-agnostic
         # installer on every OS (avoids the third-party atim/lazydocker COPR). DIR
         # installs to ~/.local/bin so no sudo is needed, matching Lazygit above.
@@ -347,13 +354,14 @@ class Dust(PackageModule):
     profiles = ("cli",)
     cmd = "dust"
     fedora_pkg = "du-dust"  # Fedora packages du-dust as `du-dust` (not `rust-dust`)
+    arch_pkg = "dust"
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # du-dust is not in Ubuntu apt until 25.10 — install the GitHub release binary.
             ctx.ex.run(["sh", "-c", _DUST_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -389,9 +397,13 @@ class Sd(PackageModule):
     category = "cli"
     profiles = ("cli",)
     cmd = "sd"
-    fedora_pkg = "sd"  # unused — sd is absent from Fedora 44 apt/dnf; binary install below
+    fedora_pkg = "sd"  # unused on Fedora — absent from F44 dnf; binary install below
+    arch_pkg = "sd"    # …but Arch does package it
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "arch":
+            pkg.install(ctx, self._resolve_pkg(ctx))
+            return
         # Not reliably packaged (dropped from Fedora 44, not in Ubuntu apt) — install the
         # official release binary into ~/.local/bin, cross-distro (same pattern as dust).
         ctx.ex.run(["sh", "-c", _SD_INSTALL])
@@ -404,13 +416,16 @@ class Yq(PackageModule):
     profiles = ("cli",)
     cmd = "yq"
     fedora_pkg = "yq"
+    # Arch's `yq` is a DIFFERENT tool (a Python jq wrapper) and conflicts with this
+    # one. `go-yq` is mikefarah/yq — the Go implementation every other OS here uses.
+    arch_pkg = "go-yq"
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — install the latest static GitHub release binary.
             ctx.ex.run(["sh", "-c", _YQ_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -440,7 +455,7 @@ class Fastfetch(PackageModule):
             # Not in Ubuntu apt until 25.10 — install the upstream .deb release.
             ctx.ex.run(["sh", "-c", _FASTFETCH_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))
 
 
 @register
@@ -450,10 +465,11 @@ class Gh(PackageModule):
     profiles = ("cli",)
     cmd = "gh"
     fedora_pkg = "gh"
+    arch_pkg = "github-cli"  # Arch names the GitHub CLI package `github-cli`, not `gh`
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — add the official GitHub CLI apt repo, then install.
             ctx.ex.run(["sh", "-c", _GH_DEBIAN])
         else:
-            pkg.install(ctx, self.fedora_pkg)
+            pkg.install(ctx, self._resolve_pkg(ctx))

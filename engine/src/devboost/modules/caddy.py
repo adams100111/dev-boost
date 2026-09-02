@@ -78,6 +78,9 @@ class Caddy(Module):
             pkg.install(ctx, "caddy", source=_caddy_apt_source())
         elif ctx.os.family == "fedora":
             ctx.ex.run(["sh", "-c", _CADDY_COPR_FEDORA], sudo=True)
+        elif ctx.os.family == "arch":
+            # Arch packages Caddy in [extra] — no vendor repo and no COPR needed.
+            pkg.install(ctx, "caddy")
         else:
             raise UnsupportedOS(f"caddy install not implemented for {ctx.os.distro!r}")
         # Drop the starter Caddyfile so a brain SERVER (which doesn't apply the laptop-only

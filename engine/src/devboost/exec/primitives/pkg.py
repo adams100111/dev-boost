@@ -1,7 +1,7 @@
 """Package primitive with OS dispatch.
 
 The package manager is selected from ctx.os; no module ever names dnf/apt directly.
-Dnf (Fedora) and Apt (Debian/Ubuntu) are implemented; Pacman is a seam for a later spec.
+Dnf (Fedora), Apt (Debian/Ubuntu) and Pacman (Arch/Omarchy) are implemented.
 """
 
 from __future__ import annotations
@@ -126,11 +126,80 @@ class Apt:
             raise InstallError("apt", "apt-get update", upd.code)
 
 
+# Omarchy ships idempotent package helpers that wrap pacman/yay, verify the package
+# actually registered afterwards, and manage their own privilege elevation. When they are
+# on PATH we delegate to them rather than shelling out to pacman ourselves: it is the
+# platform's own convention, and it keeps dev-boost out of the sudo-prompt business.
+_OMARCHY_ADD = "omarchy-pkg-add"
+_OMARCHY_AUR_ADD = "omarchy-pkg-aur-add"
+
+
+class Pacman:
+    """Arch family. Official repos via pacman; AUR via an AUR helper.
+
+    Deliberately never runs ``pacman -Sy``. On a rolling release, syncing the package
+    database without also upgrading (``-Syu``) creates a *partial upgrade* — the classic
+    way to break an Arch box, because a freshly-synced package can link against libraries
+    the installed system has not upgraded to yet. Refreshing the index is therefore the
+    OS updater's job (``omarchy update`` / ``pacman -Syu``), not an installer's; see
+    ``refresh_index`` below.
+    """
+
+    def install(self, ctx: Ctx, *pkgs: str) -> None:
+        if not pkgs:
+            return
+        if ctx.ex.which(_OMARCHY_ADD):
+            # Manages its own elevation (root-aware); wrapping it in sudo would nest.
+            result = ctx.ex.run([_OMARCHY_ADD, *pkgs])
+            cmd = f"{_OMARCHY_ADD} {' '.join(pkgs)}"
+        else:
+            result = ctx.ex.run(
+                ["pacman", "-S", "--needed", "--noconfirm", *pkgs], sudo=True
+            )
+            cmd = f"pacman -S --needed --noconfirm {' '.join(pkgs)}"
+        if not result.ok:
+            raise InstallError("pacman", cmd, result.code)
+
+    def installed(self, ctx: Ctx, pkg: str) -> bool:
+        return ctx.ex.run(["pacman", "-Q", pkg]).ok
+
+    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+        # Arch third-party software comes from the AUR or a distro-provided repo, not from
+        # per-package repo files. A module reaching here has a per-OS Source that simply
+        # does not apply to Arch — say so instead of silently doing nothing.
+        raise UnsupportedOS(
+            "pacman has no per-package repo mechanism; use install_aur() "
+            "or an official/OPR package name on the Arch family"
+        )
+
+    def install_aur(self, ctx: Ctx, *pkgs: str) -> None:
+        """Install AUR packages via an AUR helper (never as root — yay refuses)."""
+        if not pkgs:
+            return
+        if ctx.ex.which(_OMARCHY_AUR_ADD):
+            result = ctx.ex.run([_OMARCHY_AUR_ADD, *pkgs])
+            cmd = f"{_OMARCHY_AUR_ADD} {' '.join(pkgs)}"
+        elif ctx.ex.which("yay"):
+            result = ctx.ex.run(["yay", "-S", "--needed", "--noconfirm", *pkgs])
+            cmd = f"yay -S --needed --noconfirm {' '.join(pkgs)}"
+        elif ctx.ex.which("paru"):
+            result = ctx.ex.run(["paru", "-S", "--needed", "--noconfirm", *pkgs])
+            cmd = f"paru -S --needed --noconfirm {' '.join(pkgs)}"
+        else:
+            raise UnsupportedOS(
+                "no AUR helper found (looked for omarchy-pkg-aur-add, yay, paru)"
+            )
+        if not result.ok:
+            raise InstallError("aur", cmd, result.code)
+
+
 def manager_for(os_info: OsInfo) -> PackageManager:
     if os_info.family == "fedora":
         return Dnf()
     if os_info.family == "debian":
         return Apt()
+    if os_info.family == "arch":
+        return Pacman()
     raise UnsupportedOS(f"no package manager implemented for {os_info.distro!r}")
 
 
@@ -172,6 +241,19 @@ def installed(ctx: Ctx, pkg: str) -> bool:
     return manager_for(ctx.os).installed(ctx, pkg)
 
 
+def install_aur(ctx: Ctx, *pkgs: str) -> None:
+    """Install AUR packages. Arch family only — raises UnsupportedOS elsewhere.
+
+    Kept separate from ``install`` because the AUR is not a repo you add but a build
+    service you invoke: it needs a helper, must not run as root, and carries a different
+    trust model (unreviewed third-party PKGBUILDs) that a caller should opt into by name.
+    """
+    mgr = manager_for(ctx.os)
+    if not isinstance(mgr, Pacman):
+        raise UnsupportedOS(f"the AUR is Arch-only; detected {ctx.os.distro!r}")
+    mgr.install_aur(ctx, *pkgs)
+
+
 #: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).
 _APT_LOCK_TIMEOUT = 300
 _APT_LOCK_CONF = "/etc/apt/apt.conf.d/99-devboost-lock-timeout"
@@ -186,6 +268,10 @@ def refresh_index(ctx: Ctx) -> None:
     per-package overhead.  No-op on Fedora (dnf refreshes metadata on demand) and on any
     OS without a package manager.  Failures are logged, never raised: a transient mirror
     error must not abort the run, and a usable cached index may still satisfy installs.
+
+    Also a deliberate no-op on Arch: ``pacman -Sy`` without ``-u`` is a partial upgrade,
+    the standard way to break a rolling-release system.  Syncing belongs to the OS updater
+    (``omarchy update`` / ``pacman -Syu``), which snapshots first.
     """
     if ctx.os.family != "debian":
         return

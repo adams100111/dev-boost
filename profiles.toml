@@ -6,6 +6,20 @@
 # the portable subsets terminal/devtools are alternative entry points, not part of full.
 full = ["base","cli","shell","gnome","multimedia","editors","python","web","laravel",
         "dotnet","data","devops","react-native","apps","system","dev-hygiene","remote"]
+# `omarchy` — the Omarchy (Arch + Hyprland) aggregate: `full` minus the layers Omarchy
+# already owns. It is deliberately NOT `full`:
+#   - `gnome`      — Omarchy is Hyprland; a GNOME dconf dump and extension set have no
+#                    analog, and theming belongs to `omarchy theme set`.
+#   - `multimedia` — Arch ships codecs unencumbered, so the RPM Fusion / restricted-extras
+#                    swaps that profile exists to perform have nothing to do here.
+# Everything else is kept: the modules Omarchy already provides are verify-guarded or
+# declare `provided_by`, so they report themselves as satisfied instead of reinstalling.
+# This is where dev-boost earns its keep on Omarchy — the configured dev stacks
+# (ddev, Aspire, Android SDK, LSP provisioning, templates) that `omarchy install dev-env`
+# does not do: it installs languages, not stacks.
+omarchy = ["base","cli","shell","editors","python","web","laravel","dotnet","data",
+           "devops","react-native","apps","system","dev-hygiene","remote",
+           "omarchy-update-hook"]
 base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker","docker-build-gc"]

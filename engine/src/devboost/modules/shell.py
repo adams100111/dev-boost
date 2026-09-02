@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError
@@ -62,6 +63,10 @@ class Wezterm(Module):
     description = "GPU-accelerated terminal + multiplexer (nightly); default terminal."
     gui = True
     profiles = ("shell",)
+    # Omarchy ships foot as the default terminal, themed by `omarchy theme set` and
+    # routed through xdg-terminal-exec. Installing a second "default terminal" fights
+    # the platform's theming and its terminal-launch chain.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("wezterm")
@@ -133,6 +138,8 @@ class NerdFonts(Module):
     name = "nerd-fonts"
     category = "shell"
     description = "JetBrainsMono Nerd Font."
+    # Omarchy ships ttf-jetbrains-mono-nerd-basic and manages fonts via `omarchy font set`.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
     gui = True  # a display concern — on a headless server glyphs render in the CLIENT's
     # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
     # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
@@ -216,24 +223,60 @@ class Dotfiles(Module):
             ctx.ex.run(["tmux", "source", str(_home() / ".tmux.conf")])
 
 
+#: The one line dev-boost adds to a distro-owned ~/.bashrc. Guarded so a shell still
+#: starts cleanly if the fragment is ever missing.
+_SHELL_FRAGMENT = ".config/devboost/shell.bash"
+_SOURCE_MARKER = 'source "${HOME}/' + _SHELL_FRAGMENT + '"'
+_SOURCE_BLOCK = (
+    "\n# >>> devboost >>>\n"
+    "# dev-boost's shell config (prompt, history, tool init, dev/expose/pw-* helpers).\n"
+    "# Appended rather than replacing this file, because Omarchy owns ~/.bashrc.\n"
+    '[[ -r "${HOME}/' + _SHELL_FRAGMENT + '" ]] && ' + _SOURCE_MARKER + "\n"
+    "# <<< devboost <<<\n"
+)
+
+
 @register
 class BashConfig(Module):
     name = "bash-config"
     category = "shell"
-    description = "Verify the dotfiles-applied bash init (starship + devboost markers)."
+    description = "Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it)."
     requires = (Dotfiles,)
     profiles = ("shell",)
+
+    def _owns_bashrc(self, ctx: Ctx) -> bool:
+        """True when dev-boost's own dotfiles supply ~/.bashrc wholesale.
+
+        On Omarchy the distro owns the file — it bootstraps OMARCHY_PATH and sources the
+        Omarchy rc, and `.chezmoiignore` keeps chezmoi's hands off it — so dev-boost has to
+        append its one source line instead of writing the file.
+        """
+        return ctx.os.distro != "omarchy"
 
     def verify(self, ctx: Ctx) -> bool:
         bashrc = _home() / ".bashrc"
         if not bashrc.exists():
             return False
         text = bashrc.read_text(encoding="utf-8")
-        return "starship init bash" in text and "devboost" in text
+        if not self._owns_bashrc(ctx):
+            # Satisfied once the fragment exists AND the distro's bashrc sources it.
+            return (_home() / _SHELL_FRAGMENT).is_file() and _SOURCE_MARKER in text
+        return "devboost" in text and (
+            "starship init bash" in text or _SOURCE_MARKER in text
+        )
 
     def install(self, ctx: Ctx) -> None:
-        # No-op: the bashrc content is applied by the dotfiles module (this is a marker check).
-        return
+        if self._owns_bashrc(ctx):
+            # The bashrc content is applied by the dotfiles module (this is a marker check).
+            return
+        bashrc = _home() / ".bashrc"
+        text = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+        if _SOURCE_MARKER in text:
+            return  # idempotent — never append the block twice
+        bashrc.parent.mkdir(parents=True, exist_ok=True)
+        with bashrc.open("a", encoding="utf-8") as fh:
+            fh.write(_SOURCE_BLOCK)
+        log.ok("bash-config: sourced dev-boost's shell fragment from ~/.bashrc")
 
 
 @register

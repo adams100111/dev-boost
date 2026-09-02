@@ -47,7 +47,11 @@ class Ddev(Module):
         return ctx.ex.which("ddev")
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.os.family == "debian":
+        if ctx.os.family == "arch":
+            # ddev publishes no pacman repo and Arch packages no `ddev`; `ddev-bin` is
+            # the maintained AUR build of the upstream release binary.
+            pkg.install_aur(ctx, "ddev-bin")
+        elif ctx.os.family == "debian":
             ctx.ex.run(["sh", "-c", _DDEV_REPO_DEBIAN], sudo=True)  # canonical repo (ddev docs)
             pkg.install(ctx, "ddev", refresh=True)                 # install via the Apt primitive
         else:

@@ -221,14 +221,66 @@ def test_bash_config_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert BashConfig().verify(ctx) is True
 
 
+def _dotfiles_dir() -> Path:
+    return Path(__file__).resolve().parents[3] / "dotfiles"
+
+
 def test_bashrc_puts_dotnet_tools_on_path() -> None:
     """`dotnet tool install -g` (aspire, csharp-ls, csharpier) installs into ~/.dotnet/tools.
-    dot_bashrc must add it to PATH or those tools are "not found" in an interactive shell —
-    which is exactly what happened to `aspire` after `devboost install full`."""
-    from pathlib import Path
-
-    bashrc = (Path(__file__).resolve().parents[3] / "dotfiles" / "dot_bashrc").read_text(
+    The shell config must add it to PATH or those tools are "not found" in an interactive
+    shell — which is exactly what happened to `aspire` after `devboost install full`."""
+    frag = (_dotfiles_dir() / "dot_config" / "devboost" / "shell.bash").read_text(
         encoding="utf-8"
     )
-    assert ".dotnet/tools" in bashrc
-    assert 'PATH="${HOME}/.dotnet/tools:${PATH}"' in bashrc
+    assert ".dotnet/tools" in frag
+    assert 'PATH="${HOME}/.dotnet/tools:${PATH}"' in frag
+
+
+def test_bashrc_sources_the_portable_fragment() -> None:
+    """~/.bashrc must delegate to the fragment, so a distro that owns ~/.bashrc itself
+    (Omarchy) can source exactly the same config instead of losing it."""
+    bashrc = (_dotfiles_dir() / "dot_bashrc").read_text(encoding="utf-8")
+    assert 'source "${HOME}/.config/devboost/shell.bash"' in bashrc
+
+
+def test_chezmoiignore_protects_omarchy_owned_configs() -> None:
+    """Every path Omarchy ships and refreshes on update must be ignored there, or
+    `omarchy update` overwrites the chezmoi-applied file and drift becomes permanent."""
+    ignore = (_dotfiles_dir() / ".chezmoiignore").read_text(encoding="utf-8")
+    assert '.chezmoi.osRelease.id "omarchy"' in ignore
+    for path in (
+        ".bashrc",
+        ".tmux.conf",
+        ".config/starship.toml",
+        ".config/btop",
+        ".config/lazygit",
+        ".config/herdr",
+        ".config/git/config",
+    ):
+        assert f"\n{path}\n" in ignore, path
+
+
+def test_bash_config_appends_source_line_on_omarchy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Omarchy dev-boost appends to the distro's bashrc — never replaces it."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    omarchy = OsInfo("omarchy", "arch", "x86_64", id_like=("arch",))
+    ctx = Ctx(os=omarchy, ex=FakeExecutor())
+    bashrc = tmp_path / ".bashrc"
+    original = 'source "$OMARCHY_PATH/default/bash/rc"\n'
+    bashrc.write_text(original, encoding="utf-8")
+    frag = tmp_path / ".config" / "devboost" / "shell.bash"
+    frag.parent.mkdir(parents=True)
+    frag.write_text("# fragment\n", encoding="utf-8")
+
+    assert BashConfig().verify(ctx) is False
+    BashConfig().install(ctx)
+    text = bashrc.read_text(encoding="utf-8")
+    assert original in text, "Omarchy's own bashrc content must survive"
+    assert 'source "${HOME}/.config/devboost/shell.bash"' in text
+    assert BashConfig().verify(ctx) is True
+
+    # Re-running must not append the block a second time.
+    BashConfig().install(ctx)
+    assert bashrc.read_text(encoding="utf-8").count(">>> devboost >>>") == 1
