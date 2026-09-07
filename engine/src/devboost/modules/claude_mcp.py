@@ -31,7 +31,7 @@ class ClaudeMcp(Module):
     category = "cli"
     description = "Register user-global MCP servers (google-docs, fathom)."
     requires = (ClaudeCode, Dotfiles)
-    profiles = ("cli",)
+    profiles = ("claude",)
 
     def _installed(self, ctx: Ctx) -> str:
         if not ctx.ex.which("claude"):
