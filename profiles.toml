@@ -17,6 +17,8 @@ shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-stat
 remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
+# codex — reusable OpenAI Codex CLI config bundle. Stub → finalized in the codex-profile task.
+codex = ["codex-code"]
 brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]
 brain-tools = ["herdr","herdr-plugins"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
