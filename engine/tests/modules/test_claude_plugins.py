@@ -86,20 +86,24 @@ def test_install_plugins_noop_without_claude(
     assert not any("plugin install" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
 
 
-def test_clickup_token_written_to_local_settings(
+def test_clickup_token_written_to_settings_json_preserving_existing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     from devboost.exec.executor import Result
 
-    (tmp_path / ".claude").mkdir(parents=True)
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    # pre-existing settings (e.g. from _merge_settings) must be preserved
+    settings.write_text(json.dumps({"theme": "dark", "env": {"OTHER": "keep"}}), encoding="utf-8")
     ctx = _ctx(present={"pass"}, scripts={"pass": Result(0, stdout="pk_secret_123\n")})
     ClaudePlugins()._resolve_clickup_token(ctx)
 
-    local = tmp_path / ".claude" / "settings.local.json"
-    data = json.loads(local.read_text(encoding="utf-8"))
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    # Claude Code reads env from the user-global settings.json (no user-level settings.local.json)
     assert data["env"]["CLICKUP_API_TOKEN"] == "pk_secret_123"
-    assert (local.stat().st_mode & 0o777) == 0o600
+    assert data["env"]["OTHER"] == "keep"  # other env preserved
+    assert data["theme"] == "dark"  # other keys preserved
 
 
 def test_clickup_token_absent_pass_degrades(
@@ -108,4 +112,4 @@ def test_clickup_token_absent_pass_degrades(
     monkeypatch.setenv("HOME", str(tmp_path))
     ctx = _ctx()  # pass not present
     ClaudePlugins()._resolve_clickup_token(ctx)  # must not raise
-    assert not (tmp_path / ".claude" / "settings.local.json").exists()
+    assert not (tmp_path / ".claude" / "settings.json").exists()

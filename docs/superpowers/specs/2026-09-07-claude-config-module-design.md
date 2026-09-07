@@ -211,6 +211,7 @@ Merge gates unchanged: `mypy --strict`, ruff, pytest from `engine/`.
 - "age default + pass opt-in" → **pass-primary** (§2.4).
 - "Vendor only ~1 local skill" → **~14 non-lock dirs vendored** (§2.3).
 - "MCP `${VAR}` resolves from `settings.local.json`" → **false**; concrete value written instead (§5).
+- **"CLICKUP token → user-level `settings.local.json` (0600)"** → **false / fixed post-merge (PR after #19)**: there is NO user-level `~/.claude/settings.local.json` — that filename is project-scoped only, and Claude Code reads user-global `env` from `~/.claude/settings.json`. The token is therefore merged into `~/.claude/settings.json` (a device-local home file that is never committed to the repo, so the plaintext-free-repo invariant still holds). Every `settings.local.json`/0600-dedicated-file reference elsewhere in this doc is superseded by this line.
 
 ---
 
