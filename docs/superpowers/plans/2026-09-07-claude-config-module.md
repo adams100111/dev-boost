@@ -425,7 +425,9 @@ def test_merge_preserves_existing_and_adds_keys(
 
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["theme"] == "dark"  # preserved
-    assert data["extraKnownMarketplaces"]["clickup-flow-marketplace"]["source"] == "github"
+    clickup = data["extraKnownMarketplaces"]["clickup-flow-marketplace"]
+    assert clickup["source"]["source"] == "github"  # schema nests source: {source, repo}
+    assert clickup["source"]["repo"] == "adams100111/clickup-flow"
     for plugin in ENABLED_PLUGINS:
         assert data["enabledPlugins"][plugin] is True
 
@@ -793,10 +795,10 @@ git commit -m "feat(claude): claude-plugins resolves CLICKUP token from pass int
 
 ## Task 6: `claude` profile wiring
 
-Add the `claude` profile and include it in `full`. `profiles.toml` validation (`registry.validate_profiles`) requires every module's declared `profiles` to exist; the three new modules declare `("claude",)`, so this task makes them valid.
+A `claude = ["claude-code"]` **stub already exists** in `profiles.toml` (added up front so every module could legally declare `profiles=("claude",)` — `registry.validate_profiles` requires each module's declared profiles to exist). This task **finalizes** that stub to the full four-module list and adds `claude` to the `full` aggregate.
 
 **Files:**
-- Modify: `profiles.toml:7-8` (add `claude` to `full`) and add a `claude = [...]` line.
+- Modify: `profiles.toml` — expand the `claude = ["claude-code"]` stub to all four modules; add `"claude"` to `full`.
 - Test: `engine/tests/modules/test_claude_profile.py` (new) — assert the profile expands to the four modules.
 
 **Interfaces:**
@@ -829,11 +831,11 @@ Note: `load()` returns `dict[str, type[Module]]` and `expand(tokens, profiles, m
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd engine && uv run pytest tests/modules/test_claude_profile.py -v`
-Expected: FAIL — `ProfileError: unknown token 'claude'` (profile not defined yet).
+Expected: FAIL — `AssertionError` (the `claude` stub expands only to `{claude-code}`, missing the three new modules).
 
 - [ ] **Step 3: Edit `profiles.toml`**
 
-Add a `claude` profile line (after the `remote` line, near the other aggregates):
+Replace the stub line `claude = ["claude-code"]` (after the `remote` line) with the full member list:
 
 ```toml
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
