@@ -18,6 +18,7 @@
 - **Degrade + report:** when `pass`/an entry/auth is missing, `log.warn` and skip that piece; do not raise. Non-secret config still applies.
 - **Module metadata:** every module is `@register`, sets `name`, `category`, `description`, `requires`, `profiles`, and overrides `verify`/`install`.
 - **Profile≠module rule:** the profile name `claude` must differ from every module name (`claude-plugins`, `claude-skills`, `claude-mcp`, `claude-code`, …). Honored.
+- **`pass` provisioning (prerequisite):** the `google-docs/*` and `clickup/api-token` entries reach a device via `PassStore` cloning `DEVBOOST_PASS_REPO` (a private git-backed password store). Set that env var so the entries are present; without it the store inits empty and the secret steps degrade (warn + skip). This is why `claude-plugins` hard-`requires=(Secrets, PassStore)` — on the provisioned fleet these always succeed and give correct ordering, while a missing *entry* (pass present, key absent) still degrades gracefully.
 
 ---
 
@@ -73,6 +74,12 @@ def test_manifest_is_google_docs_and_fathom_only() -> None:
     assert "pass google-docs/" in MCP_SERVERS["google-docs"]
     # no plaintext api key anywhere in the manifest
     assert "ctx7sk" not in json.dumps(MCP_SERVERS)
+
+
+def test_manifest_entries_are_valid_json() -> None:
+    # catches any escaping bug in the google-docs bash/pass wrapper
+    for spec in MCP_SERVERS.values():
+        json.loads(spec)  # must not raise
 
 
 def test_install_adds_only_missing_servers() -> None:
@@ -164,7 +171,7 @@ class ClaudeMcp(Module):
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd engine && uv run pytest tests/modules/test_claude_mcp.py -v`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Typecheck + lint**
 
@@ -592,15 +599,17 @@ def test_install_plugins_adds_only_missing(
     monkeypatch.setenv("HOME", str(tmp_path))
     from devboost.exec.executor import Result
 
-    # `claude plugin list` reports superpowers already installed → it is skipped.
+    # `claude plugin list --json` reports superpowers already installed → it is skipped.
     ctx = _ctx(
         present={"claude"},
-        scripts={"claude": Result(0, stdout="superpowers@claude-plugins-official (installed)\n")},
+        scripts={"claude": Result(0, stdout='[{"name":"superpowers","marketplace":"claude-plugins-official"}]')},
     )
     ClaudePlugins()._install_plugins(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     install_calls = [j for j in joined if "plugin install" in j]
-    assert any("clickup-flow@clickup-flow-marketplace" in j for j in install_calls)
+    assert any(
+        "clickup-flow@clickup-flow-marketplace" in j and "--yes" in j for j in install_calls
+    )
     assert not any("superpowers@claude-plugins-official" in j for j in install_calls)
 
 
@@ -627,13 +636,27 @@ Add this method to `ClaudePlugins` and update `install`:
         if not ctx.ex.which("claude"):
             log.warn("claude-plugins: claude CLI not found — skipping plugin install")
             return
-        listed = ctx.ex.run(["claude", "plugin", "list"])
-        installed = listed.stdout if listed.ok else ""
+        # `list` plain-text format is unstable; `--json` gives {name, marketplace, …} per entry.
+        listed = ctx.ex.run(["claude", "plugin", "list", "--json"])
+        installed: set[str] = set()
+        if listed.ok:
+            try:
+                entries = json.loads(listed.stdout)
+            except ValueError:
+                entries = []
+            if isinstance(entries, list):
+                installed = {
+                    e["name"]
+                    for e in entries
+                    if isinstance(e, dict) and isinstance(e.get("name"), str)
+                }
         for plugin in ENABLED_PLUGINS:
-            if plugin in installed:
+            name = plugin.split("@", 1)[0]
+            if name in installed:
                 log.skip(f"claude-plugins: {plugin} already installed")
                 continue
-            res = ctx.ex.run(["claude", "plugin", "install", plugin])
+            # --yes: non-interactive (auto-approves any headersHelper/command prompts).
+            res = ctx.ex.run(["claude", "plugin", "install", plugin, "--scope", "user", "--yes"])
             if not res.ok:
                 log.warn(f"claude-plugins: install {plugin} failed: {res.stderr.strip()}")
 
@@ -788,20 +811,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from devboost.core.profiles import expand, load_profiles
-from devboost.core.registry import all_modules, load
+from devboost.core.registry import load
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_claude_profile_expands_to_the_four_modules() -> None:
-    load()
+    modules = load()  # dict[str, type[Module]] — confirmed in core/registry.py:31
     profiles = load_profiles(REPO_ROOT / "profiles.toml")
-    modules = set(all_modules())
     resolved = expand(["claude"], profiles, modules)
-    assert {"claude-code", "claude-plugins", "claude-skills", "claude-mcp"} <= set(resolved)
+    names = {r if isinstance(r, str) else getattr(r, "name", None) for r in resolved}
+    assert {"claude-code", "claude-plugins", "claude-skills", "claude-mcp"} <= names
 ```
 
-Note: confirm the exact helper names in `engine/src/devboost/core/registry.py` and `core/profiles.py` (`all_modules`/`load`/`expand`/`load_profiles`); adjust the import to match. If `all_modules` is named differently (e.g. `names()` / `registered()`), use that — the test's intent is "the `claude` profile resolves to the four modules."
+Note: `load()` returns `dict[str, type[Module]]` and `expand(tokens, profiles, modules)` is the real signature (see `cli/app.py:60-62`). The test normalizes each resolved entry to its `name`, so it passes whether `expand` yields names or module classes.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1022,4 +1045,4 @@ git commit -m "feat(claude): seed managed ~/.claude config (rules, vendored skil
 
 **Type consistency:** `MCP_SERVERS: dict[str,str]`, `MARKETPLACES: dict[str,dict[str,str]]`, `ENABLED_PLUGINS: tuple[str,...]`, and methods `_merge_settings`/`_install_plugins`/`_resolve_clickup_token`/`_lock_entries`/`_present`/`_installed` are used consistently across Tasks 1–5. `FakeExecutor` fields used: `.calls`, `.present`, `.scripts` (per `exec/executor.py:130-132`).
 
-**Known verification point:** Task 6's import of registry/profile helpers (`all_modules`, `load`, `expand`, `load_profiles`) must be reconciled with the actual names in `core/registry.py` / `core/profiles.py` at implementation time (noted inline).
+**Verified against source:** the CLI install command (`devboost install claude`, `cli/app.py:176`), the registry/profile API (`load()` `registry.py:31`, `load_profiles`/`expand` `profiles.py:13,21`, `validate_profiles` `registry.py:67`), and the `claude mcp add-json … --scope user` / `claude plugin install … --scope user --yes` / `claude plugin list --json` / `claude mcp list` syntaxes are all confirmed against source + current Claude Code docs.
