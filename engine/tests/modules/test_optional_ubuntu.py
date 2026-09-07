@@ -160,3 +160,15 @@ def test_pass_store_raises_when_clone_fails(
     ctx = _ctx(scripts={"git": Result(1)})
     with pytest.raises(ConfigError, match="cloning"):
         PassStore().install(ctx)
+
+
+def test_pass_store_raises_when_pass_init_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # DEVBOOST_PASS_GPG_ID set but `pass init` errors → hard-fail (no silent broken store)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    monkeypatch.setenv("DEVBOOST_PASS_GPG_ID", "ABCDEF12")
+    ctx = _ctx(scripts={"pass": Result(1)})
+    with pytest.raises(ConfigError, match="pass init"):
+        PassStore().install(ctx)
