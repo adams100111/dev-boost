@@ -27,7 +27,9 @@ cat > "$DOT_CLAUDE/rules/commit-conventions.md" <<'EOF'
 EOF
 
 # 3. skills lockfile (drop the .bak-* backups)
-[ -f "$AGENTS/.skill-lock.json" ] && cp "$AGENTS/.skill-lock.json" "$DOT_AGENTS/.skill-lock.json"
+# chezmoi source name MUST use the dot_ prefix — a literal '.skill-lock.json' in the source is
+# ignored by chezmoi and never applied to ~/.agents/.skill-lock.json.
+[ -f "$AGENTS/.skill-lock.json" ] && cp "$AGENTS/.skill-lock.json" "$DOT_AGENTS/dot_skill-lock.json"
 
 # 4. skills classification report (upstream vs local-only) — for human review, no auto-vendor
 echo "=== SKILLS CLASSIFICATION (review before vendoring) ==="
