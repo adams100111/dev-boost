@@ -36,7 +36,10 @@ import json, os, sys
 skills_dir, lock_path = sys.argv[1], sys.argv[2]
 lock = set()
 if os.path.isfile(lock_path):
-    lock = set(json.load(open(lock_path)).get("skills", {}))
+    try:
+        lock = set(json.load(open(lock_path)).get("skills", {}))
+    except (ValueError, OSError):
+        lock = set()   # corrupt/unreadable lockfile -> treat as no lock entries
 real, symlink, vendor = [], [], []
 for name in sorted(os.listdir(skills_dir)) if os.path.isdir(skills_dir) else []:
     p = os.path.join(skills_dir, name)
