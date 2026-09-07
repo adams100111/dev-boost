@@ -37,6 +37,10 @@ class SecretsError(DevbootError):
     """The age-encrypted secrets bundle is missing, undecryptable, or incomplete."""
 
 
+class ConfigError(DevbootError):
+    """A required configuration value or environment variable is missing or invalid."""
+
+
 class GithubError(DevbootError):
     """A GitHub REST API call failed."""
 

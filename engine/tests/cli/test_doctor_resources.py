@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
@@ -16,6 +18,32 @@ def test_doctor_all_ok_when_deps_present(tmp_path: Path) -> None:
     ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
     checks = run_checks(ctx, tmp_path)
     assert all_ok(checks)
+
+
+def test_doctor_pass_config_check_warns_when_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    monkeypatch.delenv("DEVBOOST_PASS_GPG_ID", raising=False)
+    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "age"})
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
+    checks = run_checks(ctx, tmp_path)
+    pc = [c for c in checks if c.name == "pass-config"]
+    assert pc, "pass-config check missing"
+    assert pc[0].ok is True  # informational — never blocks doctor
+    assert "not set" in pc[0].detail and "DEVBOOST_PASS_REPO" in pc[0].detail
+
+
+def test_doctor_pass_config_reports_repo_when_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_PASS_REPO", "git@github.com:user/pass-store.git")
+    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "age"})
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
+    pc = [c for c in run_checks(ctx, tmp_path) if c.name == "pass-config"]
+    assert pc and pc[0].ok is True and "DEVBOOST_PASS_REPO set" in pc[0].detail
 
 
 def test_doctor_fails_on_missing_dep_and_unknown_os(tmp_path: Path) -> None:

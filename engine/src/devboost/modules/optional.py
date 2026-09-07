@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from devboost.core import log
+from devboost.core.errors import ConfigError
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
@@ -82,8 +82,19 @@ class PassStore(Module):
     def install(self, ctx: Ctx) -> None:
         repo = os.environ.get("DEVBOOST_PASS_REPO")
         if repo:
-            if not ctx.ex.run(["git", "clone", repo, str(self._store())]).ok:
-                log.warn("pass-store: clone failed (non-blocking)")
+            res = ctx.ex.run(["git", "clone", repo, str(self._store())])
+            if not res.ok:
+                raise ConfigError(
+                    f"pass-store: cloning DEVBOOST_PASS_REPO ({repo}) failed (exit {res.code}) — "
+                    "check the repo URL and your git credentials"
+                )
             return
-        gpg_id = os.environ.get("DEVBOOST_PASS_GPG_ID", "")
-        ctx.ex.run(["pass", "init", gpg_id])
+        gpg_id = os.environ.get("DEVBOOST_PASS_GPG_ID")
+        if not gpg_id:
+            raise ConfigError(
+                "pass-store: no pass store configured — set DEVBOOST_PASS_REPO to clone your "
+                "existing pass repo, or DEVBOOST_PASS_GPG_ID to initialize a new store"
+            )
+        res = ctx.ex.run(["pass", "init", gpg_id])
+        if not res.ok:
+            raise ConfigError(f"pass-store: `pass init {gpg_id}` failed (exit {res.code})")
