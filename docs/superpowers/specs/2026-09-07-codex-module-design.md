@@ -88,16 +88,29 @@ by **merge-not-clobber**: prefer the `codex` CLI where it owns the write (`codex
 `config/batchWrite`), and for pure-config sections a Python TOML merge that preserves `[projects.*]`
 trust, `[hooks.state.*]` hashes, and any other device state.
 
-## Verification spike (front of the plan — real facts before task code)
+## Verification spike — RESOLVED (facts from the live `codex-cli 0.149.0` binary + `npx skills` + engine deps)
 
-1. Exact `codex plugin marketplace add` / `codex plugin add` / `codex mcp add` syntax, scope, and
-   idempotency (mirror the `claude plugin`/`claude mcp` verification).
-2. How `npx skills` targets Codex — the lockfile carries `lastSelectedAgents`, implying the installer
-   is multi-agent; determine the exact command to hydrate `~/.codex/skills` and whether it also writes
-   `[[skills.config]]`.
-3. Claude vs Codex `SKILL.md` format compatibility (for vendored-skill conversion), and a TOML
-   **writer** for the engine — stdlib `tomllib` is read-only; confirm/add `tomli-w` (or equivalent)
-   as an engine dependency for the `config.toml` merges.
+1. **Marketplaces:** `codex plugin marketplace add <SOURCE>` where SOURCE = `owner/repo[@ref]` |
+   HTTPS/SSH Git URL | local path (`--ref`, `--sparse` available). Idempotency: `codex plugin
+   marketplace list`. clickup-flow `local`→`adams100111/clickup-flow`.
+2. **Plugins:** `codex plugin add PLUGIN@MARKETPLACE --json` (or `PLUGIN --marketplace M`). Idempotency:
+   `codex plugin list --available --json` → parse installed names, add only missing.
+3. **MCP:** `codex mcp add <NAME> -- <cmd…>` (stdio; `--env KEY=VAL`) or `codex mcp add <NAME> --url
+   <URL>` (http; `--bearer-token-env-var`, OAuth flags). Idempotency: `codex mcp list --json` /
+   `codex mcp get <NAME>`. google-docs = stdio `bash -lc '… $(pass …) … exec npx …'`.
+4. **Skills:** `npx skills` (skills.sh) is **natively multi-agent** — `--agent/-a <agents>` (`'*'` =
+   all), `-g` global; its `lastSelectedAgents` already includes `codex`. Hydrate lockfile skills:
+   `npx skills add <owner/repo@skill> -g -a codex -y` per lock entry (`experimental_install` restores
+   from lock). Vendored non-lock skills: **`SKILL.md` format is compatible** (both use `--- name /
+   description ---`; Codex adds optional `metadata.short-description`), so they drop into
+   `~/.codex/skills/<name>/SKILL.md` and are auto-discovered (same as the `.system` skills, which have
+   no per-skill config entry). `[[skills.config]]` is only needed to force enable/disable, not for
+   discovery.
+5. **TOML writer:** `tomli-w>=1.0` is **already an engine dependency** (`engine/pyproject.toml`).
+   `config.toml` merge = `tomllib` read → deep-merge managed sections → `tomli-w` write, preserving
+   `[projects.*]` / `[hooks.state.*]` / other device state. (Prefer the `codex` CLI for the sections
+   it owns — plugin/marketplace/mcp — and the TOML merge only for pure-config sections: prefs,
+   `[features]`, `[shell_environment_policy]`, `[hooks]`.)
 
 ## Not portable (machine-state, excluded)
 
