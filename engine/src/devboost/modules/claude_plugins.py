@@ -153,8 +153,13 @@ class ClaudePlugins(Module):
         env["CLICKUP_API_TOKEN"] = token
         data["env"] = env
         local.parent.mkdir(parents=True, exist_ok=True)
-        local.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        local.chmod(0o600)
+        data_bytes = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+        fd = os.open(local, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, data_bytes)
+        finally:
+            os.close(fd)
+        os.chmod(local, 0o600)  # also tighten a pre-existing file (O_TRUNC keeps old mode)
 
     def install(self, ctx: Ctx) -> None:
         self._merge_settings(ctx)
