@@ -88,4 +88,4 @@ class CodexConfig(Module):
             managed["shell_environment_policy"]["set"] = {"CLICKUP_API_TOKEN": token}
         _deep_merge(data, managed)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomli_w.dumps(data) + "", encoding="utf-8")
+        path.write_text(tomli_w.dumps(data), encoding="utf-8")
