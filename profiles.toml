@@ -15,6 +15,10 @@ cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydock
 shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline",
          "claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]
+# claude — reusable Claude Code config bundle. Stub lists only claude-code so modules can
+# declare profiles=("claude",) at load; finalized to the full four-module list (+ added to
+# `full`) once claude-plugins/claude-skills/claude-mcp exist.
+claude = ["claude-code"]
 brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]
 brain-tools = ["herdr","herdr-plugins"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
