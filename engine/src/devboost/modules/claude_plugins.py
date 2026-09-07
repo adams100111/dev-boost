@@ -138,13 +138,17 @@ class ClaudePlugins(Module):
         if not res.ok or not token:
             log.warn("claude-plugins: `pass show clickup/api-token` missing — skipping token")
             return
-        local = _home() / ".claude" / "settings.local.json"
+        # Claude Code reads `env` from the user-global ~/.claude/settings.json. There is NO
+        # user-level settings.local.json (that name is project-scoped only), so the token must
+        # land in settings.json. settings.json is a device-local home file — never committed to
+        # the repo — so the plaintext-free-repo invariant still holds. Merge-preserving.
+        path = self._settings_path()
         data: dict[str, object] = {}
-        if local.exists():
+        if path.exists():
             try:
-                loaded = json.loads(local.read_text(encoding="utf-8"))
+                loaded = json.loads(path.read_text(encoding="utf-8"))
             except ValueError:
-                log.warn("claude-plugins: settings.local.json invalid JSON — left untouched")
+                log.warn("claude-plugins: settings.json invalid JSON — left untouched (token)")
                 return
             if isinstance(loaded, dict):
                 data = loaded
@@ -152,14 +156,8 @@ class ClaudePlugins(Module):
         env: dict[str, object] = env_raw if isinstance(env_raw, dict) else {}
         env["CLICKUP_API_TOKEN"] = token
         data["env"] = env
-        local.parent.mkdir(parents=True, exist_ok=True)
-        data_bytes = (json.dumps(data, indent=2) + "\n").encode("utf-8")
-        fd = os.open(local, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, data_bytes)
-        finally:
-            os.close(fd)
-        os.chmod(local, 0o600)  # also tighten a pre-existing file (O_TRUNC keeps old mode)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     def install(self, ctx: Ctx) -> None:
         self._merge_settings(ctx)

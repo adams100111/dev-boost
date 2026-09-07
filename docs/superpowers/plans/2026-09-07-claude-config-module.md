@@ -14,7 +14,7 @@
 - **Executor seam:** all system-tool calls go through `ctx.ex.run([...])` (argv lists, never shell strings unless via `["sh","-c", ...]`/`["bash","-lc", ...]`) and `ctx.ex.which(...)`. Never call `subprocess` directly.
 - **Settings writes:** always read → merge → write; never clobber. Absent file → create; unparseable JSON → `log.warn` and leave untouched (pattern: `ClaudeStatusline.install`, `engine/src/devboost/modules/shell.py:264-284`).
 - **Never hand-edit `~/.claude.json`:** MCP via `claude mcp`, plugins via `claude plugin install`.
-- **Zero plaintext secrets in committed files:** secrets live only in `pass`; the sole on-disk decrypted value is `~/.claude/settings.local.json` (0600, git-ignored).
+- **Zero plaintext secrets in committed files:** secrets live only in `pass`; the sole on-disk decrypted value is in `~/.claude/settings.json` `env` — a device-local home file that is never committed to the repo. (NOTE, post-merge correction: earlier drafts targeted a user-level `settings.local.json`, but no such user-level file exists in Claude Code; the token goes into `~/.claude/settings.json`. Task 5 code/tests below are superseded by that fix.)
 - **Degrade + report:** when `pass`/an entry/auth is missing, `log.warn` and skip that piece; do not raise. Non-secret config still applies.
 - **Module metadata:** every module is `@register`, sets `name`, `category`, `description`, `requires`, `profiles`, and overrides `verify`/`install`.
 - **Profile≠module rule:** the profile name `claude` must differ from every module name (`claude-plugins`, `claude-skills`, `claude-mcp`, `claude-code`, …). Honored.
