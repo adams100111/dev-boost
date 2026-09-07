@@ -6,6 +6,7 @@ their milestones (M1 secrets, M9 gpu).
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +71,20 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
     # secrets state: 'missing' is a warning (ok), but a present-yet-broken bundle fails.
     state = age.doctor_state(ctx, bundle_path(), key_path())
     checks.append(Check("secrets", state in ("ok", "missing"), state))
+
+    # pass-config: informational only (ok=True) — pass is opt-in (claude / security-cli profiles)
+    # and doctor doesn't know the selected profile, so it never blocks here; PassStore enforces at
+    # install time. Surfaces a forgotten DEVBOOST_PASS_REPO before the install fails.
+    if os.environ.get("DEVBOOST_PASS_REPO"):
+        pass_detail = "DEVBOOST_PASS_REPO set (pass store cloned at install)"
+    elif os.environ.get("DEVBOOST_PASS_GPG_ID"):
+        pass_detail = "DEVBOOST_PASS_GPG_ID set (new store initialized at install)"
+    else:
+        pass_detail = (
+            "not set — pass-backed secrets (claude/security-cli profile) will fail to "
+            "provision; set DEVBOOST_PASS_REPO"
+        )
+    checks.append(Check("pass-config", True, pass_detail))
     return checks
 
 

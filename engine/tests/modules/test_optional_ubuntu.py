@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsInfo
-from devboost.exec.executor import FakeExecutor
+from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules.optional import JetbrainsToolbox, Neovim, Pass, PassStore
 
@@ -136,3 +137,26 @@ def test_pass_store_inits_with_gpg_id_on_ubuntu(
     ctx = _ctx()
     PassStore().install(ctx)
     assert ["pass", "init", "ABCDEF12"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_pass_store_raises_when_no_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # neither DEVBOOST_PASS_REPO nor DEVBOOST_PASS_GPG_ID set → hard-fail with an actionable error
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    monkeypatch.delenv("DEVBOOST_PASS_GPG_ID", raising=False)
+    ctx = _ctx()
+    with pytest.raises(ConfigError, match="DEVBOOST_PASS_REPO"):
+        PassStore().install(ctx)
+
+
+def test_pass_store_raises_when_clone_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # DEVBOOST_PASS_REPO set but the clone fails → hard-fail (no silent empty store)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("DEVBOOST_PASS_REPO", "git@github.com:user/pass-store.git")
+    ctx = _ctx(scripts={"git": Result(1)})
+    with pytest.raises(ConfigError, match="cloning"):
+        PassStore().install(ctx)
