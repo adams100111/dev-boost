@@ -84,3 +84,28 @@ def test_install_plugins_noop_without_claude(
     ctx = _ctx()  # claude not present
     ClaudePlugins()._install_plugins(ctx)
     assert not any("plugin install" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_clickup_token_written_to_local_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from devboost.exec.executor import Result
+
+    (tmp_path / ".claude").mkdir(parents=True)
+    ctx = _ctx(present={"pass"}, scripts={"pass": Result(0, stdout="pk_secret_123\n")})
+    ClaudePlugins()._resolve_clickup_token(ctx)
+
+    local = tmp_path / ".claude" / "settings.local.json"
+    data = json.loads(local.read_text(encoding="utf-8"))
+    assert data["env"]["CLICKUP_API_TOKEN"] == "pk_secret_123"
+    assert (local.stat().st_mode & 0o777) == 0o600
+
+
+def test_clickup_token_absent_pass_degrades(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx()  # pass not present
+    ClaudePlugins()._resolve_clickup_token(ctx)  # must not raise
+    assert not (tmp_path / ".claude" / "settings.local.json").exists()

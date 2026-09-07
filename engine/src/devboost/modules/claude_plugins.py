@@ -129,6 +129,34 @@ class ClaudePlugins(Module):
             if not res.ok:
                 log.warn(f"claude-plugins: install {plugin} failed: {res.stderr.strip()}")
 
+    def _resolve_clickup_token(self, ctx: Ctx) -> None:
+        if not ctx.ex.which("pass"):
+            log.warn("claude-plugins: pass not configured — skipping CLICKUP_API_TOKEN")
+            return
+        res = ctx.ex.run(["pass", "show", "clickup/api-token"])
+        token = res.stdout.strip()
+        if not res.ok or not token:
+            log.warn("claude-plugins: `pass show clickup/api-token` missing — skipping token")
+            return
+        local = _home() / ".claude" / "settings.local.json"
+        data: dict[str, object] = {}
+        if local.exists():
+            try:
+                loaded = json.loads(local.read_text(encoding="utf-8"))
+            except ValueError:
+                log.warn("claude-plugins: settings.local.json invalid JSON — left untouched")
+                return
+            if isinstance(loaded, dict):
+                data = loaded
+        env_raw = data.get("env")
+        env: dict[str, object] = env_raw if isinstance(env_raw, dict) else {}
+        env["CLICKUP_API_TOKEN"] = token
+        data["env"] = env
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        local.chmod(0o600)
+
     def install(self, ctx: Ctx) -> None:
         self._merge_settings(ctx)
         self._install_plugins(ctx)
+        self._resolve_clickup_token(ctx)
