@@ -51,3 +51,36 @@ def test_merge_leaves_invalid_json_untouched(
     settings.write_text("{ broken", encoding="utf-8")
     ClaudePlugins()._merge_settings(_ctx())
     assert settings.read_text(encoding="utf-8") == "{ broken"
+
+
+def test_install_plugins_adds_only_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from devboost.exec.executor import Result
+
+    # `claude plugin list --json` reports superpowers already installed → it is skipped.
+    ctx = _ctx(
+        present={"claude"},
+        scripts={
+            "claude": Result(
+                0, stdout='[{"name":"superpowers","marketplace":"claude-plugins-official"}]'
+            )
+        },
+    )
+    ClaudePlugins()._install_plugins(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    install_calls = [j for j in joined if "plugin install" in j]
+    assert any(
+        "clickup-flow@clickup-flow-marketplace" in j and "--yes" in j for j in install_calls
+    )
+    assert not any("superpowers@claude-plugins-official" in j for j in install_calls)
+
+
+def test_install_plugins_noop_without_claude(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx()  # claude not present
+    ClaudePlugins()._install_plugins(ctx)
+    assert not any("plugin install" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]

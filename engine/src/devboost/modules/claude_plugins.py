@@ -101,5 +101,34 @@ class ClaudePlugins(Module):
         enabled = data.get("enabledPlugins")
         return isinstance(enabled, dict) and all(p in enabled for p in ENABLED_PLUGINS)
 
+    def _install_plugins(self, ctx: Ctx) -> None:
+        if not ctx.ex.which("claude"):
+            log.warn("claude-plugins: claude CLI not found — skipping plugin install")
+            return
+        # `list` plain-text format is unstable; `--json` gives {name, marketplace, …} per entry.
+        listed = ctx.ex.run(["claude", "plugin", "list", "--json"])
+        installed: set[str] = set()
+        if listed.ok:
+            try:
+                entries = json.loads(listed.stdout)
+            except ValueError:
+                entries = []
+            if isinstance(entries, list):
+                installed = {
+                    e["name"]
+                    for e in entries
+                    if isinstance(e, dict) and isinstance(e.get("name"), str)
+                }
+        for plugin in ENABLED_PLUGINS:
+            name = plugin.split("@", 1)[0]
+            if name in installed:
+                log.skip(f"claude-plugins: {plugin} already installed")
+                continue
+            # --yes: non-interactive (auto-approves any headersHelper/command prompts).
+            res = ctx.ex.run(["claude", "plugin", "install", plugin, "--scope", "user", "--yes"])
+            if not res.ok:
+                log.warn(f"claude-plugins: install {plugin} failed: {res.stderr.strip()}")
+
     def install(self, ctx: Ctx) -> None:
         self._merge_settings(ctx)
+        self._install_plugins(ctx)
