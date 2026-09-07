@@ -66,6 +66,7 @@ def profiles_file(tmp_path: Path) -> Path:
         'server = ["zram"]\n'
         'remote = ["tailscale","mosh"]\n'
         'claude = ["claude-code"]\n'
+        'codex = ["codex-code"]\n'
         'brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]\n'
         'brain-tools = ["herdr","herdr-plugins"]\n',
         encoding="utf-8",

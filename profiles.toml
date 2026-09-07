@@ -5,7 +5,7 @@
 # security-cli) and
 # the portable subsets terminal/devtools are alternative entry points, not part of full.
 full = ["base","cli","shell","gnome","multimedia","editors","python","web","laravel",
-        "dotnet","data","devops","react-native","apps","system","dev-hygiene","remote","claude"]
+        "dotnet","data","devops","react-native","apps","system","dev-hygiene","remote","claude","codex"]
 base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker","docker-build-gc"]
@@ -17,6 +17,8 @@ shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-stat
 remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
+# codex — reusable OpenAI Codex CLI config bundle: base CLI + config + plugins + MCP servers + skills.
+codex = ["codex-code","codex-config","codex-plugins","codex-mcp","codex-skills"]
 brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]
 brain-tools = ["herdr","herdr-plugins"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
