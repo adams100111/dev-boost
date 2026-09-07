@@ -4,7 +4,7 @@
 
 **Goal:** Reproduce the operator's global OpenAI Codex CLI setup (instructions, plugins, marketplaces, MCP servers, skills, prefs, hooks) on any device via five small idempotent engine modules + chezmoi dotfiles, mirroring the `claude` module.
 
-**Architecture:** Static config (AGENTS.md, hooks, vendored SKILL.md skills) rides the existing `Dotfiles` chezmoi module. Five modules do the imperative work: `codex-code` (install the standalone binary), `codex-config` (TOML-merge prefs/features/shell_env/hooks + CLICKUP from `pass`), `codex-plugins` (`codex plugin marketplace add`/`codex plugin add`), `codex-mcp` (`codex mcp add`), `codex-skills` (`npx skills add … -a codex`). A `codex` profile bundles them.
+**Architecture:** Static config (AGENTS.md, hooks, vendored SKILL.md skills) rides the existing `Dotfiles` chezmoi module. Five modules do the imperative work: `codex-code` (install the standalone binary), `codex-config` (TOML-merge prefs/features/shell_env/hooks + CLICKUP from `pass`), `codex-plugins` (`codex plugin marketplace add`/`codex plugin add`), `codex-mcp` (`codex mcp add`), `codex-skills` (populate the shared `~/.agents/skills` via `npx skills add … -g`). A `codex` profile bundles them.
 
 **Tech Stack:** Python 3.12 engine (src-layout under `engine/`), `pytest` + `FakeExecutor`, `mypy` + `ruff`. Config target `~/.codex/config.toml` (TOML, via `tomllib` read + `tomli_w` write) + `~/.codex/AGENTS.md`. Secrets via `pass`.
 
@@ -26,9 +26,9 @@
 dev-boost/
 ├─ dotfiles/private_dot_codex/            # delivered by existing Dotfiles module (chezmoi)
 │  ├─ AGENTS.md                           # Codex global instructions (= CLAUDE.md analogue)
-│  ├─ hooks.json                          # SessionStart/Stop hook wiring
-│  ├─ hooks/executable_*.sh               # herdr + notify hook scripts
-│  └─ skills/<name>/SKILL.md              # vendored non-lock skills (format-compatible)
+│  ├─ hooks.json.tmpl                     # SessionStart/Stop wiring ({{ .chezmoi.homeDir }} paths)
+│  └─ hooks/executable_*.sh               # herdr + notify hook scripts
+├─ dotfiles/private_dot_agents/skills/<name>/SKILL.md   # vendored skills (Codex reads ~/.agents/skills)
 ├─ engine/src/devboost/modules/
 │  ├─ codex_code.py    codex_config.py    codex_plugins.py    codex_mcp.py    codex_skills.py
 ├─ engine/tests/modules/
@@ -307,7 +307,7 @@ git commit -m "feat(codex): codex-mcp registers google-docs (context7 dropped)"
 
 ## Task 4: `codex-skills` module
 
-Reproduces lockfile skills into Codex via the multi-agent `npx skills add … -a codex`. Vendored non-lock skills arrive via `Dotfiles` (Task 8). Idempotent: only adds skills whose `~/.codex/skills/<name>` is absent.
+Ensures the shared `~/.agents/skills` (which Codex auto-discovers, USER scope) is populated via `npx skills add … -g` per lock entry. Vendored non-lock skills arrive via `Dotfiles` into `~/.agents/skills` (Task 8). Idempotent: only adds skills whose `~/.agents/skills/<name>` is absent (no-ops if the claude module already populated it).
 
 **Files:** Create `engine/src/devboost/modules/codex_skills.py`, `engine/tests/modules/test_codex_skills.py`.
 
@@ -353,7 +353,7 @@ def test_install_adds_lock_entry_for_codex(
     ctx = _ctx(present={"npx"})
     CodexSkills().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
-    assert any("skills add mattpocock/skills@caveman" in j and "-a codex" in j for j in joined)
+    assert any("skills add mattpocock/skills@caveman -g -y" in j for j in joined)
 
 
 def test_install_skips_present_codex_skill(
@@ -361,7 +361,7 @@ def test_install_skips_present_codex_skill(
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     _write_lock(tmp_path)
-    (tmp_path / ".codex" / "skills" / "caveman").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "caveman").mkdir(parents=True)
     ctx = _ctx(present={"npx"})
     CodexSkills().install(ctx)
     assert not any("@caveman" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
@@ -373,7 +373,7 @@ def test_install_skips_present_codex_skill(
 
 ```python
 # engine/src/devboost/modules/codex_skills.py
-"""codex-skills — reproduce lockfile skills into Codex via the multi-agent `npx skills` CLI."""
+"""codex-skills — ensure ~/.agents/skills (Codex's shared USER skills) is populated via npx skills."""
 
 from __future__ import annotations
 
@@ -396,12 +396,14 @@ def _home() -> Path:
 class CodexSkills(Module):
     name = "codex-skills"
     category = "cli"
-    description = "Reproduce lockfile skills into Codex via `npx skills add -a codex`."
+    description = "Ensure ~/.agents/skills (Codex USER skills, shared with ~/.claude) is populated."
     requires = (CodexCode, Dotfiles)
     profiles = ("codex",)
 
     def _present(self, name: str) -> bool:
-        p = _home() / ".codex" / "skills" / name
+        # Codex reads USER skills from ~/.agents/skills (auto-discovered) — the same real-content
+        # dir ~/.claude/skills symlinks into. NOT ~/.codex/skills; no -a codex / [[skills.config]].
+        p = _home() / ".agents" / "skills" / name
         return p.exists() or p.is_symlink()
 
     def verify(self, ctx: Ctx) -> bool:
@@ -415,7 +417,7 @@ class CodexSkills(Module):
             if self._present(name):
                 log.skip(f"codex-skills: {name} already present")
                 continue
-            res = ctx.ex.run(["npx", "skills", "add", f"{source}@{name}", "-g", "-a", "codex", "-y"])
+            res = ctx.ex.run(["npx", "skills", "add", f"{source}@{name}", "-g", "-y"])
             if not res.ok:
                 log.warn(f"codex-skills: `skills add {source}@{name}` failed — vendor it instead")
 ```
@@ -426,7 +428,7 @@ class CodexSkills(Module):
 
 ```bash
 git add engine/src/devboost/modules/codex_skills.py engine/tests/modules/test_codex_skills.py
-git commit -m "feat(codex): codex-skills hydrates lockfile skills via npx skills -a codex"
+git commit -m "feat(codex): codex-skills populates shared ~/.agents/skills via npx skills"
 ```
 
 ---
@@ -816,7 +818,7 @@ git commit -m "feat(codex): finalize codex profile (5 modules) and add to full"
 
 Mirror the claude migration for Codex: copy `AGENTS.md` + `hooks.json` + hook scripts into the chezmoi source; vendor the same non-lock skills as Codex `SKILL.md` dirs; drop the live `context7` MCP; the CLICKUP token is already in `pass`.
 
-**Files:** Create `scripts/import-codex-config.sh`; generated `dotfiles/private_dot_codex/{AGENTS.md,hooks.json,hooks/*,skills/<name>/}`.
+**Files:** Create `scripts/import-codex-config.sh`; generated `dotfiles/private_dot_codex/{AGENTS.md,hooks.json.tmpl,hooks/*}` and vendored `dotfiles/private_dot_agents/skills/<name>/` (Codex reads `~/.agents/skills`).
 
 - [ ] **Step 1: Write `scripts/import-codex-config.sh`**
 
@@ -829,30 +831,27 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX="$HOME/.codex"
 DOT="$REPO_ROOT/dotfiles/private_dot_codex"
-mkdir -p "$DOT/hooks" "$DOT/skills"
+mkdir -p "$DOT/hooks"
 
-# 1. AGENTS.md + hooks (global instructions + hook wiring/scripts)
-[ -f "$CODEX/AGENTS.md" ] && cp "$CODEX/AGENTS.md" "$DOT/AGENTS.md"
-[ -f "$CODEX/hooks.json" ] && cp "$CODEX/hooks.json" "$DOT/hooks.json"
+# 1. AGENTS.md — copy, then fix the copy-paste attribution artifact (Codex/OpenAI, dedup)
+if [ -f "$CODEX/AGENTS.md" ]; then
+  sed -e 's/reference to Codex, Codex, or Anthropic/reference to Codex or OpenAI/g' \
+      -e 's/Codex\/Anthropic attribution/OpenAI\/Codex attribution/g' \
+      -e 's/or any Codex\/Anthropic/or any OpenAI\/Codex/g' \
+      "$CODEX/AGENTS.md" > "$DOT/AGENTS.md"
+fi
+
+# 2. hooks.json -> hooks.json.tmpl: replace the literal HOME with a chezmoi template var so the
+#    hook-script paths resolve to the real HOME on every device (any username).
+[ -f "$CODEX/hooks.json" ] && \
+  sed "s|$HOME|{{ .chezmoi.homeDir }}|g" "$CODEX/hooks.json" > "$DOT/hooks.json.tmpl"
 if [ -d "$CODEX/hooks" ]; then
   for f in "$CODEX/hooks"/*; do [ -f "$f" ] && cp "$f" "$DOT/hooks/executable_$(basename "$f")"; done
 fi
 
-# 2. skills classification (non-.system, non-symlink dirs = vendor candidates)
-echo "=== CODEX SKILLS (review before vendoring) ==="
-python3 - "$CODEX/skills" <<'PY'
-import os, sys
-d = sys.argv[1]
-if os.path.isdir(d):
-    for n in sorted(os.listdir(d)):
-        p = os.path.join(d, n)
-        if n == ".system" or n.startswith("."):
-            continue
-        kind = "symlink" if os.path.islink(p) else "dir"
-        print(f"  {kind}: {n}")
-else:
-    print("  (no ~/.codex/skills)")
-PY
+# NOTE: Codex USER skills live in ~/.agents/skills (auto-discovered, shared with ~/.claude), NOT
+# ~/.codex/skills (which holds only bundled .system skills). Vendored skills are seeded separately
+# into dotfiles/private_dot_agents/skills below.
 
 # 3. secret-scrub PREVIEW (read-only; does not modify ~/.codex)
 echo "=== SECRET SCRUB (Codex) ==="
@@ -866,7 +865,7 @@ if os.path.isfile(p):
     if "context7" in d.get("mcp_servers", {}):
         print("  context7 MCP (inline ctx7sk key) -> drop: `codex mcp remove context7`; plugin covers it")
 PY
-echo "=== DONE. Vendor chosen skills into $DOT/skills/, then commit. ==="
+echo "=== DONE. Vendor chosen skills into dotfiles/private_dot_agents/skills/ (~/.agents/skills), then commit. ==="
 ```
 
 - [ ] **Step 2: `chmod +x scripts/import-codex-config.sh`; `bash -n` it; shellcheck if available. Commit the script only.**
@@ -876,15 +875,17 @@ git add scripts/import-codex-config.sh
 git commit -m "feat(codex): one-time import script (AGENTS.md, hooks, skills report, secret scrub)"
 ```
 
-- [ ] **Step 3: Run the import; vendor the same 14 non-lock skills as Codex SKILL.md dirs**
+- [ ] **Step 3: Run the import; vendor the same 14 non-lock skills into `~/.agents/skills`**
 
-Run `./scripts/import-codex-config.sh`, then (format is compatible, so reuse the claude vendored SKILL.md content):
+Run `./scripts/import-codex-config.sh`, then vendor into `private_dot_agents/skills` (Codex
+auto-discovers `~/.agents/skills`; SKILL.md format is compatible, reuse the claude content):
 
 ```bash
+mkdir -p dotfiles/private_dot_agents/skills
 for s in agents-sdk cloudflare cloudflare-email-service cloudflare-one cloudflare-one-migrations \
          context7-mcp durable-objects find-docs sandbox-sdk sharpen turnstile-spin web-perf \
          workers-best-practices wrangler; do
-  cp -aL "dotfiles/private_dot_claude/skills/$s" "dotfiles/private_dot_codex/skills/$s"
+  cp -aL "dotfiles/private_dot_claude/skills/$s" "dotfiles/private_dot_agents/skills/$s"
 done
 ```
 
@@ -897,16 +898,20 @@ codex mcp remove context7 2>/dev/null || true
 - [ ] **Step 5: Secret-scan the seeded dotfiles (must be clean of REAL secrets)**
 
 ```bash
-! grep -rniE 'ctx7sk-f4f06e7a|pk_89590270|dits_client|GLBO6ZND' dotfiles/private_dot_codex/ && echo clean
+! grep -rniE 'ctx7sk-f4f06e7a|pk_89590270|dits_client|GLBO6ZND' \
+    dotfiles/private_dot_codex/ dotfiles/private_dot_agents/ && echo clean
 ```
 
-- [ ] **Step 6: Verify chezmoi applies + commit the seeded config**
+- [ ] **Step 6: Verify chezmoi applies (incl. the hooks template) + commit the seeded config**
 
 ```bash
 DEST=$(mktemp -d); chezmoi apply --force --source "$PWD/dotfiles" --destination "$DEST" >/dev/null 2>&1
-ls "$DEST/.codex/AGENTS.md" && ls "$DEST/.codex/skills/" | wc -l; rm -rf "$DEST"
-git add dotfiles/private_dot_codex
-git commit -m "feat(codex): seed managed ~/.codex config (AGENTS.md, hooks, vendored skills)"
+ls "$DEST/.codex/AGENTS.md" "$DEST/.codex/hooks.json"   # hooks.json.tmpl -> hooks.json (HOME resolved)
+! grep -q '{{' "$DEST/.codex/hooks.json" && echo "hooks template rendered (no raw {{ left)"
+ls "$DEST/.agents/skills/" | wc -l                       # vendored skills land in ~/.agents/skills
+rm -rf "$DEST"
+git add dotfiles/private_dot_codex dotfiles/private_dot_agents
+git commit -m "feat(codex): seed managed ~/.codex config (AGENTS.md, hooks.tmpl) + ~/.agents skills"
 ```
 
 ---
@@ -919,4 +924,4 @@ git commit -m "feat(codex): seed managed ~/.codex config (AGENTS.md, hooks, vend
 
 **Type consistency:** `CODEX_MCP_SERVERS: dict[str,list[str]]`, `CODEX_MARKETPLACES: dict[str,str]`, `CODEX_PREFS: dict[str,str]`, reused `ENABLED_PLUGINS`/`_lock_entries`; `FakeExecutor` `.calls/.scripts/.present` per `exec/executor.py`.
 
-**Verified against source/binary:** `codex plugin marketplace add <source>`, `codex plugin add PLUGIN@MARKETPLACE --json`, `codex plugin list --available --json`, `codex mcp add NAME -- <cmd>` / `--url`, `codex mcp list --json`, `npx skills add … -a codex`, `tomli_w` present. Profile-ordering fix (stub in profiles.toml + both test tables) carried over from the `claude` module.
+**Verified against source/binary:** `codex plugin marketplace add <source>`, `codex plugin add PLUGIN@MARKETPLACE --json`, `codex plugin list --available --json`, `codex mcp add NAME -- <cmd>` / `--url`, `codex mcp list --json`, `npx skills add … -g` into the shared `~/.agents/skills` (Codex USER scope, auto-discovered — corrected during grilling from the wrong `~/.codex/skills`), `tomli_w` present. Profile-ordering fix (stub in profiles.toml + both test tables) carried over from the `claude` module.

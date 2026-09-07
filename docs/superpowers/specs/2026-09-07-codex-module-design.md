@@ -29,7 +29,7 @@ Confirmed via context7 (`/openai/codex`) + web + the live `~/.codex` (`codex-cli
 | `settings.json` `enabledPlugins` | `config.toml` `[plugins."x@y"] enabled=true` |
 | `extraKnownMarketplaces` | `config.toml` `[marketplaces.x]` (`source_type` git/local) |
 | `mcpServers` | `config.toml` `[mcp_servers.x]` |
-| `~/.claude/skills/` + `~/.agents` lock | `config.toml` `[[skills.config]]` (path→SKILL.md + enabled) + `~/.codex/skills/<name>/SKILL.md` |
+| `~/.claude/skills/` (symlinks into `~/.agents/skills`) | **`~/.agents/skills`** (USER scope, auto-discovered) — the SAME real-content dir; `[[skills.config]]` is only to *disable* a skill |
 | hooks in settings.json | `~/.codex/hooks.json` + `[hooks]` + `[features] hooks=true` |
 | `effortLevel`/`theme` | `model`, `model_reasoning_effort`, `approval_policy`, `sandbox_mode` |
 | CLICKUP env | `[shell_environment_policy.set] CLICKUP_API_TOKEN` |
@@ -63,8 +63,9 @@ same 18 plugins, same MCP servers (context7 with a plaintext `ctx7sk` key; googl
 ## Architecture (mirrors the `claude` cluster)
 
 **Dotfiles (chezmoi, global-only):** `dotfiles/private_dot_codex/AGENTS.md`,
-`dotfiles/private_dot_codex/hooks.json`, `dotfiles/private_dot_codex/hooks/*`, and vendored
-`dotfiles/private_dot_codex/skills/<name>/SKILL.md`.
+`dotfiles/private_dot_codex/hooks.json.tmpl` (`{{ .chezmoi.homeDir }}` paths),
+`dotfiles/private_dot_codex/hooks/*`, and vendored
+`dotfiles/private_dot_agents/skills/<name>/SKILL.md` (Codex reads `~/.agents/skills`).
 
 **Modules (idempotent; TOML merge-not-clobber on `config.toml`):**
 
@@ -98,14 +99,16 @@ trust, `[hooks.state.*]` hashes, and any other device state.
 3. **MCP:** `codex mcp add <NAME> -- <cmd…>` (stdio; `--env KEY=VAL`) or `codex mcp add <NAME> --url
    <URL>` (http; `--bearer-token-env-var`, OAuth flags). Idempotency: `codex mcp list --json` /
    `codex mcp get <NAME>`. google-docs = stdio `bash -lc '… $(pass …) … exec npx …'`.
-4. **Skills:** `npx skills` (skills.sh) is **natively multi-agent** — `--agent/-a <agents>` (`'*'` =
-   all), `-g` global; its `lastSelectedAgents` already includes `codex`. Hydrate lockfile skills:
-   `npx skills add <owner/repo@skill> -g -a codex -y` per lock entry (`experimental_install` restores
-   from lock). Vendored non-lock skills: **`SKILL.md` format is compatible** (both use `--- name /
-   description ---`; Codex adds optional `metadata.short-description`), so they drop into
-   `~/.codex/skills/<name>/SKILL.md` and are auto-discovered (same as the `.system` skills, which have
-   no per-skill config entry). `[[skills.config]]` is only needed to force enable/disable, not for
-   discovery.
+4. **Skills (corrected during grilling):** Codex reads USER skills from **`$HOME/.agents/skills`**
+   (auto-discovered from repo/user/admin/system scopes) — **the same real-content dir the
+   `~/.claude/skills` symlinks point into**, NOT `~/.codex/skills` (that only holds bundled `.system`
+   skills). So the lockfile skills already in `~/.agents/skills` (from the claude module's
+   `npx skills add -g`) are **already visible to Codex** — no `-a codex` needed. `[[skills.config]]`
+   entries are only for **disabling** a skill, never for discovery. **`SKILL.md` format is compatible**
+   (both use `--- name / description ---`). Therefore: `codex-skills` ensures `~/.agents/skills` is
+   populated via `npx skills add <owner/repo@skill> -g -y` (idempotent; no-ops if the claude module
+   already ran), and vendored non-lock skills are vendored into **`~/.agents/skills`** (chezmoi
+   `private_dot_agents/skills/`), not `~/.codex/skills`.
 5. **TOML writer:** `tomli-w>=1.0` is **already an engine dependency** (`engine/pyproject.toml`).
    `config.toml` merge = `tomllib` read → deep-merge managed sections → `tomli-w` write, preserving
    `[projects.*]` / `[hooks.state.*]` / other device state. (Prefer the `codex` CLI for the sections
