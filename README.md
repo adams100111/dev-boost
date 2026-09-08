@@ -78,14 +78,16 @@ enrollment on NVIDIA when Secure Boot is on.
 | `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
 | `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server`, `browser-view` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
+| `claude` | `claude-code`, `claude-plugins`, `claude-skills`, `claude-mcp` |
 | `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code` |
+| `codex` | `codex-code`, `codex-config`, `codex-plugins`, `codex-mcp`, `codex-skills` |
 | `data` | `data-services` |
 | `dev-hygiene` | `aspire-gc` |
 | `devops` | `devops-tools`, `devops-lsp` |
 | `devtools` | `web-runtimes`, `uv`, `python-lsp`, `web-lsp`, `dotnet-sdk`, `aspire`, `dotnet-lsp`, `ddev`, `playwright` |
 | `dotnet` | `dotnet-sdk`, `aspire`, `dotnet-lsp` |
 | `editors` | `vscode`, `fresh`, `fresh-lsp` |
-| `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote` |
+| `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `claude`, `codex`, `pi` |
 | `gnome` | `gnome-settings`, `gnome-extensions`, `gnome-manager-apps` |
 | `gnome-aesthetics` | `gnome-aesthetics-bundle` |
 | `gnome-theme` | `gnome-theme-bundle` |
@@ -94,6 +96,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
 | `optional-agents` | `herdr-plugins` |
 | `optional-editors` | `neovim`, `jetbrains-toolbox` |
+| `pi` | `pi-harness` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
 | `remote` | `tailscale`, `mosh` |
@@ -125,11 +128,19 @@ enrollment on NVIDIA when Secure Boot is on.
 | `chezmoi` | base | Install the chezmoi dotfiles manager. |
 | `chezmoi-repo` | base | Clone + apply the managed dotfiles repo via the credential store. |
 | `claude-code` | cli | Claude Code CLI (npm; node via mise). |
+| `claude-mcp` | cli | Register user-global MCP servers (google-docs, fathom). |
 | `claude-notify` | shell | Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks. |
+| `claude-plugins` | cli | Register Claude marketplaces + install enabled plugins; resolve CLICKUP token. |
+| `claude-skills` | cli | Reproduce lockfile-tracked skills via `npx skills add`. |
 | `claude-statusline` | shell | Point Claude Code's statusLine at the managed ~/.claude/statusline.sh. |
 | `code-server` | brain-host | code-server — VS Code in the browser (front with tailscale serve; any device). |
 | `codecs` | multimedia | Install the @multimedia codec group (Fedora-only via RPM Fusion). |
 | `codecs-ubuntu` | multimedia | ubuntu-restricted-extras + libavcodec-extra (Ubuntu-only). |
+| `codex-code` | cli | OpenAI Codex CLI (standalone binary; self-updating via `codex update`). |
+| `codex-config` | cli | Merge shareable ~/.codex/config.toml prefs/features/shell-env (CLICKUP via pass). |
+| `codex-mcp` | cli | Register Codex MCP servers (google-docs). |
+| `codex-plugins` | cli | Register Codex marketplaces + install enabled plugins. |
+| `codex-skills` | cli | Ensure ~/.agents/skills (Codex USER skills, shared with ~/.claude) is populated. |
 | `coreutils` | base |  |
 | `crossarch-build` | brain-host | Rootless podman + qemu binfmt for capped multi-arch (amd64+arm64) builds. |
 | `cuda` | hardware-nvidia | CUDA toolkit (Fedora-only via RPM Fusion). |
@@ -198,6 +209,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `pass` | security-cli | pass password-store CLI. |
 | `pass-store` | security-cli | Initialize the GPG-backed password store (optionally cloned). |
+| `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
 | `power-profiles-daemon` | system | Power profile switching (D-Bus). |
 | `python-lsp` | editors | basedpyright + ruff for Python (fresh). |
