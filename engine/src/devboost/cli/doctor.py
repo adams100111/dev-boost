@@ -85,6 +85,17 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
             "provision; set DEVBOOST_PASS_REPO"
         )
     checks.append(Check("pass-config", True, pass_detail))
+
+    # pi-login: informational only (ok=True) — Pi auth is a manual one-time `pi /login` per box
+    # (like pass-config, doctor never blocks on it). Surfaces the reminder until auth.json exists.
+    auth_json = Path(os.environ["HOME"]) / ".pi" / "agent" / "auth.json"
+    if auth_json.exists():
+        pi_detail = "Pi authenticated (~/.pi/agent/auth.json present)"
+    elif ctx.ex.which("harness") or ctx.ex.which("pi"):
+        pi_detail = "Pi installed but not authenticated — run `pi /login` once per box"
+    else:
+        pi_detail = "Pi not installed (install the `pi` profile)"
+    checks.append(Check("pi-login", True, pi_detail))
     return checks
 
 
