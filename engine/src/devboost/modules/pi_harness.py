@@ -56,7 +56,7 @@ class PiHarness(Module):
         # (our temp checkout is only the source of install.sh's bytes), so BOTH env vars must be
         # passed — and install.sh's HARNESS_REPO is a full URL, not owner/repo.
         script = (
-            f"set -e; d=$(mktemp -d); "
+            f"set -e; d=$(mktemp -d); trap 'rm -rf \"$d\"' EXIT; "
             f'git clone --depth 1 {url} "$d/h"; '
             f'HARNESS_REPO={url} HARNESS_REF={ref} bash "$d/h/install.sh"'
         )
