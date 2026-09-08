@@ -31,6 +31,33 @@ subclasses, `Ctx`/`Executor` seam, `FakeExecutor` tests, `mypy --strict` + ruff 
   `HARNESS_REF=<ref>` (install.sh does the ref-pinned clone — so SHA/tag/branch all work).
 - No commit trailer or body may reference Claude/Anthropic.
 
+## Grill-confirmed runtime behaviors (facts — do not re-litigate)
+
+- **Failure isolation:** `core/runner.py` wraps `mod.install(ctx)` in `except Exception` → a raising
+  module becomes an isolated `fail` result; the run CONTINUES to other modules. Nothing `requires`
+  `pi-harness`, so no cascade. So a HARD bootstrap failure fails only Pi in `full` (the overall run
+  exits non-zero and reports `pi-harness: fail`), never the whole workstation.
+- **No exec timeout:** `RealExecutor.run` calls `subprocess.run` with no timeout — a multi-minute
+  `harness install` runs to completion.
+- **PATH:** `RealExecutor` prepends `~/.local/bin` for both `run` and `which`, so `which("harness")`
+  and `run(["harness"/"pass", …])` resolve. (Do NOT add `pi-harness` to accounts-firstboot bootstrap
+  choices — that path demotes via root and would probe `/root/.local/bin`.)
+- **`requires` are auto-installed transitively** (`toposort`), so `devboost install pi` pulls Mise +
+  Secrets and orders them first.
+- **`install.sh` env:** `HARNESS_REPO` (full URL, default the agent-harness https URL), `HARNESS_REF`
+  (branch/tag/SHA, default `main`); it re-clones `HARNESS_REPO@HARNESS_REF` into
+  `~/.local/share/harness` itself. It does NOT modify PATH.
+- **`harness secrets init --backend pass --yes`** exits 0 with a partial auto-map: `CONTEXT7_API_KEY`,
+  `GOOGLE_CLIENT_ID`→`google-docs/dits_client_id`, `GOOGLE_CLIENT_SECRET` all map; `HERDR_*` stay
+  unmapped. Writes `~/.config/harness/config.toml`.
+- **`harness provision`** writes whatever the backend returns; it **throws** if a *mapped* pass entry
+  can't be decrypted (GPG passphrase not cached unattended) — hence SOFT/guarded. Expect a **partial**
+  provision (context7 + google), never herdr secrets.
+- **`harness install --yes`** needs no prior `setup`, installs pi itself, and **exits non-zero today**
+  on the herdr `REPLACE_WITH_VERIFIED_SHA256` pin — hence SOFT/guarded; pi core installs first.
+- **`verify()=which harness` ⇒ bootstrap-once:** a re-run skips the module (so provision/install do
+  not retry) unless `--force`. Ongoing reconcile is `harness-cli`'s job (`harness upgrade`, etc.).
+
 ---
 
 ### Task 1: `pi-harness` module + profile wiring + unit tests
@@ -114,6 +141,8 @@ def test_bootstrap_clones_repo_and_runs_installer() -> None:
     assert any("github.com/adams100111/agent-harness" in c for c in j)
     assert any("install.sh" in c for c in j)
     assert any("HARNESS_REF=main" in c for c in j)
+    # install.sh must receive HARNESS_REPO as a full URL (it re-clones the repo itself).
+    assert any("HARNESS_REPO=https://github.com/adams100111/agent-harness" in c for c in j)
 
 
 def test_provisions_node_when_absent() -> None:
@@ -136,6 +165,7 @@ def test_env_overrides_repo_and_ref(monkeypatch: pytest.MonkeyPatch) -> None:
     j = _joined(ctx)
     assert any("github.com/me/fork" in c for c in j)
     assert any("HARNESS_REF=v1.2.3" in c for c in j)
+    assert any("HARNESS_REPO=https://github.com/me/fork" in c for c in j)
 
 
 def test_provisions_from_pass_when_store_present(
@@ -226,10 +256,14 @@ class PiHarness(Module):
         # token juggling. Shallow-clone the default branch just to obtain install.sh; it then does
         # the HARNESS_REF-pinned clone itself (so SHA/tag/branch all work).
         repo, ref = self._repo(), self._ref()
+        url = f"https://github.com/{repo}"
+        # install.sh re-clones $HARNESS_REPO@$HARNESS_REF into ~/.local/share/harness itself
+        # (our temp checkout is only the source of install.sh's bytes), so BOTH env vars must be
+        # passed — and install.sh's HARNESS_REPO is a full URL, not owner/repo.
         script = (
             f"set -e; d=$(mktemp -d); "
-            f'git clone --depth 1 https://github.com/{repo} "$d/h"; '
-            f'HARNESS_REF={ref} bash "$d/h/install.sh"'
+            f'git clone --depth 1 {url} "$d/h"; '
+            f'HARNESS_REPO={url} HARNESS_REF={ref} bash "$d/h/install.sh"'
         )
         res = ctx.ex.run(["sh", "-c", script])
         if not res.ok:
@@ -346,11 +380,71 @@ git commit -m "test(pi): lock pi profile expansion + full membership"
 
 ---
 
+### Task 3: `pi-login` doctor check (informational, never-blocking)
+
+**Files:**
+- Modify: `engine/src/devboost/cli/doctor.py` (append a `pi-login` `Check`, mirroring `pass-config`)
+- Modify/Create: the doctor test (find it: `grep -rln "run_checks\|pass-config" engine/tests`; add a
+  case there, or create `engine/tests/cli/test_doctor_pi_login.py`)
+
+**Interfaces:**
+- Consumes: `Check`, `run_checks(ctx, root)` in `doctor.py`; `Ctx`/`FakeExecutor`; `Path`.
+- The check is **always `ok=True`** (informational only) — like `pass-config` it must never fail
+  `all_ok()` (doctor doesn't know the selected profile, and Pi auth is a manual one-time step).
+
+- [ ] **Step 1: Write the failing test**
+
+Add a test asserting `run_checks` includes a `pi-login` check that is always `ok=True`, and whose
+`detail` differs by auth state. Mirror how the existing doctor test builds a `Ctx` +
+`FakeExecutor` and calls `run_checks(ctx, root)`:
+```python
+def test_pi_login_check_is_informational(tmp_path: object) -> None:
+    ctx = Ctx(os=FEDORA, ex=FakeExecutor(present={"harness"}))  # type: ignore[arg-type]
+    checks = run_checks(ctx, tmp_path)  # type: ignore[arg-type]
+    pi = next(c for c in checks if c.name == "pi-login")
+    assert pi.ok is True
+    assert "pi /login" in pi.detail  # reminds when auth.json absent
+```
+(Match the existing doctor test's imports/fixtures for `FEDORA`, `Ctx`, `run_checks`.)
+
+- [ ] **Step 2: Run it to see it fail**
+
+Run: `cd engine && uv run pytest -k pi_login -q` → FAIL (no `pi-login` check yet).
+
+- [ ] **Step 3: Add the check to `doctor.py`**
+
+After the `pass-config` block (before `return checks`), append:
+```python
+    # pi-login: informational only (ok=True) — Pi auth is a manual one-time `pi /login` per box
+    # (like pass-config, doctor never blocks on it). Surfaces the reminder until auth.json exists.
+    auth_json = Path(os.environ["HOME"]) / ".pi" / "agent" / "auth.json"
+    if auth_json.exists():
+        pi_detail = "Pi authenticated (~/.pi/agent/auth.json present)"
+    elif ctx.ex.which("harness") or ctx.ex.which("pi"):
+        pi_detail = "Pi installed but not authenticated — run `pi /login` once per box"
+    else:
+        pi_detail = "Pi not installed (install the `pi` profile)"
+    checks.append(Check("pi-login", True, pi_detail))
+```
+
+- [ ] **Step 4: Run tests + gates**
+
+Run: `cd engine && uv run ruff check && uv run mypy && uv run pytest -q` → all green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add engine/src/devboost/cli/doctor.py engine/tests/cli/test_doctor_pi_login.py
+git commit -m "feat(pi): informational pi-login doctor check (reminds to run pi /login)"
+```
+
+---
+
 ## Self-review notes
 
 - **Spec coverage:** design's single `pi-harness` module (bootstrap HARD + guarded provision/install,
   `requires=(Mise,Secrets)`, `pi` profile + `full`, no dotfiles) → Task 1. Profile membership
-  guarantee → Task 2. No spec requirement left unmapped.
+  guarantee → Task 2. Informational `pi-login` doctor check → Task 3. No spec requirement unmapped.
 - **Placeholder scan:** none. `DEFAULT_HARNESS_REF="main"` is an intentional env-overridable default.
 - **Type consistency:** `verify→bool`, `install→None`, `_repo/_ref→str`, `_pass_ready→bool`; module
   name `pi-harness`, profile `pi` used identically in module, profiles.toml, and both test fixtures.

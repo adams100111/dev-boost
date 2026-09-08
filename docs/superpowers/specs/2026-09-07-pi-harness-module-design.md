@@ -94,6 +94,28 @@ is nothing for dev-boost to write into `~/.pi`; `harness install` is the sole wr
 when pass is unconfigured, which would break `full` on pass-less boxes). Provisioning degrades
 gracefully instead.
 
+Plus an informational, never-blocking **`pi-login` doctor check** (mirroring `pass-config`):
+`devboost doctor` surfaces a reminder to run `pi /login` while `~/.pi/agent/auth.json` is absent.
+
+## Grill addendum (verified 2026-09-07 — facts, not assumptions)
+
+- **HARD bootstrap in `full` is safe:** `core/runner.py` isolates a raising module (`except
+  Exception` → `fail` result) and CONTINUES; nothing `requires` `pi-harness`, so a bootstrap failure
+  (e.g. the PAT lacks read scope on the private repo) fails only Pi — the workstation still builds
+  (the overall run exits non-zero and reports `pi-harness: fail`). **Operator prerequisite:** the
+  `secrets`-bundle GitHub PAT must have read scope on `<DEVBOOST_HARNESS_REPO>`.
+- **No exec timeout** — `harness install` (minutes; ~11 skill-repo clones + npm) runs to completion.
+- **`~/.local/bin` is on the engine's exec PATH** (RealExecutor prepends it) — so `which("harness")`
+  and the `harness`/`pass` calls resolve. (Keep `pi-harness` out of the accounts-firstboot bootstrap
+  choices — that root-demoting path would probe `/root/.local/bin`.)
+- **Provisioning is partial by design:** `harness secrets init --backend pass --yes` auto-maps
+  context7 + google (exit 0); `HERDR_*` stay unmapped; `harness provision` throws only if a *mapped*
+  entry can't be GPG-decrypted (guarded). So expect context7+google provisioned, herdr secrets not.
+- **`harness install` exits non-zero today** on the manifest's `HERDR_PIN` placeholder (guarded warn);
+  pi core installs first. Self-completes once the operator finalizes the pin — no dev-boost change.
+- **`verify()=which harness` ⇒ bootstrap-once:** re-runs skip unless `--force`; staying current with
+  the manifest is `harness-cli`'s own job.
+
 **Profiles** (`profiles.toml`): add `pi = ["pi-harness"]`; add `"pi"` to `full`. Profile name `pi`
 is disjoint from the module name `pi-harness` (collision rule holds).
 
@@ -101,9 +123,11 @@ is disjoint from the module name `pi-harness` (collision rule holds).
 
 1. **Ensure node:** `if not ctx.ex.which("node"): mise.use_global(ctx, "node@lts")` (mirrors
    `codex-code`).
-2. **Bootstrap (HARD):** clone `https://github.com/<DEVBOOST_HARNESS_REPO>` at `<ref>` (authenticated
-   by the `secrets`-provisioned `~/.git-credentials`) and run its `install.sh` with `HARNESS_REF=<ref>`
-   → builds `~/.local/share/harness` + `~/.local/bin/harness`. On failure raise
+2. **Bootstrap (HARD):** shallow-clone `https://github.com/<DEVBOOST_HARNESS_REPO>` (authenticated
+   by the `secrets`-provisioned `~/.git-credentials`) to obtain `install.sh`, then run it with
+   **`HARNESS_REPO=https://github.com/<repo>` `HARNESS_REF=<ref>`** (install.sh re-clones the repo at
+   the ref into `~/.local/share/harness` itself — so both env vars must be passed, and its
+   `HARNESS_REPO` is a full URL, not owner/repo) → builds `~/.local/bin/harness`. On failure raise
    `ConfigError("pi-harness: cloning/building agent-harness (<repo>@<ref>) failed … check the PAT has
    repo read scope")`. (The PAT is recoverable from the age bundle via
    `age.decrypt(bundle_path(), key_path())["GITHUB_PAT"]` if the `gh api … | bash` one-liner is used
