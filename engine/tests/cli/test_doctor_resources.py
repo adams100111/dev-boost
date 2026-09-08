@@ -91,3 +91,44 @@ def test_doctor_network_check_fails_when_curl_returns_nonzero(tmp_path: Path) ->
 def test_resource_root_from_source_holds_profiles() -> None:
     assert (resource_root() / "profiles.toml").exists()
     assert resource_path("profiles.toml").name == "profiles.toml"
+
+
+def test_doctor_pi_login_check_is_informational_when_installed_but_unauthenticated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pi-login must always be ok=True and remind the operator to run `pi /login`."""
+    monkeypatch.setenv("HOME", str(tmp_path))  # no ~/.pi/agent/auth.json under here
+    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "age", "harness"})
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
+    checks = run_checks(ctx, tmp_path)
+    pi = next(c for c in checks if c.name == "pi-login")
+    assert pi.ok is True
+    assert "pi /login" in pi.detail
+
+
+def test_doctor_pi_login_check_reports_authenticated_when_auth_json_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    auth_dir = tmp_path / ".pi" / "agent"
+    auth_dir.mkdir(parents=True)
+    (auth_dir / "auth.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "age", "harness"})
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
+    pi = next(c for c in run_checks(ctx, tmp_path) if c.name == "pi-login")
+    assert pi.ok is True
+    assert "authenticated" in pi.detail
+
+
+def test_doctor_pi_login_check_reports_not_installed_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "age"})  # no harness/pi
+    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
+    pi = next(c for c in run_checks(ctx, tmp_path) if c.name == "pi-login")
+    assert pi.ok is True
+    assert "not installed" in pi.detail
