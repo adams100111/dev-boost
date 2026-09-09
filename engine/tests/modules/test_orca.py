@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsInfo
-from devboost.exec.executor import FakeExecutor
+from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
-from devboost.modules.orca import OrcaIde
+from devboost.modules.orca import OrcaIde, OrcaServe
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 FEDORA_ARM = OsInfo("fedora", "fedora", "aarch64")
@@ -72,3 +74,68 @@ def test_pinned_version_uses_tag() -> None:
 def test_unsupported_os_raises() -> None:
     with pytest.raises(ConfigError):
         OrcaIde().install(_ctx(MAC))
+
+
+def _serve_ctx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, os: OsInfo = FEDORA, **kw: object
+) -> Ctx:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USER", "dev")
+    return Ctx(os=os, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
+
+
+def _unit_text(tmp_path: Path) -> str:
+    unit = tmp_path / ".config" / "systemd" / "user" / "orca-serve.service"
+    return unit.read_text(encoding="utf-8")
+
+
+def test_serve_writes_unit_with_env_pairing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_ORCA_PAIRING_ADDRESS", "100.64.1.20")
+    ctx = _serve_ctx(tmp_path, monkeypatch, FEDORA, present={"orca-ide"})
+    OrcaServe().install(ctx)
+    u = _unit_text(tmp_path)
+    assert "xvfb-run -a orca-ide serve" in u
+    assert "--pairing-address 100.64.1.20" in u
+    assert "LIBGL_ALWAYS_SOFTWARE=1" in u
+    assert "RestartPreventExitStatus=3" in u
+    j = _joined(ctx)
+    assert any("xorg-x11-server-Xvfb" in c for c in j)              # xvfb on fedora
+    assert any("enable-linger dev" in c for c in j)
+    assert any("systemctl --user enable --now orca-serve.service" in c for c in j)
+
+
+def test_serve_derives_tailscale_ip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEVBOOST_ORCA_PAIRING_ADDRESS", raising=False)
+    ctx = _serve_ctx(
+        tmp_path, monkeypatch, UBUNTU,
+        present={"orca-ide", "tailscale"},
+        scripts={"tailscale": Result(0, stdout="100.99.1.5\n")},
+    )
+    OrcaServe().install(ctx)
+    u = _unit_text(tmp_path)
+    assert "--pairing-address 100.99.1.5" in u
+    assert any("xvfb" in c for c in _joined(ctx))  # xvfb on debian
+
+
+def test_serve_no_pairing_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEVBOOST_ORCA_PAIRING_ADDRESS", raising=False)
+    ctx = _serve_ctx(tmp_path, monkeypatch, FEDORA, present={"orca-ide"})  # no tailscale
+    with pytest.raises(ConfigError):
+        OrcaServe().install(ctx)
+
+
+def test_serve_custom_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEVBOOST_ORCA_PAIRING_ADDRESS", "10.0.0.9")
+    monkeypatch.setenv("DEVBOOST_ORCA_PORT", "7000")
+    ctx = _serve_ctx(tmp_path, monkeypatch, FEDORA, present={"orca-ide"})
+    OrcaServe().install(ctx)
+    assert "--port 7000" in _unit_text(tmp_path)
+
+
+def test_serve_verify_uses_is_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ok = _serve_ctx(tmp_path, monkeypatch, FEDORA, present={"orca-ide"})
+    assert OrcaServe().verify(ok) is True   # FakeExecutor is-enabled → Result(0)
+    bad = _serve_ctx(tmp_path, monkeypatch, FEDORA, scripts={"systemctl": Result(1)})
+    assert OrcaServe().verify(bad) is False

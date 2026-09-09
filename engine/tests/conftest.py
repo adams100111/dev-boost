@@ -71,7 +71,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]\n'
         'brain-tools = ["herdr","herdr-plugins"]\n'
         'omarchy = ["omarchy-update-hook"]\n'
-        'orca = ["orca-ide"]\n',
+        'orca = ["orca-ide"]\n'
+        'orca-box = ["orca-ide","orca-serve"]\n',
         encoding="utf-8",
     )
     return p

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 
+from devboost.core import log
 from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
-from devboost.exec.primitives import pkg
+from devboost.exec.primitives import pkg, systemd
 from devboost.model import Ctx, Module
 
 _REPO = "stablyai/orca"
@@ -73,3 +74,64 @@ class OrcaIde(Module):
         res = ctx.ex.run(["sh", "-c", script])
         if not res.ok:
             raise ConfigError(f"orca-ide: install failed (exit {res.code})")
+
+
+_ORCA_UNIT = """\
+[Unit]
+Description=Orca headless serve
+
+[Service]
+Type=simple
+Environment=LIBGL_ALWAYS_SOFTWARE=1
+ExecStart=/usr/bin/xvfb-run -a {cmd} serve --port {port} --pairing-address {addr}
+Restart=on-failure
+RestartPreventExitStatus=3
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def _invoking_user() -> str:
+    return os.environ.get("SUDO_USER") or os.environ.get("USER") or ""
+
+
+@register
+class OrcaServe(Module):
+    name = "orca-serve"
+    category = "orca"
+    description = "Run Orca headless (orca-ide serve) as a systemd --user service."
+    requires = (OrcaIde,)
+    profiles = ("orca-box",)
+    families = ("fedora", "debian")
+
+    def verify(self, ctx: Ctx) -> bool:
+        return systemd.is_enabled(ctx, "orca-serve.service", user=True)
+
+    def _pairing_address(self, ctx: Ctx) -> str:
+        env = os.environ.get("DEVBOOST_ORCA_PAIRING_ADDRESS")
+        if env:
+            return env
+        if ctx.ex.which("tailscale"):
+            res = ctx.ex.run(["tailscale", "ip", "-4"])
+            lines = res.stdout.strip().splitlines()
+            if res.ok and lines:
+                return lines[0].strip()
+        return ""
+
+    def install(self, ctx: Ctx) -> None:
+        pkg.install(ctx, OsMap(fedora="xorg-x11-server-Xvfb", debian="xvfb"))
+        addr = self._pairing_address(ctx)
+        if not addr:
+            raise ConfigError(
+                "orca-serve: no pairing address — set DEVBOOST_ORCA_PAIRING_ADDRESS or bring up "
+                "Tailscale (`tailscale up`) on this box"
+            )
+        port = os.environ.get("DEVBOOST_ORCA_PORT", "6768")
+        unit = _ORCA_UNIT.format(cmd=orca_cmd(ctx), port=port, addr=addr)
+        systemd.write_user_unit(ctx, "orca-serve.service", unit)
+        user = _invoking_user()
+        if user:
+            ctx.ex.run(["loginctl", "enable-linger", user], sudo=True)
+        systemd.enable_user_unit(ctx, "orca-serve.service", now=True)
+        log.info("orca-serve enabled; first pairing prints an orca://pair code in its journal")
