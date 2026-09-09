@@ -59,6 +59,12 @@ def build_plan(
     in the ``hardware-nvidia`` category are automatically appended to the plan (if not
     already present) and the combined set is re-sorted topologically.
 
+    Platform-provided modules
+    -------------------------
+    A module whose ``provided_by`` names the detected distro (or its family) is reported as
+    a ``provided-by-<distro>`` skip rather than installed: the OS already covers it, and
+    installing anyway would duplicate or downgrade what the platform ships.
+
     Headless installs
     -----------------
     ``gui=True`` modules are skipped when the host is headless (a server — see
@@ -90,10 +96,19 @@ def build_plan(
         reason: str | None = None
         if not _supported(cls, os_info):
             reason = "unsupported-os"
+        elif _provided_by_os(cls, os_info):
+            reason = f"provided-by-{os_info.distro}"
         elif cls.gui and os_info.headless:
             reason = "headless"
         plan.append(PlannedModule(name=name, skip_reason=reason))
     return plan
+
+
+def _provided_by_os(cls: type[Module], os_info: OsInfo) -> bool:
+    """True when the running platform already provides what this module installs."""
+    return bool(cls.provided_by) and (
+        os_info.distro in cls.provided_by or os_info.family in cls.provided_by
+    )
 
 
 def _supported(cls: type[Module], os_info: OsInfo) -> bool:

@@ -42,7 +42,8 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]\n'
         'brain-tools = ["herdr","herdr-plugins"]\n'
         'laravel = ["ddev"]\nclaude = ["claude-code"]\ncodex = ["codex-code"]\n'
-        'pi = ["pi-harness"]\n',
+        'pi = ["pi-harness"]\n'
+        'omarchy = ["omarchy-update-hook"]\n',
         encoding="utf-8",
     )
     lock = lc.write_lock(tmp_path)

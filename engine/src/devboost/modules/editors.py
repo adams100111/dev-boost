@@ -41,6 +41,12 @@ class Vscode(Module):
         return ctx.ex.which("code")
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "arch":
+            # Arch's own `code` package is the OSS rebuild (no Marketplace, no MS
+            # branding). The Microsoft build is `visual-studio-code-bin`, which Omarchy
+            # also mirrors in its own repo — the AUR helper resolves either source.
+            pkg.install_aur(ctx, "visual-studio-code-bin")
+            return
         if ctx.os.family == "fedora":
             # Fedora: import the GPG key into the RPM keyring before adding the repo
             ctx.ex.run(["rpm", "--import", _MS_KEY], sudo=True)

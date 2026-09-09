@@ -1,0 +1,25 @@
+{{/*
+   dev-boost chezmoi ignore list.
+
+   On Omarchy the distro ships its own copies of these files and REPLACES the user's
+   version during `omarchy update`: migrations call `omarchy-refresh-config`, which does
+   `cp -f <default> <user file>` (keeping a .bak). A chezmoi-managed file at one of these
+   paths therefore loses the race on every update and shows as permanent drift afterwards.
+
+   So on Omarchy dev-boost is a tenant in ~/.config, not the landlord: it skips the paths
+   the platform owns and delivers its own shell config as ~/.config/devboost/shell.bash,
+   which the bash-config module sources from Omarchy's own ~/.bashrc. Everything with no
+   Omarchy counterpart (atuin, ripgrep, bat, fresh, caddy, fleet, systemd units, ~/.claude,
+   ~/.local/bin) still applies normally.
+*/ -}}
+{{ if eq .chezmoi.osRelease.id "omarchy" -}}
+.bashrc
+.tmux.conf
+.config/starship.toml
+.config/btop
+.config/lazygit
+.config/herdr
+.config/git/config
+.config/ghostty
+.config/wezterm
+{{ end -}}

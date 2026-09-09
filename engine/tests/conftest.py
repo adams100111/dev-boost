@@ -69,7 +69,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'codex = ["codex-code"]\n'
         'pi = ["pi-harness"]\n'
         'brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]\n'
-        'brain-tools = ["herdr","herdr-plugins"]\n',
+        'brain-tools = ["herdr","herdr-plugins"]\n'
+        'omarchy = ["omarchy-update-hook"]\n',
         encoding="utf-8",
     )
     return p

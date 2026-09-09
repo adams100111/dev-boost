@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError
@@ -18,6 +19,10 @@ class Herdr(Module):
     category = "cli"
     description = "herdr — agent-aware terminal multiplexer (pinned binary)."
     profiles = ("cli", "brain-tools")
+    # Omarchy packages herdr and refreshes its config on update. Dropping our pinned
+    # binary on top would DOWNGRADE it (Omarchy ships a newer release than we pin) and
+    # then fight `omarchy refresh herdr` on every system update.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("herdr")

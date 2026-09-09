@@ -38,6 +38,11 @@ class Uv(Module):
         return ctx.ex.which("uv")
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "arch":
+            # uv is a first-class Arch package; prefer it over the curl|sh escape hatch so
+            # pacman owns the file and `omarchy update` keeps it current.
+            pkg.install(ctx, "uv")
+            return
         ctx.ex.run(["sh", "-c", f"curl -LsSf https://astral.sh/uv/{_UV_VERSION}/install.sh | sh"])
 
 
@@ -192,6 +197,10 @@ class DotnetSdk(Module):
                 env={"DEBIAN_FRONTEND": "noninteractive"},
             )
             pkg.install(ctx, "dotnet-sdk-10.0")
+        elif ctx.os.family == "arch":
+            # Arch ships the current SDK unversioned as `dotnet-sdk` (10.x in [extra]);
+            # there is no `dotnet-sdk-10.0` name to install.
+            pkg.install(ctx, "dotnet-sdk")
         else:
             pkg.install(ctx, "dotnet-sdk-10.0")
 

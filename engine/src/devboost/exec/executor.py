@@ -32,6 +32,7 @@ class Executor(Protocol):
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result: ...
 
     def which(self, cmd: str) -> bool: ...
@@ -79,6 +80,7 @@ class RealExecutor:
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result:
         cmd = (["sudo", *argv]) if sudo else list(argv)
         # Start from the full process environment so that PATH, HOME, USER, etc. are
@@ -97,6 +99,13 @@ class RealExecutor:
         else:
             effective = base
         try:
+            if interactive:
+                # Hand the real terminal to the child. A tool that drives its own TUI or
+                # reads a secret (`gh auth login`, an editor) needs the tty: capturing its
+                # output hides the prompt and it blocks forever on input nobody can see.
+                # Nothing is captured, so stdout/stderr come back empty by construction.
+                completed = subprocess.run(cmd, env=effective, cwd=cwd, check=False)
+                return Result(code=completed.returncode)
             proc = subprocess.run(
                 cmd,
                 input=stdin,
@@ -141,6 +150,7 @@ class FakeExecutor:
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result:
         recorded = (["sudo", *argv]) if sudo else list(argv)
         self.calls.append(recorded)
@@ -172,11 +182,16 @@ class DemotingExecutor:
         stdin: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        interactive: bool = False,
     ) -> Result:
         if sudo:
-            return self._inner.run(argv, sudo=False, stdin=stdin, env=env, cwd=cwd)
+            return self._inner.run(
+                argv, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+            )
         wrapped = ["sudo", "-u", self._user, "-H", *argv]
-        return self._inner.run(wrapped, sudo=False, stdin=stdin, env=env, cwd=cwd)
+        return self._inner.run(
+            wrapped, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+        )
 
     def which(self, cmd: str) -> bool:
         return self._inner.which(cmd)
