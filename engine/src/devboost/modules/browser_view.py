@@ -79,6 +79,11 @@ class BrowserView(Module):
             pkg.install(ctx, "xvfb", "x11vnc", "novnc", "websockify")
         elif ctx.os.family == "fedora":
             pkg.install(ctx, "xorg-x11-server-Xvfb", "x11vnc", "novnc", "python3-websockify")
+        elif ctx.os.family == "arch":
+            # Arch splits Xvfb into its own package and ships neither noVNC nor websockify
+            # in the official repos, so those two come from the AUR.
+            pkg.install(ctx, "xorg-server-xvfb", "x11vnc")
+            pkg.install_aur(ctx, "novnc", "websockify")
         else:
             raise UnsupportedOS(f"browser-view not implemented for {ctx.os.distro!r}")
         # Drop the runtime helper onto the brain (dotfiles don't reach a server) + make it exec.

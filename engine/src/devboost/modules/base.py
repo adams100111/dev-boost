@@ -22,6 +22,12 @@ _BUILD_PKGS_DEBIAN = (
     "build-essential cmake git wget perl vim nano unzip gnupg fastfetch libfuse2 ripgrep"
 ).split()
 
+# Arch: base-devel is the meta-package covering gcc/make/binutils/fakeroot — and it is a
+# hard prerequisite for building anything from the AUR.
+_BUILD_PKGS_ARCH = (
+    "base-devel cmake git wget perl vim nano unzip gnupg fastfetch ripgrep"
+).split()
+
 
 @register
 class Rpmfusion(Module):
@@ -97,6 +103,11 @@ class Flatpak(Module):
     category = "base"
     description = "Configure the (unfiltered) Flathub remote."
     profiles = ("base",)
+    # Not installed on Omarchy at all, and every GUI app dev-boost delivers via Flathub
+    # exists as a native Arch package (see the `apps-native` profile). Pulling in a
+    # ~1 GB Flatpak runtime to duplicate them is pure overhead, so the Arch family uses
+    # pacman/AUR instead and this module never runs there.
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def verify(self, ctx: Ctx) -> bool:
         return "flathub" in ctx.ex.run(["flatpak", "remotes"]).stdout.split()
@@ -121,6 +132,8 @@ class BuildTools(Module):
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             pkg.install(ctx, *_BUILD_PKGS_DEBIAN)
+        elif ctx.os.family == "arch":
+            pkg.install(ctx, *_BUILD_PKGS_ARCH)
         else:
             pkg.install(ctx, *_BUILD_PKGS_FEDORA)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
@@ -53,13 +54,25 @@ AppOpt = Annotated[
 ]
 
 
+#: Per-distro default install target. `full` is the Fedora/Ubuntu workstation aggregate;
+#: an OS that already ships its own desktop, system and multimedia layers gets an
+#: aggregate scoped to what dev-boost actually adds there.
+_DEFAULT_PROFILE = {"omarchy": "omarchy"}
+
+
+def default_profile(os_info: osinfo.OsInfo | None = None) -> str:
+    """The profile `devboost install` uses when the operator names none."""
+    info = os_info if os_info is not None else osinfo.detect()
+    return _DEFAULT_PROFILE.get(info.distro, "full")
+
+
 def _resolve(
     tokens: list[str], root: Path
 ) -> tuple[dict[str, type[Module]], list[str]]:
     modules = load()
     profiles = load_profiles(root / "profiles.toml")
     validate_profiles(modules, set(profiles))
-    expanded = expand(tokens or ["full"], profiles, modules)
+    expanded = expand(tokens or [default_profile()], profiles, modules)
     return modules, expanded
 
 
@@ -185,7 +198,7 @@ def install(
     app: AppOpt = [],
     update: UpdateOpt = False,
 ) -> None:
-    """Install one or more profiles/modules (default: full)."""
+    """Install one or more profiles/modules (default: `full`; `omarchy` on Omarchy)."""
     if force and update:
         raise typer.BadParameter("--force and --update are mutually exclusive")
     _run(profiles, root, dry_run, force, offline, all_=all_, apps=app, update=update)
@@ -238,24 +251,73 @@ def brain(
 
 
 @app.command(name="list")
-def list_(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
-    """Print the resolved install order."""
-    order, _ = _order(profiles, root)
-    for name in order:
-        typer.echo(name)
+def list_(
+    profiles: ProfilesArg = [],
+    root: RootOpt = settings.root,
+    json_out: Annotated[
+        bool, typer.Option("--json", help="machine-readable rows (name/category/…)")
+    ] = False,
+    status: Annotated[
+        bool, typer.Option("--status", help="with --json, also run each module's verify()")
+    ] = False,
+) -> None:
+    """Print the resolved install order (or `--json` rows for a UI to consume)."""
+    order, modules = _order(profiles, root)
+    if not json_out:
+        for name in order:
+            typer.echo(name)
+        return
+
+    # The plan, so a UI shows exactly what `install` would do on THIS host — wrong-OS
+    # modules are absent and platform-provided ones carry their skip reason.
+    os_info = osinfo.detect()
+    plan = build_plan(order, modules, os_info)
+    ctx = Ctx(os=os_info, ex=RealExecutor()) if status else None
+    rows: list[dict[str, object]] = []
+    for pm in plan:
+        cls = modules[pm.name]
+        installed: bool | None = None
+        if ctx is not None and pm.skip_reason is None:
+            # One process for the whole catalog: a UI that shelled out per module would
+            # pay the interpreter start-up cost ~100 times over.
+            try:
+                installed = cls().verify(ctx)
+            except Exception:  # noqa: BLE001 — a probe must never break the listing
+                installed = None
+        rows.append(
+            {
+                "name": pm.name,
+                "category": cls.category,
+                "description": cls.description,
+                "profiles": list(cls.profiles),
+                "gui": cls.gui,
+                "skip_reason": pm.skip_reason,
+                "installed": installed,
+            }
+        )
+    typer.echo(json.dumps(rows, indent=2))
 
 
 @app.command()
 def verify(profiles: ProfilesArg = [], root: RootOpt = settings.root) -> None:
     """Report which modules are installed."""
     order, modules = _order(profiles, root)
-    ctx = Ctx(os=osinfo.detect(), ex=RealExecutor())
+    os_info = osinfo.detect()
+    # Verify what `install` would actually run — i.e. the PLAN, not the raw profile
+    # expansion. Without this, a module scoped to another OS (rpmfusion on Arch,
+    # ffmpeg-ubuntu on Fedora) or one the platform provides is reported "missing", so
+    # `devboost verify` can never go green on a correctly provisioned non-Fedora box.
+    plan = build_plan(order, modules, os_info)
+    ctx = Ctx(os=os_info, ex=RealExecutor())
     failed = False
-    for name in order:
-        if modules[name]().verify(ctx):
-            log.ok(f"{name}: installed")
+    for pm in plan:
+        if pm.skip_reason is not None:
+            log.skip(f"{pm.name} ({pm.skip_reason})")
+            continue
+        if modules[pm.name]().verify(ctx):
+            log.ok(f"{pm.name}: installed")
         else:
-            log.error(f"{name}: missing")
+            log.error(f"{pm.name}: missing")
             failed = True
     if failed:
         raise typer.Exit(code=1)

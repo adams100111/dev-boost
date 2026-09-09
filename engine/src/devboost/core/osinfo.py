@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import platform
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -18,6 +18,7 @@ _FAMILY = {
     "rocky": "fedora", "almalinux": "fedora",
     "ubuntu": "debian", "debian": "debian", "linuxmint": "debian", "pop": "debian",
     "arch": "arch", "manjaro": "arch", "endeavouros": "arch",
+    "omarchy": "arch", "cachyos": "arch", "garuda": "arch",
     "macos": "macos", "darwin": "macos",
 }
 
@@ -32,10 +33,26 @@ class OsInfo:
     #: Used to build version-correct third-party repo URLs; empty when unknown.
     version_id: str = ""
     codename: str = ""
+    #: os-release ID_LIKE, split into tokens (e.g. ("arch",) for Omarchy). A derivative
+    #: distro that is not in _FAMILY still resolves to the right family through this.
+    id_like: tuple[str, ...] = ()
 
 
-def family_of(distro: str) -> str:
-    return _FAMILY.get(distro, distro)
+def family_of(distro: str, id_like: Sequence[str] = ()) -> str:
+    """Resolve a distro id to its package/tooling family.
+
+    A known id wins outright.  Otherwise fall back through os-release ``ID_LIKE``, which is
+    how a derivative distro declares its base — Omarchy ships ``ID=omarchy ID_LIKE=arch``.
+    Without this step an unknown derivative resolves to a family of its own name, and every
+    ``OsMap`` lookup for it silently returns ``default`` (i.e. no strategy at all) rather
+    than the base distro's.  Unknown and unrelated ids still resolve to themselves.
+    """
+    if distro in _FAMILY:
+        return _FAMILY[distro]
+    for like in id_like:
+        if like in _FAMILY:
+            return _FAMILY[like]
+    return distro
 
 
 def is_headless(
@@ -70,6 +87,7 @@ def detect(
     distro = "unknown"
     version_id = ""
     codename = ""
+    id_like: tuple[str, ...] = ()
     if platform.system() == "Darwin":
         distro = "macos"
     else:
@@ -86,15 +104,19 @@ def detect(
                         version_id = val
                     elif key == "VERSION_CODENAME":
                         codename = val
+                    elif key == "ID_LIKE":
+                        # Space-separated, most-similar-first (os-release spec).
+                        id_like = tuple(val.split())
         except OSError:
             distro = "unknown"
     return OsInfo(
         distro=distro,
-        family=family_of(distro),
+        family=family_of(distro, id_like),
         arch=machine or platform.machine(),
         headless=is_headless(env, default_target_link),
         version_id=version_id,
         codename=codename,
+        id_like=id_like,
     )
 
 

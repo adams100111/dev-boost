@@ -86,6 +86,11 @@ class Docker(Module):
         if not ctx.ex.which("dockerd"):
             if ctx.os.family == "debian":
                 pkg.install(ctx, *_CE_PKGS, source=_docker_apt_source(ctx))
+            elif ctx.os.family == "arch":
+                # Arch packages the upstream engine directly in [extra] — no vendor repo,
+                # no podman-docker shim to displace. Omarchy preinstalls these, so on a
+                # provisioned box this is a no-op and only the service/group steps run.
+                pkg.install(ctx, "docker", "docker-buildx", "docker-compose")
             else:
                 # Fedora: docker-ce from Docker's official repo (removes the conflicting shim).
                 ctx.ex.run(["sh", "-c", _DOCKER_CE_FEDORA], sudo=True)

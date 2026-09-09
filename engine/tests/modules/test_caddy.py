@@ -36,10 +36,17 @@ def test_caddy_installs_on_fedora_via_copr() -> None:
     )
 
 
+def test_caddy_installs_from_extra_on_arch() -> None:
+    """Arch packages Caddy — no vendor apt repo and no COPR needed."""
+    ex = FakeExecutor()
+    Caddy().install(Ctx(os=OsInfo("arch", "arch", "x86_64"), ex=ex))
+    assert ["sudo", "pacman", "-S", "--needed", "--noconfirm", "caddy"] in ex.calls
+
+
 def test_caddy_unsupported_os_raises() -> None:
     from devboost.core.errors import UnsupportedOS
 
-    ctx = Ctx(os=OsInfo("arch", "arch", "x86_64"), ex=FakeExecutor())
+    ctx = Ctx(os=OsInfo("plan9", "plan9", "x86_64"), ex=FakeExecutor())
     import pytest
 
     with pytest.raises(UnsupportedOS):

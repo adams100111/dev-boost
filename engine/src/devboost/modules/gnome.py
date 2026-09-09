@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import ClassVar
 
 from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, pkg
@@ -29,6 +30,7 @@ class GnomeSettings(Module):
     description = "Apply the reference GNOME look-and-feel via a dconf dump."
     gui = True
     profiles = ("gnome",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def verify(self, ctx: Ctx) -> bool:
         out = ctx.ex.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"])
@@ -52,6 +54,7 @@ class GnomeExtensions(Module):
     gui = True
     requires = (GnomeSettings,)
     profiles = ("gnome",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def verify(self, ctx: Ctx) -> bool:
         enabled = ctx.ex.run(
@@ -87,6 +90,7 @@ class GnomeManagerApps(Module):
     gui = True
     requires = (GnomeSettings, FlatpakModule)
     profiles = ("gnome",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def verify(self, ctx: Ctx) -> bool:
         flatpaks = ctx.ex.run(["flatpak", "list"]).stdout
@@ -114,6 +118,7 @@ class GnomeThemeBundle(Module):
     description = "Opt-in reproducible GTK theme + icons (adw-gtk3 + papirus)."
     gui = True
     profiles = ("gnome-theme",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def _theme_pkg(self, ctx: Ctx) -> str:
         return "adw-gtk3-theme" if ctx.os.family == "fedora" else "adw-gtk3"
@@ -136,6 +141,7 @@ class GnomeAestheticsBundle(Module):
     description = "Opt-in aesthetic extras (fonts + theming helpers)."
     gui = True
     profiles = ("gnome-aesthetics",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian")
 
     def _usertheme_pkg(self, ctx: Ctx) -> str:
         # Fedora: standalone extension package; Ubuntu: gnome-shell-extensions bundle

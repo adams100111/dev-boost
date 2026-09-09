@@ -64,6 +64,13 @@ class Module:
     profiles: ClassVar[tuple[str, ...]] = ()
     self_updating: ClassVar[bool] = False
     families: ClassVar[tuple[str, ...]] = ()
+    #: Distro ids / families whose base platform ALREADY provides this concern, so
+    #: dev-boost must not install it there. Unlike `families` (which scopes a module to
+    #: the OSes it *can* run on, and drops it elsewhere), this keeps the module in the
+    #: plan and reports a `provided-by-<distro>` skip — the constitution requires that a
+    #: module which does nothing says why. Omarchy, for instance, packages herdr and ships
+    #: its own terminal and fonts; reinstalling ours would downgrade or fight the platform.
+    provided_by: ClassVar[tuple[str, ...]] = ()
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 

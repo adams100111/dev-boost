@@ -77,6 +77,8 @@ class PowerProfilesDaemon(SystemService):
     description = "Power profile switching (D-Bus)."
     svc_pkg = "power-profiles-daemon"
     service = "power-profiles-daemon"
+    # Omarchy ships and enables ppd, and drives it through `omarchy powerprofiles ...`.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
     def _ppd_already_provided(self, ctx: Ctx) -> bool:
         # power-profiles-daemon and tuned-ppd both Provide AND Conflict on `ppd-service`, so
@@ -105,6 +107,8 @@ class Thermald(SystemService):
     description = "Thermal management."
     svc_pkg = "thermald"
     service = "thermald"
+    # Shipped in Omarchy's base package set and enabled by its install scripts.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
 
 @register
