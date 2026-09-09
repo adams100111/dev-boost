@@ -37,8 +37,8 @@ def _fetch_script(pattern: str, install_cmd: str, suffix: str) -> str:
         f"set -e; "
         f"url=$(curl -fsSL \"{api}\" | grep -oE 'https://[^\"]*{pattern}' | head -1); "
         f"[ -n \"$url\" ] || {{ echo 'orca-ide: no asset for {pattern}' >&2; exit 1; }}; "
-        f"f=$(mktemp --suffix={suffix}); curl -fsSL \"$url\" -o \"$f\"; "
-        f"{install_cmd} \"$f\"; rm -f \"$f\""
+        f"f=$(mktemp --suffix={suffix}); trap 'rm -f \"$f\"' EXIT; "
+        f"curl -fsSL \"$url\" -o \"$f\"; {install_cmd} \"$f\""
     )
 
 
@@ -120,13 +120,14 @@ class OrcaServe(Module):
         return ""
 
     def install(self, ctx: Ctx) -> None:
-        pkg.install(ctx, OsMap(fedora="xorg-x11-server-Xvfb", debian="xvfb"))
+        # Resolve the pairing address first so a misconfigured box fails before doing work.
         addr = self._pairing_address(ctx)
         if not addr:
             raise ConfigError(
                 "orca-serve: no pairing address — set DEVBOOST_ORCA_PAIRING_ADDRESS or bring up "
                 "Tailscale (`tailscale up`) on this box"
             )
+        pkg.install(ctx, OsMap(fedora="xorg-x11-server-Xvfb", debian="xvfb"))
         port = os.environ.get("DEVBOOST_ORCA_PORT", "6768")
         unit = _ORCA_UNIT.format(cmd=orca_cmd(ctx), port=port, addr=addr)
         systemd.write_user_unit(ctx, "orca-serve.service", unit)
