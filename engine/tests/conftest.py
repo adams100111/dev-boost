@@ -70,7 +70,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'pi = ["pi-harness"]\n'
         'brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]\n'
         'brain-tools = ["herdr","herdr-plugins"]\n'
-        'omarchy = ["omarchy-update-hook"]\n',
+        'omarchy = ["omarchy-update-hook"]\n'
+        'orca = ["orca-ide"]\n',
         encoding="utf-8",
     )
     return p
