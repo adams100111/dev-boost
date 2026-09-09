@@ -97,6 +97,8 @@ enrollment on NVIDIA when Secure Boot is on.
 | `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
 | `optional-editors` | `neovim`, `jetbrains-toolbox` |
+| `orca` | `orca-ide` |
+| `orca-box` | `orca-ide`, `orca-serve` |
 | `pi` | `pi-harness` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
@@ -209,6 +211,8 @@ enrollment on NVIDIA when Secure Boot is on.
 | `obsidian-sync` | apps | Provision the Obsidian vault: deploy key, clone, daily push backstop. |
 | `omarchy-update-hook` | omarchy | Refresh dev-boost's tooling as part of `omarchy update` (post-update hook). |
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
+| `orca-ide` | orca | Orca — multi-agent development environment (stablyai/orca). |
+| `orca-serve` | orca | Run Orca headless (orca-ide serve) as a systemd --user service. |
 | `pass` | security-cli | pass password-store CLI. |
 | `pass-store` | security-cli | Initialize the GPG-backed password store (optionally cloned). |
 | `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |

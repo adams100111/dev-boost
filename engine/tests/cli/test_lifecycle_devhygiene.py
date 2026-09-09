@@ -43,7 +43,9 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'brain-tools = ["herdr","herdr-plugins"]\n'
         'laravel = ["ddev"]\nclaude = ["claude-code"]\ncodex = ["codex-code"]\n'
         'pi = ["pi-harness"]\n'
-        'omarchy = ["omarchy-update-hook"]\n',
+        'omarchy = ["omarchy-update-hook"]\n'
+        'orca = ["orca-ide"]\n'
+        'orca-box = ["orca-ide","orca-serve"]\n',
         encoding="utf-8",
     )
     lock = lc.write_lock(tmp_path)
