@@ -71,6 +71,7 @@ enrollment on NVIDIA when Secure Boot is on.
 ## Profiles
 
 <!-- BEGIN generated profiles table (scripts/gen_profiles_table.py) -->
+
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
@@ -247,6 +248,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `yq` | cli |  |
 | `zoxide` | cli |  |
 | `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
+
 <!-- END generated profiles table -->
 
 Stacks (`python`/`web`/`laravel`/`dotnet`/`data`/`devops`/`react-native`) are opt-in per project;
