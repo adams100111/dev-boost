@@ -7,6 +7,8 @@ git history and the GitHub release notes.
 
 ## [Unreleased]
 
+## [0.1.80] — 2026-09-09
+
 ### Added
 - **Omarchy / Arch support** (#27) — a `pacman` package backend (official repos + AUR via
   `install_aur`), `ID_LIKE`-based Omarchy detection (`omarchy`/`cachyos`/`garuda` → `arch`), an
