@@ -61,7 +61,10 @@ so `build_plan` drops it cleanly elsewhere. `orca-ide` = {fedora, debian, arch};
   `InstallError` on failure.
 - **arch:** `pkg.install_aur(ctx, "stably-orca-bin")` (AUR helper / `omarchy-pkg-aur-add` / yay / paru).
 - **verify / update:** `which(_ORCA_CMD.get(os))`; on `--force`, reinstall latest (dnf/apt reinstall;
-  AUR re-install). Idempotent.
+  AUR re-install). Idempotent. NOTE: do **not** set `gui=True` on `orca-ide` — `build_plan` skips
+  `gui=True` modules on headless hosts, which would break `orca-serve`'s dependency on a server.
+- **update path:** dev-boost re-fetch on `--force` (packaged installs are root-owned, so Orca's
+  Electron self-updater can't rewrite them; updates come through the package/re-fetch, not auto-update).
 
 ### `orca-serve`
 
@@ -69,8 +72,11 @@ so `build_plan` drops it cleanly elsewhere. `orca-ide` = {fedora, debian, arch};
   Electron libs come from the `orca-ide` package deps).
 - Resolve pairing address (env → `tailscale ip -4` → `ConfigError`) and port.
 - `systemd.write_user_unit(ctx, "orca-serve.service", <unit>)` with
-  `ExecStart=%h/... orca-ide serve --port <PORT> --pairing-address <ADDR>` (the resolved `orca-ide`
-  path), `Environment=LIBGL_ALWAYS_SOFTWARE=1`, `Restart=on-failure`, `RestartPreventExitStatus=3`.
+  `ExecStart=/usr/bin/xvfb-run -a orca-ide serve --port <PORT> --pairing-address <ADDR>`,
+  `Environment=LIBGL_ALWAYS_SOFTWARE=1`, `Restart=on-failure`, `RestartPreventExitStatus=3`. The
+  `xvfb-run -a` wrapper is belt-and-suspenders: the packaged `orca-ide serve` auto-starting its own
+  Xvfb is *implied* (app-build behavior) but never doc-demonstrated for the package, so we allocate a
+  display deterministically. Non-root ⇒ no `--no-sandbox`.
 - `ctx.ex.run(["loginctl","enable-linger",<user>], sudo=True)`; `systemd.enable_user_unit(ctx,
   "orca-serve.service", now=True)`.
 - **verify:** `systemd.is_enabled(ctx, "orca-serve.service", user=True)`.
@@ -89,6 +95,27 @@ so `build_plan` drops it cleanly elsewhere. `orca-ide` = {fedora, debian, arch};
 macOS/Windows (outside Linux target); the mobile app / cloud relay / per-workspace `orca.yaml` env
 targets; a dedicated non-root `orca` system user (systemd `--user` under `dev` is the model);
 `orca-serve` on Arch.
+
+## Grill addendum (verified 2026-09-09)
+
+- **Engine runs as the invoking user** (get.sh installs to `$HOME`, runs `devboost install`
+  un-elevated; modules elevate per-op). So `systemd --user` + `loginctl enable-linger <user>` is safe
+  and correct (mirrors the working `aspire-gc` `--user` pattern). Username via
+  `_invoking_user()` = `SUDO_USER or USER` (as `code_server`/`docker` do); linger via
+  `ctx.ex.run(["loginctl","enable-linger",user], sudo=True)`.
+- **Xvfb is never a package dependency** (any distro) — install it explicitly. Wrap `serve` in
+  `xvfb-run -a` for a deterministic display.
+- **AUR:** `stably-orca-bin` (upstream-recommended) installs the command **`stably-orca`** only —
+  `_ORCA_CMD` map is correct. `stably-orca serve …` is a pass-through to the same release binary.
+  Rejected `orca-ide-bin` (uniform name but unofficial maintainer) for trust.
+- **`.rpm`/`.deb` GUI-runtime libs** are expected as package `Requires`/`Depends` but not
+  doc-published — verify on the target rather than trusting blindly (non-blocking; dnf/apt would fail
+  loudly if a dep is missing).
+- **`orca-serve` needs Tailscale *up*** at install (not just installed) to derive the pairing IP:
+  `DEVBOOST_ORCA_PAIRING_ADDRESS` → `tailscale ip -4` → `ConfigError`. Tailnet reachability means no
+  public firewall hole for the port.
+- **GitHub API** for asset resolution is unauthenticated (public repo; 60/hr is ample for installs);
+  the `.rpm`/`.deb` asset download itself needs no auth.
 
 ## Sources
 
