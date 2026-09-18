@@ -4,7 +4,7 @@
 
 **Goal:** Make the dev-boost engine run correctly on macOS (Apple Silicon, macOS 27/26): detect it, install through Homebrew, manage launchd jobs, report user-only steps as `blocked`, and handle credentials without plaintext tokens — with no catalog/profile content changes beyond what the engine needs.
 
-**Architecture:** `macos` becomes a first-class OS family inside the existing typed seams: `OsMap.macos`, a `Brew` package manager behind `pkg.manager_for()`, a `launchd` primitive beside `systemd`, two new typed errors (`NeedsUser`, `PresentUnmanaged`) mapped by the runner, a `TccGrant` module field for privacy permissions, and a small `cli/platform.py` for macOS invocation rules (root guard, Linux-only commands, sudo keepalive, keep-awake). All behaviour is injected/hermetic so tests run identically on Linux CI and on a Mac.
+**Architecture:** `macos` becomes a first-class OS family inside the existing typed seams: `OsMap.macos`, a `Brew` package manager behind `pkg.manager_for()`, a `launchd` primitive beside `systemd`, two new typed errors (`NeedsUser`, `PresentUnmanaged`) mapped by the runner, a `TccGrant` module field for privacy permissions, and a small `cli/host.py` for macOS invocation rules (root guard, Linux-only commands, sudo keepalive, keep-awake). All behaviour is injected/hermetic so tests run identically on Linux CI and on a Mac.
 
 **Tech Stack:** Python ≥ 3.12, Typer, Pydantic, stdlib `plistlib`/`platform`/`threading`, pytest, mypy `--strict`, ruff; `uv` for the dev environment.
 
@@ -40,7 +40,7 @@
 | `engine/src/devboost/modules/apps.py` (modify) | `FlatpakApp.cask` + macOS branch; obsidian-sync token source | 6, 9 |
 | `engine/src/devboost/exec/primitives/tcc.py` (create) | privacy-permission URLs + confirmation state | 7 |
 | `engine/src/devboost/cli/permissions.py` (create) | `devboost permissions` command | 7 |
-| `engine/src/devboost/cli/platform.py` (create) | root guard, Linux-only commands, sudo keepalive, keep-awake | 8 |
+| `engine/src/devboost/cli/host.py` (create) | root guard, Linux-only commands, sudo keepalive, keep-awake | 8 |
 | `engine/src/devboost/cli/app.py` (modify) | wire platform rules, default profile, sub-commands | 7, 8, 9 |
 | `profiles.toml` (modify) | seed `macos` profile | 8 |
 | `engine/src/devboost/modules/_credentials.py` (modify) | `github_credentials()` single token source | 9 |
@@ -469,7 +469,9 @@ git commit -m "feat(runner): NeedsUser → blocked, PresentUnmanaged → skip"
 ```python
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -489,7 +491,7 @@ class _EnvRecorder(FakeExecutor):
 
     envs: list[dict[str, str]] = field(default_factory=list)
 
-    def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False):  # type: ignore[no-untyped-def,override]
+    def run(self, argv: Sequence[str], *, sudo: bool = False, stdin: str | None = None, env: Mapping[str, str] | None = None, cwd: Path | None = None, interactive: bool = False) -> Result:
         self.envs.append(dict(env or {}))
         return super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
 
@@ -766,6 +768,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -792,7 +795,7 @@ def test_label_namespacing() -> None:
 
 
 def test_user_agent_writes_plist_and_bootstraps(home: Path) -> None:
-    ex = FakeExecutor(scripts={"launchctl": Result(1)})  # not loaded yet
+    ex = FakeExecutor()  # no plist yet → written and bootstrapped
     changed = launchd.user_agent(
         Ctx(os=MAC, ex=ex), "dev.devboost.x", ["/usr/bin/true", "a"],
         start_interval=900, env={"K": "V"}, run_at_load=True,
@@ -839,7 +842,7 @@ def test_system_daemon_writes_via_sudo_and_bootstraps_system_domain(home: Path) 
     calls: list[list[str]] = []
 
     class _Ex(FakeExecutor):
-        def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False):  # type: ignore[no-untyped-def,override]
+        def run(self, argv: Sequence[str], *, sudo: bool = False, stdin: str | None = None, env: Mapping[str, str] | None = None, cwd: Path | None = None, interactive: bool = False) -> Result:
             calls.append((["sudo"] if sudo else []) + list(argv))
             return Result(1) if argv[:2] == ["launchctl", "print"] else Result(0)
 
@@ -1497,12 +1500,12 @@ git commit -m "feat(macos): TCC privacy-permission grants — blocked until conf
 ### Task 8: macOS invocation rules — root guard, Linux-only commands, sudo keepalive, keep-awake, default profile
 
 **Files:**
-- Create: `engine/src/devboost/cli/platform.py`
+- Create: `engine/src/devboost/cli/host.py`
 - Modify: `engine/src/devboost/cli/app.py`, `profiles.toml` (repo root)
-- Test: `engine/tests/cli/test_platform.py` (create); `engine/tests/modules/test_omarchy.py` (add default-profile assertion)
+- Test: `engine/tests/cli/test_host.py` (create); `engine/tests/modules/test_omarchy.py` (add default-profile assertion)
 
 **Interfaces:**
-- Produces (in `devboost.cli.platform`):
+- Produces (in `devboost.cli.host`):
   - `LINUX_ONLY: frozenset[str] = frozenset({"installer", "accounts", "brain"})`
   - `invocation_error(os_info: OsInfo, subcommand: str | None, euid: int) -> str | None`
   - `class SudoKeepalive` — context manager; `__init__(self, run: Callable[[list[str]], int] = <subprocess>, interval: float = 60.0)`; on enter runs `["sudo", "-v"]` once, then `["sudo", "-n", "-v"]` every `interval` seconds on a daemon thread until exit.
@@ -1510,14 +1513,14 @@ git commit -m "feat(macos): TCC privacy-permission grants — blocked until conf
   - `mac_session(os_info, *, dry_run: bool)` — context manager combining both; no-op off macOS or when `dry_run`.
   - `app.default_profile(OsInfo("macos",...)) == "macos"`.
 
-- [ ] **Step 1: Write the failing tests** — `tests/cli/test_platform.py`
+- [ ] **Step 1: Write the failing tests** — `tests/cli/test_host.py`
 
 ```python
 from __future__ import annotations
 
 import time
 
-from devboost.cli import platform as plat
+from devboost.cli import host as plat
 from devboost.cli.app import default_profile
 from devboost.core.osinfo import OsInfo
 
@@ -1569,12 +1572,12 @@ def test_default_profile_on_macos() -> None:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `uv run pytest tests/cli/test_platform.py -v`
-Expected: FAIL — `ImportError: cannot import name 'platform'` from `devboost.cli`.
+Run: `uv run pytest tests/cli/test_host.py -v`
+Expected: FAIL — `ImportError: cannot import name 'host'` from `devboost.cli`.
 
 - [ ] **Step 3: Implement**
 
-`cli/platform.py`:
+`cli/host.py`:
 
 ```python
 """macOS invocation rules: who may run devboost, which commands exist, and the session.
@@ -1673,7 +1676,7 @@ def mac_session(os_info: OsInfo, *, dry_run: bool) -> Iterator[None]:
 
 `cli/app.py`:
 - `_DEFAULT_PROFILE = {"omarchy": "omarchy", "macos": "macos"}` and update the comment above it to mention macOS.
-- import `import os` and `from devboost.cli import platform as plat`.
+- import `import os` and `from devboost.cli import host as plat`.
 - in `main_callback`, before `_maybe_warn_update()` block:
 
 ```python
@@ -1704,20 +1707,29 @@ macos = ["terminal"]
 
 `tests/conftest.py::profiles_file` — add the line `'macos = ["ripgrep"]\n'` (the fixture must declare every profile referenced anywhere).
 
-`tests/cli/conftest.py` — CLI tests call the real `osinfo.detect()`; on a Mac that now means macOS rules (Linux-only commands refused, `macos` default profile). Pin them to a Linux host by default; a test that wants macOS monkeypatches `detect` itself. Add:
+`tests/conftest.py` (root, so it also covers `tests/core/test_selfupdate.py`, `tests/media/test_cli_installer.py` and `tests/modules/test_omarchy.py`, which drive the CLI too) — code under test calls `osinfo.detect()` with no arguments; on a Mac that now means macOS rules (Linux-only commands refused, `macos` default profile). Pin such calls to a Linux host; calls that name the OS explicitly (`system=...`, as the osinfo tests do) still reach the real function. Add:
 
 ```python
+from typing import Any
+
 from devboost.core import osinfo
+
+_REAL_DETECT = osinfo.detect
 
 
 @pytest.fixture(autouse=True)
 def _linux_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI tests are host-independent: they see Fedora unless they opt into another OS."""
-    monkeypatch.setattr(
-        osinfo, "detect",
-        lambda *a, **k: osinfo.OsInfo("fedora", "fedora", "x86_64", headless=False),
-    )
+    """Tests are host-independent: an argument-less detect() sees Fedora on any machine."""
+
+    def _pinned(*args: Any, **kwargs: Any) -> osinfo.OsInfo:
+        if "system" in kwargs:
+            return _REAL_DETECT(*args, **kwargs)
+        return osinfo.OsInfo("fedora", "fedora", "x86_64", headless=False)
+
+    monkeypatch.setattr(osinfo, "detect", _pinned)
 ```
+
+A test that needs macOS monkeypatches `osinfo.detect` itself.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -1727,7 +1739,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/devboost/cli/platform.py src/devboost/cli/app.py tests/cli/test_platform.py tests/cli/conftest.py tests/conftest.py ../profiles.toml
+git add src/devboost/cli/host.py src/devboost/cli/app.py tests/cli/test_host.py tests/conftest.py ../profiles.toml
 git commit -m "feat(cli): macOS root guard, Linux-only commands, one sudo prompt, keep-awake, macos default profile"
 ```
 
@@ -1755,6 +1767,7 @@ git commit -m "feat(cli): macOS root guard, Linux-only commands, one sudo prompt
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -1785,7 +1798,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 class _GhEx(FakeExecutor):
     """gh authenticated as alice; no bundle."""
 
-    def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False):  # type: ignore[no-untyped-def,override]
+    def run(self, argv: Sequence[str], *, sudo: bool = False, stdin: str | None = None, env: Mapping[str, str] | None = None, cwd: Path | None = None, interactive: bool = False) -> Result:
         super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
         if list(argv[:3]) == ["gh", "api", "user"]:
             return Result(0, stdout=_GH_USER)
@@ -1810,7 +1823,7 @@ def test_macos_bundle_source_uses_osxkeychain(home: Path, monkeypatch: pytest.Mo
     stdins: list[str | None] = []
 
     class _Ex(FakeExecutor):
-        def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False):  # type: ignore[no-untyped-def,override]
+        def run(self, argv: Sequence[str], *, sudo: bool = False, stdin: str | None = None, env: Mapping[str, str] | None = None, cwd: Path | None = None, interactive: bool = False) -> Result:
             super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
             stdins.append(stdin)
             return Result(0, stdout=_JSON) if argv[0] == "age" else Result(0)
@@ -1881,16 +1894,16 @@ KEYCHAIN_ACCOUNT = "devboost"
 def age_key(ctx: Ctx) -> Iterator[Path | None]:
     """The age identity file to decrypt with, wherever it lives.
 
-    A key file (env override or bootstrap dir) wins. On macOS the key may instead live in
-    the login keychain (`devboost secrets import-key`); it is then materialized as a
-    0600 temp file only for the duration of the decrypt.
+    A key file (env override or bootstrap dir) wins; off macOS the configured path is
+    always returned. On macOS the key may instead live in the login keychain
+    (`devboost secrets import-key`); it is then materialized as a 0600 temp file only for
+    the duration of the decrypt, and None means "no key anywhere".
     """
     explicit = key_path()
-    if explicit.exists():
+    if explicit.exists() or ctx.os.family != "macos":
+        # Off macOS this is exactly the old behaviour: the configured path, and `age`
+        # itself reports a missing key.
         yield explicit
-        return
-    if ctx.os.family != "macos":
-        yield None
         return
     res = ctx.ex.run([
         "security", "find-generic-password",
@@ -2270,7 +2283,9 @@ def resolvable_on_macos(cls: type[Module]) -> bool:
     if cls.per_os.macos is not None:
         return True
     if issubclass(cls, PackageModule):
-        return True  # brew_pkg / brew_cask / module name
+        # Only the base behaviour is brew-aware; a subclass that overrides install/verify
+        # (COPR, curl installers, …) needs its own macOS answer.
+        return cls.install is PackageModule.install and cls.verify is PackageModule.verify
     if issubclass(cls, FlatpakApp):
         return cls.cask is not None
     return cls.portable
@@ -2298,7 +2313,7 @@ Run:
 uv run python -c "import sys; sys.path.insert(0,'tests'); from core.test_macos_contract import unresolved; print('\n'.join(f'    \"{n}\",' for n in sorted(unresolved())))"
 ```
 
-Paste the printed lines into `KNOWN_GAPS`. Sanity-check the list: it must **not** contain simple `PackageModule`s (e.g. `jq`, `bat`) or Linux-only modules that already declare `families` (e.g. `rpmfusion`, `dnf-tune`); it **should** contain custom modules such as `herdr`, `docker`, `ghostty`, `nerd-fonts`, `vscode`, `obsidian`/other `FlatpakApp`s (no `cask` yet), `aspire-gc`. If it looks wrong, fix `resolvable_on_macos`, not the list.
+Paste the printed lines into `KNOWN_GAPS`. Sanity-check the list: it must **not** contain simple `PackageModule`s (e.g. `jq`, `bat`); it **must** contain the `PackageModule`s that override `install`/`verify` (`eza`, `atuin`, `lazygit`, `lazydocker`, `dust`, `sd`, `yq`, `fastfetch`, `gh`, `tealdeer`) or Linux-only modules that already declare `families` (e.g. `rpmfusion`, `dnf-tune`); it **should** contain custom modules such as `herdr`, `docker`, `ghostty`, `nerd-fonts`, `vscode`, `obsidian`/other `FlatpakApp`s (no `cask` yet), `aspire-gc`. If it looks wrong, fix `resolvable_on_macos`, not the list.
 
 - [ ] **Step 4: Run to verify pass**
 
