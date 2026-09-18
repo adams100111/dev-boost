@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import os
+import plistlib
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+
+import pytest
+
+from devboost.core.errors import InstallError
+from devboost.core.osinfo import OsInfo
+from devboost.exec.executor import FakeExecutor, Result
+from devboost.exec.primitives import launchd
+from devboost.model import Ctx
+
+MAC = OsInfo("macos", "macos", "aarch64")
+UID = os.getuid()
+
+
+@pytest.fixture
+def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(launchd, "DAEMONS_DIR", tmp_path / "LaunchDaemons")
+    return tmp_path
+
+
+def test_label_namespacing() -> None:
+    assert launchd.label("pass-sync") == "dev.devboost.pass-sync"
+
+
+def test_user_agent_writes_plist_and_bootstraps(home: Path) -> None:
+    ex = FakeExecutor()  # no plist yet → written and bootstrapped
+    changed = launchd.user_agent(
+        Ctx(os=MAC, ex=ex), "dev.devboost.x", ["/usr/bin/true", "a"],
+        start_interval=900, env={"K": "V"}, run_at_load=True,
+    )
+    plist = home / "Library" / "LaunchAgents" / "dev.devboost.x.plist"
+    data = plistlib.loads(plist.read_bytes())
+    assert data == {
+        "Label": "dev.devboost.x",
+        "ProgramArguments": ["/usr/bin/true", "a"],
+        "StartInterval": 900,
+        "RunAtLoad": True,
+        "EnvironmentVariables": {"K": "V"},
+    }
+    assert changed is True
+    assert ["launchctl", "bootstrap", f"gui/{UID}", str(plist)] in ex.calls
+
+
+def test_user_agent_idempotent_when_unchanged_and_loaded(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())  # launchctl print → ok (loaded)
+    launchd.user_agent(ctx, "dev.devboost.x", ["/usr/bin/true"])
+    ex2 = FakeExecutor()
+    assert launchd.user_agent(Ctx(os=MAC, ex=ex2), "dev.devboost.x", ["/usr/bin/true"]) is False
+    assert ex2.calls == [["launchctl", "print", f"gui/{UID}/dev.devboost.x"]]
+
+
+def test_user_agent_calendar(home: Path) -> None:
+    launchd.user_agent(
+        Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.y", ["/bin/echo"],
+        start_calendar={"Hour": 3, "Minute": 0},
+    )
+    data = plistlib.loads((home / "Library/LaunchAgents/dev.devboost.y.plist").read_bytes())
+    assert data["StartCalendarInterval"] == {"Hour": 3, "Minute": 0}
+
+
+def test_user_agent_bootstrap_failure_raises(home: Path) -> None:
+    ex = FakeExecutor(scripts={"launchctl": Result(5)})
+    with pytest.raises(InstallError):
+        launchd.user_agent(Ctx(os=MAC, ex=ex), "dev.devboost.z", ["/bin/echo"])
+
+
+def test_system_daemon_writes_via_sudo_and_bootstraps_system_domain(home: Path) -> None:
+    path = home / "LaunchDaemons" / "dev.devboost.limits.plist"
+    # not loaded: make `launchctl print` fail but bootstrap succeed
+    calls: list[list[str]] = []
+
+    class _Ex(FakeExecutor):
+        def run(
+            self,
+            argv: Sequence[str],
+            *,
+            sudo: bool = False,
+            stdin: str | None = None,
+            env: Mapping[str, str] | None = None,
+            cwd: Path | None = None,
+            interactive: bool = False,
+        ) -> Result:
+            calls.append((["sudo"] if sudo else []) + list(argv))
+            return Result(1) if argv[:2] == ["launchctl", "print"] else Result(0)
+
+    launchd.system_daemon(
+        Ctx(os=MAC, ex=_Ex()),
+        "dev.devboost.limits",
+        ["/bin/launchctl", "limit"],
+    )
+    assert ["sudo", "tee", str(path)] in calls
+    assert ["sudo", "chown", "root:wheel", str(path)] in calls
+    assert ["sudo", "chmod", "644", str(path)] in calls
+    assert ["sudo", "launchctl", "bootstrap", "system", str(path)] in calls
+
+
+def test_remove_agent_bootouts_and_deletes(home: Path) -> None:
+    launchd.user_agent(Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.x", ["/bin/echo"])
+    ex = FakeExecutor()
+    launchd.remove_agent(Ctx(os=MAC, ex=ex), "dev.devboost.x")
+    assert ["launchctl", "bootout", f"gui/{UID}/dev.devboost.x"] in ex.calls
+    assert not (home / "Library/LaunchAgents/dev.devboost.x.plist").exists()
