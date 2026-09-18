@@ -28,7 +28,7 @@ def test_install_uses_dnf_on_fedora() -> None:
 
 def test_install_with_source_adds_repo_then_installs_refresh() -> None:
     ex = FakeExecutor()
-    src: pkg.Source = OsMap[DnfRepo | AptRepo](
+    src: pkg.Source = OsMap(
         fedora=DnfRepo("ddev", "https://pkg.ddev.com/yum/", gpgcheck=False)
     )
     pkg.install(Ctx(os=FEDORA, ex=ex), "ddev", source=src, refresh=True)
@@ -95,7 +95,7 @@ def test_dnf_add_repo_failure_raises_install_error() -> None:
 
 def test_install_refresh_failure_raises_install_error() -> None:
     ex = FakeExecutor(scripts={"dnf": Result(1, stderr="GPG check failed")})
-    src: pkg.Source = OsMap[DnfRepo | AptRepo](
+    src: pkg.Source = OsMap(
         fedora=DnfRepo("myrepo", "https://example.com/", gpgcheck=False)
     )
     with pytest.raises(InstallError):
@@ -244,7 +244,7 @@ def test_arch_resolves_per_os_package_name() -> None:
 def test_add_repo_on_arch_raises_rather_than_no_op() -> None:
     """A per-OS Source that does not apply to Arch must fail loudly, not silently pass."""
     ex = FakeExecutor()
-    src: pkg.Source = OsMap[DnfRepo | AptRepo](
+    src: pkg.Source = OsMap(
         fedora=DnfRepo("ddev", "https://pkg.ddev.com/yum/", gpgcheck=False),
         default=DnfRepo("ddev", "https://pkg.ddev.com/yum/", gpgcheck=False),
     )

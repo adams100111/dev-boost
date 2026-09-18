@@ -47,11 +47,19 @@ class AptRepo:  # seam — not implemented for the Fedora-only delivery
 
 
 @dataclass(frozen=True)
+class BrewTap:
+    """A Homebrew tap (third-party formula/cask repository), e.g. ``ddev/ddev``."""
+
+    name: str
+    url: str | None = None
+
+
+@dataclass(frozen=True)
 class Script:
     url: str
 
 
-Source = OsMap[DnfRepo | AptRepo | Script]
+Source = OsMap[DnfRepo | AptRepo | BrewTap | Script]
 
 
 class Module:
