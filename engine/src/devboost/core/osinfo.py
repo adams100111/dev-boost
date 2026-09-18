@@ -55,9 +55,21 @@ def family_of(distro: str, id_like: Sequence[str] = ()) -> str:
     return distro
 
 
+_ARCH_ALIASES = {"arm64": "aarch64", "amd64": "x86_64"}
+
+
+def normalize_arch(machine: str) -> str:
+    """One arch vocabulary on every OS: macOS reports ``arm64``, Linux ``aarch64``.
+
+    Release assets, catalog pins and self-update all key on ``aarch64``/``x86_64``.
+    """
+    return _ARCH_ALIASES.get(machine.lower(), machine)
+
+
 def is_headless(
     env: Mapping[str, str] | None = None,
     default_target_link: str = "/etc/systemd/system/default.target",
+    system: str | None = None,
 ) -> bool:
     """Return True when the host is not a graphical machine (e.g. a server).
 
@@ -69,6 +81,10 @@ def is_headless(
     yet) as a server.  When the target can't be read, assume headless (skip GUI installs).
     """
     e = os.environ if env is None else env
+    if (system or platform.system()) == "Darwin":
+        # A Mac is a GUI machine unless we are reaching it over SSH; there is no
+        # systemd default target to consult (its absence would wrongly mean "headless").
+        return bool(e.get("SSH_CONNECTION") or e.get("SSH_TTY"))
     if e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"):
         return False
     try:
@@ -83,13 +99,17 @@ def detect(
     machine: str | None = None,
     env: Mapping[str, str] | None = None,
     default_target_link: str = "/etc/systemd/system/default.target",
+    system: str | None = None,
+    mac_version: str | None = None,
 ) -> OsInfo:
+    sysname = system or platform.system()
     distro = "unknown"
     version_id = ""
     codename = ""
     id_like: tuple[str, ...] = ()
-    if platform.system() == "Darwin":
+    if sysname == "Darwin":
         distro = "macos"
+        version_id = mac_version if mac_version is not None else platform.mac_ver()[0]
     else:
         try:
             with open(os_release_path, encoding="utf-8") as fh:
@@ -112,8 +132,8 @@ def detect(
     return OsInfo(
         distro=distro,
         family=family_of(distro, id_like),
-        arch=machine or platform.machine(),
-        headless=is_headless(env, default_target_link),
+        arch=normalize_arch(machine or platform.machine()),
+        headless=is_headless(env, default_target_link, sysname),
         version_id=version_id,
         codename=codename,
         id_like=id_like,
@@ -127,10 +147,14 @@ class OsMap(Generic[T]):
     fedora: T | None = None
     debian: T | None = None
     arch: T | None = None
+    macos: T | None = None
     default: T | None = None
 
     def get(self, os_info: OsInfo) -> T | None:
-        by_distro = {"fedora": self.fedora, "debian": self.debian, "arch": self.arch}
+        by_distro = {
+            "fedora": self.fedora, "debian": self.debian, "arch": self.arch,
+            "macos": self.macos,
+        }
         if os_info.distro in by_distro and by_distro[os_info.distro] is not None:
             return by_distro[os_info.distro]
         if os_info.family in by_distro and by_distro[os_info.family] is not None:

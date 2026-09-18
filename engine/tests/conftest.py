@@ -1,12 +1,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
+
+_REAL_DETECT = osinfo.detect
+
+
+@pytest.fixture(autouse=True)
+def _linux_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests are host-independent: an argument-less detect() sees Fedora on any machine."""
+
+    def _pinned(*args: Any, **kwargs: Any) -> osinfo.OsInfo:
+        if "system" in kwargs:
+            return _REAL_DETECT(*args, **kwargs)
+        return osinfo.OsInfo("fedora", "fedora", "x86_64", headless=False)
+
+    monkeypatch.setattr(osinfo, "detect", _pinned)
 
 
 @pytest.fixture

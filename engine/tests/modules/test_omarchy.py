@@ -79,7 +79,9 @@ def test_detect_parses_id_like(tmp_path: Path) -> None:
     release.write_text(
         'NAME="Omarchy"\nID=omarchy\nID_LIKE=arch\nVERSION_ID="4.0.2"\n', encoding="utf-8"
     )
-    info = detect(os_release_path=str(release), machine="x86_64", env={"DISPLAY": ":0"})
+    info = detect(
+        os_release_path=str(release), machine="x86_64", env={"DISPLAY": ":0"}, system="Linux"
+    )
     assert info.distro == "omarchy"
     assert info.family == "arch"
     assert info.id_like == ("arch",)
