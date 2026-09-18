@@ -23,7 +23,7 @@ engine branching.
 | Architecture | `macos` is a first-class family. `brew bundle` batching deferred; data model keeps it possible |
 | Hardware | Apple Silicon only (`darwin-arm64`); Intel refused with a clear message |
 | Shell | zsh on macOS, bash on Linux; shared POSIX core; zsh-autosuggestions + zsh-syntax-highlighting |
-| Terminal | Ghostty default on macOS; `wezterm@nightly` opt-in |
+| Terminal | **Ghostty default on every OS** (cross-OS change); foot stays on Omarchy (`provided_by`); WezTerm opt-in + deprecated |
 | Docker | Colima (default) / OrbStack / Docker Desktop, switchable with full reconfigure |
 | Desktop | `macos-defaults` (+ revert), maxfiles limit, firewall, Raycast, AeroSpace + AltTab, Thaw, MonitorControl + BetterDisplay, Keka, Stats, Quick Look plugins, `duti` |
 | iOS | Opt-in `ios` profile (xcodes + simulator runtime + CocoaPods/watchman) |
@@ -215,7 +215,7 @@ session; else `NeedsUser`.
 | `com.apple.finder FXPreferredViewStyle` | `Nlsv` |
 | `com.apple.desktopservices DSDontWriteNetworkStores` / `DSDontWriteUSBStores` | `true` |
 | `com.apple.dock autohide` / `tilesize` / `show-recents` | `true` / `48` / `false` |
-| `com.apple.screencapture location` / `type` | `~/Pictures/Screenshots` / `png` |
+| `com.apple.screencapture target` / `type` | `clipboard` / `png` — screenshots land on the clipboard, ready for `herdr --remote` Ctrl+V image paste; ⌘⇧5 “Save to” for files |
 | `com.apple.AppleMultitouchTrackpad Clicking` | `true` |
 
 Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (or
@@ -226,6 +226,8 @@ Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (o
 - `base` += `homebrew`, `xcode-clt`, `rosetta`, `pass`, `pass-store` (pass per companion spec).
 - `cli` += `herdr-plugins`, `glow` (**every OS**).
 - `shell` += `zsh-config`, `zsh-plugins`; `terminal` += `zsh-config`.
+- `shell` and `terminal`: `wezterm` → `ghostty` (**every OS**). `wezterm` moves to a new
+  opt-in profile `optional-terminals` and is marked deprecated in the docs.
 - `editors` = `zed`, `fresh`, `fresh-lsp` (Zed spec); `optional-editors` += `vscode`.
 - New `ios` = `xcode`, `ios-tooling`.
 - New `macos-desktop` = `macos-defaults`, `macos-limits`, `macos-firewall`,
@@ -271,6 +273,19 @@ dotfiles/
   read RAM/disk via `sysctl hw.memsize` / `vm_stat` / `df -g` on Darwin (today `/proc` +
   `df -BG`); `starship.toml` switches to starship's built-in `memory_usage` module;
   `pw-autoregister.sh` uses `gtimeout` when `timeout` is absent.
+- **Terminal (every OS): Ghostty.** Why: WezTerm's last stable is Feb 2024 (nightlies
+  only) and its multiplexer is redundant with herdr; Ghostty 1.3 is actively maintained,
+  fastest on macOS, native on both OSes, and has everything agent work needs (kitty
+  keyboard protocol → Shift+Enter, OSC 52, synchronized output, kitty graphics,
+  `notify-on-command-finish`). Linux install: the existing `ghostty` module's Fedora/Ubuntu
+  strategies (unchanged); Omarchy keeps foot (`provided_by=("omarchy",)`).
+  Ghostty config sets `notify-on-command-finish = unfocused`.
+- **Image paste is herdr's, not the terminal's:** `herdr --remote` reads the local
+  clipboard image (Linux `wl-paste`, macOS `osascript` PNG), ships it over its SSH
+  connection, stages it in the remote's `$TMPDIR/herdr-clipboard-images-<uid>/` and pastes
+  the path. Trigger: `keys.remote_image_paste = "ctrl+v"` or an empty bracketed paste.
+  Therefore **no terminal config may bind Ctrl+V** (WezTerm's `paste.lua` smart paste is
+  retired with WezTerm; `img2ssh` is not ported).
 - **Keyboard:** Ghostty `macos-option-as-alt = left` (and WezTerm equivalent) — right
   Option keeps accents. Ghostty/WezTerm on Darwin add **Cmd** equivalents of every
   Ctrl+Shift binding (both work). WezTerm leader on Darwin → `Ctrl+A` (macOS keeps
