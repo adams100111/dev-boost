@@ -28,6 +28,18 @@ def test_label_namespacing() -> None:
     assert launchd.label("pass-sync") == "dev.devboost.pass-sync"
 
 
+def test_agent_loaded() -> None:
+    assert launchd.agent_loaded(Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.x") is True
+    ex_fail = FakeExecutor(scripts={"launchctl": Result(1)})
+    assert launchd.agent_loaded(Ctx(os=MAC, ex=ex_fail), "dev.devboost.x") is False
+
+
+def test_daemon_loaded() -> None:
+    assert launchd.daemon_loaded(Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.x") is True
+    ex_fail = FakeExecutor(scripts={"launchctl": Result(1)})
+    assert launchd.daemon_loaded(Ctx(os=MAC, ex=ex_fail), "dev.devboost.x") is False
+
+
 def test_user_agent_writes_plist_and_bootstraps(home: Path) -> None:
     ex = FakeExecutor()  # no plist yet → written and bootstrapped
     changed = launchd.user_agent(
