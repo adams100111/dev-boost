@@ -223,6 +223,22 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 | `ios-tooling` (opt-in `ios`) | brew `cocoapods`, `watchman`; `xcodes runtimes install "iOS <pin>"` | `pod`, `watchman`, `xcrun simctl list runtimes` |
 | `zsh-config` | marker check (dotfiles own `~/.zshrc`) | marker + sources `shell.zsh` |
 
+**Cross-OS module `voxtype`** (local push-to-talk dictation, MIT — the same tool Omarchy
+ships): macOS cask `peteonrails/voxtype/voxtype` (BrewTap) + a `launchd.user_agent` for
+the daemon (the cask adds no login item); Fedora/Ubuntu per upstream `docs/INSTALL.md`;
+`provided_by=("omarchy",)`. Config `~/.config/voxtype/config.toml` is shared through
+chezmoi (one file for every OS), hotkey taken from the author's Omarchy config, push-to-talk.
+- **Default (English):** one small resident English model — Parakeet v3 on macOS (Neural
+  Engine via ONNX) if the secondary-model mechanism below works with it, otherwise Whisper
+  `small.en` (466 MB); `language = "en"`.
+- **Opt-in Arabic** (`voxtype-arabic` module, in no default profile): downloads Whisper
+  `large-v3-turbo` (1.6 GB), sets it as `secondary_model` with `language = ["en","ar"]`
+  and `on_demand_loading` for it, so it costs **no idle RAM** — loaded only while
+  dictating Arabic (hold `model_modifier` + hotkey). Verify at implementation: Voxtype
+  documents `model_modifier` for its Linux evdev hotkey path; on macOS the fallback is a
+  second binding to `voxtype record start --model large-v3-turbo`.
+- Permissions (macOS): Input Monitoring + Microphone → see *Privacy permissions* below.
+
 **Opt-in cross-OS module:** `android-emulator` — emulator + system image (`arm64-v8a` on
 aarch64, `x86_64` on x86_64) + one Pixel AVD.
 
@@ -262,12 +278,25 @@ Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (o
 - New `macos-desktop` = `macos-defaults`, `macos-limits`, `macos-firewall`,
   `timemachine-exclusions`, `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`,
   `monitorcontrol`, `betterdisplay`, `keka`, `quicklook`, `default-apps`.
+- `base` += `voxtype` (every OS; provided on Omarchy). Opt-in `voxtype-arabic`.
 - New `macos-extras` (opt-in) = `maccy`, `ollama-app`, `lm-studio`, `pearcleaner`,
   `keycastr`, `linearmouse`, `android-studio`, `expo-orbit`, `herd`, `wezterm`.
 - New `macos` = `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`,
   `data`, `devops`, `react-native`, `apps`, `macos-desktop`, `dev-hygiene`, `remote`,
   `claude`, `codex`, `pi` (Linux-only members fall out via `families`).
 - README tables regenerated.
+
+### Privacy permissions (TCC)
+
+macOS does not let scripts grant privacy permissions. Modules that need them declare
+`tcc: ClassVar[tuple[TccGrant, ...]]` (`TccGrant(service, app_bundle_id)`, service ∈
+Accessibility / Input Monitoring / Microphone / Screen Recording). After install, a
+missing grant → `NeedsUser` with a one-click fix: `open
+"x-apple.systempreferences:com.apple.preference.security?Privacy_<Service>"`.
+`doctor` lists every outstanding grant. Known needs: AeroSpace, AltTab, Raycast, Maccy
+(Accessibility); Voxtype (Input Monitoring, Microphone); Thaw (Accessibility, Screen
+Recording). Verification reads grant state where the OS exposes it and otherwise asks
+once and records the confirmation in `~/.local/state/devboost/tcc.json`.
 
 ## 3. Shell, terminal & dotfiles
 
