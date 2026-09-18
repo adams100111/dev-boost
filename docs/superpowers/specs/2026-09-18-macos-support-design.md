@@ -204,6 +204,7 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 | chezmoi-repo | `chezmoi init --apply --force` (also fixes a Linux tty hang); no repo configured → `NeedsUser` |
 | claude-notify | ntfy **and** a native notification (`osascript -e 'display notification …'`) on Darwin |
 | secrets | gh-first (`gh auth setup-git`, keychain); age bundle optional (§5) |
+| pi-harness | private harness repo cloned with the `gh` token (today it expects the age-bundle PAT) |
 
 ### New macOS-only modules (`families=("macos",)`)
 | Module | Install | Verify |
@@ -226,7 +227,7 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 **Cross-OS module `voxtype`** (local push-to-talk dictation, MIT — the same tool Omarchy
 ships): macOS cask `peteonrails/voxtype/voxtype` (BrewTap) + a `launchd.user_agent` for
 the daemon (the cask adds no login item); Fedora/Ubuntu per upstream `docs/INSTALL.md`;
-`provided_by=("omarchy",)`. Config `~/.config/voxtype/config.toml` is shared through
+`provided_by=("omarchy",)`, `gui = True` (skipped on headless hosts). Config `~/.config/voxtype/config.toml` is shared through
 chezmoi (one file for every OS), hotkey taken from the author's Omarchy config, push-to-talk.
 - **Default (English):** one small resident English model — Parakeet v3 on macOS (Neural
   Engine via ONNX) if the secondary-model mechanism below works with it, otherwise Whisper
@@ -366,7 +367,7 @@ dotfiles/
 | Concern | Colima (default) | OrbStack | Docker Desktop |
 |---|---|---|---|
 | Install | brew `colima`, `docker`, `docker-compose`, `docker-buildx`; `cliPluginsExtraDirs` in `~/.docker/config.json` | cask `orbstack` | cask `docker-desktop` |
-| Resources | `colima start --vm-type vz --vz-rosetta --mount-type virtiofs --cpu C --memory M --disk 100` | `orb config set` | `settings-store.json` |
+| Resources | `colima start --vm-type vz [--vz-rosetta when Rosetta present, §0] --mount-type virtiofs --cpu C --memory M --disk 100` | `orb config set` | `settings-store.json` |
 | Autostart | `brew services start colima` | login item | auto-start setting |
 | Context | `colima` | `orbstack` | `desktop-linux` |
 | `/var/run/docker.sock` | `sudo ln -sf ~/.colima/default/docker.sock /var/run/docker.sock` | managed | managed |
@@ -437,7 +438,8 @@ All via `FakeExecutor`; no real brew in CI.
   `upgrade`, `install_cask` raises off macOS.
 - `launchd`: plist equality (`plistlib`), bootstrap idempotency, daemon vs agent.
 - **Catalog contract test:** for `OsInfo(distro="macos", family="macos", arch="aarch64")`,
-  every module in expanded `macos` + `macos-extras` + `ios` resolves (brew / cask /
+  every module in expanded `macos` + `macos-extras` + `ios` + `optional-terminals` +
+  `voxtype-arabic` + `android-emulator` resolves (brew / cask /
   `per_os.macos` / cross-platform) or is `families`-dropped or `provided_by`. xfail
   allow-list empties by M5.
 - `DockerRuntime`: per-runtime argv; switch path incl. snapshot prompt; selection
@@ -474,11 +476,11 @@ Each milestone PR ships its own docs; a PR is not done without them.
 
 | # | Milestone | Outcome |
 |---|---|---|
-| M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0 | engine runs on Darwin |
-| M2 | Shell & dotfiles: env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone |
+| M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0 | engine runs on Darwin |
+| M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone |
 | M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | most of the workstation |
 | M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) | ddev, Aspire, data-services |
-| M5 | Desktop: `macos-defaults` (+revert), limits, firewall, Time Machine exclusions, casks (Raycast, AeroSpace + config, AltTab, Thaw, monitor tools, Keka, Stats, Quick Look), `default-apps`; opt-in `ios`, `macos-extras`, `android-emulator`; primer | full desktop + iOS |
+| M5 | Desktop: `macos-defaults` (+revert), limits, firewall, Time Machine exclusions, casks (Raycast, AeroSpace + config, AltTab, Thaw, monitor tools, Keka, Stats, Quick Look), `default-apps`, `voxtype` (+ opt-in `voxtype-arabic`); opt-in `ios`, `macos-extras`, `android-emulator`; primer | full desktop + iOS |
 | M6 | Delivery: darwin binary, `get.sh`, self-update, CI matrix, tart `vm-test-macos.sh`, final docs | fresh Mac via `curl … \| bash` |
 
 ## Out of scope

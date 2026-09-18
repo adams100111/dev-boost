@@ -18,7 +18,7 @@ Claude, Codex and Pi as in-editor agents. VS Code becomes opt-in.
 | Install | macOS: cask `zed`; Linux: official `curl -f https://zed.dev/install.sh \| sh` (installs to `~/.local`) |
 | Profiles | `editors` = `zed`, `fresh`, `fresh-lsp`; `vscode` → `optional-editors` |
 | Config source | dev-boost ships a curated `settings.json` + `keymap.json` |
-| Ownership | **Seed once** (chezmoi `create_`); afterwards the user owns the file. dev-boost only guarantees must-have keys via `config.json_merge` |
+| Ownership | **Seed once** (chezmoi `create_`); afterwards the user owns the file. dev-boost only guarantees must-have keys via the new `config.jsonc_merge_deep` (see below) |
 | Language servers | Point Zed at **dev-boost's pinned binaries** (`lsp.<server>.binary.path` → mise pins in `data/fresh/*-lsp.tsv`); Zed's own download only where a custom path isn't supported |
 | C# | `csharp-ls` (licence-safe; C# Dev Kit/Roslyn not used by default) |
 | `$VISUAL` / `$EDITOR` | `VISUAL="zed --wait"` only in a local GUI session; `EDITOR=fresh` otherwise; git `core.editor` unset so git follows `$VISUAL` → `$EDITOR` |
