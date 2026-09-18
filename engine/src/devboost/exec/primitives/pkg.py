@@ -367,7 +367,7 @@ def refresh_index(ctx: Ctx) -> None:
     """
     if ctx.os.family == "macos":
         # One explicit update per run (auto-update is disabled on every other brew call).
-        res = ctx.ex.run(["brew", "update"])
+        res = ctx.ex.run(["brew", "update"], env=BREW_ENV)
         if not res.ok:
             log.warn(f"brew update failed (code {res.code}); using the existing index")
         return

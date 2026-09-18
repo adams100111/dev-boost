@@ -122,9 +122,10 @@ def test_cask_helpers_are_macos_only() -> None:
 
 
 def test_refresh_index_runs_brew_update_once_on_macos() -> None:
-    ex = FakeExecutor()
+    ex = _EnvRecorder()
     pkg.refresh_index(Ctx(os=MAC, ex=ex))
     assert ex.calls == [["brew", "update"]]
+    assert ex.envs == [pkg.BREW_ENV]
 
 
 def test_refresh_index_failure_is_not_raised_on_macos() -> None:
