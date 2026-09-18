@@ -18,7 +18,8 @@ from devboost.modules.ssh_setup import SshSetup
 
 
 class FlatpakApp(Module):
-    """A GUI application: Flathub on Fedora/Ubuntu, a native package on the Arch family.
+    """A GUI application: Flathub on Fedora/Ubuntu, a native package on Arch, a Homebrew
+    cask on macOS.
 
     Flathub is a *delivery mechanism*, not the product. On Arch every app dev-boost ships
     exists as a real package, so installing a ~1 GB Flatpak runtime to duplicate them would
@@ -32,6 +33,8 @@ class FlatpakApp(Module):
     arch_pkg: ClassVar[str | None] = None
     #: AUR package name, used only when the app is absent from the official repos.
     aur_pkg: ClassVar[str | None] = None
+    #: Homebrew cask on macOS (Flathub does not exist there).
+    cask: ClassVar[str | None] = None
     category = "apps"
     gui = True
     requires = (Flatpak,)
@@ -41,12 +44,19 @@ class FlatpakApp(Module):
         return self.arch_pkg or self.aur_pkg
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family == "macos":
+            return self.cask is not None and pkg.cask_installed(ctx, self.cask)
         if ctx.os.family == "arch":
             name = self._arch_name()
             return name is not None and pkg.installed(ctx, name)
         return ctx.ex.run(["flatpak", "info", self.app_id]).ok
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "macos":
+            if self.cask is None:
+                raise UnsupportedOS(f"{self.name}: no macOS cask declared (set cask)")
+            pkg.install_cask(ctx, self.cask)
+            return
         if ctx.os.family == "arch":
             if self.arch_pkg is not None:
                 pkg.install(ctx, self.arch_pkg)
