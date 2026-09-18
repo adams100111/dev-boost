@@ -22,6 +22,7 @@ engine branching.
 | Role | Primary workstation; full parity where it makes sense, Mac-native where better |
 | Architecture | `macos` is a first-class family. `brew bundle` batching deferred; data model keeps it possible |
 | Hardware | Apple Silicon only (`darwin-arm64`); Intel refused with a clear message |
+| macOS versions | **Primary target macOS 27 Golden Gate** (released 2026-09-14; the author's Mac); also supported: 26 Tahoe. 15 Sequoia best-effort (Homebrew Tier 1, untested). Older → refused |
 | Shell | zsh on macOS, bash on Linux; shared POSIX core; zsh-autosuggestions + zsh-syntax-highlighting |
 | Terminal | **Ghostty default on every OS** (cross-OS change); foot stays on Omarchy (`provided_by`); WezTerm opt-in + deprecated |
 | Docker | Colima (default) / OrbStack / Docker Desktop, switchable with full reconfigure |
@@ -48,6 +49,34 @@ commercial use:
 - **Shottr** — paid for commercial use. → not included (⌘⇧5 built-in).
 - **Raycast Free** — explicitly allowed for commercial use. → included.
 - **tart** (VM testing) — royalty-free on personal workstations. → used for rehearsal.
+
+## 0. Supported macOS versions
+
+| Version | Status | Notes |
+|---|---|---|
+| **27 Golden Gate** | primary, E2E-tested | Homebrew 7 Tier 1; last release with full Rosetta 2 |
+| 26 Tahoe | supported, E2E-tested (tart) | Spotlight clipboard history (26.0), charge limit (26.4+) |
+| 15 Sequoia | best-effort | Homebrew Tier 1; not in E2E matrix |
+| ≤ 14 | refused | Homebrew 7 moved Sonoma to Tier 3 (no bottles / `.pkg`) |
+
+Version-dependent behavior is data, keyed on `OsInfo.version_id` (major):
+- **Rosetta:** `rosetta` module installs on ≤ 27; on ≥ 28 (Rosetta limited to legacy games)
+  it is skipped with a `doctor` warning listing Intel-only apps
+  (`system_profiler SPApplicationsDataType`, "Kind: Intel"). Colima's `--vz-rosetta`
+  (fast amd64 containers) is enabled only when Rosetta is present; otherwise Colima uses
+  its default qemu emulation for amd64 images and `doctor` notes the slowdown.
+- `macos-defaults` keys and the tool casks are verified on 27 and 26 at M5 (§9); a key or
+  app that misbehaves on a version is gated by a `min_version`/`max_version` field on its
+  table row / module rather than removed.
+- Homebrew 7: `HOMEBREW_NO_AUTO_UPDATE` is deprecated but functional — kept; the explicit
+  once-per-run `brew update` makes it safe to drop later. `brew services` labels are now
+  `sh.brew.<formula>`, so service checks use `brew services info --json <formula>`, never
+  a hard-coded launchd label.
+- App compatibility on 27 (checked at M5 on the real Mac): **Thaw** — macOS 27 support
+  was in preview builds (minor menu-bar edge cases); if the stable cask misbehaves, the
+  module is gated off on 27 with a doctor note rather than shipping a preview build.
+  AeroSpace, AltTab, Colima and the other casks: no 27-specific issue found; confirmed or
+  gated during M5.
 
 ## 1. Engine core
 
@@ -198,7 +227,7 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 aarch64, `x86_64` on x86_64) + one Pixel AVD.
 
 **Pins** for `xcode` / `ios-tooling` (Xcode version, iOS runtime) live in `catalog.toml`
-next to herdr's pins, set to the newest stable GA at implementation time.
+next to herdr's pins, set to the newest stable GA at implementation time (Xcode 27 / iOS 27 as of 2026-09).
 (`devboost.lock` holds only module names, so it cannot carry versions.)
 
 Xcode auth: `XCODES_USERNAME`/`XCODES_PASSWORD` env or an existing xcodes keychain
@@ -350,12 +379,13 @@ themselves — no `--greedy`. No background upgrades. `softwareupdate` is never 
 
 - Artifact `devboost-darwin-arm64` (PyInstaller onefile, ad-hoc signed by default; curl
   sets no quarantine). Linux asset names unchanged; no Ventoy tarball on Darwin.
-- `release.yml`: matrix `{runner: macos-15, arch: darwin-arm64}` (pinned); tag check
+- `release.yml`: matrix `{runner: macos-15, arch: darwin-arm64}` (pinned; a binary built on
+  15 runs on 26/27); tag check
   `grep -oP` → `sed -nE`; checks job also on `macos-15`; combine step adds the Mac binary
   to `checksums.txt`.
 - `build-bundle.sh`: `Darwin/arm64 → darwin-arm64`; `shasum -a 256` fallback; skip
   Ventoy tarball; smoke `devboost --version && devboost list macos`.
-- `get.sh`: Darwin → `darwin-arm64` (refuse Intel); `gs_macos_prereqs` (CLT silent,
+- `get.sh`: Darwin → `darwin-arm64` (refuse Intel and macOS < 15; warn on 15); `gs_macos_prereqs` (CLT silent,
   Homebrew `NONINTERACTIVE=1`, brew shellenv); skip Ventoy archive; `exec … </dev/tty`
   so prompts work under `curl|bash`; PATH hint names `~/.zshrc`. Default profile stays
   `terminal` on every OS; README shows `… | bash -s -- macos`.
@@ -387,9 +417,11 @@ All via `FakeExecutor`; no real brew in CI.
 - Dotfiles: `.chezmoiignore` rendered for darwin / linux / omarchy (`chezmoi
   execute-template`, skip if absent); `zsh -n shell.zsh`; `bash -n shell.bash`;
   `shellcheck` on portable scripts.
-- CI: checks on `ubuntu-22.04` and `macos-15`.
-- **E2E:** `scripts/vm-test-macos.sh` (tart: `tart clone
-  ghcr.io/cirruslabs/macos-<ver>-base`, `tart run --no-graphics`, ssh `admin@$(tart ip)`,
+- CI: checks on `ubuntu-22.04` and `macos-15` (blocking), plus GitHub's `xcode-27` image —
+  which runs **macOS 27** (public preview; GitHub now names macOS images by Xcode
+  version) — as a non-blocking job until it leaves preview.
+- **E2E:** `scripts/vm-test-macos.sh` for **macOS 27 and 26** (tart: `tart clone
+  ghcr.io/cirruslabs/macos-<name>-base`, exact 27 image name confirmed at M6; `tart run --no-graphics`, ssh `admin@$(tart ip)`,
   snapshot = clone of stopped VM; verbs `create/snapshot/revert/list/destroy`, mirroring
   `vm-test.sh`). Rehearse in tart, then run on the real Mac. Shared-shell changes also
   run Fedora + Ubuntu `vm-test` before merge.
