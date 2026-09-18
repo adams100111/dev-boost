@@ -33,6 +33,27 @@ class UnsupportedOS(DevbootError):
     """No install path exists for the detected OS."""
 
 
+class NeedsUser(DevbootError):
+    """A step only a human can perform (sign in, approve, grant a permission).
+
+    Reported as ``blocked`` with the exact fix, never as a failure: the rest of the plan
+    keeps going, and the next run picks up where the human left off.
+    """
+
+    def __init__(self, reason: str, how_to_fix: str) -> None:
+        self.reason = reason
+        self.how_to_fix = how_to_fix
+        super().__init__(f"{reason} — {how_to_fix}")
+
+
+class PresentUnmanaged(DevbootError):
+    """The thing is already installed outside dev-boost and must not be overwritten."""
+
+    def __init__(self, item: str) -> None:
+        self.item = item
+        super().__init__(f"{item} is installed but not managed by dev-boost")
+
+
 class SecretsError(DevbootError):
     """The age-encrypted secrets bundle is missing, undecryptable, or incomplete."""
 

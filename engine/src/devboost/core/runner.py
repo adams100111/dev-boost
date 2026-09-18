@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from devboost.core import log
+from devboost.core.errors import NeedsUser, PresentUnmanaged
 from devboost.core.plan import PlannedModule
 from devboost.model import Ctx, Module
 
@@ -55,6 +56,12 @@ def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunR
         return RunResult(pm.name, "skip", "already-installed")
     try:
         mod.install(ctx)
+    except NeedsUser as exc:
+        log.warn(f"{pm.name}: needs you — {exc.reason}. Fix: {exc.how_to_fix}")
+        return RunResult(pm.name, "blocked", f"needs-user: {exc.reason} → {exc.how_to_fix}")
+    except PresentUnmanaged as exc:
+        log.skip(f"{pm.name} ({exc.item} already installed outside dev-boost — left untouched)")
+        return RunResult(pm.name, "skip", "present-unmanaged")
     except Exception as exc:  # noqa: BLE001 — surface any module failure as a fail result
         log.error(f"{pm.name}: {exc}")
         return RunResult(pm.name, "fail", str(exc))
