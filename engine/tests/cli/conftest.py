@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from loguru import logger
@@ -11,6 +12,15 @@ from loguru import logger
 
 def _write_stderr(msg: str) -> None:
     sys.stderr.write(msg)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never let doctor look at the developer's real ~/.password-store."""
+    monkeypatch.setenv("PASSWORD_STORE_DIR", str(tmp_path / "pass-store"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
 
 
 @pytest.fixture(autouse=True)
