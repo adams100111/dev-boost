@@ -6,10 +6,9 @@ import os
 from pathlib import Path
 from typing import ClassVar
 
-from devboost.core import log
 from devboost.core.registry import register
 from devboost.model import Ctx, Module
-from devboost.modules.claude_skills import _lock_entries, skill_present
+from devboost.modules.claude_skills import _lock_entries, hydrate_skills, skill_present
 from devboost.modules.codex_code import CodexCode
 from devboost.modules.shell import Dotfiles
 
@@ -36,13 +35,4 @@ class CodexSkills(Module):
         return all(self._present(name) for _, name in _lock_entries(_home()))
 
     def install(self, ctx: Ctx) -> None:
-        if not ctx.ex.which("npx"):
-            log.warn("codex-skills: npx not found — skipping skill hydration")
-            return
-        for source, name in _lock_entries(_home()):
-            if self._present(name):
-                log.skip(f"codex-skills: {name} already present")
-                continue
-            res = ctx.ex.run(["npx", "skills", "add", f"{source}@{name}", "-g", "-y"])
-            if not res.ok:
-                log.warn(f"codex-skills: `skills add {source}@{name}` failed — vendor it instead")
+        hydrate_skills(ctx, self.name, _home() / ".agents" / "skills")
