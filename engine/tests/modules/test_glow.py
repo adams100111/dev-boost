@@ -11,6 +11,7 @@ MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64", version_id="24.04")
 ARCH = OsInfo("arch", "arch", "x86_64")
+OMARCHY = OsInfo("omarchy", "arch", "aarch64", id_like=("arch",))
 
 
 def test_glow_on_macos_fedora_and_arch() -> None:
@@ -22,6 +23,14 @@ def test_glow_on_macos_fedora_and_arch() -> None:
         ex = FakeExecutor()
         Glow().install(Ctx(os=os_info, ex=ex))
         assert ex.calls[-1] == call, os_info.distro
+
+
+def test_glow_on_omarchy_uses_the_omarchy_pkg_helper() -> None:
+    # Omarchy routes pacman installs through its own omarchy-pkg-* helpers when they're
+    # on PATH (pkg.py:Pacman.install) rather than shelling out to pacman directly.
+    ex = FakeExecutor(present={"omarchy-pkg-add"})
+    Glow().install(Ctx(os=OMARCHY, ex=ex))
+    assert ex.calls[-1] == ["omarchy-pkg-add", "glow"]
 
 
 def test_glow_on_ubuntu_comes_from_charms_apt_repo() -> None:

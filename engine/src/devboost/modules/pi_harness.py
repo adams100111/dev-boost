@@ -51,8 +51,9 @@ class PiHarness(Module):
             mise.use_global(ctx, "node@lts")
 
         # Bootstrap (HARD). Auth = whatever git already uses for GitHub, set up by the
-        # `secrets` module: gh's credential helper (`gh auth setup-git`; macOS, gh users) or
-        # the bundle token in ~/.git-credentials (Linux). One source:
+        # `secrets` module: gh's credential helper (`gh auth setup-git`; macOS, gh users),
+        # git's osxkeychain helper (macOS, bundle-token users), or the bundle token in
+        # ~/.git-credentials (Linux). One source:
         # _credentials.github_credentials. Shallow-clone the default branch just to obtain
         # install.sh; it then does the HARNESS_REF-pinned clone itself.
         repo, ref = self._repo(), self._ref()

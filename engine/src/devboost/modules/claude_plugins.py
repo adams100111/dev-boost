@@ -59,8 +59,8 @@ class ClaudePlugins(Module):
     category = "cli"
     description = "Register Claude marketplaces + install enabled plugins; resolve CLICKUP token."
     # Secrets → git can authenticate to GitHub for the private clickup-flow marketplace
-    # clone (gh's credential helper, or the bundle token in ~/.git-credentials on Linux —
-    # one source: _credentials.github_credentials).
+    # clone (gh's credential helper, git's osxkeychain helper on macOS, or the bundle
+    # token in ~/.git-credentials on Linux — one source: _credentials.github_credentials).
     # PassStore is soft (after): the CLICKUP token is skipped until this device is approved.
     requires = (ClaudeCode, Dotfiles, Secrets)
     after = (PassStore,)

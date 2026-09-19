@@ -49,6 +49,7 @@ def test_android_on_macos_uses_the_cmdline_tools_cask(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("ANDROID_HOME", raising=False)
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
     ex = Scripted(answers={("brew", "list"): Result(1)})
     AndroidSdk().install(Ctx(os=MAC, ex=ex))
     sdk = tmp_path / "Library" / "Android" / "sdk"
@@ -56,6 +57,28 @@ def test_android_on_macos_uses_the_cmdline_tools_cask(
     assert ["brew", "install", "--cask", "-y", "--adopt", "android-commandlinetools"] in ex.calls
     assert ex.calls[-1] == ["sh", "-c", f"yes | sdkmanager --sdk_root={sdk} {PACKAGES}"]
     assert not any("profile.d" in " ".join(c) for c in ex.calls)
+    assert sdk.is_dir()
+
+
+def test_android_on_macos_install_twice_with_force_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-R17: an --update re-run (force=True) must not duplicate side effects or prompt."""
+    monkeypatch.delenv("ANDROID_HOME", raising=False)
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
+    ex = Scripted(answers={("brew", "list"): Result(1)})
+    ctx = Ctx(os=MAC, ex=ex, force=True)
+
+    AndroidSdk().install(ctx)
+    AndroidSdk().install(ctx)
+
+    sdk = tmp_path / "Library" / "Android" / "sdk"
+    cask_calls = [
+        c for c in ex.calls
+        if c[:2] == ["brew", "install"] and c[-1] == "android-commandlinetools"
+    ]
+    assert len(cask_calls) == 2  # brew's own install is idempotent, not skipped here
+    assert all(c and c[0] != "sudo" for c in ex.calls)  # never prompts unattended
     assert sdk.is_dir()
 
 

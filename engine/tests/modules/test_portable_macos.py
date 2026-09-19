@@ -33,6 +33,7 @@ from devboost.modules.dev_stacks import (
     WebRuntimes,
 )
 from devboost.modules.editors import FreshLsp
+from devboost.modules.macos import XcodeClt
 from devboost.modules.pi_harness import PiHarness
 from devboost.modules.shell import ClaudeNotify
 from devboost.modules.tpm import TmuxPersist, Tpm
@@ -52,6 +53,14 @@ PORTABLE: list[type[Module]] = [
 def test_verified_portable(cls: type[Module]) -> None:
     assert cls.portable is True
     assert resolvable_on_macos(cls)
+
+
+def test_tpm_and_tmux_persist_require_xcode_clt_on_macos() -> None:
+    # Both run `git clone` (I1) — on a fresh Mac without the CLT, /usr/bin/git is
+    # Apple's stub, which pops an "install developer tools?" dialog on an unwatched
+    # desktop. requires=(XcodeClt,) orders them after it (dropped on Linux — macOS-only).
+    assert XcodeClt in Tpm.requires
+    assert XcodeClt in TmuxPersist.requires
 
 
 def test_chezmoi_repo_never_waits_on_a_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
