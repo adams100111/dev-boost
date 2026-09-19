@@ -99,8 +99,11 @@ def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:
         "ghostty", "zsh-config", "dotfiles", "pass", "pass-store", "utiluti",
     ):
         assert reasons.get(want, "missing") is None, want
+    # M6-D11: bash-config is planned everywhere and reports an explicit skip on a Mac
+    # (zsh-config covers it) instead of being dropped from the plan without a word.
     assert reasons["flameshot"] == reasons["curl"] == "provided-by-macos"
-    for gone in ("gearlever", "rpmfusion", "flatpak", "bash-config", "wezterm"):
+    assert reasons["bash-config"] == "provided-by-macos"
+    for gone in ("gearlever", "rpmfusion", "flatpak", "wezterm"):
         assert gone not in reasons, gone
 
 
