@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import plistlib
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -16,6 +13,7 @@ from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules import _credentials
 from devboost.modules import voxtype as vox
+from tests.modules.voxtype_fakes import VoxtypeExecutor, fake_model, write_bundle
 from tests.passstore.fakes import RuleExecutor
 
 MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
@@ -30,20 +28,14 @@ RPM_SHA = "be103de733f376030180ac734bb845779bf6ee963419a8e72518b5df150525bf"
 REAL_MODEL_PINS = dict(vox.MODEL_SHA256)
 
 
-def _fake_model(name: str) -> bytes:
-    return f"lmgg fake {name}".encode()
-
-
 @pytest.fixture(autouse=True)
-def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _hermetic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USER", "dev")
     monkeypatch.delenv("SUDO_USER", raising=False)
     monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
-    # M5-D7: never the real /Applications (the conftest HOST_APP_PATHS entry is I-M5's).
-    monkeypatch.setattr(vox, "APP_BUNDLE", tmp_path / "Applications" / "Voxtype.app")
     # The pinned model digests are the real Hugging Face ones; the fakes write tiny files.
     monkeypatch.setattr(vox, "MODEL_SHA256", {
-        n: hashlib.sha256(_fake_model(n)).hexdigest() for n in (vox.MODEL, vox.ARABIC_MODEL)
+        n: hashlib.sha256(fake_model(n)).hexdigest() for n in (vox.MODEL, vox.ARABIC_MODEL)
     })
 
 
@@ -51,63 +43,6 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 def attended(monkeypatch: pytest.MonkeyPatch) -> None:
     """Someone is at the terminal: `setup app-bundle` (prompts, `open`) may run."""
     monkeypatch.setattr(_credentials, "is_interactive", lambda: True)
-
-
-def _write_bundle(version: str) -> None:
-    contents = vox.APP_BUNDLE / "Contents"
-    contents.mkdir(parents=True, exist_ok=True)
-    (contents / "Info.plist").write_bytes(
-        plistlib.dumps({"CFBundleShortVersionString": version})
-    )
-
-
-@dataclass
-class VoxEx(RuleExecutor):
-    """What the real `voxtype` leaves behind: the model file, the app bundle, a version.
-
-    ``installed`` models the pinned binary at ~/.local/bin/voxtype (macOS): `--version`
-    fails until an `install … <bin_path>` call has put it there.
-    """
-
-    version: str = "1.0.1"
-    installed: bool = False
-
-    def run(
-        self,
-        argv: Sequence[str],
-        *,
-        sudo: bool = False,
-        stdin: str | None = None,
-        env: Mapping[str, str] | None = None,
-        cwd: Path | None = None,
-        interactive: bool = False,
-    ) -> Result:
-        res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd,
-                          interactive=interactive)
-        args = list(argv)
-        if args and args[0] == "install" and args[-1] == str(vox.bin_path()) and res.ok:
-            self.installed = True
-        if not args or args[0] not in {"voxtype", str(vox.bin_path())}:
-            return res
-        rest = args[1:]
-        if rest[:2] == ["setup", "--download"] and res.ok:
-            name = rest[rest.index("--model") + 1]
-            _download_to(env, name)
-        elif rest == ["setup", "app-bundle"]:
-            _write_bundle(self.version)
-        elif rest == ["--version"]:
-            if args[0] == "voxtype" or self.installed:
-                return Result(0, f"voxtype {self.version}\n")
-            return Result(127, "", "no such file")
-        return res
-
-
-def _download_to(env: Mapping[str, str] | None, name: str) -> None:
-    """Where voxtype writes a model: $XDG_DATA_HOME/voxtype/models (the env it was given)."""
-    base = Path(env["XDG_DATA_HOME"]) if env and "XDG_DATA_HOME" in env else None
-    target = (base / "voxtype" / "models" / f"ggml-{name}.bin") if base else vox.model_file(name)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(_fake_model(name))
 
 
 def _scripts(ex: FakeExecutor) -> list[str]:
@@ -125,7 +60,7 @@ def test_model_paths_follow_xdg_data_home(tmp_path: Path) -> None:
 
 def test_model_download_is_skipped_when_present_and_verified() -> None:
     vox.model_file("small.en").parent.mkdir(parents=True)
-    vox.model_file("small.en").write_bytes(_fake_model("small.en"))
+    vox.model_file("small.en").write_bytes(fake_model("small.en"))
     ex = FakeExecutor()
     vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
     assert ex.calls == []
@@ -134,26 +69,26 @@ def test_model_download_is_skipped_when_present_and_verified() -> None:
 def test_a_model_on_disk_that_fails_its_hash_is_downloaded_again() -> None:
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").write_bytes(b"truncated by a Ctrl-C")
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
     assert sum(c[1:3] == ["setup", "--download"] for c in ex.calls) == 1
-    assert vox.model_file("small.en").read_bytes() == _fake_model("small.en")
+    assert vox.model_file("small.en").read_bytes() == fake_model("small.en")
 
 
 def test_a_model_without_a_pinned_hash_is_refused() -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     with pytest.raises(InstallError, match="no pinned sha256"):
         vox.download_model(Ctx(os=MAC, ex=ex), "medium.en")
     assert ex.calls == []
 
 
 def test_the_model_is_renamed_into_place_only_after_its_hash_matches() -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
     staging = Path(ex.envs[-1]["XDG_DATA_HOME"])
     assert staging.parent == vox.models_dir()  # same filesystem: the rename is atomic
     assert not staging.exists()  # the private download dir is gone
-    assert vox.model_file("small.en").read_bytes() == _fake_model("small.en")
+    assert vox.model_file("small.en").read_bytes() == fake_model("small.en")
 
 
 def test_a_downloaded_model_must_match_its_pinned_sha256(
@@ -161,7 +96,7 @@ def test_a_downloaded_model_must_match_its_pinned_sha256(
 ) -> None:
     monkeypatch.setattr(vox, "MODEL_SHA256", {"small.en": "0" * 64})
     with pytest.raises(InstallError, match="sha256"):
-        vox.download_model(Ctx(os=MAC, ex=VoxEx()), "small.en")
+        vox.download_model(Ctx(os=MAC, ex=VoxtypeExecutor()), "small.en")
     assert not vox.model_file("small.en").exists()  # never moved into place
     assert list(vox.models_dir().iterdir()) == []  # and the download dir is removed
 
@@ -190,7 +125,7 @@ def _vt(*args: str) -> list[str]:
 
 @pytest.mark.usefixtures("attended")
 def test_macos_installs_the_verified_binary_model_then_app_bundle(tmp_path: Path) -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     script = _scripts(ex)[0]
     assert "releases/download/v1.0.1/voxtype-1.0.1-macos-universal" in script
@@ -212,7 +147,7 @@ def test_macos_installs_the_verified_binary_model_then_app_bundle(tmp_path: Path
 
 @pytest.mark.usefixtures("attended")
 def test_the_macos_path_never_touches_homebrew() -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     vox.Voxtype().verify(Ctx(os=MAC, ex=ex))
     assert not [c for c in ex.calls if c[0] == "brew" or "peteonrails/voxtype/voxtype" in c]
@@ -223,36 +158,36 @@ def test_the_macos_path_never_touches_homebrew() -> None:
 
 @pytest.mark.usefixtures("attended")
 def test_macos_skips_the_download_when_the_pinned_version_is_installed() -> None:
-    ex = VoxEx(installed=True)
+    ex = VoxtypeExecutor(installed=True)
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     assert _scripts(ex) == []
 
 
 def test_macos_verify_needs_binary_model_and_a_current_bundle() -> None:
-    ctx = Ctx(os=MAC, ex=VoxEx(installed=True))
+    ctx = Ctx(os=MAC, ex=VoxtypeExecutor(installed=True))
     assert vox.Voxtype().verify(ctx) is False
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    _write_bundle("0.9.0")  # a copy of an older binary
+    write_bundle("0.9.0")  # a copy of an older binary
     assert vox.Voxtype().verify(ctx) is False
-    _write_bundle("1.0.1")
+    write_bundle("1.0.1")
     assert vox.Voxtype().verify(ctx) is True
-    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxEx(installed=True, version="0.7.5"))) \
+    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxtypeExecutor(installed=True, version="0.7.5"))) \
         is False
 
 
 def test_macos_verify_is_false_without_the_binary() -> None:
-    _write_bundle("1.0.1")
+    write_bundle("1.0.1")
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxEx())) is False
+    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxtypeExecutor())) is False
 
 
 @pytest.mark.usefixtures("attended")
 def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
     """M5-D6: `setup app-bundle` copies the binary, resets the TCC grants, adds the Login
     Item and launches the app, so a forced re-run must not repeat it for a current bundle."""
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     for _ in range(2):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex, force=True))
@@ -264,17 +199,17 @@ def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
 
 @pytest.mark.usefixtures("attended")
 def test_macos_force_rebuilds_a_stale_bundle() -> None:
-    _write_bundle("0.9.0")
+    write_bundle("0.9.0")
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    ex = VoxEx(installed=True)
+    ex = VoxtypeExecutor(installed=True)
     vox.Voxtype().install(Ctx(os=MAC, ex=ex, force=True))
     assert ex.calls[-1] == _vt("setup", "app-bundle")
 
 
 @pytest.mark.usefixtures("attended")
 def test_macos_app_bundle_failure_is_an_install_error() -> None:
-    ex = VoxEx(rules=[(("app-bundle",), Result(1))])
+    ex = VoxtypeExecutor(rules=[(("app-bundle",), Result(1))])
     with pytest.raises(InstallError, match="app-bundle"):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex))
 
@@ -282,7 +217,7 @@ def test_macos_app_bundle_failure_is_an_install_error() -> None:
 def test_unattended_macos_installs_binary_and_model_but_never_the_app_bundle() -> None:
     """C1: `setup app-bundle` sends System Events an Apple event and opens Voxtype.app
     (Automation + TCC prompts), so with nobody watching it must not run at all."""
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     ctx = Ctx(os=MAC, ex=ex)
     with pytest.raises(NeedsUser, match="devboost install voxtype"):
         vox.Voxtype().install(ctx)
@@ -294,7 +229,7 @@ def test_unattended_macos_installs_binary_and_model_but_never_the_app_bundle() -
 
 
 def test_macos_checksum_failure_installs_nothing() -> None:
-    ex = VoxEx(rules=[(("sh", "-c"), Result(1))])
+    ex = VoxtypeExecutor(rules=[(("sh", "-c"), Result(1))])
     with pytest.raises(InstallError, match="checksum"):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     assert not [c for c in ex.calls if c[0] == "install" or c[-1:] == ["app-bundle"]]
@@ -304,7 +239,7 @@ def test_macos_checksum_failure_installs_nothing() -> None:
 
 
 def test_fedora_installs_the_verified_rpm_deps_group_model_and_service() -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=FEDORA, ex=ex))
     script = _scripts(ex)[0]
     assert "voxtype-1.0.1-1.x86_64.rpm" in script
@@ -326,14 +261,14 @@ def test_fedora_installs_the_verified_rpm_deps_group_model_and_service() -> None
 
 
 def test_a_checksum_mismatch_installs_nothing() -> None:
-    ex = VoxEx(rules=[(("sh", "-c"), Result(1))])
+    ex = VoxtypeExecutor(rules=[(("sh", "-c"), Result(1))])
     with pytest.raises(InstallError, match="checksum"):
         vox.Voxtype().install(Ctx(os=FEDORA, ex=ex))
     assert ex.calls == [["sh", "-c", _scripts(ex)[0]]]
 
 
 def test_ubuntu_installs_the_verified_deb() -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=UBUNTU, ex=ex))
     script = _scripts(ex)[0]
     assert "voxtype_1.0.1-1_amd64.deb" in script
@@ -344,7 +279,7 @@ def test_ubuntu_installs_the_verified_deb() -> None:
 
 
 def test_linux_aarch64_installs_the_raw_binary(tmp_path: Path) -> None:
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=FEDORA_ARM, ex=ex))
     script = _scripts(ex)[0]
     assert "voxtype-1.0.1-linux-aarch64-cpu" in script
@@ -354,14 +289,14 @@ def test_linux_aarch64_installs_the_raw_binary(tmp_path: Path) -> None:
 
 
 def test_arch_uses_the_aur_package() -> None:
-    ex = VoxEx(present={"yay"})
+    ex = VoxtypeExecutor(present={"yay"})
     vox.Voxtype().install(Ctx(os=ARCH, ex=ex))
     assert ["yay", "-S", "--needed", "--noconfirm", "voxtype-bin"] in ex.calls
     assert _scripts(ex) == []
 
 
 def test_usermod_is_skipped_when_already_in_the_input_group() -> None:
-    ex = VoxEx(rules=[(("id", "-nG", "dev"), Result(0, "dev wheel input\n"))])
+    ex = VoxtypeExecutor(rules=[(("id", "-nG", "dev"), Result(0, "dev wheel input\n"))])
     vox.Voxtype().install(Ctx(os=FEDORA, ex=ex))
     assert not [c for c in ex.calls if "usermod" in c]
 
@@ -369,7 +304,7 @@ def test_usermod_is_skipped_when_already_in_the_input_group() -> None:
 def test_the_input_group_goes_to_the_sudo_user(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USER", "root")
     monkeypatch.setenv("SUDO_USER", "alice")
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=FEDORA, ex=ex))
     assert ["sudo", "usermod", "-aG", "input", "alice"] in ex.calls
 
@@ -380,7 +315,7 @@ def test_usermod_never_runs_for_root_or_an_odd_name(
 ) -> None:
     monkeypatch.setenv("USER", user)
     monkeypatch.setattr("getpass.getuser", lambda: user)
-    ex = VoxEx()
+    ex = VoxtypeExecutor()
     vox.Voxtype().install(Ctx(os=FEDORA, ex=ex))
     assert not [c for c in ex.calls if "usermod" in c]
     assert ex.calls[-1] == ["voxtype", "setup", "systemd"]  # the rest still runs
