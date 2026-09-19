@@ -108,6 +108,16 @@ def test_android_sdk_provisions_jdk_and_sdkmanager(
     assert any("sdkmanager" in " ".join(c) for c in ctx.ex.calls)  # type: ignore[attr-defined]
 
 
+def test_android_sdk_treats_an_empty_android_home_as_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exported-but-empty ANDROID_HOME must fall back to the default SDK path, same as
+    the macOS strategy (_AndroidSdkMac.sdk) — not Path(""), which is the cwd in disguise."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("ANDROID_HOME", "")
+    assert AndroidSdk()._home_sdk() == tmp_path / "Android" / "Sdk"
+
+
 def test_android_sdk_renames_nested_cmdline_tools(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

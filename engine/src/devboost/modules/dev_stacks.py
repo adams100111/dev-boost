@@ -406,7 +406,10 @@ class AndroidSdk(Module):
     _CMDLINE_VERSION = "13114758"
 
     def _home_sdk(self) -> Path:
-        return Path(os.environ.get("ANDROID_HOME", str(_home() / "Android" / "Sdk")))
+        # `or` (not .get's default) so ANDROID_HOME="" is treated as unset, same as the
+        # macOS strategy above (_AndroidSdkMac.sdk) — an exported-but-empty var must not
+        # resolve to Path(""), which is the cwd in disguise.
+        return Path(os.environ.get("ANDROID_HOME") or str(_home() / "Android" / "Sdk"))
 
     def verify(self, ctx: Ctx) -> bool:
         if (s := self.os_strategy(ctx)) is not None:
