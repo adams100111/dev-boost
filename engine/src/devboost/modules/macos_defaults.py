@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -185,15 +186,55 @@ def _restart(ctx: Ctx, procs: set[str]) -> None:
         ctx.ex.run(["killall", proc])  # not running → non-zero, harmless
 
 
+#: What `defaults read-type` prints (stderr, exit 1) when the key or its whole domain is
+#: absent — checked against macOS 27: "Could not find key 'k' in domain 'd'" and
+#: "Domain 'd' not found"; `defaults read` says "... does not exist". Nothing else means absent.
+_ABSENT = re.compile(r"Could not find key|Domain .* not found|does not exist")
+
+
+class _Unreadable(Exception):
+    """A key whose current state could not be established (neither a value nor absent)."""
+
+
+def _probe(ctx: Ctx, s: Setting) -> Value | None:
+    """The key's value, None only when `defaults` says it is absent; else _Unreadable.
+
+    `macdefaults.read` folds every failure into None ("absent"), and a revert turns absent
+    into `defaults delete` — so a transient failure recorded as absent would later wipe the
+    user's own value. The snapshot therefore uses this stricter probe.
+    """
+    typed = ctx.ex.run(["defaults", "read-type", s.domain, s.key])
+    if not typed.ok:
+        if typed.code == 1 and _ABSENT.search(f"{typed.stderr}\n{typed.stdout}"):
+            return None
+        detail = (typed.stderr or typed.stdout).strip() or f"exit {typed.code}"
+        raise _Unreadable(detail)
+    value = macdefaults.read(ctx, s.domain, s.key)
+    if value is None:  # the type was readable a moment ago, so this is a failure
+        raise _Unreadable("`defaults read` failed after `read-type` succeeded")
+    return value
+
+
 def apply(ctx: Ctx) -> list[str]:
-    """Snapshot unrecorded keys, write every key that differs, restart what changed."""
+    """Snapshot unrecorded keys, write every key that differs, restart what changed.
+
+    A key whose current state cannot be read is neither snapshotted nor written this run
+    (verify then fails, so the run reports it); every other key goes ahead.
+    """
     settings = _applicable(ctx)
-    current = {s.id: macdefaults.read(ctx, s.domain, s.key) for s in settings}
-    prior = load_snapshot()
+    current: Prior = {}
     for s in settings:
+        try:
+            current[s.id] = _probe(ctx, s)
+        except _Unreadable as exc:
+            log.warn(f"macos-defaults: cannot read {s.id} ({exc}) — not snapshotted or "
+                     "changed this run")
+    readable = [s for s in settings if s.id in current]
+    prior = load_snapshot()
+    for s in readable:
         prior.setdefault(s.id, current[s.id])
     save_snapshot(prior)  # before the first write, so a crash never loses a prior value
-    changed = [s for s in settings if current[s.id] != s.value]
+    changed = [s for s in readable if current[s.id] != s.value]
     for s in changed:
         macdefaults.write(ctx, s.domain, s.key, s.value)
     _restart(ctx, {r for s in changed if (r := s.restart) is not None})

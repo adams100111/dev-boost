@@ -269,3 +269,41 @@ def test_a_mistyped_snapshot_entry_is_refused(entry: object) -> None:
     path.write_text(json.dumps({"version": 1, "prior": {"a:b": entry}}), encoding="utf-8")
     with pytest.raises(md.SnapshotError, match="not a valid"):
         md.load_snapshot()
+
+
+def test_a_missing_domain_counts_as_absent() -> None:
+    ex = PrefsExecutor(rules=[(
+        ("read-type", "com.apple.desktopservices"),
+        Result(1, "", "Domain 'com.apple.desktopservices' not found.\n"),
+    )])
+    md.apply(_ctx(ex))
+    assert md.load_snapshot()["com.apple.desktopservices:DSDontWriteUSBStores"] is None
+
+
+def test_a_failed_read_is_never_recorded_as_absent() -> None:
+    # A transient failure must not become "absent": revert would then delete the user's value.
+    ex = PrefsExecutor(
+        prefs={(DOCK, "tilesize"): ("integer", "64")},
+        rules=[(("read-type", DOCK, "tilesize"), Result(2, "", "cfprefsd not responding\n"))],
+    )
+    changed = md.apply(_ctx(ex))
+    assert "com.apple.dock:tilesize" not in changed
+    assert "com.apple.dock:tilesize" not in md.load_snapshot()
+    assert ex.prefs[(DOCK, "tilesize")] == ("integer", "64")  # not written either
+    assert "com.apple.dock:autohide" in changed  # the other keys still go ahead
+    assert md.verify_all(_ctx(ex)) is False
+    ex.rules.clear()  # the next run records the real prior
+    md.apply(_ctx(ex))
+    assert md.load_snapshot()["com.apple.dock:tilesize"] == Value("int", 64)
+    md.revert(_ctx(ex))
+    assert ex.prefs == {(DOCK, "tilesize"): ("integer", "64")}
+
+
+def test_a_failed_value_read_after_a_good_type_read_is_unreadable() -> None:
+    ex = PrefsExecutor(
+        prefs={(DOCK, "tilesize"): ("integer", "64")},
+        rules=[(("defaults", "read", DOCK, "tilesize"), Result(1))],
+    )
+    md.apply(_ctx(ex))
+    assert "com.apple.dock:tilesize" not in md.load_snapshot()
+    assert ex.prefs[(DOCK, "tilesize")] == ("integer", "64")
