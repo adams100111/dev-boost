@@ -52,7 +52,8 @@ would otherwise look installed.
 
 More precisely: `--update` on macOS runs `brew upgrade` / `brew upgrade --cask` for every
 module whose whole macOS install is exactly one Homebrew formula or cask — Zed included,
-since its macOS install is the `zed` cask. A cask that updates itself (brew's
+since its macOS install is the `zed` cask, and so is every single-cask desktop app
+(AeroSpace, Raycast, Stats, …). An app it already installed is never re-opened. A cask that updates itself (brew's
 `auto_updates`: Zed, Ghostty, Obsidian, VS Code, Tailscale, …) is skipped by that upgrade
 step, but the rest of the module's own logic still runs on an `--update` pass: for Zed, the
 config merge always runs, and the default-apps step can still report `blocked` if the run

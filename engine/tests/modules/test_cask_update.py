@@ -182,3 +182,30 @@ def test_a_caskless_app_does_not_require_homebrew() -> None:
     # Homebrew (and the CLT under it) only matter for installing a cask.
     assert Homebrew not in _NoCaskApp.requires and Flatpak in _NoCaskApp.requires
     assert Homebrew in _App.requires and Flatpak in _App.requires
+
+
+def test_update_admits_every_cask_app_on_macos_only() -> None:
+    """Minor 1: CaskApp modules (CaskInstall, which wraps BrewCask) are exactly one cask,
+    so `--update` refreshes them like any BrewCask module; Linux plans never see them."""
+    from devboost.core.registry import load
+    from devboost.modules._cask import CaskApp
+
+    modules = load()
+    cask_apps = sorted(n for n, cls in modules.items() if issubclass(cls, CaskApp))
+    assert "aerospace" in cask_apps and "keka" in cask_apps
+    assert all(_brew_managed_on_macos(modules[n]) for n in cask_apps)
+    plan = [PlannedModule(n) for n in cask_apps]
+    assert [p.name for p in _apply_update_filter(plan, modules, MAC)] == cask_apps
+    assert _apply_update_filter(plan, modules, FEDORA) == []
+
+
+def test_update_of_a_cask_app_skips_self_updating_casks_and_upgrades_the_rest() -> None:
+    from devboost.modules import macos_apps as apps
+
+    ex = _Brew(installed={"stats", "keka"}, auto_updates={"stats"})
+    apps.Stats().install(Ctx(os=MAC, ex=ex, force=True))
+    apps.Keka().install(Ctx(os=MAC, ex=ex, force=True))
+    assert [c for c in ex.calls if c[:2] == ["brew", "upgrade"]] == [
+        ["brew", "upgrade", "--cask", "keka"]
+    ]
+    assert not [c for c in ex.calls if c[:2] == ["brew", "install"] or c[0] == "open"]

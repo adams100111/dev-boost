@@ -124,9 +124,12 @@ def _brew_managed_on_macos(cls: type[Module]) -> bool:
     """True when a module's whole macOS install is one Homebrew formula or cask.
 
     `brew upgrade` is safe for all of these; custom macOS strategies (the Android SDK,
-    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux.
+    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux. A
+    `CaskApp` (`CaskInstall`) is one cask too: it wraps `BrewCask`, so a cask that updates
+    itself is skipped, and a forced re-run never re-opens the app (M5-D6).
     """
     from devboost.modules._brew import BrewCask, BrewFormula
+    from devboost.modules._cask import CaskInstall
     from devboost.modules._pkgmodule import PackageModule
     from devboost.modules.apps import FlatpakApp
 
@@ -134,7 +137,7 @@ def _brew_managed_on_macos(cls: type[Module]) -> bool:
         return cls.cask is not None
     if issubclass(cls, PackageModule):
         return True
-    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask))
+    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask, CaskInstall))
 
 
 def _apply_update_filter(
