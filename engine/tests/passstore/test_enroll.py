@@ -321,3 +321,12 @@ def test_no_root_gpg_id_is_genesis_only_on_an_empty_store(tmp_path: Path, what: 
     with pytest.raises(ConfigError, match="devboost pass sync --resolve"):
         enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
     assert not any(c[:2] == ["pass", "init"] for c in ex.calls)
+
+
+def test_a_revoked_name_is_never_reused(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _revoked(store, "lap", FP_OLD)
+    ex = _ex(colons("sec", FP_NEW, UID_NEW))  # a fresh key, but the old name
+    with pytest.raises(ConfigError, match="'lap'"):
+        enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    assert store.record("pending", "lap") is None

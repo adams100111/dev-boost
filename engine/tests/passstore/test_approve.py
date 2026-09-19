@@ -248,8 +248,10 @@ def test_approve_refuses_name_with_path_separator(tmp_path: Path) -> None:
     (s.meta / "pending").mkdir(parents=True)
     (s.meta / "pending" / "evil.json").write_text(rec.model_dump_json(), encoding="utf-8")
     ex = _ex()
-    with pytest.raises(ConfigError, match="path separator"):
+    # The record claims a name other than its file's, so it is never loaded (P-R19).
+    with pytest.raises(ConfigError, match="no pending request"):
         approve.approve(_ctx(ex), s, "desk", "../evil", lambda r: True)
+    assert approve.approve(_ctx(ex), s, "desk", None, lambda r: True) == []
     assert _no_pass_init(ex)
 
 

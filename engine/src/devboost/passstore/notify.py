@@ -8,14 +8,19 @@ import re
 from devboost.core.osinfo import OsInfo
 from devboost.model import Ctx
 
-#: C0/C1 control characters and the bidi overrides/isolates that can disguise text.
-_UNSAFE = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
+#: C0/C1 control characters, zero-width marks and the bidi overrides/isolates that can
+#: disguise text.
+_UNSAFE = re.compile(
+    "[\x00-\x1f\x7f-\x9f\u200b-\u200f\u061c\ufeff\u202a-\u202e\u2066-\u2069]"
+)
 
 
 def clean(text: str, limit: int = 64) -> str:
     """A remote-sourced string (a record's name / os) made safe to show in a notification:
-    no control characters, no leading `-` (never read as an option), at most *limit* chars."""
-    return _UNSAFE.sub("", text).strip().lstrip("-").strip()[:limit]
+    no control / invisible characters, no leading `-` (never read as an option), at most
+    *limit* chars, and `&`, `<`, `>` escaped (notify-send bodies are markup)."""
+    short = _UNSAFE.sub("", text).strip().lstrip("-").strip()[:limit]
+    return short.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def ntfy(ctx: Ctx, title: str, body: str, *, priority: str = "default") -> bool:

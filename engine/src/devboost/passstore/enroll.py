@@ -114,8 +114,12 @@ def publish(ctx: Ctx, store: Store, message: str) -> None:
 
 
 def _name_free(store: Store, name: str, fp: str | None) -> None:
-    """Refuse to file *name* for key *fp* (None: no key yet) when the name belongs to another
-    key, the key was revoked (I1), or the key is registered under another name."""
+    """Refuse to file *name* for key *fp* (None: no key yet) when the name belongs to a
+    revoked device or another key, the key was revoked (I1), or the key is registered under
+    another name."""
+    if store.record("revoked", name) is not None:
+        raise ConfigError(f"pass: device name {name!r} belongs to a revoked device — choose "
+                          "another: devboost pass enroll --name <name>")
     kinds: tuple[Kind, ...] = ("devices", "pending")
     for kind in kinds:
         rec = store.record(kind, name)

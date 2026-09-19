@@ -137,3 +137,9 @@ def test_clean_strips_control_chars_and_leading_dashes_and_caps() -> None:
     assert notify.clean(" -lap\x1b[31m\nx\u202e ") == "lap[31mx"
     assert notify.clean("a" * 500) == "a" * 64
     assert notify.clean("b" * 500, limit=10) == "b" * 10
+
+
+def test_clean_escapes_markup_and_strips_zero_width_and_bidi() -> None:
+    assert notify.clean("<b>a&b</b>") == "&lt;b&gt;a&amp;b&lt;/b&gt;"
+    hidden = "d\u200be\u200fs\u061ck\ufeff\u202a\u2066"
+    assert notify.clean(hidden) == "desk"

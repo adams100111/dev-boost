@@ -70,10 +70,16 @@ class Store:
         if not p.exists():
             return None
         try:
-            return DeviceRecord.model_validate_json(p.read_text(encoding="utf-8"))
+            rec = DeviceRecord.model_validate_json(p.read_text(encoding="utf-8"))
         except (ValidationError, UnicodeDecodeError):
             log.warn(f"pass: ignoring malformed {p}")
             return None
+        if rec.name != name or rec.name != p.stem:
+            # Callers act on rec.name (approve / revoke / notices): it must be the file's name,
+            # or a pushed `evil.json` could claim to be another device.
+            log.warn(f"pass: ignoring {p} — it claims the name {rec.name!r}")
+            return None
+        return rec
 
     def records(self, kind: Kind) -> list[DeviceRecord]:
         d = self.meta / kind

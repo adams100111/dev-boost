@@ -84,3 +84,13 @@ def test_malformed_record_is_skipped_with_a_warning(tmp_path: Path) -> None:
     (s.meta / "devices" / "bad.json").write_bytes(b"\xff{")
     s.write_record("devices", DeviceRecord(name="ok", fingerprint=FP, os="fedora"), "K")
     assert [r.name for r in s.records("devices")] == ["ok"]
+
+
+def test_record_whose_name_differs_from_its_file_is_skipped(tmp_path: Path) -> None:
+    """P-R19: devices/evil.json claiming "name": "desk" must never be taken for desk."""
+    s = _store(tmp_path)
+    s.write_record("devices", DeviceRecord(name="desk", fingerprint=FP, os="fedora"), "K")
+    spoof = DeviceRecord(name="desk", fingerprint="E" * 40, os="fedora")
+    (s.meta / "devices" / "evil.json").write_text(spoof.model_dump_json(), encoding="utf-8")
+    assert s.record("devices", "evil") is None
+    assert [(r.name, r.fingerprint) for r in s.records("devices")] == [("desk", FP)]

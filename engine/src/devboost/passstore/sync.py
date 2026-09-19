@@ -243,9 +243,11 @@ def _forget_revoked(ctx: Ctx, store: Store) -> None:
     if not revoked:
         return
     try:
-        present = gpg.public_fingerprints(ctx) & revoked
+        # Never this device's own key (a revoked device keeps its secret key; gpg refuses).
+        own = {k.fingerprint.upper() for k in gpg.secret_keys(ctx)}
+        present = (gpg.public_fingerprints(ctx) & revoked) - own
     except DevbootError as exc:
-        _log(f"listing public keys failed: {exc}")
+        _log(f"listing keys failed: {exc}")
         return
     for fp in sorted(present):
         res = gpg.delete_public_key(ctx, fp)

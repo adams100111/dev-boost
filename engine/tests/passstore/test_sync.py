@@ -371,3 +371,25 @@ def test_notifications_sanitize_remote_names(tmp_path: Path) -> None:
     sync.run(_ctx(ex), s, "desk")
     body = _notifications(ex)[0][-1]
     assert body.startswith("x[2Jy (os)") and "\x1b" not in body
+
+
+def test_tripwire_trusts_no_spoofed_record_name(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    _device(s, "desk", FP_ME)
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")  # seed
+    _list(s, FP_ME, FP_EVIL)
+    spoof = DeviceRecord(name="desk", fingerprint=FP_EVIL, os="fedora")
+    (s.meta / "devices" / "evil.json").write_text(spoof.model_dump_json(), encoding="utf-8")
+    sync.run(_ctx(ex), s, "desk")
+    assert not any("revoke desk" in c[-1] for c in _notifications(ex))
+
+
+def test_forget_revoked_skips_this_devices_own_key(tmp_path: Path) -> None:
+    """A revoked device keeps its own secret key: never try (and fail) to delete it."""
+    s = _store(tmp_path)
+    s.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_ME, os="fedora"), "K")
+    s.move("devices", "revoked", "desk")
+    ex = _ex((("--list-keys",), Result(0, colons("pub", FP_ME))))
+    sync.run(_ctx(ex), s, "desk")
+    assert not any("--delete-keys" in c for c in ex.calls)
