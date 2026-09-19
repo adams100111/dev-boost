@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -26,9 +27,9 @@ from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask
 from devboost.modules._credentials import is_interactive
-from devboost.modules._pending import MacosPending
+from devboost.modules._launchd_jobs import job_scheduled, schedule_job
 from devboost.modules.macos import Homebrew
-from devboost.modules.secrets import bundle_path, key_path
+from devboost.modules.secrets import age_key, bundle_path
 
 
 def _secret(ctx: Ctx, field: str) -> str | None:
@@ -36,12 +37,17 @@ def _secret(ctx: Ctx, field: str) -> str | None:
 
     Server modules must not fail `devboost server` just because an optional secret
     (a Tailscale auth key, B2 credentials) wasn't provisioned — they degrade to a
-    printed next-step instead.
+    printed next-step instead. The key comes from `age_key`: the key file, or on macOS the
+    login keychain (M1), materialized 0600 only for the decrypt; off macOS it is exactly
+    the configured key path, as before.
     """
-    try:
-        data = age.decrypt(ctx, bundle_path(), key_path())
-    except SecretsError:
-        return None
+    with age_key(ctx) as key:
+        if key is None:
+            return None
+        try:
+            data = age.decrypt(ctx, bundle_path(), key)
+        except SecretsError:
+            return None
     return data.get(field)
 
 
@@ -344,15 +350,110 @@ def _devboost_dir() -> Path:
     return Path(os.environ["HOME"]) / ".config" / "devboost"
 
 
+_B2_FIELDS = ("B2_ACCOUNT_ID", "B2_ACCOUNT_KEY", "RESTIC_REPOSITORY", "RESTIC_PASSWORD")
+_B2_JOB = "restic-b2"
+
+#: The macOS job: the Linux unit's ExecStartPre=- / ExecStart / ExecStartPost, in sh.
+B2_MAC_SCRIPT = (
+    'set -a; . "$HOME/.config/devboost/restic-b2.env"; set +a; '
+    "restic init >/dev/null 2>&1; "
+    'restic backup --files-from "$HOME/.config/devboost/restic-include" && '
+    "restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune"
+)
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text``, readable by the owner only, atomically.
+
+    The content goes to a fresh 0600 temp file in the same directory (``mkstemp`` uses
+    O_EXCL, so it never opens an existing file or follows a link), is fsynced, then
+    renamed over ``path``. There is no moment when the secrets sit in a looser file, a
+    reader never sees a half-written one, and a symlink planted at ``path`` is replaced
+    rather than written through.
+    """
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fd = -1
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _b2_prepare(ctx: Ctx, *, shell_quoted: bool = False) -> Path | None:
+    """Write restic-include (once) and the 0600 env file; None when a secret is missing.
+
+    ``shell_quoted`` quotes values for ``sh`` to source (macOS); systemd's
+    EnvironmentFile format (Linux) is unchanged. Secrets live only in this file, never
+    in a unit, a plist or an argv.
+    """
+    values: dict[str, str] = {}
+    for field in _B2_FIELDS:
+        value = _secret(ctx, field)
+        if not value:
+            log.warn(
+                "restic-b2: installed restic, but B2/restic secrets are missing — add "
+                "B2_ACCOUNT_ID, B2_ACCOUNT_KEY, RESTIC_REPOSITORY, RESTIC_PASSWORD to the "
+                "secrets bundle to enable the nightly timer"
+            )
+            return None
+        values[field] = value
+    d = _devboost_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    include = d / "restic-include"
+    if not include.exists():  # editable default; keep what the user tuned
+        home = Path(os.environ["HOME"])
+        include.write_text(f"{home}/repos\n{home}/.config\n", encoding="utf-8")
+    envfile = d / "restic-b2.env"
+    _write_private(
+        envfile,
+        "".join(f"{k}={shlex.quote(v) if shell_quoted else v}\n" for k, v in values.items()),
+    )
+    return envfile
+
+
+@dataclass(frozen=True)
+class _MacResticB2:
+    """macOS: brew restic; with secrets, a nightly launchd agent (plan D7).
+
+    The agent sources the 0600 env file at run time, so no secret is in its plist.
+    """
+
+    uses_brew: ClassVar[bool] = True
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (
+            pkg.installed(ctx, "restic")
+            and (_devboost_dir() / "restic-b2.env").is_file()
+            and job_scheduled(ctx, _B2_JOB, B2_MAC_SCRIPT, "daily")
+        )
+
+    def install(self, ctx: Ctx) -> None:
+        if not pkg.installed(ctx, "restic"):
+            pkg.install(ctx, "restic")
+        if _b2_prepare(ctx, shell_quoted=True) is None:
+            return
+        schedule_job(ctx, _B2_JOB, B2_MAC_SCRIPT, "daily")
+
+
 @register
 class ResticB2(Module):
     name = "restic-b2"
     category = "server"
-    description = "Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer."
+    description = (
+        "Offsite encrypted backups — restic → Backblaze B2, nightly "
+        "(systemd timer / launchd agent)."
+    )
     profiles = ("server",)
-    per_os = OsMap(macos=MacosPending(
-        "M4", "run the restic → B2 backup by hand; the nightly launchd timer lands in M4"
-    ))
+    requires = (Homebrew,)  # macOS brews restic (M4-D9); Linux plans drop Homebrew
+    per_os = OsMap(macos=_MacResticB2())
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
@@ -373,31 +474,10 @@ class ResticB2(Module):
             pkg.install(ctx, "restic")
         # Destination + credentials come from the age bundle. Without them we can't run an
         # offsite backup, so install the binary and stop — don't wire a timer to nowhere.
-        b2_id = _secret(ctx, "B2_ACCOUNT_ID")
-        b2_key = _secret(ctx, "B2_ACCOUNT_KEY")
-        repo = _secret(ctx, "RESTIC_REPOSITORY")
-        password = _secret(ctx, "RESTIC_PASSWORD")
-        if not (b2_id and b2_key and repo and password):
-            log.warn(
-                "restic-b2: installed restic, but B2/restic secrets are missing — add "
-                "B2_ACCOUNT_ID, B2_ACCOUNT_KEY, RESTIC_REPOSITORY, RESTIC_PASSWORD to the "
-                "secrets bundle to enable the nightly timer"
-            )
+        envfile = _b2_prepare(ctx)
+        if envfile is None:
             return
-        d = _devboost_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        include = d / "restic-include"
-        if not include.exists():  # editable default; keep what the user tuned
-            home = Path(os.environ["HOME"])
-            include.write_text(f"{home}/repos\n{home}/.config\n", encoding="utf-8")
-        # Secrets live in a 0600 EnvironmentFile, never inline in the unit.
-        envfile = d / "restic-b2.env"
-        envfile.write_text(
-            f"B2_ACCOUNT_ID={b2_id}\nB2_ACCOUNT_KEY={b2_key}\n"
-            f"RESTIC_REPOSITORY={repo}\nRESTIC_PASSWORD={password}\n",
-            encoding="utf-8",
-        )
-        envfile.chmod(0o600)
+        include = envfile.parent / "restic-include"
         service = (
             "[Unit]\nDescription=devboost restic → B2 backup\n\n[Service]\nType=oneshot\n"
             f"EnvironmentFile={envfile}\n"
