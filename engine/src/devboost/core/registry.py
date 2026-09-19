@@ -42,6 +42,10 @@ def _validate(modules: dict[str, type[Module]]) -> None:
             dep_name = getattr(dep, "name", None)
             if not dep_name or dep_name not in modules:
                 raise ManifestError(f"module {name!r} requires unknown module {dep!r}")
+        for dep in cls.after:
+            dep_name = getattr(dep, "name", None)
+            if not dep_name or dep_name not in modules:
+                raise ManifestError(f"module {name!r} has unknown 'after' module {dep!r}")
     _check_cycles(modules)
 
 
@@ -55,7 +59,7 @@ def _check_cycles(modules: dict[str, type[Module]]) -> None:
         if name in visiting:
             raise DependencyCycle(" -> ".join((*stack, name)))
         visiting.add(name)
-        for dep in modules[name].requires:
+        for dep in (*modules[name].requires, *modules[name].after):
             walk(dep.name, (*stack, name))
         visiting.discard(name)
         done.add(name)

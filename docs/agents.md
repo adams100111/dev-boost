@@ -18,7 +18,7 @@ dev-boost reproduces your AI coding-agent setup across devices. Install a profil
 
 `devboost install claude` / `codex` (both already in `full`). Each reproduces your marketplaces,
 enabled plugins, skills (the shared `~/.agents/skills`), and MCP servers. Integration secrets (e.g.
-CLICKUP) come from your `pass` store — set `DEVBOOST_PASS_REPO` (see the security-cli profile). You
+CLICKUP) come from your `pass` store — every workstation has it (`base`); see [pass.md](pass.md). You
 sign in to each CLI once per box.
 
 ## Pi
@@ -52,14 +52,13 @@ orchestrates Claude/Codex/etc. in parallel git worktrees — bring your own agen
 
 | Variable | Module(s) | Default | Meaning |
 |---|---|---|---|
-| `DEVBOOST_PASS_REPO` | `pass-store` | — | git URL of your `pass` store to clone (claude/codex secrets) |
-| `DEVBOOST_PASS_GPG_ID` | `pass-store` | — | GPG id to initialize a new store (when not cloning) |
+| `DEVBOOST_PASS_REPO` | `pass-store` | `adams100111/password-store` | overrides `pass_repo` in `~/.config/devboost/config.toml` |
 | `DEVBOOST_HARNESS_REPO` | `pi-harness` | `adams100111/agent-harness` | the Pi harness repo to bootstrap |
 | `DEVBOOST_HARNESS_REF` | `pi-harness` | `main` | branch / tag / SHA of the harness to install |
 | `DEVBOOST_ORCA_VERSION` | `orca-ide` | latest | pin a specific Orca release (Fedora/Ubuntu) |
 | `DEVBOOST_ORCA_PAIRING_ADDRESS` | `orca-serve` | Tailscale IP | host clients dial to pair |
 | `DEVBOOST_ORCA_PORT` | `orca-serve` | `6768` | port `orca-ide serve` binds |
-| `DEVBOOST_NTFY_URL` | `claude-notify` | — | ntfy topic for phone push on Claude task-done |
+| `DEVBOOST_NTFY_URL` | `claude-notify`, `pass-store` | — | ntfy topic for phone push on Claude task-done |
 
 ## First-run authentication (once per box — not automatable)
 

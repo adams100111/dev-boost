@@ -11,9 +11,14 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from devboost.core.errors import DevbootError
 from devboost.exec.primitives import age
 from devboost.model import Ctx
 from devboost.modules.secrets import age_key, bundle_path
+from devboost.passstore import approve as pass_approve
+from devboost.passstore import enroll as pass_enroll
+from devboost.passstore import paths as pass_paths
+from devboost.passstore.layout import Store
 
 # Binaries that must be present on the host before the engine can run.
 # Note: jq is NOT used by the Python engine; curl is required (chezmoi, uv, nerd-fonts,
@@ -89,22 +94,11 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
         )
     checks.append(Check("secrets", state in ("ok", "missing"), state))
 
-    # pass-config: informational only (ok=True) — pass is opt-in (claude / security-cli profiles)
-    # and doctor doesn't know the selected profile, so it never blocks here; PassStore enforces at
-    # install time. Surfaces a forgotten DEVBOOST_PASS_REPO before the install fails.
-    if os.environ.get("DEVBOOST_PASS_REPO"):
-        pass_detail = "DEVBOOST_PASS_REPO set (pass store cloned at install)"
-    elif os.environ.get("DEVBOOST_PASS_GPG_ID"):
-        pass_detail = "DEVBOOST_PASS_GPG_ID set (new store initialized at install)"
-    else:
-        pass_detail = (
-            "not set — pass-backed secrets (claude/security-cli profile) will fail to "
-            "provision; set DEVBOOST_PASS_REPO"
-        )
-    checks.append(Check("pass-config", True, pass_detail))
+    checks.extend(_pass_checks(ctx))
 
     # pi-login: informational only (ok=True) — Pi auth is a manual one-time `pi /login` per box
-    # (like pass-config, doctor never blocks on it). Surfaces the reminder until auth.json exists.
+    # (informational, like the `pass` check — doctor never blocks on it). Surfaces the reminder
+    # until auth.json exists.
     auth_json = Path(os.environ["HOME"]) / ".pi" / "agent" / "auth.json"
     if auth_json.exists():
         pi_detail = "Pi authenticated (~/.pi/agent/auth.json present)"
@@ -117,6 +111,41 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
     if ctx.os.family == "macos":
         checks.append(_permissions_check(ctx))
     return checks
+
+
+def _pass_checks(ctx: Ctx) -> list[Check]:
+    """pass: enrollment state (informational) + rotation backlog after a revoke (blocking).
+
+    Never raises: a bad config, a failing gpg or a malformed store file is a failing check.
+    """
+    try:
+        return _pass_state(ctx)
+    except (DevbootError, OSError) as exc:
+        return [Check("pass", False, str(exc))]
+
+
+def _pass_state(ctx: Ctx) -> list[Check]:
+    store = Store(pass_paths.store_dir())
+    if not store.is_clone():
+        return [Check("pass", True, f"no store at {store.root} yet — `devboost install` "
+                                    f"clones {pass_paths.pass_repo()}")]
+    device = pass_paths.device_name()
+    acc = pass_enroll.local_access(ctx, store, device)
+    name = acc.record.name if acc.record else device
+    state = {
+        "enrolled": f"{name} is enrolled",
+        "pending": f"{name} is waiting for approval — on an enrolled device: "
+                   f"devboost pass approve {name}",
+        "new": "this device is not enrolled — run `devboost pass enroll`",
+        "genesis": "the store is empty — run `devboost pass enroll` to initialise it",
+        "no-store": "no store",
+    }[acc.state]
+    todo = pass_approve.unrotated(ctx, store)
+    rot = ("nothing awaiting rotation" if not todo else
+           f"{len(todo)} entries are still readable by a revoked device's key (git history) "
+           "— rotate each with `pass edit <entry>`: "
+           + ", ".join(f"{u.entry} ({u.device})" for u in todo))
+    return [Check("pass", True, state), Check("pass-rotation", not todo, rot)]
 
 
 def _permissions_check(ctx: Ctx) -> Check:

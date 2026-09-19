@@ -11,6 +11,8 @@ from devboost.core.errors import InstallError
 from devboost.core.registry import register
 from devboost.media.catalog import herdr_pin
 from devboost.model import Ctx, Module
+from devboost.modules._pass import pass_fields, pass_show
+from devboost.modules.pass_store import PassStore
 
 
 @register
@@ -86,6 +88,7 @@ class HerdrPlugins(Module):
     category = "optional-agents"
     description = "Curated, pinned herdr plugin set."
     requires = (Herdr,)
+    after = (PassStore,)
     profiles = ("optional-agents", "brain-tools")
 
     def verify(self, ctx: Ctx) -> bool:
@@ -100,13 +103,16 @@ class HerdrPlugins(Module):
         self._configure_notify(ctx)
 
     def _configure_notify(self, ctx: Ctx) -> None:
-        """Provision the Telegram notify plugin from env, or skip with a warning.
+        """Provision the Telegram notify plugin from pass (devboost/herdr-telegram), else env,
+        else skip.
 
         Var names (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) confirmed against the
         agent-telegram-notify README during the skim step; they match verbatim.
         """
-        token = os.environ.get("DEVBOOST_HERDR_TELEGRAM_TOKEN")
-        chat = os.environ.get("DEVBOOST_HERDR_TELEGRAM_CHAT_ID")
+        stored = pass_show(ctx, "devboost/herdr-telegram", who="herdr-plugins")
+        fields = pass_fields(stored) if stored else {}
+        token = fields.get("token") or os.environ.get("DEVBOOST_HERDR_TELEGRAM_TOKEN")
+        chat = fields.get("chat_id") or os.environ.get("DEVBOOST_HERDR_TELEGRAM_CHAT_ID")
         if not (token and chat):
             log.warn(
                 "herdr-plugins: Telegram token/chat unset — notify unconfigured (non-blocking)"

@@ -131,3 +131,14 @@ Modules obtain a GitHub token from exactly one place — `_credentials.github_cr
 
 The first source that yields a complete set wins; callers never raise on failure, since
 `ssh-setup` and `obsidian-sync` treat `None` as "try again next run".
+
+## Which tool holds what
+
+| Secret | Lives in | Why |
+|---|---|---|
+| GitHub access (git over HTTPS, API) | `gh` (or the provisioned PAT) | first thing a box needs; `gh auth login` is the fallback |
+| Every other credential (API tokens, bot tokens, …) | `pass` — see [pass.md](pass.md) | per-device keys, auto-sync, revocable |
+| Bootstrap-only values (`GIT_USER`, `GIT_EMAIL`, `GITHUB_PAT`) | the `age` bundle | zero-touch installs before anything else exists |
+
+The age bundle never carries a GPG key: each device makes its own and is approved from
+another device.

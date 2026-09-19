@@ -13,7 +13,8 @@ from devboost.exec.primitives import gpu
 from devboost.model import Ctx
 from devboost.modules.base import Rpmfusion
 from devboost.modules.hardware import NvidiaAkmod, NvidiaContainerToolkit
-from devboost.modules.optional import Neovim, Pass
+from devboost.modules.optional import Neovim
+from devboost.modules.pass_store import Pass
 from devboost.modules.system import (
     BtrfsAssistant,
     Btrfsmaintenance,
@@ -250,7 +251,12 @@ def test_nvidia_container_toolkit_configures_runtime() -> None:
     assert ["sudo", "nvidia-ctk", "runtime", "configure", "--runtime=docker"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
-def test_optional_and_security_install() -> None:
+def test_optional_and_security_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Pass writes gpg-agent.conf — keep it off the real ~/.gnupg.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GNUPGHOME", str(tmp_path / ".gnupg"))
     ctx = _ctx()
     Neovim().install(ctx)
     Pass().install(ctx)

@@ -11,6 +11,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import mise
 from devboost.model import Ctx, Module
 from devboost.modules.mise import Mise
+from devboost.modules.pass_store import PassStore
 from devboost.modules.secrets import Secrets
 
 DEFAULT_HARNESS_REPO = "adams100111/agent-harness"
@@ -25,6 +26,7 @@ class PiHarness(Module):
         "Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config)."
     )
     requires = (Mise, Secrets)
+    after = (PassStore,)
     profiles = ("pi",)
 
     def verify(self, ctx: Ctx) -> bool:

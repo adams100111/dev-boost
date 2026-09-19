@@ -1,4 +1,4 @@
-"""Ubuntu/Debian path tests for optional-editors and security-cli modules."""
+"""Ubuntu/Debian path tests for optional-editors modules."""
 
 from __future__ import annotations
 
@@ -6,11 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsInfo
-from devboost.exec.executor import FakeExecutor, Result
+from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
-from devboost.modules.optional import JetbrainsToolbox, Neovim, Pass, PassStore
+from devboost.modules.optional import JetbrainsToolbox, Neovim
 
 UBUNTU = OsInfo(distro="ubuntu", family="debian", arch="x86_64")
 
@@ -87,88 +86,3 @@ def test_jetbrains_toolbox_verify_checks_bin(
     assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is False
     tb_bin.write_text("#!/bin/sh", encoding="utf-8")
     assert JetbrainsToolbox().verify(Ctx(os=UBUNTU, ex=FakeExecutor())) is True
-
-
-# ---------------------------------------------------------------------------
-# Pass
-# ---------------------------------------------------------------------------
-
-
-def test_pass_installs_via_apt_on_ubuntu() -> None:
-    ctx = _ctx()
-    Pass().install(ctx)
-    assert ["sudo", "apt-get", "install", "-y", "pass"] in ctx.ex.calls  # type: ignore[attr-defined]
-
-
-def test_pass_verify_uses_pass_binary() -> None:
-    ctx = _ctx(present={"pass"})
-    assert Pass().verify(ctx) is True
-
-
-def test_pass_no_dnf_calls_on_ubuntu() -> None:
-    ctx = _ctx()
-    Pass().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert not any("dnf" in " ".join(c) for c in calls)
-
-
-# ---------------------------------------------------------------------------
-# PassStore — cross-distro git clone / pass init
-# ---------------------------------------------------------------------------
-
-
-def test_pass_store_clones_repo_on_ubuntu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("DEVBOOST_PASS_REPO", "git@github.com:user/pass-store.git")
-    ctx = _ctx()
-    PassStore().install(ctx)
-    calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert any(c[:2] == ["git", "clone"] for c in calls)
-
-
-def test_pass_store_inits_with_gpg_id_on_ubuntu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
-    monkeypatch.setenv("DEVBOOST_PASS_GPG_ID", "ABCDEF12")
-    ctx = _ctx()
-    PassStore().install(ctx)
-    assert ["pass", "init", "ABCDEF12"] in ctx.ex.calls  # type: ignore[attr-defined]
-
-
-def test_pass_store_raises_when_no_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # neither DEVBOOST_PASS_REPO nor DEVBOOST_PASS_GPG_ID set → hard-fail with an actionable error
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
-    monkeypatch.delenv("DEVBOOST_PASS_GPG_ID", raising=False)
-    ctx = _ctx()
-    with pytest.raises(ConfigError, match="DEVBOOST_PASS_REPO"):
-        PassStore().install(ctx)
-
-
-def test_pass_store_raises_when_clone_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # DEVBOOST_PASS_REPO set but the clone fails → hard-fail (no silent empty store)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("DEVBOOST_PASS_REPO", "git@github.com:user/pass-store.git")
-    ctx = _ctx(scripts={"git": Result(1)})
-    with pytest.raises(ConfigError, match="cloning"):
-        PassStore().install(ctx)
-
-
-def test_pass_store_raises_when_pass_init_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # DEVBOOST_PASS_GPG_ID set but `pass init` errors → hard-fail (no silent broken store)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
-    monkeypatch.setenv("DEVBOOST_PASS_GPG_ID", "ABCDEF12")
-    ctx = _ctx(scripts={"pass": Result(1)})
-    with pytest.raises(ConfigError, match="pass init"):
-        PassStore().install(ctx)

@@ -25,3 +25,15 @@ never persistent infra). The `aspire-gc` timer runs `dev gc` hourly.
 ## Dry-run a rebuild (no hardware)
 Rehearse the whole flow in a VM first: [vm-testing.md](vm-testing.md) —
 `scripts/vm-test.sh engine --iso Fedora-Live.iso` (engine) or `scripts/vm-test.sh usb …` (full USB).
+
+## Lost (or stolen) a laptop
+1. **First, cut its GitHub access**: revoke its `gh auth` token / rotate the PAT and remove
+   its SSH key in GitHub settings. Write access to the store repo is the trust root — while
+   the laptop can still push, it could re-list its own key (see
+   [pass.md](pass.md#trust-root-what-revoke-guarantees)).
+2. On any other enrolled workstation: `devboost pass revoke <laptop>` — removes its key
+   and re-encrypts the store. Its key can never be re-enrolled, under any name, and every
+   device drops its public key on the next sync.
+3. Rotate every entry it printed (change the secret at its source, then `pass edit
+   <entry>`); `devboost doctor` lists what is left until all are done.
+Lost **every** device? Restore your offline key backup — see [pass.md](pass.md#if-every-device-is-lost).

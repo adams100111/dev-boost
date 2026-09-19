@@ -9,6 +9,7 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.resources import resource_path, resource_root
 from devboost.model import Ctx
+from devboost.passstore.layout import RotationEntry, Store
 
 
 def test_doctor_all_ok_when_deps_present(tmp_path: Path) -> None:
@@ -20,30 +21,43 @@ def test_doctor_all_ok_when_deps_present(tmp_path: Path) -> None:
     assert all_ok(checks)
 
 
-def test_doctor_pass_config_check_warns_when_unset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
-    monkeypatch.delenv("DEVBOOST_PASS_GPG_ID", raising=False)
-    (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
-    ex = FakeExecutor(present={"curl", "age"})
-    ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
-    checks = run_checks(ctx, tmp_path)
-    pc = [c for c in checks if c.name == "pass-config"]
-    assert pc, "pass-config check missing"
-    assert pc[0].ok is True  # informational — never blocks doctor
-    assert "not set" in pc[0].detail and "DEVBOOST_PASS_REPO" in pc[0].detail
+def _pass_store(tmp_path: Path) -> Store:
+    root = tmp_path / "pass-store"
+    (root / ".git").mkdir(parents=True)
+    (root / ".gpg-id").write_text("A" * 40 + "\n", encoding="utf-8")
+    (root / "web").mkdir()
+    (root / "web" / "github.gpg").write_text("x", encoding="utf-8")
+    return Store(root)
 
 
-def test_doctor_pass_config_reports_repo_when_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DEVBOOST_PASS_REPO", "git@github.com:user/pass-store.git")
+def _checks(tmp_path: Path, ex: FakeExecutor) -> dict[str, tuple[bool, str]]:
     (tmp_path / "profiles.toml").write_text("[profiles]\n", encoding="utf-8")
-    ex = FakeExecutor(present={"curl", "age"})
     ctx = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=ex)
-    pc = [c for c in run_checks(ctx, tmp_path) if c.name == "pass-config"]
-    assert pc and pc[0].ok is True and "DEVBOOST_PASS_REPO set" in pc[0].detail
+    return {c.name: (c.ok, c.detail) for c in run_checks(ctx, tmp_path)}
+
+
+def test_doctor_pass_without_store_is_informational(tmp_path: Path) -> None:
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass"][0] is True and "no store" in out["pass"][1]
+    assert "pass-rotation" not in out
+
+
+def test_doctor_fails_while_entries_await_rotation(tmp_path: Path) -> None:
+    s = _pass_store(tmp_path)
+    s.write_rotation([RotationEntry(device="lap", fingerprint="B" * 40, revoked_at="t",
+                                    after="abc", entries=["web/github"])])
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))  # git log → no commits
+    assert out["pass-rotation"][0] is False and "web/github (lap)" in out["pass-rotation"][1]
+    assert "not enrolled" in out["pass"][1]
+
+
+def test_doctor_rotation_clears_after_edit(tmp_path: Path) -> None:
+    s = _pass_store(tmp_path)
+    s.write_rotation([RotationEntry(device="lap", fingerprint="B" * 40, revoked_at="t",
+                                    after="abc", entries=["web/github"])])
+    ex = FakeExecutor(present={"curl", "age"},
+                      scripts={"git": Result(0, "Edit password for web/github using vim.\n")})
+    assert _checks(tmp_path, ex)["pass-rotation"][0] is True
 
 
 def test_doctor_fails_on_missing_dep_and_unknown_os(tmp_path: Path) -> None:
@@ -132,3 +146,20 @@ def test_doctor_pi_login_check_reports_not_installed_when_absent(
     pi = next(c for c in run_checks(ctx, tmp_path) if c.name == "pi-login")
     assert pi.ok is True
     assert "not installed" in pi.detail
+
+
+def test_doctor_pass_check_reports_errors_instead_of_raising(tmp_path: Path) -> None:
+    s = _pass_store(tmp_path)
+    s.meta.mkdir()
+    (s.meta / "rotation.json").write_text("{oops", encoding="utf-8")
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass"][0] is False and "rotation.json" in out["pass"][1]
+
+
+def test_doctor_pass_check_reports_invalid_config(tmp_path: Path) -> None:
+    _pass_store(tmp_path)
+    cfg = tmp_path / "cfg" / "devboost" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("device_name = [\n", encoding="utf-8")
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass"][0] is False and "invalid TOML" in out["pass"][1]

@@ -18,6 +18,7 @@ class Ripgrep(Module):
     name = "ripgrep"
     category = "cli"
     requires = ()                 # references to other Module classes (topo-sorted before this)
+    after = ()                    # ordering only: run after these IF they are in the plan; never pulls them in, never blocked by them
     profiles = ("cli",)
 
     def verify(self, ctx: Ctx) -> bool:
@@ -42,6 +43,10 @@ uv run mypy && uv run ruff check
 `requires = (Docker,)` references the depended-on **class**, so `mypy --strict` proves the graph and
 the IDE refactors/navigates it. The registry validates the whole catalog at load (unique names,
 deps resolve, profiles exist, no cycles) before any side effect.
+
+Use `after` for a soft input the module can do without — e.g. `claude-plugins` reads a token from
+`pass` and runs `after = (PassStore,)`, so a device awaiting approval still installs Claude and just
+skips the token.
 
 ## Side effects go through the injected executor
 
