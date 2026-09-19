@@ -56,3 +56,65 @@ def test_no_chrome_falls_back_to_chromium(tmp_path: Path) -> None:
 
 def test_launcher_is_valid_bash() -> None:
     subprocess.run(["bash", "-n", str(LAUNCHER)], check=True, env=dict(os.environ))
+
+
+# --- security: pinned server (never @latest), one version everywhere -------------------------
+
+REPO = Path(__file__).resolve().parents[3]
+ALIASES = REPO / "dotfiles" / "dot_config" / "devboost" / "aliases.sh"
+
+
+def _run_env(tmp_path: Path, **extra: str) -> subprocess.CompletedProcess[str]:
+    bash = shutil.which("bash")
+    assert bash is not None
+    env = {"HOME": str(tmp_path), "PATH": str(_fake_bin(tmp_path)),
+           "CHROME_APP": str(tmp_path / "absent.app"), **extra}
+    return subprocess.run([bash, str(LAUNCHER)], env=env, capture_output=True, text=True)
+
+
+def test_launcher_runs_the_pinned_server(tmp_path: Path) -> None:
+    from devboost.modules._playwright_mcp import PLAYWRIGHT_MCP_PKG
+
+    out = _run(tmp_path, tmp_path / "absent.app")
+    assert out.startswith(f"-y {PLAYWRIGHT_MCP_PKG} ")
+    assert PLAYWRIGHT_MCP_PKG == "@playwright/mcp@0.0.82"
+
+
+def test_launcher_takes_the_version_the_launchagent_passes(tmp_path: Path) -> None:
+    res = _run_env(tmp_path, PLAYWRIGHT_MCP_VERSION="0.0.83")
+    assert res.returncode == 0 and res.stdout.startswith("-y @playwright/mcp@0.0.83 ")
+
+
+@pytest.mark.parametrize("bad", ["latest", "next", "^0.0.82", "0.0.82 --host 0.0.0.0", ".1"])
+def test_launcher_rejects_a_non_exact_version(tmp_path: Path, bad: str) -> None:
+    res = _run_env(tmp_path, PLAYWRIGHT_MCP_VERSION=bad)
+    assert res.returncode == 1
+    assert "exact x.y.z" in res.stderr and res.stdout == ""
+
+
+def test_bash_defaults_match_the_engine_pin() -> None:
+    """The launcher (Linux systemd + macOS) and `pw-mcp` default to the engine's one pin."""
+    from devboost.modules._playwright_mcp import PLAYWRIGHT_MCP_VERSION
+
+    want = f"${{PLAYWRIGHT_MCP_VERSION:-{PLAYWRIGHT_MCP_VERSION}}}"
+    assert want in LAUNCHER.read_text(encoding="utf-8")
+    assert want in ALIASES.read_text(encoding="utf-8")
+
+
+def test_nothing_starts_playwright_mcp_at_latest() -> None:
+    roots = [REPO / "dotfiles", REPO / "engine" / "src", REPO / "docs"]
+    skip = {"superpowers"}  # dated plans/specs record history, not what runs
+    hits = [
+        str(f.relative_to(REPO))
+        for root in roots
+        for f in root.rglob("*")
+        if f.is_file() and not skip & set(f.relative_to(REPO).parts)
+        and "@playwright/mcp@latest" in f.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert hits == []
+
+
+def test_pw_mcp_never_binds_every_interface() -> None:
+    text = ALIASES.read_text(encoding="utf-8")
+    assert "bind=0.0.0.0" not in text
+    assert "refusing to bind 0.0.0.0" in text

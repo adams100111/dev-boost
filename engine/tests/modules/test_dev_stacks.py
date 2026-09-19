@@ -173,5 +173,6 @@ def test_playwright_wires_mcp_with_chromium_browser(
     Playwright().install(Ctx(os=OsInfo("ubuntu", "debian", "aarch64"), ex=ex))
     assert [
         "claude", "mcp", "add", "playwright", "--",
-        "npx", "@playwright/mcp@latest", "--browser", "chromium",
+        "npx", "@playwright/mcp@0.0.82", "--browser", "chromium",
     ] in ex.calls
+    assert ["npm", "install", "-g", "playwright", "@playwright/mcp@0.0.82"] in ex.calls

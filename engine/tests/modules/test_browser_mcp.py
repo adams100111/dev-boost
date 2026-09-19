@@ -40,7 +40,10 @@ def test_runs_the_dotfiles_launcher_as_a_keep_alive_agent(tmp_path: Path) -> Non
     assert data["KeepAlive"] == {"SuccessfulExit": False}
     assert data["ThrottleInterval"] == 60
     shims = str(tmp_path / ".local" / "share" / "mise" / "shims")
-    assert data["EnvironmentVariables"] == {"PATH": f"{shims}:{launchd_path()}"}
+    assert data["EnvironmentVariables"] == {
+        "PATH": f"{shims}:{launchd_path()}",
+        "PLAYWRIGHT_MCP_VERSION": "0.0.82",
+    }
     log = str(tmp_path / "Library" / "Logs" / "devboost" / "browser-mcp.log")
     assert data["StandardOutPath"] == log and data["StandardErrorPath"] == log
     assert BrowserMcp().verify(ctx) is True

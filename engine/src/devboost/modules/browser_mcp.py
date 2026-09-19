@@ -16,6 +16,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import launchd
 from devboost.model import Ctx, Module
 from devboost.modules._launchd_jobs import launchd_path, log_path
+from devboost.modules._playwright_mcp import PLAYWRIGHT_MCP_VERSION
 from devboost.modules.shell import Dotfiles
 
 _NAME = "browser-mcp"
@@ -41,7 +42,11 @@ def _agent() -> dict[str, Any]:
         # tailnet is down rather than launchd's default every 10 s.
         "keep_alive": {"SuccessfulExit": False},
         "throttle_interval": 60,
-        "env": {"PATH": f"{shims}:{launchd_path()}"},
+        # The launcher runs `npx @playwright/mcp@$PLAYWRIGHT_MCP_VERSION` — the one pin.
+        "env": {
+            "PATH": f"{shims}:{launchd_path()}",
+            "PLAYWRIGHT_MCP_VERSION": PLAYWRIGHT_MCP_VERSION,
+        },
         "log_path": log_path(_NAME),
     }
 

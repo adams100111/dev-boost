@@ -24,6 +24,24 @@ set -euo pipefail
 export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
 PORT="${PORT:-8931}"
+
+# SECURITY: this server exposes `browser_run_code_unsafe` (arbitrary JavaScript in the
+# server process, "RCE-equivalent" per its own tool description) and `browser_evaluate`.
+# Both sit in the always-on `core` capability: in @playwright/mcp 0.0.82 there is NO flag
+# to turn them off (`--caps` only ADDS vision/pdf/devtools) and no auth token. So anyone
+# who can reach ${TS_IP}:${PORT} can run code as you. The only gate is the network:
+# restrict tcp:8931 on this machine with a Tailscale ACL (docs/remote-dev.md).
+#
+# Pinned, never @latest: an upstream release must not silently change the tool surface.
+# The default mirrors PLAYWRIGHT_MCP_VERSION in engine/src/devboost/modules/_playwright_mcp.py
+# (the macOS LaunchAgent passes that value in; a test keeps this default equal to it).
+PLAYWRIGHT_MCP_VERSION="${PLAYWRIGHT_MCP_VERSION:-0.0.82}"
+case "${PLAYWRIGHT_MCP_VERSION}" in
+  *[!0-9.]* | '' | .* | *.)
+    echo "browser-mcp: PLAYWRIGHT_MCP_VERSION must be an exact x.y.z version, got '${PLAYWRIGHT_MCP_VERSION}'." >&2
+    exit 1
+    ;;
+esac
 TS_IP="${TS_IP:-$(tailscale ip -4 2>/dev/null | head -n1 || true)}"
 
 if [ -z "${TS_IP}" ]; then
@@ -50,7 +68,7 @@ fi
 
 # Bind ONLY to the tailnet interface (never 0.0.0.0) and pin the host allowlist to
 # this exact address:port — reachable from your tailnet, not from local/cafe wifi.
-exec npx -y @playwright/mcp@latest \
+exec npx -y "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
   --port "${PORT}" \
   --host "${TS_IP}" \
   --allowed-hosts "${TS_IP}:${PORT}" \
