@@ -9,7 +9,7 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
 from devboost.passstore import approve
-from devboost.passstore.layout import DeviceRecord, RotationEntry, Store
+from devboost.passstore.layout import DeviceRecord, Kind, RotationEntry, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -32,6 +32,7 @@ def _ex(*extra: tuple[tuple[str, ...], Result]) -> RuleExecutor:
     return RuleExecutor(rules=[
         *extra,
         (("--list-secret-keys",), Result(0, colons("sec", FP_ME))),
+        (("--list-keys",), Result(0, colons("pub", FP_ME))),
         (("--show-keys",), Result(0, colons("pub", FP_NEW))),
         (("diff", "--cached"), Result(1)),
         (("rev-parse", "HEAD"), Result(0, "abc123\n")),
@@ -183,3 +184,150 @@ def test_unrotated_ignores_automated_reencryptions(tmp_path: Path) -> None:
                                    "devboost: enroll x\n")),
     ])
     assert approve.unrotated(_ctx(ex), s) == [approve.Unrotated("lap", "web/b")]
+
+
+def _recording(seen: list[str]) -> approve.Confirm:
+    def _yes(r: DeviceRecord) -> bool:
+        seen.append(r.name)
+        return True
+
+    return _yes
+
+
+def _no_pass_init(ex: RuleExecutor) -> bool:
+    return not any(c[:2] == ["pass", "init"] for c in ex.calls)
+
+
+@pytest.mark.parametrize("scope", [[""], ["."], ["../x"], ["harness/../.."], ["/etc"], []])
+def test_approve_rejects_bad_request_scope(tmp_path: Path, scope: list[str]) -> None:
+    s = _store(tmp_path, [FP_ME])
+    _pending(s, scope=scope)
+    ex = _ex()
+    with pytest.raises(ConfigError, match="'lap'"):
+        approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert _no_pass_init(ex) and s.record("pending", "lap") is not None
+
+
+@pytest.mark.parametrize("scope", [[""], ["."], ["../x"], ["/etc"], [".devboost"], []])
+def test_approve_rejects_bad_scope_override(tmp_path: Path, scope: list[str]) -> None:
+    s = _store(tmp_path, [FP_ME])
+    _pending(s)
+    ex = _ex()
+    asked: list[str] = []
+    with pytest.raises(ConfigError, match="'lap'"):
+        approve.approve(_ctx(ex), s, "desk", "lap", _recording(asked),
+                        scope_override=scope)
+    assert _no_pass_init(ex) and asked == []
+
+
+@pytest.mark.parametrize("kind", ["devices", "revoked"])
+def test_approve_refuses_name_taken_by_other_key(tmp_path: Path, kind: Kind) -> None:
+    s = _store(tmp_path, [FP_ME])
+    s.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_SRV, os="fedora"), ARMOR)
+    if kind == "revoked":
+        s.move("devices", "revoked", "lap")
+    _pending(s)
+    ex = _ex()
+    with pytest.raises(ConfigError, match="already belongs"):
+        approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert _no_pass_init(ex)
+    kept = s.record(kind, "lap")
+    assert kept is not None and kept.fingerprint == FP_SRV
+
+
+def test_approve_refuses_name_with_path_separator(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    rec = DeviceRecord(name="../evil", fingerprint=FP_NEW, os="ubuntu")
+    (s.meta / "pending").mkdir(parents=True)
+    (s.meta / "pending" / "evil.json").write_text(rec.model_dump_json(), encoding="utf-8")
+    ex = _ex()
+    with pytest.raises(ConfigError, match="path separator"):
+        approve.approve(_ctx(ex), s, "desk", "../evil", lambda r: True)
+    assert _no_pass_init(ex)
+
+
+def test_approve_without_name_skips_a_bad_request(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    s.write_record("pending", DeviceRecord(name="bad", fingerprint=FP_NEW, os="ubuntu",
+                                           scope=[".."]), ARMOR)
+    _pending(s)
+    ex = _ex()
+    seen: list[str] = []
+    done = approve.approve(_ctx(ex), s, "desk", None, _recording(seen))
+    assert done == [approve.Approved("lap", None)] and seen == ["lap"]
+    assert s.record("pending", "bad") is not None and s.record("devices", "bad") is None
+
+
+def test_approve_stores_uppercase_fingerprint(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    s.write_record("pending", DeviceRecord(name="lap", fingerprint=FP_NEW.lower(), os="ubuntu"),
+                   ARMOR)
+    ex = _ex()
+    approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    rec = s.record("devices", "lap")
+    assert rec is not None and rec.fingerprint == FP_NEW
+    assert ["pass", "init", FP_ME, FP_NEW] in ex.calls
+
+
+def test_approve_and_revoke_import_enrolled_device_keys(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME, FP_SRV])
+    s.write_record("devices", DeviceRecord(name="srv", fingerprint=FP_SRV, os="ubuntu"), ARMOR)
+    srv_key = str(s.key_path("devices", "srv"))
+    _pending(s)
+    ex = _ex((("--show-keys", srv_key), Result(0, colons("pub", FP_SRV))))
+    approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    imp = ex.calls.index(["gpg", "--batch", "--import", srv_key])
+    assert imp < ex.calls.index(["pass", "init", FP_ME, FP_SRV, FP_NEW])
+
+    s.gpg_id_path().write_text(f"{FP_ME}\n{FP_SRV}\n{FP_NEW}\n", encoding="utf-8")  # fake pass
+    ex = _ex((("--show-keys", srv_key), Result(0, colons("pub", FP_SRV))))
+    approve.revoke(_ctx(ex), s, "desk", "lap", lambda r: True)
+    imp = ex.calls.index(["gpg", "--batch", "--import", srv_key])
+    assert imp < ex.calls.index(["pass", "init", FP_ME, FP_SRV])
+
+
+def test_unscoped_approve_adds_key_to_scoped_folders(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    (s.root / "harness").mkdir()
+    (s.root / "harness" / ".gpg-id").write_text(f"{FP_ME}\n{FP_SRV}\n", encoding="utf-8")
+    ex = _ex()
+    _pending(s)
+    approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert ["pass", "init", FP_ME, FP_NEW] in ex.calls
+    assert ["pass", "init", "-p", "harness", FP_ME, FP_SRV, FP_NEW] in ex.calls
+
+
+@pytest.mark.parametrize("folder", ["", "harness"])
+def test_revoke_refuses_email_ids(tmp_path: Path, folder: str) -> None:
+    s = _store(tmp_path, [FP_ME, FP_NEW])
+    s.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    ids = s.gpg_id_path(folder)
+    ids.parent.mkdir(exist_ok=True)
+    ids.write_text(f"{FP_ME}\n{FP_NEW}\nme@example.com\n", encoding="utf-8")
+    ex = _ex()
+    with pytest.raises(ConfigError, match="replace the email ids in") as err:
+        approve.revoke(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert str(ids) in str(err.value)
+    assert _no_pass_init(ex) and s.record("devices", "lap") is not None
+
+
+def test_revoke_refuses_this_device_stored_lowercase(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME, FP_NEW])
+    s.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_ME.lower(), os="fedora"),
+                   ARMOR)
+    ex = _ex()
+    with pytest.raises(ConfigError, match="another enrolled device"):
+        approve.revoke(_ctx(ex), s, "desk", "desk", lambda r: True)
+    assert _no_pass_init(ex)
+
+
+def test_revoke_scoped_folder_same_ids_in_other_order_inherits(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME, FP_NEW])
+    (s.root / "harness").mkdir()
+    (s.root / "harness" / ".gpg-id").write_text(f"{FP_NEW}\n{FP_SRV}\n{FP_ME}\n",
+                                                encoding="utf-8")
+    s.write_record("devices", DeviceRecord(name="srv", fingerprint=FP_SRV, os="ubuntu",
+                                           scope=["harness"]), ARMOR)
+    ex = _ex()
+    approve.revoke(_ctx(ex), s, "desk", "srv", lambda r: True)
+    assert ["pass", "init", "-p", "harness", ""] in ex.calls
