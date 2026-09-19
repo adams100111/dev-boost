@@ -20,8 +20,10 @@ This never runs on macOS: ``accounts`` is in ``cli/host.LINUX_ONLY`` and the roo
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import pwd
+import stat
 import sys
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -91,7 +93,39 @@ class _Fakes:
         self.chown_raises = dict(chown_raises or {})
         self.on_stat = on_stat
         self.stat_paths: list[Path] = []
+        self.stat_dir_fds: list[tuple[Path, int | None]] = []
         self.chown_calls: list[tuple[Path, int, int, int | None]] = []
+        self.fchown_calls: list[tuple[Path, int, int]] = []
+
+    def _inode_path(self, fd: int) -> Path:
+        """The path of the inode *fd* holds, searched among the indexed dirs' entries."""
+        st = os.fstat(fd)
+        for base in self.index.values():
+            if (os.lstat(base).st_dev, os.lstat(base).st_ino) == (st.st_dev, st.st_ino):
+                return base
+            for child in base.iterdir():
+                c = os.lstat(child)
+                if (c.st_dev, c.st_ino) == (st.st_dev, st.st_ino):
+                    return child
+        raise AssertionError(f"fstat of an inode outside the index: {st.st_ino}")
+
+    def _forced(self, path: Path, real: os.stat_result) -> os.stat_result:
+        uid, when = self.table.get(str(path), (USER_UID, OLD))
+        fields = list(real)[:10]
+        fields[3] = self.nlink.get(str(path), real.st_nlink)
+        fields[4] = uid
+        fields[8] = fields[9] = when
+        return os.stat_result(fields)
+
+    def fstat_fd(self, fd: int) -> os.stat_result:
+        return self._forced(self._inode_path(fd), os.fstat(fd))
+
+    def fchown_fd(self, fd: int, uid: int, gid: int) -> None:
+        path = self._inode_path(fd)
+        self.fchown_calls.append((path, uid, gid))
+        exc = self.chown_raises.get(str(path))
+        if exc is not None:
+            raise exc
 
     def resolve(self, name: str, dir_fd: int | None) -> Path:
         if dir_fd is None:
@@ -104,15 +138,12 @@ class _Fakes:
     def stat_at(self, name: str, dir_fd: int | None) -> os.stat_result:
         path = self.resolve(name, dir_fd)
         self.stat_paths.append(path)
+        self.stat_dir_fds.append((path, dir_fd))
         real = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
-        uid, when = self.table.get(str(path), (USER_UID, OLD))
-        fields = list(real)[:10]
-        fields[3] = self.nlink.get(str(path), real.st_nlink)
-        fields[4] = uid
-        fields[8] = fields[9] = when
+        forced = self._forced(path, real)
         if self.on_stat is not None:
             self.on_stat(path)
-        return os.stat_result(fields)
+        return forced
 
     def chown_at(self, name: str, uid: int, gid: int, dir_fd: int | None) -> None:
         path = self.resolve(name, dir_fd)
@@ -154,6 +185,7 @@ def _reclaim(home: Path, fakes: _Fakes, *, protected: bool = True) -> list[Path]
         home, uid=USER_UID, gid=USER_GID, since=SINCE,
         stat_at=fakes.stat_at, chown_at=fakes.chown_at,
         hardlinks_protected=lambda: protected,
+        fstat_fd=fakes.fstat_fd, fchown_fd=fakes.fchown_fd,
     )
 
 
@@ -307,6 +339,8 @@ def test_a_mid_pass_directory_swap_cannot_escape_home(home: Path, tmp_path: Path
     assert not [p for p in fakes.stat_paths if p == shadow]
     # Every chown went through a directory fd; nothing was chowned by path.
     assert all(c[3] is not None for c in fakes.chown_calls)
+    # …and every stat that fed a decision did too: only HOME's own pre-check is by path.
+    assert [p for p, fd in fakes.stat_dir_fds if fd is None] == [home]
     assert shadow.read_text(encoding="utf-8") == "root-only"
 
 
@@ -378,6 +412,142 @@ def test_hardlinked_files_are_skipped_and_logged_when_unprotected(
     err = capsys.readouterr().err
     assert str(home / "linked") in err
     assert "fs.protected_hardlinks is off" in err
+
+
+# --- the fd-checked chown when the sysctl is off (final review B-I1) ---------------------
+
+
+def test_unprotected_chown_goes_through_the_opened_fd(home: Path) -> None:
+    """With the sysctl off, nothing is chowned by name: the candidate is opened, the fd is
+    re-checked, and that same fd is fchown'ed."""
+    (home / "plain").write_text("x", encoding="utf-8")
+    sub = home / "sub"
+    sub.mkdir()
+    fakes = _Fakes(_index(home), {str(home / "plain"): (0, NEW), str(sub): (0, NEW)})
+
+    done = _reclaim(home, fakes, protected=False)
+
+    assert done == sorted([home / "plain", sub])
+    assert fakes.chown_calls == []
+    assert sorted(c[0] for c in fakes.fchown_calls) == sorted([home / "plain", sub])
+    assert all(c[1:] == (USER_UID, USER_GID) for c in fakes.fchown_calls)
+
+
+def test_a_hardlink_planted_after_the_stat_is_caught_on_the_fd(
+    home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], loguru_stderr: None
+) -> None:
+    """B-I1: the user swaps a checked, singly-linked file for a hardlink to a root-owned
+    file elsewhere in the window between the name stat and the chown. The re-check runs on
+    the opened fd — the real inode, with its real link count — so the swap is seen and the
+    outside file is never chowned."""
+    outside = tmp_path / "etc"
+    outside.mkdir()
+    shadow = outside / "shadow"
+    shadow.write_text("root-only", encoding="utf-8")
+    target = home / "rc"
+    target.write_text("x", encoding="utf-8")
+    sprung: list[bool] = []
+
+    def plant_link(path: Path) -> None:
+        if path == target and not sprung:
+            sprung.append(True)
+            target.unlink()
+            os.link(shadow, target)  # what fs.protected_hardlinks=0 lets the user do
+
+    index = _index(home, outside)
+    fakes = _Fakes(
+        index, {str(target): (0, NEW), str(shadow): (0, NEW)}, on_stat=plant_link
+    )
+    before = os.stat(shadow)
+
+    done = _reclaim(home, fakes, protected=False)
+
+    assert sprung, "the swap never fired — the test proves nothing"
+    assert done == []
+    assert fakes.chown_calls == []
+    assert fakes.fchown_calls == []
+    after = os.stat(shadow)
+    assert (after.st_uid, after.st_gid, after.st_nlink) == (before.st_uid, before.st_gid, 2)
+    assert "2 hardlinks and fs.protected_hardlinks is off" in capsys.readouterr().err
+
+
+def test_unprotected_leaves_symlinks_root_owned(
+    home: Path, capsys: pytest.CaptureFixture[str], loguru_stderr: None
+) -> None:
+    """A symlink cannot be opened O_NOFOLLOW, so with the sysctl off it is not reclaimed."""
+    (home / "link").symlink_to("/nonexistent")
+    fakes = _Fakes(_index(home), {str(home / "link"): (0, NEW)})
+
+    assert _reclaim(home, fakes, protected=False) == []
+    assert fakes.chown_calls == [] and fakes.fchown_calls == []
+    assert "leaving symlink" in capsys.readouterr().err
+
+
+def test_unprotected_refuses_a_non_regular_inode_on_the_fd(home: Path) -> None:
+    """A FIFO has no meaningful link check; the fd path hands back only files and dirs."""
+    os.mkfifo(home / "fifo")
+    fakes = _Fakes(_index(home), {str(home / "fifo"): (0, NEW)})
+    assert _reclaim(home, fakes, protected=False) == []
+    assert fakes.fchown_calls == []
+
+
+def test_protected_mode_never_opens_anything(home: Path) -> None:
+    """With the sysctl on, the existing name-relative fchownat path is kept."""
+    (home / "a").write_text("x", encoding="utf-8")
+    fakes = _Fakes(_index(home), {str(home / "a"): (0, NEW)})
+
+    def no_open(name: str, dir_fd: int) -> int:
+        raise AssertionError("open_at must not run when fs.protected_hardlinks is on")
+
+    done = reclaim_home(
+        home, uid=USER_UID, gid=USER_GID, since=SINCE,
+        stat_at=fakes.stat_at, chown_at=fakes.chown_at, hardlinks_protected=lambda: True,
+        open_at=no_open,
+    )
+    assert done == [home / "a"]
+    assert fakes.chown_paths == [home / "a"]
+
+
+def test_open_at_refuses_symlinks_and_never_blocks_on_a_fifo(tmp_path: Path) -> None:
+    """Pins the real flags: O_NOFOLLOW (a symlink fails, ELOOP) and O_NONBLOCK (opening a
+    FIFO with no writer returns at once instead of hanging the root pass)."""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "file").write_text("x", encoding="utf-8")
+    (d / "link").symlink_to(d / "file")
+    os.mkfifo(d / "fifo")
+    dfd = os.open(d, os.O_RDONLY)
+    try:
+        with pytest.raises(OSError):
+            bootstrap._open_at("link", dfd)
+        fd = bootstrap._open_at("fifo", dfd)
+        os.close(fd)
+        fd = bootstrap._open_at("file", dfd)
+        try:
+            assert os.fstat(fd).st_ino == os.stat(d / "file").st_ino
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dfd)
+    assert bootstrap._OPEN_FLAGS & os.O_NOFOLLOW
+    assert bootstrap._OPEN_FLAGS & os.O_NONBLOCK
+
+
+def test_the_real_unprotected_pass_fchowns_the_file(home: Path) -> None:
+    """End to end with the real open/fstat-fd/fchown (uid/ctime forced on the stats only):
+    the file's group really changes."""
+    f = home / "f"
+    f.write_text("x", encoding="utf-8")
+    others = [g for g in os.getgroups() if g != os.stat(f).st_gid]
+    if not others:
+        pytest.skip("no second group to chown to")
+    fakes = _Fakes(_index(home), {str(f): (0, NEW)})
+    done = reclaim_home(
+        home, uid=os.getuid(), gid=others[0], since=SINCE,
+        stat_at=fakes.stat_at, fstat_fd=fakes.fstat_fd, hardlinks_protected=lambda: False,
+    )
+    assert done == [f]
+    assert os.stat(f).st_gid == others[0]
 
 
 def test_hardlink_protection_reads_the_sysctl(tmp_path: Path) -> None:
@@ -461,6 +631,41 @@ def test_defaults_are_the_dir_fd_safe_primitives() -> None:
     assert params["stat_at"].default is bootstrap._stat_at
     assert params["chown_at"].default is bootstrap._chown_at
     assert params["hardlinks_protected"].default is bootstrap._hardlinks_protected
+    assert params["open_at"].default is bootstrap._open_at
+    assert params["fstat_fd"].default is os.fstat
+    assert params["fchown_fd"].default is os.fchown
+
+
+def test_the_real_stat_at_is_dir_fd_relative_and_nofollow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins ``_stat_at``: the name resolves against the directory fd, not the cwd, and a
+    symlink is stat'ed as a link. (Either mutation used to survive the suite.)"""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "x").symlink_to(tmp_path / "target")
+    (tmp_path / "target").write_text("t", encoding="utf-8")
+    decoy = tmp_path / "cwd"
+    decoy.mkdir()
+    (decoy / "x").mkdir()  # a same-named DIRECTORY in the cwd
+    monkeypatch.chdir(decoy)
+    dfd = os.open(d, os.O_RDONLY)
+    try:
+        assert stat.S_ISLNK(bootstrap._stat_at("x", dfd).st_mode)
+    finally:
+        os.close(dfd)
+
+
+def test_the_walk_raising_on_home_itself_escapes_reclaim_home(home: Path) -> None:
+    """Documented: an error on HOME itself (here: gone after the pre-check) is raised, not
+    swallowed — bootstrap_user is the one that contains it."""
+
+    def vanishing(top: Path) -> Iterator[FwalkEntry]:
+        raise FileNotFoundError(str(top))
+        yield  # pragma: no cover
+
+    with pytest.raises(FileNotFoundError):
+        reclaim_home(home, uid=USER_UID, gid=USER_GID, since=SINCE, fwalk=vanishing)
     assert bootstrap.PROTECTED_HARDLINKS == Path("/proc/sys/fs/protected_hardlinks")
 
 
@@ -566,6 +771,26 @@ def test_bootstrap_user_calls_reclaim_as_root(
     assert isinstance(call["since"], int | float) and before - 1 <= call["since"] <= before + 1
     assert call["HOME"] == "/home/dev"  # runs before HOME is restored
     assert os.environ["HOME"] == str(tmp_path)  # …and HOME is restored afterwards
+
+
+def test_bootstrap_user_floors_since_to_the_second(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _stub_pwd: None
+) -> None:
+    """A filesystem with 1 s timestamps truncates, so `since` is floored: a file written
+    in this very second must not sort below it."""
+    seen: list[float] = []
+    monkeypatch.setattr(bootstrap, "_run_profiles", lambda c, tokens, root: None)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(bootstrap.time, "time", lambda: 1_700_000_123.9)
+
+    def reclaim(h: Path, *, uid: int, gid: int, since: float) -> list[Path]:
+        seen.append(since)
+        return []
+
+    monkeypatch.setattr(bootstrap, "reclaim_home", reclaim)
+    bootstrap.bootstrap_user(_ctx(), _user(), root=tmp_path)
+    assert seen == [1_700_000_123]
+    assert seen[0] == math.floor(seen[0])
 
 
 def test_bootstrap_user_reclaims_after_a_successful_run(

@@ -27,6 +27,10 @@ Fwalk = Callable[[Path], Iterator[FwalkEntry]]
 #: ``stat``/``chown`` of a *bare name* relative to an already-open directory fd.
 StatAt = Callable[[str, int | None], os.stat_result]
 ChownAt = Callable[[str, int, int, int | None], None]
+#: ``open`` of a bare name relative to a directory fd, then ``fstat``/``fchown`` of that fd.
+OpenAt = Callable[[str, int], int]
+FstatFd = Callable[[int], os.stat_result]
+FchownFd = Callable[[int, int, int], None]
 
 #: sysctl that stops an unprivileged user hardlinking a file they neither own nor can
 #: write. 1 on every distro dev-boost targets (Fedora, Debian/Ubuntu, Arch).
@@ -59,6 +63,16 @@ def _chown_at(name: str, uid: int, gid: int, dir_fd: int | None) -> None:
     # fchownat(dir_fd, name, …, AT_SYMLINK_NOFOLLOW): no parent component is re-resolved
     # and a symlink is chowned as a link, never through it.
     os.chown(name, uid, gid, dir_fd=dir_fd, follow_symlinks=False)
+
+
+#: O_NOFOLLOW: a symlink (including one swapped in after the stat) fails with ELOOP instead
+#: of being followed. O_NONBLOCK: a FIFO swapped in cannot hang the pass. O_NOCTTY: a tty
+#: never becomes root's controlling terminal. Read-only: the fd is only fstat'ed/fchown'ed.
+_OPEN_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC
+
+
+def _open_at(name: str, dir_fd: int) -> int:
+    return os.open(name, _OPEN_FLAGS, dir_fd=dir_fd)
 
 
 def _hardlinks_protected(marker: Path = PROTECTED_HARDLINKS) -> bool:
@@ -99,6 +113,55 @@ def _should_reclaim(
     return None
 
 
+def _fd_checked_chown(
+    name: str,
+    dirfd: int,
+    shown: Path,
+    *,
+    uid: int,
+    gid: int,
+    since: float,
+    open_at: OpenAt,
+    fstat_fd: FstatFd,
+    fchown_fd: FchownFd,
+    failed: Callable[[str], None],
+    linked: Callable[[str], None],
+) -> bool:
+    """Open *name* under *dirfd*, re-check the opened inode, and ``fchown`` that same fd.
+
+    The check and the change are on one inode, so a hardlink (or any other swap) planted
+    after the name ``stat`` cannot redirect the chown. True when the fd was chowned.
+    """
+    try:
+        fd = open_at(name, dirfd)
+    except OSError as exc:  # ELOOP: swapped for a symlink; ENOENT: vanished; ENXIO: socket
+        failed(f"accounts: could not open {shown} to reclaim it — {exc}")
+        return False
+    try:
+        st = fstat_fd(fd)
+        if not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
+            # Only these two have a meaningful link count here (a directory cannot be
+            # hardlinked); anything else could be a link to an inode outside HOME.
+            failed(f"accounts: leaving {shown} root-owned — not a regular file or directory")
+            return False
+        why = _should_reclaim(st, since=since, allow_hardlinks=False)
+        if why == "multiply-linked":
+            linked(
+                f"accounts: leaving {shown} root-owned — it has {st.st_nlink} hardlinks "
+                "and fs.protected_hardlinks is off"
+            )
+            return False
+        if why is not None:
+            return False
+        fchown_fd(fd, uid, gid)
+    except OSError as exc:
+        failed(f"accounts: could not reclaim {shown} — {exc}")
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
 def reclaim_home(
     home: Path,
     *,
@@ -109,6 +172,9 @@ def reclaim_home(
     stat_at: StatAt = _stat_at,
     chown_at: ChownAt = _chown_at,
     hardlinks_protected: Callable[[], bool] = _hardlinks_protected,
+    open_at: OpenAt = _open_at,
+    fstat_fd: FstatFd = os.fstat,
+    fchown_fd: FchownFd = os.fchown,
 ) -> list[Path]:
     """Give (uid, gid) back every root-owned path under *home* touched since *since*.
 
@@ -135,16 +201,28 @@ def reclaim_home(
       the run.
 
     Hardlinks. ``chown`` follows the *inode*, so a hardlink the user planted to a
-    root-owned file elsewhere would hand that inode over. Linux's
-    ``fs.protected_hardlinks`` already forbids planting one, so when that sysctl reads 1
-    (the default on every distro dev-boost targets) multiply-linked files are reclaimed
-    normally — which matters, because hardlink stores *inside* HOME are ordinary: ``uv``
-    links from ``~/.cache/uv`` into every venv, and ``pnpm``/``npm`` do the same from their
-    content-addressable stores. Only when the sysctl is off or unreadable are multiply-
-    linked regular files skipped (and each skip is logged), leaving those stores root-owned.
+    root-owned file elsewhere would hand that inode over. With ``fs.protected_hardlinks``
+    at 1 (the default on every distro dev-boost targets) the kernel refuses to let the user
+    link a file they neither own nor can both read and write, so multiply-linked files are
+    reclaimed normally — which matters, because hardlink stores *inside* HOME are ordinary:
+    ``uv`` links from ``~/.cache/uv`` into every venv, and ``pnpm``/``npm`` do the same from
+    their content-addressable stores. The sysctl does not stop a link to a root-owned file
+    the user can already read *and* write (e.g. a 0666 file on the same filesystem); reclaim
+    then makes them its owner. That is a narrow, low-ceiling residual (they already had
+    write access, and ``chown`` clears setuid/setgid bits), accepted here.
 
-    It never raises: a path that vanishes or refuses the chown is logged and skipped.
-    Returns the paths actually chowned, sorted.
+    When the sysctl is off or unreadable, the multiply-linked check is enforced on the
+    inode that is actually changed: each candidate is opened relative to the directory fd
+    with ``O_NOFOLLOW|O_NONBLOCK``, the *fd* is ``fstat``-ed and re-checked (root-owned,
+    touched since *since*, a regular file with one link), and the *fd* is ``fchown``-ed. A
+    link planted between the name ``stat`` and the change is therefore seen, and the file
+    is left root-owned (and logged); a symlink cannot be opened that way, so it too is left
+    root-owned while the sysctl is off. Hardlink stores stay root-owned in that mode.
+
+    Errors. A path that vanishes, or refuses the open or the chown, is logged and skipped.
+    The walk itself can still raise ``OSError`` — ``os.fwalk`` re-raises a failure on HOME
+    itself (removed or unreadable after the check below) — so callers must contain it;
+    ``bootstrap_user`` does. Returns the paths actually chowned, sorted.
 
     This is Linux-only in practice: ``accounts`` is in ``cli/host.LINUX_ONLY`` and the
     root guard in ``cli/host.invocation_error`` refuses euid 0 on macOS outright.
@@ -187,11 +265,25 @@ def reclaim_home(
                 continue
             if why is not None:
                 continue
-            try:
-                chown_at(name, uid, gid, dirfd)
-            except OSError as exc:
-                failed(f"accounts: could not reclaim {here / name} — {exc}")
-                continue
+            if allow_hardlinks:
+                try:
+                    chown_at(name, uid, gid, dirfd)
+                except OSError as exc:
+                    failed(f"accounts: could not reclaim {here / name} — {exc}")
+                    continue
+            else:
+                if stat.S_ISLNK(st.st_mode):
+                    linked(
+                        f"accounts: leaving symlink {here / name} root-owned — it cannot "
+                        "be re-checked through an fd while fs.protected_hardlinks is off"
+                    )
+                    continue
+                if not _fd_checked_chown(
+                    name, dirfd, here / name,
+                    uid=uid, gid=gid, since=since, open_at=open_at, fstat_fd=fstat_fd,
+                    fchown_fd=fchown_fd, failed=failed, linked=linked,
+                ):
+                    continue
             reclaimed.append(here if name == "." else here / name)
 
     failed.summarise("path(s) that could not be reclaimed")
@@ -217,7 +309,8 @@ def bootstrap_user(ctx: Ctx, user: ManagedUser, *, root: Path) -> None:
         _run_profiles(demoted, list(user.bootstrap_profiles), root)
     finally:
         # Still inside the user's HOME: hand back whatever the in-process writers created
-        # as root. Runs even when the profiles raised, and never raises itself.
+        # as root. Runs even when the profiles raised; anything the pass raises (it can,
+        # see reclaim_home) is contained below, so it never masks the run's own error.
         if os.geteuid() == 0 and not ctx.dry_run:
             try:
                 pw = pwd.getpwnam(user.name)
