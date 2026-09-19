@@ -18,6 +18,8 @@ MAC = OsInfo("macos", "macos", "aarch64")
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 _JSON = json.dumps({"GIT_USER": "alice", "GIT_EMAIL": "a@x", "GITHUB_PAT": "ghp_x"})
 _GH_USER = json.dumps({"login": "alice", "email": "a@x"})
+#: `-c core.askPass=` — no GUI prompt even when the user configured an askpass helper.
+FILL = ("git", "-c", "core.askPass=", "credential", "fill")
 
 
 @pytest.fixture
@@ -225,20 +227,19 @@ def test_import_key_is_macos_only(home: Path, monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_github_credentials_falls_back_to_git_credential_fill(home: Path) -> None:
-    fill = ("git", "credential", "fill")
-    ex = _StdinEx({fill: Result(0, stdout="protocol=https\nhost=github.com\n"
-                                          "username=carol\npassword=ghp_kc\n")})
+    ex = _StdinEx({FILL: Result(0, stdout="protocol=https\nhost=github.com\n"
+                                           "username=carol\npassword=ghp_kc\n")})
     assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == {
         "GIT_USER": "carol", "GIT_EMAIL": "", "GITHUB_PAT": "ghp_kc",
     }
-    i = ex.calls.index(list(fill))
+    i = ex.calls.index(list(FILL))
     assert ex.stdins[i] == "protocol=https\nhost=github.com\n\n"
     # No terminal prompt and no GUI askpass pop-up in an unattended run.
     assert ex.envs[i] == {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""}
 
 
 def test_git_credential_fill_without_password_is_none(home: Path) -> None:
-    ex = _StdinEx({("git", "credential", "fill"): Result(0, stdout="username=carol\n")})
+    ex = _StdinEx({FILL: Result(0, stdout="username=carol\n")})
     assert creds.github_credentials(Ctx(os=MAC, ex=ex)) is None
 
 
@@ -337,7 +338,7 @@ def test_macos_bundle_source_approve_failure_raises_without_token(home: Path) ->
 
 def test_macos_verify_true_when_keychain_yields_token(home: Path) -> None:
     ex = _StdinEx({
-        ("git", "credential", "fill"): Result(
+        FILL: Result(
             0, stdout="protocol=https\nhost=github.com\nusername=carol\npassword=ghp_kc\n"
         ),
     })
@@ -348,7 +349,7 @@ def test_macos_verify_false_when_helper_set_but_no_token(home: Path) -> None:
     # credential.helper=osxkeychain alone proves nothing: the keychain may be empty.
     ex = _StdinEx({
         ("git", "config", "--global", "credential.helper"): Result(0, stdout="osxkeychain\n"),
-        ("git", "credential", "fill"): Result(128, stderr="terminal prompts disabled"),
+        FILL: Result(128, stderr="terminal prompts disabled"),
     })
     assert Secrets().verify(Ctx(os=MAC, ex=ex)) is False
 

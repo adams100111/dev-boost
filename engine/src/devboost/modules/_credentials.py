@@ -127,11 +127,14 @@ def _from_git_credential_fill(ctx: Ctx) -> Credentials | None:
     """Ask git's configured helper (e.g. the macOS keychain) for a github.com login.
 
     `GIT_TERMINAL_PROMPT=0` makes git fail instead of prompting when no helper has one;
-    the empty askpass vars stop it popping a GUI password dialog in an unattended run.
+    `-c core.askPass=` and the empty askpass variables stop it popping a GUI password dialog
+    in an unattended run.
     The output carries the token, so it is parsed here and never logged.
     """
     res = ctx.ex.run(
-        ["git", "credential", "fill"],
+        # `-c core.askPass=` plus the empty askpass vars: no GUI password dialog, whatever
+        # the user configured, in an unattended run.
+        ["git", "-c", "core.askPass=", "credential", "fill"],
         stdin="protocol=https\nhost=github.com\n\n",
         env={"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""},
     )
