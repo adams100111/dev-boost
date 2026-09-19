@@ -67,7 +67,9 @@ class _DeviceEx(RealExecutor):
             "GNUPGHOME": str(self.gnupg),
             **(env or {}),
         }
-        return super().run(argv, sudo=sudo, stdin=stdin, env=merged, cwd=cwd, interactive=False)
+        return super().run(
+            argv, sudo=sudo, stdin=stdin, env=merged, cwd=cwd, interactive=False, timeout=timeout
+        )
 
 
 @dataclass
