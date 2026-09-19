@@ -61,7 +61,10 @@ sudo devboost installer            # wizard: pick the USB, confirm the wipe
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
 
 **macOS (Apple Silicon):** `devboost install` from a clone installs the workstation — see
-[docs/macos.md](docs/macos.md) (Docker in M4; `curl … | bash` in M6).
+[docs/macos.md](docs/macos.md) (`curl … | bash` lands in M6).
+Docker on a Mac is Colima by default (free for work use); see
+[docs/docker-runtimes.md](docs/docker-runtimes.md) for OrbStack / Docker Desktop and
+`devboost docker use`.
 
 Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
 
@@ -107,7 +110,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `pi` | `pi-harness` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
-| `remote` | `tailscale`, `mosh` |
+| `remote` | `tailscale`, `mosh`, `browser-mcp` |
 | `security-cli` | `pass`, `pass-store` |
 | `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `zsh-config`, `zsh-plugins`, `bash`, `ghostty`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
@@ -121,12 +124,13 @@ enrollment on NVIDIA when Secure Boot is on.
 | `agent-sudo` | server | Passwordless sudo for your user — so agents/automation never hang on a prompt. |
 | `android-sdk` | react-native | Android SDK (cmdline-tools + platform/build-tools) + JDK via mise. |
 | `aspire` | dotnet | Aspire CLI (dotnet global tool). |
-| `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd --user timer). |
+| `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd timer / launchd agent). |
 | `atuin` | cli |  |
 | `bash` | shell | bash 5 as a tool on macOS (/bin/bash is 3.2); zsh stays the login shell. |
 | `bash-config` | shell | Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
+| `browser-mcp` | remote | Playwright MCP on the tailnet for remote Claude Code sessions (launchd agent). |
 | `browser-view` | brain-host | Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device. |
 | `bruno` | apps | Bruno API client. |
 | `btop` | cli |  |
@@ -227,7 +231,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
 | `power-profiles-daemon` | system | Power profile switching (D-Bus). |
 | `python-lsp` | editors | basedpyright + ruff for Python (fresh). |
-| `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer. |
+| `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly (systemd timer / launchd agent). |
 | `restic-backup` | system | Restic backup user service + timer. |
 | `ripgrep` | cli | Fast recursive search (rg). |
 | `rosetta` | base | Rosetta 2 — runs Intel-only apps and fast amd64 containers (macOS ≤ 27). |
