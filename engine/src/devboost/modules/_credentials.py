@@ -75,7 +75,14 @@ def _gh_api_user(ctx: Ctx) -> dict[str, str]:
 
 
 def _gh_email(ctx: Ctx, user: dict[str, str]) -> str:
-    """Best public email, else the account's primary, else git's configured email."""
+    """Public email, else the account's primary, else git's email, else GitHub's noreply.
+
+    ``gh api user/emails`` needs the ``user`` (or ``user:email``) token scope, which a
+    default ``gh auth login`` token lacks (404), and a private profile email reads null.
+    The last resort is the address GitHub itself gives every account for commits,
+    ``ID+USERNAME@users.noreply.github.com`` (docs: "Email addresses reference" → "Your
+    noreply email address"); the ID-based form keeps commits linked across renames.
+    """
     if user.get("email"):
         return user["email"]
     res = ctx.ex.run(["gh", "api", "user/emails"])
@@ -87,26 +94,44 @@ def _gh_email(ctx: Ctx, user: dict[str, str]) -> str:
         except (json.JSONDecodeError, AttributeError, TypeError):
             pass
     configured = ctx.ex.run(["git", "config", "--global", "user.email"])
-    return configured.stdout.strip() if configured.ok else ""
+    if configured.ok and configured.stdout.strip():
+        return configured.stdout.strip()
+    return noreply_email(user)
 
 
-def from_gh(ctx: Ctx) -> Credentials | None:
-    """Derive credentials from an authenticated `gh`, or None if unusable."""
+def noreply_email(user: dict[str, str]) -> str:
+    """GitHub's ID-based noreply commit address for ``gh api user``, or "" without both."""
+    uid, login = user.get("id", ""), user.get("login", "")
+    if not uid.isdigit() or not login:
+        return ""
+    return f"{uid}+{login}@users.noreply.github.com"
+
+
+def from_gh_or_reason(ctx: Ctx) -> tuple[Credentials | None, str]:
+    """Credentials from an authenticated `gh`, or None plus which piece was missing."""
     user = _gh_api_user(ctx)
     login = user.get("login")
     if not login:
-        return None
+        return None, "the GitHub CLI is signed in, but `gh api user` returned no login"
     token = ctx.ex.run(["gh", "auth", "token"])
     if not token.ok or not token.stdout.strip():
-        return None
+        return None, f"the GitHub CLI is signed in as {login}, but `gh auth token` gave no token"
     email = _gh_email(ctx, user)
     if not email:
-        return None
+        return None, (
+            f"the GitHub CLI is signed in as {login}, but no commit email was found "
+            "(no public or primary email, no git user.email, no account id for noreply)"
+        )
     return {
         "GIT_USER": login,
         "GIT_EMAIL": email,
         "GITHUB_PAT": token.stdout.strip(),
-    }
+    }, ""
+
+
+def from_gh(ctx: Ctx) -> Credentials | None:
+    """Derive credentials from an authenticated `gh`, or None if unusable."""
+    return from_gh_or_reason(ctx)[0]
 
 
 def _from_git_credentials() -> Credentials | None:
@@ -273,11 +298,22 @@ def resolve_interactively(ctx: Ctx, existing: Credentials | None = None) -> Cred
 
 # --- the message shown when nothing is available and nobody can be asked ------------------
 
-NO_CREDENTIALS_HELP = (
-    "no secrets bundle, and no authenticated GitHub CLI to fall back on.\n"
-    "  Pick whichever fits:\n"
-    "    • gh auth login                    then re-run — dev-boost picks it up automatically\n"
-    "    • scripts/make-secrets.sh --out DIR then DEVBOOST_BOOTSTRAP_DIR=DIR devboost install\n"
-    "    • run devboost install from a terminal to be walked through it\n"
-    "  Only ssh-setup, chezmoi-repo and obsidian-sync need this; everything else installs."
-)
+#: Why the gh fallback was not available when gh is absent or signed out.
+NO_GH = "no authenticated GitHub CLI to fall back on"
+
+
+def no_credentials_help(gh_problem: str = NO_GH) -> str:
+    """The error for a run with no bundle and no usable gh; *gh_problem* says why gh failed."""
+    return (
+        f"no secrets bundle, and {gh_problem}.\n"
+        "  Pick whichever fits:\n"
+        "    • gh auth login                    then re-run — dev-boost picks it up "
+        "automatically\n"
+        "    • scripts/make-secrets.sh --out DIR then DEVBOOST_BOOTSTRAP_DIR=DIR devboost "
+        "install\n"
+        "    • run devboost install from a terminal to be walked through it\n"
+        "  Only ssh-setup, chezmoi-repo and obsidian-sync need this; everything else installs."
+    )
+
+
+NO_CREDENTIALS_HELP = no_credentials_help()

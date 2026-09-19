@@ -254,3 +254,64 @@ def test_verify_accepts_an_authenticated_gh_with_no_credentials_file(
 def test_verify_is_false_without_any_credential_source(tmp_path: Path) -> None:
     ex = FakeExecutor(present={"git"})
     assert Secrets().verify(Ctx(os=OMARCHY, ex=ex)) is False
+
+
+# ---------------------------------------------------------------------------
+# M3 AF3: gh signed in, but no email reachable (private profile, token without `user`)
+# ---------------------------------------------------------------------------
+
+_NO_EMAIL_USER = json.dumps({"login": "octocat", "id": 583231, "email": None})
+
+
+def _gh_without_email(git_email: str = "") -> _Gh:
+    return _Gh({
+        "gh api user/emails": Result(1, stderr="gh: Not Found (HTTP 404)"),
+        "gh api user": Result(0, stdout=_NO_EMAIL_USER),
+        "gh auth token": Result(0, stdout="gho_token"),
+        "gh auth status": Result(0),
+        "git config --global user.email": Result(0 if git_email else 1, stdout=git_email),
+    })
+
+
+def test_gh_falls_back_to_the_id_based_noreply_address() -> None:
+    got = creds_src.from_gh(Ctx(os=OMARCHY, ex=_gh_without_email()))
+    assert got is not None
+    assert got["GIT_EMAIL"] == "583231+octocat@users.noreply.github.com"
+
+
+def test_git_configured_email_still_beats_noreply() -> None:
+    got = creds_src.from_gh(Ctx(os=OMARCHY, ex=_gh_without_email("me@example.com\n")))
+    assert got is not None and got["GIT_EMAIL"] == "me@example.com"
+
+
+def test_noreply_needs_both_id_and_login() -> None:
+    assert creds_src.noreply_email({"login": "octocat"}) == ""
+    assert creds_src.noreply_email({"id": "1", "login": ""}) == ""
+    assert creds_src.noreply_email({"id": "1", "login": "a"}) == "1+a@users.noreply.github.com"
+
+
+def test_unattended_secrets_uses_gh_with_the_noreply_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    ex = _gh_without_email()
+    Secrets().install(Ctx(os=OMARCHY, ex=ex))
+    assert [
+        "git", "config", "--global", "user.email", "583231+octocat@users.noreply.github.com"
+    ] in ex.calls
+
+
+def test_unattended_error_names_the_missing_piece_when_gh_is_signed_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    ex = _Gh({
+        "gh api user": Result(0, stdout=json.dumps({"login": "octocat"})),
+        "gh auth token": Result(1, stderr="no oauth token"),
+        "gh auth status": Result(0),
+    })
+    with pytest.raises(SecretsError) as exc:
+        Secrets().install(Ctx(os=OMARCHY, ex=ex))
+    msg = str(exc.value)
+    assert "signed in as octocat" in msg and "gh auth token" in msg
+    assert "no authenticated GitHub CLI" not in msg
