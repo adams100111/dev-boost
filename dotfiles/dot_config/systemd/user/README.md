@@ -14,6 +14,12 @@ sharing a profile). Launcher: [`~/.local/bin/browser-mcp`](../../../dot_local/bi
 same launcher as the LaunchAgent `dev.devboost.browser-mcp`. The launcher finds Chrome at
 `/Applications/Google Chrome.app` (override with `CHROME_APP`).
 
+**Security:** the launcher runs `@playwright/mcp` at a pinned version, `PLAYWRIGHT_MCP_VERSION`,
+which defaults to 0.0.82 and is never `@latest`. That server includes
+`browser_run_code_unsafe`, which is RCE-equivalent, and no flag turns it off. Any tailnet peer
+that can reach tcp/8931 can run code as you, so restrict the port with a Tailscale ACL. See
+[docs/remote-dev.md](../../../../docs/remote-dev.md#security-port-8931-runs-code-on-your-machine).
+
 ### On a dev-boost machine this is automatic
 
 The `dotfiles` module applies this tree via chezmoi, which drops the unit **and**

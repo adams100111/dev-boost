@@ -151,6 +151,12 @@ labelled `dev.devboost.<name>`; `browser-mcp` is an always-on agent in the `remo
 profile. See [docker-runtimes.md](docker-runtimes.md#scheduled-jobs-launchd) for the
 schedule and log locations.
 
+`browser-mcp` runs `@playwright/mcp@0.0.82`, pinned and never `@latest`, on the Mac's
+Tailscale IP at port 8931. That server has `browser_run_code_unsafe`, which is
+RCE-equivalent, and no option turns it off. Any tailnet peer that can reach tcp/8931 can run
+code as you. Restrict the port with a Tailscale ACL. See
+[remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the policy.
+
 ## One-time manual steps
 
 A step only you can do is reported as **blocked** with the exact fix, and the rest of the

@@ -201,6 +201,62 @@ does nothing otherwise. Manual `pw-workstation` is the explicit fallback.
 Claude (on the VPS) drives the browser; the window opens on your machine. Only a
 browser's worth of RAM stays local — trivial next to the LSP/builds you offloaded.
 
+### Security: port 8931 runs code on your machine
+
+The same MCP server also runs always-on as the `browser-mcp` service (a systemd `--user` unit
+on Linux, the `dev.devboost.browser-mcp` LaunchAgent on macOS, `remote` profile), bound to the
+machine's Tailscale IP on port **8931**. Treat that port as a remote shell:
+
+- **It can run code on the machine.** Playwright MCP includes `browser_run_code_unsafe`.
+  Its own description says it "executes arbitrary JavaScript in the Playwright server
+  process and is RCE-equivalent". `browser_evaluate` runs JavaScript in the page. Both are
+  in the `core` capability, which is always on.
+- **There is no switch to turn them off.** In `@playwright/mcp` 0.0.82, `--caps` only adds
+  the `vision`, `pdf` and `devtools` capabilities. `--allowed-hosts` is DNS-rebinding
+  protection, not authentication, and the server has no token option.
+- **So the network is the only gate.** Every tailnet device that can open tcp/8931 on this
+  machine can run commands as you. So can anything that runs code on a server you
+  registered it with.
+
+What dev-boost does about it:
+
+- It pins the server to `@playwright/mcp@0.0.82` everywhere. It never uses `@latest`, so a
+  new upstream release can't change the tools without review. The version lives in
+  `engine/src/devboost/modules/_playwright_mcp.py`.
+- It binds only to the Tailscale IP, never `0.0.0.0`. If there is no tailnet IP, `pw-mcp`
+  refuses to start instead of binding every interface.
+- For a local-only session, set `TS_IP=127.0.0.1` for the launcher. Remote servers then
+  can't reach it.
+
+**What you should do: restrict tcp/8931 with a Tailscale ACL.** Only the servers that
+drive your browser should reach the port. Tailscale's policy is allow-only, so first remove
+or narrow the default "allow all" rule, then grant 8931 explicitly. Tag your workstations
+and dev servers, and use grants like these in the tailnet policy file:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:workstation": ["autogroup:admin"],
+    "tag:dev-server":  ["autogroup:admin"]
+  },
+  "grants": [
+    // Your untagged personal devices keep reaching each other.
+    { "src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"] },
+    // Only the dev servers may reach the browser MCP on the workstations.
+    { "src": ["tag:dev-server"], "dst": ["tag:workstation"], "ip": ["tcp:8931"] }
+  ]
+}
+```
+
+Tagging a device removes it from `autogroup:self`. The second grant is then the only way
+into a workstation's port 8931. Every other port on the workstation is closed to other
+devices unless you grant it, so add grants for anything else you need, such as SSH. Check a peer with `tailscale ping` and the admin console's "Access
+controls → Preview rules" tab. Don't share the workstation node with other tailnets.
+
+Why `tailscale serve` isn't used: fronting a loopback-bound server with `tailscale serve`
+still forwards every peer the ACL allows. Playwright MCP checks no identity, so that adds
+nothing on top of the ACL.
+
 ### Multiple machines / switching (laptop, desktop, a new PC)
 
 Nothing is hardcoded to "a laptop." `pw-workstation` (and the tmux hook) read the **ssh client
@@ -220,7 +276,7 @@ read from the secrets bundle; export it yourself in `~/.bash_profile` if you wan
 chromium --remote-debugging-port=9222 &
 ssh -R 9222:localhost:9222 my-vps
 # VPS:
-npx @playwright/mcp@latest --cdp-endpoint ws://localhost:9222
+npx -y @playwright/mcp@0.0.82 --cdp-endpoint ws://localhost:9222
 ```
 
 Chrome guards `--remote-debugging-port` to *localhost* and rejects cross-host Host

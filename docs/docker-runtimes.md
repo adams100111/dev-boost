@@ -94,7 +94,7 @@ tail -f ~/Library/Logs/devboost/restic-b2.log
 
 ### browser-mcp
 
-`browser-mcp` (profile `remote`) is the macOS twin of the Linux `browser-mcp.service` systemd unit (see `dotfiles/dot_config/systemd/user/README.md`): an always-on Playwright MCP server bound to the Tailscale interface, so a remote Claude Code session gets its own visible browser on this Mac. It is unauthenticated by design (reachable from the tailnet, not the open internet), so restrict it further with a **Tailscale ACL** scoped to `tcp:8931` on this device rather than relying on the tailnet's default allow — see the [Tailscale ACL docs](https://tailscale.com/kb/1018/acls). Never `tailscale funnel` it.
+`browser-mcp` (profile `remote`) is the macOS twin of the Linux `browser-mcp.service` systemd unit (see `dotfiles/dot_config/systemd/user/README.md`): an always-on Playwright MCP server bound to the Tailscale interface, so a remote Claude Code session gets its own visible browser on this Mac. It is unauthenticated by design (reachable from the tailnet, not the open internet), so restrict it further with a **Tailscale ACL** scoped to `tcp:8931` on this device rather than relying on the tailnet's default allow — see the [Tailscale ACL docs](https://tailscale.com/kb/1018/acls). Never `tailscale funnel` it. The server includes `browser_run_code_unsafe`, which is RCE-equivalent, and in the pinned `@playwright/mcp@0.0.82` no flag turns it off. See [remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the exposure and an example ACL.
 
 ## Troubleshooting
 

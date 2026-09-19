@@ -7,6 +7,14 @@ git history and the GitHub release notes.
 
 ## [Unreleased]
 
+### Security
+- **browser-mcp security** — the Playwright MCP server is pinned to `@playwright/mcp@0.0.82`
+  everywhere (the `browser-mcp` launcher, the macOS LaunchAgent, `pw-mcp`, and the Claude
+  Code wiring in the `playwright` module); nothing starts `@latest`. The server's
+  `browser_run_code_unsafe` tool is RCE-equivalent and 0.0.82 has no flag to disable it, so
+  the docs now explain the port-8931 exposure and give a Tailscale ACL. `pw-mcp` refuses to
+  bind `0.0.0.0` when there is no tailnet IP and accepts its MagicDNS name as a host.
+
 ### Added
 - **Docker runtimes on macOS (M4)** — Colima (default), OrbStack and Docker Desktop behind
   a common `DockerRuntime` protocol, plus `devboost docker use <runtime>` to switch between
