@@ -163,7 +163,11 @@ def apply(ctx: Ctx, rows: Sequence[Association], *, can_prompt: bool) -> Outcome
     for row in rows:
         if row.ext in seen.get(row.bundle_id, []):
             continue
-        uti = _ask(ctx, "get-uti", row.ext)
+        # --show-dynamic: without it, an extension with no app-declared UTI prints nothing
+        # (exit 0, empty stdout) — indistinguishable from a real tool failure. With it,
+        # utiluti always answers (a dyn.* UTI when nothing else applies), so an empty/failed
+        # read-back here is a genuine tool failure, and a dyn.* UTI reaches the skip below.
+        uti = _ask(ctx, "get-uti", row.ext, "--show-dynamic")
         if uti is None:  # a tool failure, not an answer: retried by the next run
             log.warn(
                 f"utiluti could not look up the type of .{row.ext}; "

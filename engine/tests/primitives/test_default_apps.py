@@ -54,7 +54,15 @@ class _LaunchServices(FakeExecutor):
         a = list(argv)
         if a[:2] == ["utiluti", "get-uti"]:
             uti = self.utis.get(a[2])
-            return Result(0, stdout=f"{uti}\n") if uti else Result(1)
+            if uti is None:
+                return Result(1)
+            # Real utiluti: a dyn.* UTI (no app declares the type) prints nothing unless
+            # --show-dynamic is passed — still exit 0, which without the flag is
+            # indistinguishable from "nothing to report" and used to be logged as a
+            # lookup failure instead of the dynamic-UTI skip path.
+            if uti.startswith("dyn.") and "--show-dynamic" not in a:
+                return Result(0, stdout="")
+            return Result(0, stdout=f"{uti}\n")
         if a[:3] == ["utiluti", "type", "set"]:
             self.sets.append((a[3], a[4], interactive))
             if a[3] in self.crash:
@@ -204,6 +212,22 @@ def test_a_dynamic_uti_is_skipped_not_declined(monkeypatch: pytest.MonkeyPatch) 
     assert len(skipped) == 1 and ".py" in skipped[0] and warned == []
     _next_run(monkeypatch)
     assert default_apps.handled(ROWS)  # settled: not asked again
+
+
+def test_get_uti_passes_show_dynamic_so_a_dyn_type_is_not_mistaken_for_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: `utiluti get-uti <ext>` alone prints nothing (exit 0) for a dyn.* type
+    # (e.g. .jsx/.cs/.scss when no installed app declares them); only --show-dynamic
+    # reveals it. Without the flag this looked like a tool failure, not the dyn.* skip.
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    utis = {**UTIS, "py": "dyn.ah62d4rv4ge81e5pe"}
+    ex = _LaunchServices(utis)
+    out = default_apps.apply(Ctx(os=MAC, ex=ex), ROWS, can_prompt=True)
+    assert out.dynamic == ["py"] and out.failed == [] and warned == []
+    calls = [c for c in ex.calls if c[:2] == ["utiluti", "get-uti"] and c[2] == "py"]
+    assert calls and "--show-dynamic" in calls[0]
 
 
 def test_an_interrupted_run_keeps_the_answers_already_given() -> None:

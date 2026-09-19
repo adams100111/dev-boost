@@ -26,6 +26,7 @@ def test_scaffold_module_writes_typed_file(tmp_path: Path) -> None:
 def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
     (tmp_path / "profiles.toml").write_text(
         '[profiles]\nbase = ["docker"]\ncli = ["ripgrep"]\nshell = ["starship"]\n'
+        'macos-desktop = []\nios = []\nmacos-extras = []\n'
         'gnome = ["gnome-settings"]\ngnome-theme = ["gnome-theme-bundle"]\n'
         'gnome-aesthetics = ["gnome-aesthetics-bundle"]\n'
         'multimedia = ["openh264"]\neditors = ["fresh"]\n'

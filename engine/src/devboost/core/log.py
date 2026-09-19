@@ -9,22 +9,25 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, format="{message}", level="INFO")
 
+# Messages are passed as format *arguments*: loguru colours only the format string, so text
+# like `git clone <repo>` or a stray backslash is printed verbatim, never parsed as markup.
+
 
 def info(msg: str) -> None:
-    logger.opt(colors=True).info(msg)
+    logger.opt(colors=True).info("{}", msg)
 
 
 def ok(msg: str) -> None:
-    logger.opt(colors=True).info(f"<green>ok</green> {msg}")
+    logger.opt(colors=True).info("<green>ok</green> {}", msg)
 
 
 def skip(msg: str) -> None:
-    logger.opt(colors=True).info(f"<yellow>skip</yellow> {msg}")
+    logger.opt(colors=True).info("<yellow>skip</yellow> {}", msg)
 
 
 def warn(msg: str) -> None:
-    logger.opt(colors=True).warning(f"<yellow>warn</yellow> {msg}")
+    logger.opt(colors=True).warning("<yellow>warn</yellow> {}", msg)
 
 
 def error(msg: str) -> None:
-    logger.opt(colors=True).error(f"<red>error</red> {msg}")
+    logger.opt(colors=True).error("<red>error</red> {}", msg)

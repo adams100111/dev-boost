@@ -17,6 +17,7 @@ from devboost.cli import devhygiene as dh
 from devboost.cli import host as plat
 from devboost.cli import lifecycle as lc
 from devboost.cli import pass_cmd as _pass
+from devboost.cli import revert as _revert
 from devboost.cli import secrets_cmd as _secrets_cmd
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
@@ -226,11 +227,13 @@ def _run(
     if offline:
         plan = _apply_offline_filter(plan, modules)
     sudo = ctx.os.family == "macos" and not dry_run and _needs_sudo(plan, modules, ctx, forced)
-    if ctx.os.family == "macos" and not sudo:
-        # Nothing pending needs root, so no password was asked for: a sudo step that
-        # runs anyway fails fast instead of prompting on a hidden tty (ruling C-R18).
-        ctx = replace(ctx, ex=NoPromptSudoExecutor(ctx.ex))
-    with plat.mac_session(ctx.os, dry_run=dry_run, sudo=sudo):
+    with plat.mac_session(ctx.os, dry_run=dry_run, sudo=sudo) as sudo_held:
+        if ctx.os.family == "macos" and not (sudo and sudo_held):
+            # No sudo timestamp: either nothing pending needed root, or the password was
+            # asked for and not given (no tty in an unattended run). The runner blocks
+            # every flagged module whose sudo step is pending, and a sudo step that runs
+            # anyway fails fast instead of prompting on a hidden tty (ruling C-R18).
+            ctx = replace(ctx, ex=NoPromptSudoExecutor(ctx.ex), no_sudo=True)
         if not offline and not dry_run:
             # Refresh the package index once up front so installs don't fail against a
             # stale index on a fresh box (no network access happens in offline/dry-run
@@ -575,6 +578,7 @@ app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
 app.add_typer(_pass.app, name="pass")
 app.add_typer(_secrets_cmd.app, name="secrets")
+app.add_typer(_revert.app, name="revert")
 
 
 def main() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -199,3 +200,24 @@ def test_the_refusal_warning_names_extensions_not_utis(
     [msg] = [w for w in warned if "not the default app" in w]
     assert ".py" in msg and ".md" in msg
     assert "test." not in msg  # no UTI strings
+
+
+def test_unattended_no_sudo_hand_installed_zed_is_kept_and_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # M3 AF2: `brew install --cask --adopt zed` needed sudo to chmod the hand-installed
+    # bundle. Without sudo the adopt is skipped, and Zed still gets its config.
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    app = tmp_path / "Applications" / "Zed.app"
+    app.mkdir(parents=True)
+    monkeypatch.setattr(editors, "_ZED_APP", app)
+    monkeypatch.setattr(_zed, "is_interactive", lambda: True)
+    ex = _mac()
+    art = [{"app": ["Zed.app"], "target": str(app)}]
+    ex.answers[("brew", "info", "--json=v2", "--cask", "zed")] = Result(
+        0, stdout=json.dumps({"casks": [{"artifacts": art}]})
+    )
+    Zed().install(Ctx(os=MAC, ex=ex, no_sudo=True))
+    assert _CASK_INSTALL not in ex.calls
+    assert _zed.settings_path().is_file() and _zed.keymap_path().is_file()
+    assert len(_sets(ex)) == len(_zed.default_app_rows())

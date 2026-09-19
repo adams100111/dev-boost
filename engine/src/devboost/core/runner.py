@@ -73,6 +73,21 @@ def _tcc_gate(pm: PlannedModule, mod: Module, ctx: Ctx, ok: RunResult) -> RunRes
     )
 
 
+def _sudo_blocked(name: str, mod: Module, ctx: Ctx) -> bool:
+    """True when a macOS module's pending sudo step cannot run: the session holds no sudo.
+
+    Only ``needs_sudo_on_macos`` modules are probed, with their read-only ``sudo_needed``.
+    A probe that raises counts as pending, like the up-front pre-check (cli/app.py).
+    """
+    if not ctx.no_sudo or ctx.os.family != "macos" or not type(mod).needs_sudo_on_macos:
+        return False
+    try:
+        return mod.sudo_needed(ctx)
+    except Exception:  # noqa: BLE001 — a probe must never break the run
+        log.warn(f"{name}: sudo probe failed — treating its sudo step as pending")
+        return True
+
+
 def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunResult:
     if pm.skip_reason is not None:
         log.skip(f"{pm.name} ({pm.skip_reason})")
@@ -90,6 +105,10 @@ def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunR
     if not ctx.force and mod.verify(ctx):
         log.skip(f"{pm.name} (already installed)")
         return _tcc_gate(pm, mod, ctx, RunResult(pm.name, "skip", "already-installed"))
+    if _sudo_blocked(pm.name, mod, ctx):
+        fix = f"run `devboost install {pm.name}` in a terminal (needs your password)"
+        log.warn(f"{pm.name}: needs you — needs sudo, which this run does not hold. Fix: {fix}")
+        return RunResult(pm.name, "blocked", f"needs-user: needs sudo → {fix}")
     try:
         mod.install(ctx)
     except NeedsUser as exc:
