@@ -33,8 +33,12 @@ use_cache=1
 if [ "$use_cache" -eq 1 ]; then
   now=$(date +%s)
   if cached=$(cat "$cache_file" 2>/dev/null); then
-    # shellcheck disable=SC2046 # splitting "<epoch> <ram> <used%> <free-G>" is the point
+    # Split "<epoch> <ram> <used%> <free-G>" on whitespace, with globbing off so a corrupt
+    # field such as `*` stays literal (and is rejected below).
+    set -f
+    # shellcheck disable=SC2086 # the word splitting is the point
     set -- $cached
+    set +f
     if [ "$#" -eq 4 ]; then
       ok=1
       for f in "$1" "$2" "$3" "$4"; do

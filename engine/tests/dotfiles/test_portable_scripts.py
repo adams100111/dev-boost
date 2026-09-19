@@ -25,10 +25,10 @@ DF = ("echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'; "
       "echo '/dev/disk3s5 971298980 68717056 875921296 8% /System/Volumes/Data'")
 
 
-def _probe(bin_dir: Path, extra: dict[str, str]) -> str:
+def _probe(bin_dir: Path, extra: dict[str, str], cwd: Path | None = None) -> str:
     return subprocess.run(
         ["sh", str(PROBE)], env={"PATH": f"{bin_dir}:/usr/bin:/bin", **extra},
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=True, cwd=cwd,
     ).stdout.strip()
 
 
@@ -150,6 +150,22 @@ def test_probe_corrupt_cache_falls_back_to_live_probe(
     assert _probe(bin_dir, env) == "57 8 835"
     calls = call_log.read_text(encoding="utf-8").split()
     assert calls == ["sysctl", "vm_stat", "df"]  # ignored the corrupt line, probed live
+
+
+def test_probe_cache_line_is_never_glob_expanded(
+    bin_dir: Path, cache_env: tuple[Path, dict[str, str]], tmp_path: Path,
+) -> None:
+    # A corrupt cache field that is a glob must stay literal (and be rejected), not
+    # expand to a digit-named file in the caller's directory and pass as a value.
+    call_log, env = cache_env
+    cache_dir = Path(env["XDG_CACHE_HOME"]) / "devboost"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "resources").write_text(f"{int(time.time())} 9 [0-9] 7\n", encoding="utf-8")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / "8").write_text("", encoding="utf-8")
+    assert _probe(bin_dir, env, cwd=cwd) == "57 8 835"
+    assert call_log.read_text(encoding="utf-8").split() == ["sysctl", "vm_stat", "df"]
 
 
 def test_probe_cache_write_failure_falls_back_silently(
