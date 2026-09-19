@@ -109,8 +109,8 @@ shared with M5's `default-apps` module). macOS 26.4+ asks you to confirm every c
 dialog per file type (extensions sharing a type share one), so dev-boost only tries when a
 terminal is attached, asks each type once, and records it in
 `~/.local/state/devboost/default-apps.json` — a "no" is never asked again. An unattended
-run leaves `zed` **blocked** with "run `devboost install zed` in a terminal". `.ts` is also
-MPEG transport-stream video on macOS; on a dev box it opens in Zed.
+run leaves `zed` **blocked** with "run `devboost install zed` in a terminal". `.ts` is not
+claimed: macOS gives it the same type as MPEG transport-stream video (`.mts`, `.m2ts`).
 
 **Your own editor.** `~/.config/devboost/local.sh` is sourced last by `env.sh`; set
 `EDITOR` / `VISUAL` there.
