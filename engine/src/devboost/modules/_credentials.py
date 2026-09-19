@@ -20,8 +20,8 @@ So credentials resolve in order of decreasing automation:
    (an unattended run) it is used directly, since the alternative is failing outright.
 3. **An interactive choice** — only when a real terminal is attached: use the signed-in
    account, sign in as someone else, type the details in, or skip.
-4. Otherwise a `SecretsError` that names these options instead of just reporting a
-   missing file.
+4. Otherwise `NeedsUser`: the module is reported *blocked* (not failed) with a fix that
+   names these options, instead of just reporting a missing file.
 
 Step 4 is what keeps unattended installs honest: nothing here ever blocks waiting for
 input that nobody is there to give.
