@@ -12,6 +12,8 @@ on x86_64 CI works on both amd64 and arm64 targets.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from devboost.core.registry import register
 from devboost.exec.primitives import copr, pkg
 from devboost.model import Ctx
@@ -151,6 +153,8 @@ class Curl(PackageModule):
     profiles = ("base",)
     cmd = "curl"
     fedora_pkg = "curl"
+    # brew's curl is keg-only (never on PATH); macOS ships a current curl in /usr/bin.
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
 
 @register
@@ -169,6 +173,8 @@ class Unzip(PackageModule):
     profiles = ("base",)
     cmd = "unzip"
     fedora_pkg = "unzip"
+    # /usr/bin/unzip ships with macOS; brew's unzip is keg-only.
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
 
 @register
@@ -226,7 +232,7 @@ class Eza(PackageModule):
     cmd = "eza"
     fedora_pkg = "eza"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu 24.04 apt — install the latest GitHub release binary.
             ctx.ex.run(["sh", "-c", _EZA_DEBIAN])
@@ -270,7 +276,7 @@ class Atuin(PackageModule):
     cmd = "atuin"
     fedora_pkg = "atuin"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — official installer (→ ~/.atuin/bin, symlinked onto PATH).
             ctx.ex.run(["sh", "-c", _ATUIN_DEBIAN])
@@ -288,15 +294,29 @@ class Direnv(PackageModule):
 
 
 @register
+class Bash(PackageModule):
+    name = "bash"
+    category = "shell"
+    description = "bash 5 as a tool on macOS (/bin/bash is 3.2); zsh stays the login shell."
+    profiles = ("shell",)
+    # Linux distros ship a current bash; only macOS needs brew's.
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    cmd = "bash"
+    fedora_pkg = "bash"
+
+
+@register
 class WlClipboard(PackageModule):
     name = "wl-clipboard"
     category = "shell"
-    description = "Wayland clipboard CLI (wl-copy/wl-paste) — powers the image-paste bridge."
+    description = "Wayland clipboard CLI (wl-copy/wl-paste)."
     profiles = ("shell",)
     cmd = "wl-paste"
     fedora_pkg = "wl-clipboard"
     debian_pkg = "wl-clipboard"
     gui = True  # laptop-only; skipped on a headless VPS
+    # macOS has pbcopy/pbpaste built in; herdr reads clipboard images via osascript.
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
 
 @register
@@ -306,6 +326,7 @@ class Delta(PackageModule):
     profiles = ("cli",)
     cmd = "delta"
     fedora_pkg = "git-delta"
+    brew_pkg = "git-delta"  # Homebrew's formula name (`delta` is a different project)
 
 
 @register
@@ -317,7 +338,7 @@ class Lazygit(PackageModule):
     fedora_pkg = "lazygit"
     copr_repo = "atim/lazygit"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — install the latest GitHub release binary.
             ctx.ex.run(["sh", "-c", _LAZYGIT_DEBIAN])
@@ -334,7 +355,7 @@ class Lazydocker(PackageModule):
     cmd = "lazydocker"
     fedora_pkg = "lazydocker"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "arch":
             # Unlike Fedora/Debian, Arch packages lazydocker properly (and Omarchy
             # preinstalls it) — let pacman own the binary so `omarchy update` keeps it
@@ -356,7 +377,7 @@ class Dust(PackageModule):
     fedora_pkg = "du-dust"  # Fedora packages du-dust as `du-dust` (not `rust-dust`)
     arch_pkg = "dust"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # du-dust is not in Ubuntu apt until 25.10 — install the GitHub release binary.
             ctx.ex.run(["sh", "-c", _DUST_DEBIAN])
@@ -400,7 +421,7 @@ class Sd(PackageModule):
     fedora_pkg = "sd"  # unused on Fedora — absent from F44 dnf; binary install below
     arch_pkg = "sd"    # …but Arch does package it
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "arch":
             pkg.install(ctx, self._resolve_pkg(ctx))
             return
@@ -420,7 +441,7 @@ class Yq(PackageModule):
     # one. `go-yq` is mikefarah/yq — the Go implementation every other OS here uses.
     arch_pkg = "go-yq"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — install the latest static GitHub release binary.
             ctx.ex.run(["sh", "-c", _YQ_DEBIAN])
@@ -436,7 +457,7 @@ class Tealdeer(PackageModule):
     cmd = "tldr"
     fedora_pkg = "tealdeer"
 
-    def verify(self, ctx: Ctx) -> bool:
+    def verify_linux(self, ctx: Ctx) -> bool:
         # Fedora's package provides `tldr`; Ubuntu's provides `tealdeer` (no `tldr`
         # symlink). Accept either so verify is correct on both.
         return ctx.ex.which("tldr") or ctx.ex.which("tealdeer")
@@ -450,7 +471,7 @@ class Fastfetch(PackageModule):
     cmd = "fastfetch"
     fedora_pkg = "fastfetch"
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt until 25.10 — install the upstream .deb release.
             ctx.ex.run(["sh", "-c", _FASTFETCH_DEBIAN])
@@ -467,7 +488,7 @@ class Gh(PackageModule):
     fedora_pkg = "gh"
     arch_pkg = "github-cli"  # Arch names the GitHub CLI package `github-cli`, not `gh`
 
-    def install(self, ctx: Ctx) -> None:
+    def install_linux(self, ctx: Ctx) -> None:
         if ctx.os.family == "debian":
             # Not in Ubuntu apt — add the official GitHub CLI apt repo, then install.
             ctx.ex.run(["sh", "-c", _GH_DEBIAN])

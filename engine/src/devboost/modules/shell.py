@@ -1,20 +1,23 @@
-"""shell profile — starship, ghostty, nerd-fonts, dotfiles, bash-config."""
+"""shell profile — starship, ghostty (default), wezterm (opt-in), fonts, dotfiles, bash/zsh."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.core.settings import settings
-from devboost.exec.primitives import copr, flatpak, pkg
+from devboost.exec.primitives import copr, pkg
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
 
@@ -28,17 +31,138 @@ def _home() -> Path:
     return Path(os.environ["HOME"])
 
 
+#: Every dev-boost managed dotfile carries this marker (dot_zshrc, dot_bashrc, …).
+_MANAGED_MARKER = "devboost — managed by chezmoi"
+#: macOS login/rc files the dotfiles take over (spec §3) → their plain (non-template)
+#: source in dotfiles/. Before `chezmoi apply --force` overwrites one, a copy is kept
+#: unless it is exactly what dev-boost wrote.
+_TAKEN_OVER = {".zshrc": "dot_zshrc", ".zprofile": "dot_zprofile",
+               ".bash_profile": "dot_bash_profile"}
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """True when backup *b* already holds *a*: same link target, or same regular bytes."""
+    if a.is_symlink() or b.is_symlink():
+        return a.is_symlink() and b.is_symlink() and a.readlink() == b.readlink()
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def _rc_digests_path() -> Path:
+    """$XDG_STATE_HOME/devboost/rc-digests.json (default ~/.local/state/devboost)."""
+    base = os.environ.get("XDG_STATE_HOME")
+    root = Path(base) if base else _home() / ".local" / "state"
+    return root / "devboost" / "rc-digests.json"
+
+
+def _read_rc_digests() -> dict[str, str]:
+    """The post-apply digests, by rc file name. Missing or corrupt → {} (never raises)."""
+    try:
+        data = json.loads(_rc_digests_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def record_rc_digests(home: Path) -> None:
+    """Record the sha256 of each managed rc file as the apply just wrote it (M-R26).
+
+    A later run then tells "untouched since dev-boost wrote it, but from an older release"
+    (no backup needed) apart from "someone appended to it" (keep a copy). Atomic write;
+    the state dir is created 0700.
+    """
+    digests: dict[str, str] = {}
+    for name in _TAKEN_OVER:
+        path = home / name
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if _MANAGED_MARKER.encode("utf-8") in data:
+            digests[name] = hashlib.sha256(data).hexdigest()
+    target = _rc_digests_path()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".rc-digests.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(digests, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def back_up_rc_files(home: Path, source: Path) -> list[Path]:
+    """Copy each rc file ``apply --force`` would lose to ``<name>.pre-devboost``.
+
+    A file is kept when it is foreign (no dev-boost marker) or when it is dev-boost's
+    but has drifted — another tool appended a line that the next ``apply --force`` would
+    silently drop. Drifted means its bytes match neither its *source* in dotfiles/ nor
+    the digest recorded after the last successful apply (``record_rc_digests``), so a
+    file merely left over from an older release needs no copy. With no usable recorded
+    digest, the source comparison alone decides.
+
+    A copy, not a move: the original stays in place until ``chezmoi apply --force``
+    replaces it, so a failed apply never leaves the Mac without its ``~/.zprofile``
+    (brew's PATH). A symlink is copied as the link itself, never followed.
+
+    An earlier backup is never replaced: a later one becomes ``<name>.pre-devboost.1``,
+    ``.2``, … No new copy is made when the newest backup already holds the same file
+    (a retried run, M-R21). Content is not merged — the managed files source
+    ``~/<name>.local`` for machine-specific lines.
+    """
+    kept: list[Path] = []
+    recorded = _read_rc_digests()
+    for name, src in _TAKEN_OVER.items():
+        path = home / name
+        if not (path.is_file() or path.is_symlink()):
+            continue
+        try:
+            current = path.read_bytes()
+        except OSError:
+            current = b""  # a dangling symlink: nothing of ours, keep it too
+        managed = _MANAGED_MARKER.encode("utf-8") in current
+        src_path = source / src
+        if managed and not path.is_symlink() and (
+            (src_path.is_file() and current == src_path.read_bytes())
+            or recorded.get(name) == hashlib.sha256(current).hexdigest()
+        ):
+            continue
+        newest: Path | None = None
+        backup = home / f"{name}.pre-devboost"
+        n = 0
+        while backup.exists() or backup.is_symlink():
+            newest = backup
+            n += 1
+            backup = home / f"{name}.pre-devboost.{n}"
+        if newest is not None and _same_file(path, newest):
+            continue
+        shutil.copy2(path, backup, follow_symlinks=False)
+        kept.append(backup)
+    return kept
+
+
 @register
 class Starship(Module):
     name = "starship"
     category = "shell"
     description = "Cross-shell prompt."
     profiles = ("shell",)
+    per_os = OsMap(macos=BrewFormula("starship"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("starship")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Not in Ubuntu apt OR Fedora's default repos — the official installer drops the binary
         # into ~/.local/bin (on PATH), no sudo, on any distro. The installer's -b doesn't create
         # the dir, so ensure it exists (fresh boxes may not have ~/.local/bin yet).
@@ -60,18 +184,28 @@ _WEZTERM_APPIMAGE = (
 class Wezterm(Module):
     name = "wezterm"
     category = "shell"
-    description = "GPU-accelerated terminal + multiplexer (nightly); default terminal."
+    description = (
+        "GPU terminal + multiplexer (nightly) — opt-in, deprecated: Ghostty is the default "
+        "and herdr the multiplexer."
+    )
     gui = True
-    profiles = ("shell",)
+    profiles = ("optional-terminals",)
     # Omarchy ships foot as the default terminal, themed by `omarchy theme set` and
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: the nightly cask (the last stable release is Feb 2024).
+    per_os = OsMap(macos=BrewCask("wezterm@nightly"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("wezterm")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Nightly AppImage extracted into ~/.local (no FUSE, no sudo). The COPR
         # lacks builds for newer Fedora releases, so the AppImage is the reliable
         # path on both Fedora and Ubuntu. Symlinked onto PATH + a desktop entry.
@@ -114,20 +248,37 @@ DESKTOP
 class Ghostty(Module):
     name = "ghostty"
     category = "shell"
-    description = "GPU-accelerated terminal (optional; WezTerm is the default)."
+    description = "GPU-accelerated terminal — the default on every OS (Omarchy keeps foot)."
     gui = True
-    profiles = ()  # optional — install on demand; WezTerm is the default terminal
+    profiles = ("shell",)
+    # Omarchy ships foot as the default terminal, themed by `omarchy theme set` and
+    # routed through xdg-terminal-exec. Installing a second "default terminal" fights
+    # the platform's theming and its terminal-launch chain.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: the cask is the app bundle (no CLI on PATH), so verify asks brew.
+    per_os = OsMap(macos=BrewCask("ghostty"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         if ctx.os.family == "debian":
-            return "com.mitchellh.ghostty" in ctx.ex.run(
-                ["flatpak", "list", "--app", "--columns=application"]
-            ).stdout
+            # /snap/bin may not be on devboost's own PATH yet, so ask snap too.
+            return ctx.ex.which("ghostty") or ctx.ex.run(["snap", "list", "ghostty"]).ok
         return ctx.ex.which("ghostty")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
-            flatpak.install(ctx, "com.mitchellh.ghostty")
+            # Flathub has no Ghostty (com.mitchellh.ghostty is a 404); the snap is the
+            # packaged build for Ubuntu/Debian. Classic confinement: a terminal needs the
+            # user's whole filesystem and shell. snapd ships on Ubuntu desktop.
+            if not ctx.ex.which("snap"):
+                pkg.install(ctx, "snapd")
+            res = ctx.ex.run(["snap", "install", "ghostty", "--classic"], sudo=True)
+            if not res.ok:
+                raise InstallError(self.name, "snap install ghostty --classic", res.code)
         else:
             copr.enable(ctx, "scottames/ghostty")
             pkg.install(ctx, "ghostty")
@@ -144,11 +295,18 @@ class NerdFonts(Module):
     # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
     # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
     profiles = ("shell",)
+    # macOS: the Homebrew font cask (tracks the latest Nerd Fonts; Linux pins v3.2.1).
+    per_os = OsMap(macos=BrewCask("font-jetbrains-mono-nerd-font"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return "JetBrainsMono Nerd Font" in ctx.ex.run(["fc-list"]).stdout
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         font_dir = _home() / ".local" / "share" / "fonts" / "JetBrainsMono"
         font_dir.mkdir(parents=True, exist_ok=True)
         zip_path = Path(tempfile.gettempdir()) / "devboost-jetbrainsmono.zip"
@@ -164,6 +322,9 @@ class Dotfiles(Module):
     description = "Apply the in-repo chezmoi dotfiles source."
     requires = (Chezmoi, Starship, Atuin, Zoxide, Direnv)
     profiles = ("shell",)
+    # Runs unchanged on macOS: chezmoi comes from brew, and the source picks each OS's
+    # files itself (.chezmoiignore). install() also keeps foreign zsh/bash rc files.
+    portable = True
 
     def _stamp(self) -> Path:
         return _home() / ".config" / "devboost" / "dotfiles.sha256"
@@ -200,6 +361,13 @@ class Dotfiles(Module):
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
+        if ctx.os.family == "macos":
+            for backup in back_up_rc_files(_home(), src):
+                name = backup.name.split(".pre-devboost")[0]
+                log.ok(
+                    f"dotfiles: kept your previous ~/{name} as ~/{backup.name} —"
+                    f" machine-specific lines belong in ~/{name}.local"
+                )
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
         # overwritten silently. Without it, chezmoi tries to prompt on /dev/tty for any
@@ -211,6 +379,8 @@ class Dotfiles(Module):
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)
+        if ctx.os.family == "macos":
+            record_rc_digests(_home())
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
@@ -243,6 +413,8 @@ class BashConfig(Module):
     description = "Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it)."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    # bash is the interactive shell on Linux only; macOS runs zsh (zsh-config).
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian", "arch")
 
     def _owns_bashrc(self, ctx: Ctx) -> bool:
         """True when dev-boost's own dotfiles supply ~/.bashrc wholesale.
@@ -280,12 +452,57 @@ class BashConfig(Module):
 
 
 @register
+class ZshPlugins(Module):
+    name = "zsh-plugins"
+    category = "shell"
+    description = "zsh-autosuggestions + zsh-syntax-highlighting (sourced by shell.zsh)."
+    profiles = ("shell",)
+    # zsh is the interactive shell only on macOS (bash on Linux) — spec §2.
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    self_updating = True  # `devboost install --update` → brew upgrade
+    per_os = OsMap(macos=BrewFormula("zsh-autosuggestions", "zsh-syntax-highlighting"))
+
+
+#: The line dot_zshrc uses to load dev-boost's zsh config (checked by zsh-config).
+_ZSH_SOURCE_LINE = (
+    '[[ -r "${HOME}/.config/devboost/shell.zsh" ]] && source "${HOME}/.config/devboost/shell.zsh"'
+)
+
+
+@register
+class ZshConfig(Module):
+    name = "zsh-config"
+    category = "shell"
+    description = "Check dev-boost's zsh config is live (~/.zshrc → shell.zsh) — macOS."
+    requires = (Dotfiles, ZshPlugins)
+    profiles = ("shell",)
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    # Written for macOS: it only reads the files the dotfiles module applied.
+    portable = True
+
+    def verify(self, ctx: Ctx) -> bool:
+        zshrc = _home() / ".zshrc"
+        if not zshrc.is_file() or not (_home() / ".config/devboost/shell.zsh").is_file():
+            return False
+        text = zshrc.read_text(encoding="utf-8", errors="replace")
+        return _MANAGED_MARKER in text and _ZSH_SOURCE_LINE in text
+
+    def install(self, ctx: Ctx) -> None:
+        # ~/.zshrc is written by the dotfiles module (a marker check, like bash-config).
+        log.warn(
+            "zsh-config: ~/.zshrc is not dev-boost's — run `devboost install dotfiles --force`"
+        )
+
+
+@register
 class ClaudeStatusline(Module):
     name = "claude-statusline"
     category = "shell"
     description = "Point Claude Code's statusLine at the managed ~/.claude/statusline.sh."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    # A JSON merge into ~/.claude/settings.json; the script it points at is portable.
+    portable = True
 
     def _settings_path(self) -> Path:
         return _home() / ".claude" / "settings.json"

@@ -17,6 +17,25 @@ jobs:
           python-version: '3.12'
       - name: pass + gpg for the pass integration test
         run: sudo apt-get update && sudo apt-get install -y pass
+      # Pinned chezmoi so the hermetic Linux `chezmoi apply` tests (tests/dotfiles, the
+      # M2 Linux gate) run here instead of skipping. Same version as the macOS dev box's
+      # brew chezmoi. The .deb is checked against the release checksums file AND the
+      # pinned digest below before dpkg sees it — no curl | sh.
+      - name: chezmoi (pinned, checksum-verified)
+        working-directory: ${{ runner.temp }}
+        env:
+          CHEZMOI_VERSION: 2.72.2
+          CHEZMOI_DEB_SHA256: 310a8f141b940e5dbf0fef33fe27804768c977fa1da72112e27f78797225a526
+        run: |
+          set -euo pipefail
+          deb="chezmoi_${CHEZMOI_VERSION}_linux_amd64.deb"
+          base="https://github.com/twpayne/chezmoi/releases/download/v${CHEZMOI_VERSION}"
+          curl -fsSLO "${base}/${deb}"
+          curl -fsSLO "${base}/chezmoi_${CHEZMOI_VERSION}_checksums.txt"
+          grep " ${deb}\$" "chezmoi_${CHEZMOI_VERSION}_checksums.txt" | sha256sum -c -
+          echo "${CHEZMOI_DEB_SHA256}  ${deb}" | sha256sum -c -
+          sudo dpkg -i "${deb}"
+          chezmoi --version
       - run: uv sync
       - name: ruff
         run: uv run ruff check

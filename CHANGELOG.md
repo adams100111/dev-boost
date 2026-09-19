@@ -8,6 +8,11 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **macOS shell, terminal & dotfiles (M2)** — `devboost install terminal` runs on an
+  Apple Silicon Mac: every terminal-set module installs through Homebrew
+  (`BrewFormula`/`BrewCask` strategies, `per_os.macos`), zsh config (`shell.zsh`,
+  `~/.zshrc`/`~/.zprofile` with `.local` hooks, `zsh-config`, `zsh-plugins`), brew `bash`,
+  foreign rc files kept as `*.pre-devboost`, `docs/macos.md`.
 - **`pass` multi-device (P1, Linux)** — per-device GPG keys (fingerprint-only access and
   trust; email ids in `.gpg-id` never grant access), enroll → approve → sync onto a shared
   private GitHub `pass` store, scoped enrollment for servers, revoke + a rotation checklist
@@ -34,7 +39,30 @@ git history and the GitHub release notes.
   `VISUAL="zed --wait"` in local GUI sessions. See [docs/zed.md](docs/zed.md).
 
 ### Changed
+- **Ghostty is the default terminal on every OS**; WezTerm moved to the opt-in
+  `optional-terminals` profile (deprecated) and its Ctrl+V smart paste was retired (herdr
+  owns image paste).
+- Shell config split into POSIX `env.sh` + shared `aliases.sh`; `shell.bash` uses
+  `fzf --bash` when available (fallback for fzf < 0.48).
+- One RAM/disk probe (`~/.local/bin/devboost-resources`, Linux + macOS) feeds tmux,
+  starship, WezTerm and the Claude status line.
+- Linux `PATH` order changed: `~/.local/bin` now comes first.
 - `vscode` moved from `editors` to the opt-in `optional-editors` profile.
+
+### Fixed
+- `.chezmoiignore` no longer fails on macOS (`.chezmoi.osRelease` is Linux-only).
+- Ghostty config: `theme = Catppuccin Mocha` (Title Case) and `toggle_split_zoom` — the old
+  values were rejected by Ghostty 1.3.
+- `git credential fill` also neutralises `core.askPass`.
+- Ubuntu/Debian: Ghostty installs as a classic snap (`snap install ghostty --classic`);
+  Flathub has no Ghostty. A failed `flatpak install` now fails its module instead of
+  passing silently.
+- macOS: a dev-boost `~/.zshrc`/`~/.zprofile`/`~/.bash_profile` that another tool appended
+  to is copied to `*.pre-devboost` before `chezmoi apply --force` (it used to lose those
+  lines silently); a retried run makes no duplicate copy. `zsh-config` verify no longer
+  crashes on a non-UTF-8 `~/.zshrc`.
+- `zsh -i -c` without a terminal (an editor capturing the env) no longer prints
+  `can't change option: zle`: the fzf and atuin key bindings load only on a tty.
 
 ### Removed
 - `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device

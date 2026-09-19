@@ -107,8 +107,23 @@ class Module:
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 
+    def os_strategy(self, ctx: Ctx) -> Installer | None:
+        """The ``per_os`` strategy declared for the running OS, or None.
+
+        A module whose own install()/verify() implement its Linux path calls this first,
+        so a declared entry such as ``per_os = OsMap(macos=BrewFormula("x"))`` still
+        decides on that OS::
+
+            def install(self, ctx: Ctx) -> None:
+                if (s := self.os_strategy(ctx)) is not None:
+                    s.install(ctx)
+                    return
+                ...  # the Linux path
+        """
+        return self.per_os.get(ctx.os)
+
     def _strategy(self, ctx: Ctx) -> Installer:
-        return self.per_os.get(ctx.os) or self
+        return self.os_strategy(ctx) or self
 
     def _require_override(self, what: str) -> NoReturn:
         raise NotImplementedError(

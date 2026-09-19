@@ -37,7 +37,9 @@ resumable; a failure names the module and the exact failing command.
 The package manager is selected once from `ctx.os`: `Dnf` (Fedora), `Apt` (Debian/Ubuntu), `Pacman`
 (Arch/Omarchy), `Brew` (macOS — formulae, casks with `--adopt`, taps; never sudo). Per-OS divergence
 is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os` `Installer` strategies —
-resolved `distro → family → default`. No branching in the engine.
+resolved `distro → family → default`. No branching in the engine. A module's `per_os` entry for
+the running OS wins (`Module.os_strategy`); for other OSes its own `install()` is the fallback.
+The common macOS entries are the `BrewFormula` / `BrewCask` strategies in `modules/_brew.py`.
 
 ### User-only steps
 

@@ -6,6 +6,7 @@ flatpak itself is installed before any flatpak command runs.
 
 from __future__ import annotations
 
+from devboost.core.errors import InstallError
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx
 
@@ -36,4 +37,8 @@ def install(ctx: Ctx, app_id: str, *, remote: str = "flathub") -> None:
     # A freshly-installed flatpak has no remotes; an install against a missing remote fails.
     if remote == "flathub":
         remote_add(ctx, "flathub", _FLATHUB_URL)
-    ctx.ex.run(["flatpak", "install", "-y", remote, app_id])
+    res = ctx.ex.run(["flatpak", "install", "-y", remote, app_id])
+    if not res.ok:
+        # Never silent: an app id the remote lacks (a 404 on Flathub) must fail the module,
+        # not report "installed" and leave verify to fail later with no cause.
+        raise InstallError("flatpak", f"flatpak install -y {remote} {app_id}", res.code)

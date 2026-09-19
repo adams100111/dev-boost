@@ -10,6 +10,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, DnfRepo, Module
 from devboost.modules import _zed
+from devboost.modules._brew import BrewFormula
 from devboost.modules._lsp import LspModule, all_pins, seed_base_config
 from devboost.modules.mise import Mise
 
@@ -121,13 +122,20 @@ class Fresh(Module):
     category = "editors"
     description = "The fresh terminal editor."
     profiles = ("editors",)
+    # macOS: Homebrew's `fresh-editor` formula (the binary is still `fresh`).
+    per_os = OsMap(macos=BrewFormula("fresh-editor"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("fresh")
 
     def install(self, ctx: Ctx) -> None:
-        # Upstream installer (rpm asset + post-install script); curl|sh escape hatch.
-        ctx.ex.run(["sh", "-c", f"curl -fsSL {_FRESH_INSTALL} | sh"])
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+        else:
+            # Upstream installer (rpm asset + post-install script); curl|sh escape hatch.
+            ctx.ex.run(["sh", "-c", f"curl -fsSL {_FRESH_INSTALL} | sh"])
         # Seed the base config so the editor is configured even in a bare `terminal`
         # install (no LSP module present to seed it). Idempotent: only writes if absent.
         seed_base_config()

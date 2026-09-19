@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from devboost.core.errors import UnsupportedOS
+from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
@@ -175,27 +175,40 @@ def test_lazydocker_uses_curl_installer_on_ubuntu() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ghostty — flatpak on Ubuntu
+# Ghostty — snap on Ubuntu (Flathub has no com.mitchellh.ghostty)
 # ---------------------------------------------------------------------------
 
 
-def test_ghostty_installs_via_flatpak_on_ubuntu() -> None:
-    ctx = _ctx(present={"flatpak"})
+def test_ghostty_installs_via_classic_snap_on_ubuntu() -> None:
+    ctx = _ctx(present={"snap"})
     Ghostty().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert any("com.mitchellh.ghostty" in " ".join(c) for c in calls)
-    assert not any("copr" in " ".join(c) for c in calls)
+    assert calls == [["sudo", "snap", "install", "ghostty", "--classic"]]
 
 
-def test_ghostty_verifies_via_flatpak_list_on_ubuntu() -> None:
-    ctx = _ctx(scripts={
-        "flatpak": Result(0, stdout="com.mitchellh.ghostty\n")
-    })
+def test_ghostty_installs_snapd_first_when_snap_is_missing_on_ubuntu() -> None:
+    ctx = _ctx()
+    Ghostty().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["sudo", "apt-get", "install", "-y", "snapd"] in calls
+    assert calls[-1] == ["sudo", "snap", "install", "ghostty", "--classic"]
+
+
+def test_ghostty_snap_failure_raises_on_ubuntu() -> None:
+    ctx = _ctx(present={"snap"}, scripts={"snap": Result(1)})
+    with pytest.raises(InstallError):
+        Ghostty().install(ctx)
+
+
+def test_ghostty_verifies_on_path_or_via_snap_list_on_ubuntu() -> None:
+    assert Ghostty().verify(_ctx(present={"ghostty"})) is True
+    ctx = _ctx(scripts={"snap": Result(0, stdout="Name Version\nghostty 1.2.0\n")})
     assert Ghostty().verify(ctx) is True
+    assert ["snap", "list", "ghostty"] in ctx.ex.calls  # type: ignore[attr-defined]
 
 
 def test_ghostty_verify_false_when_not_installed_on_ubuntu() -> None:
-    ctx = _ctx(scripts={"flatpak": Result(0, stdout="org.kde.okular\n")})
+    ctx = _ctx(scripts={"snap": Result(1, stderr="error: no matching snaps installed")})
     assert Ghostty().verify(ctx) is False
 
 

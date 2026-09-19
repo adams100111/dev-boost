@@ -6,7 +6,7 @@ developer workstation in minutes — delivered by an unattended **Ventoy USB** (
 **build, out of the box**: **Laravel** (ddev), **.NET + Aspire**, **Python** (uv),
 **Next.js / React** (web), and **React Native + Expo** (Android) — plus editors
 (Zed + fresh; VS Code opt-in), GUI apps (Obsidian w/ GitHub sync, Bruno, dbgate, Bitwarden, …),
-and fully-configured terminal/shell/desktop (wezterm + starship + tmux + GNOME),
+and fully-configured terminal/shell/desktop (Ghostty + starship + tmux + GNOME; zsh on macOS),
 all restored from chezmoi-managed dotfiles.
 
 **Zero-config caveats (by design):** secrets (GitHub PAT) are pre-provisioned once on

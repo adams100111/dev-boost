@@ -22,6 +22,7 @@ from devboost.modules.shell import (
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
+MAC = OsInfo("macos", "macos", "aarch64")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -56,21 +57,48 @@ def test_ghostty_is_gui_and_uses_copr() -> None:
     assert ["sudo", "dnf", "install", "-y", "ghostty"] in calls
 
 
-def test_ghostty_is_now_optional() -> None:
-    """WezTerm is the default terminal; Ghostty stays registered but off-profile."""
-    assert Ghostty.profiles == ()
+def test_ghostty_is_the_default_terminal() -> None:
+    assert Ghostty.profiles == ("shell",)
+    assert Ghostty.provided_by == ("omarchy",)  # Omarchy keeps foot
 
 
-def test_wezterm_is_default_terminal_and_installs_nightly_appimage(
+def test_ghostty_is_a_cask_on_macos() -> None:
+    ex = FakeExecutor()
+    Ghostty().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls == [["brew", "install", "--cask", "-y", "--adopt", "ghostty"]]
+    ex = FakeExecutor(scripts={"brew": Result(1)}, present={"ghostty"})
+    assert Ghostty().verify(Ctx(os=MAC, ex=ex)) is False
+    assert ex.calls == [["brew", "list", "--cask", "--versions", "ghostty"]]
+
+
+def test_wezterm_is_opt_in_and_still_installs_the_nightly_appimage_on_linux(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     assert Wezterm.gui is True
-    assert "shell" in Wezterm.profiles
+    assert Wezterm.profiles == ("optional-terminals",)
+    assert "deprecated" in Wezterm.description
     ctx = _ctx()
     Wezterm().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     assert any("WezTerm-nightly" in j and "AppImage" in j for j in joined)
+
+
+def test_wezterm_is_the_nightly_cask_on_macos() -> None:
+    ex = FakeExecutor()
+    Wezterm().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls == [["brew", "install", "--cask", "-y", "--adopt", "wezterm@nightly"]]
+
+
+def test_nerd_fonts_is_a_cask_on_macos() -> None:
+    ex = FakeExecutor()
+    NerdFonts().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls == [
+        ["brew", "install", "--cask", "-y", "--adopt", "font-jetbrains-mono-nerd-font"]
+    ]
+    ex = FakeExecutor()
+    assert NerdFonts().verify(Ctx(os=MAC, ex=ex)) is True
+    assert ex.calls == [["brew", "list", "--cask", "--versions", "font-jetbrains-mono-nerd-font"]]
 
 
 def test_nerd_fonts_download_unzip_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,15 +253,12 @@ def _dotfiles_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "dotfiles"
 
 
-def test_bashrc_puts_dotnet_tools_on_path() -> None:
+def test_env_puts_dotnet_tools_on_path() -> None:
     """`dotnet tool install -g` (aspire, csharp-ls, csharpier) installs into ~/.dotnet/tools.
-    The shell config must add it to PATH or those tools are "not found" in an interactive
+    The shared env must add it to PATH or those tools are "not found" in an interactive
     shell — which is exactly what happened to `aspire` after `devboost install full`."""
-    frag = (_dotfiles_dir() / "dot_config" / "devboost" / "shell.bash").read_text(
-        encoding="utf-8"
-    )
-    assert ".dotnet/tools" in frag
-    assert 'PATH="${HOME}/.dotnet/tools:${PATH}"' in frag
+    env = (_dotfiles_dir() / "dot_config" / "devboost" / "env.sh").read_text(encoding="utf-8")
+    assert '_devboost_path_prepend "${HOME}/.dotnet/tools"' in env
 
 
 def test_bashrc_sources_the_portable_fragment() -> None:

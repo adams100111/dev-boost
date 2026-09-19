@@ -1,8 +1,9 @@
 [profiles]
 # `full` — the production workstation aggregate (the default install target).
 # Union of the default-on profiles; opt-in/aesthetic/hardware profiles are excluded
-# (gnome-aesthetics, gnome-theme, hardware-nvidia, optional-editors, optional-agents) and
-# the portable subsets terminal/devtools are alternative entry points, not part of full.
+# (gnome-aesthetics, gnome-theme, hardware-nvidia, optional-editors, optional-terminals,
+# optional-agents) and the portable subsets terminal/devtools are alternative entry
+# points, not part of full.
 full = ["base","cli","shell","gnome","multimedia","editors","python","web","laravel",
         "dotnet","data","devops","react-native","apps","system","dev-hygiene","remote","claude","codex","pi"]
 # `omarchy` — the Omarchy (Arch + Hyprland) aggregate: `full` minus the layers Omarchy
@@ -31,8 +32,8 @@ base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatp
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
         "fastfetch","claude-code"]
-shell = ["starship","bash-config","wezterm","nerd-fonts","dotfiles","claude-statusline",
-         "claude-notify","wl-clipboard"]
+shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
+         "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
@@ -59,6 +60,9 @@ dev-hygiene      = ["aspire-gc"]
 system           = ["snapper","snapper-dnf-hook","grub-btrfs","btrfs-assistant","btrfsmaintenance","fwupd","power-profiles-daemon","thermald","smartmontools","dnf-automatic-security","restic-backup","earlyoom","swapfile","gpu-detect"]
 hardware-nvidia  = ["nvidia-akmod","cuda","libva-nvidia-driver","secureboot-mok","nvidia-resign-service","nvidia-container-toolkit","nvidia-driver-ubuntu"]
 optional-editors = ["neovim","jetbrains-toolbox","vscode"]
+# optional-terminals — WezTerm (nightly), kept for people who want its multiplexer/SSH
+# domains. Deprecated: Ghostty is the default terminal on every OS, herdr the multiplexer.
+optional-terminals = ["wezterm"]
 security-cli     = ["pass","pass-store"]   # alias — both now ship in base
 optional-agents  = ["herdr-plugins"]
 # `term` — alias so `devboost install term` / `get.sh -- term` match the `devboost term`
@@ -67,8 +71,8 @@ term = ["terminal"]
 terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
             "ripgrep","fd","fzf","bat","eza","btop","zoxide","atuin","direnv",
             "delta","lazygit","dust","duf","sd","yq","gh","tealdeer","fastfetch",
-            "tmux","fresh","starship","bash-config","dotfiles","wezterm","nerd-fonts",
-            "claude-statusline"]
+            "tmux","fresh","starship","bash-config","zsh-config","bash","dotfiles",
+            "ghostty","nerd-fonts","claude-statusline"]
 devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
             "dotnet-lsp","ddev","playwright"]
 # server — headless-VPS hardening + ops (Ubuntu/Debian). Separate entry point, like

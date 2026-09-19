@@ -1,5 +1,8 @@
 # WezTerm Config
 
+**Opt-in and deprecated** (`devboost install optional-terminals`) — Ghostty is the default
+terminal on every OS.
+
 Modular WezTerm config tuned for heavy agentic coding + multi-server access.
 Catppuccin theme that follows the OS light/dark preference, a **top** tab bar +
 status (workspace · host · clock), and a background **resource alert** when RAM/disk
@@ -78,7 +81,8 @@ Fonts: **JetBrainsMono Nerd Font** (required for the status glyphs).
   disk-free` gauges when `show_resource_gauges` (`config/prefs.lua`) is set — off by
   default, since the starship prompt and Claude status line show them instead. When
   shown, RAM is green `<60` / yellow `60–79` / red `≥80`; disk is teal, red at `≥80%`
-  used. Read from a throttled probe (no per-tick process spawn).
+  used. Read from the shared `~/.local/bin/devboost-resources` probe, throttled (no
+  per-tick process spawn).
 
 ### Resource alert
 
@@ -92,7 +96,9 @@ a state change. Thresholds live at the top of `config/status.lua` (`RAM_CRITICAL
 
 ## Keybindings
 
-Leader = **CTRL+Space**.
+Leader = **CTRL+Space** on Linux, **CTRL+A** on macOS (macOS keeps Ctrl+Space for
+switching input sources). On macOS, press **CTRL+A twice** to send a literal Ctrl+A to the
+shell (line start).
 
 **Panes:** `LEADER v` split L/R · `LEADER s` split T/B · `ALT h/j/k/l` move ·
 `LEADER H/J/K/L` resize · `LEADER z` zoom · `LEADER o` rotate · `LEADER w` close.
@@ -111,6 +117,10 @@ Leader = **CTRL+Space**.
 **Links:** WezTerm opens URLs on the laptop (so it works over SSH). Inside tmux (`mouse
 on`), the click is captured by tmux — hold **Shift** to bypass it: **`CTRL+SHIFT+Click`**
 opens the link under the cursor. Or go mouse-free with **`LEADER u`**.
+
+**macOS twins:** every `CTRL+SHIFT` binding also works with Cmd — `CMD+SHIFT+D` detach
+domain, `CMD+F` search, `CMD+Click` open a link. Left Option is Alt (`ALT h/j/k/l`); right
+Option still types accents.
 
 ## Servers
 
