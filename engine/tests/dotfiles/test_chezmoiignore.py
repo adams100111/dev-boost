@@ -15,8 +15,7 @@ def test_macos_apply_succeeds_with_the_zsh_files(chezmoi_apply: Apply) -> None:
     home = chezmoi_apply("darwin", "macos")
     for f in (*MAC_ONLY, ".config/devboost/shell.zsh", ".config/devboost/env.sh"):
         assert (home / f).exists(), f
-    # Zed config stays Linux-only until Z2 routes macOS through _zed.ensure_config.
-    for f in (*LINUX_ONLY, ".config/caddy", ".config/zed"):
+    for f in (*LINUX_ONLY, ".config/caddy"):
         assert not (home / f).exists(), f
 
 

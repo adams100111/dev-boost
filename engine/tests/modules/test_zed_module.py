@@ -165,10 +165,9 @@ def test_verify_accepts_the_user_local_symlink_off_path(
     assert Zed().verify(ctx) is True
 
 
-def test_zed_is_gui_and_dropped_on_macos_until_z2() -> None:
+def test_zed_is_gui_and_skipped_on_headless_hosts() -> None:
     modules = load()
     assert Zed.gui is True
-    assert build_plan(["zed"], modules, MAC) == []
     headless = OsInfo("fedora", "fedora", "x86_64", headless=True)
     assert build_plan(["zed"], modules, headless)[0].skip_reason == "headless"
 

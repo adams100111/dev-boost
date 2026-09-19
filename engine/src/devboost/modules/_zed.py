@@ -1,12 +1,11 @@
-"""Zed editor configuration — OS-agnostic (Linux now; macOS Z2 reuses it unchanged).
+"""Zed editor configuration — OS-agnostic (Linux and macOS).
 
 dev-boost seeds ~/.config/zed/{settings,keymap}.json once (the same bundled files chezmoi
 `create_`s) and afterwards guarantees only the spec's must-have keys, via a comment-tolerant
 deep merge. Language servers are pointed at dev-boost's pinned binaries (data/fresh/*.tsv).
 
-Z2 (macOS) seam: adding "macos" to SUPPORTED_FAMILIES is NOT enough. Zed.install always
-calls the Linux-only zed_install_steps, so Z2 must also route the install through
-pkg / per_os = OsMap(macos=BrewCask("zed")) (M2), then call the same ensure_config.
+macOS (Z2) uses the same config files and paths; the Zed module installs the cask and
+makes Zed the default app for code/text files (`ensure_default_apps`).
 """
 
 from __future__ import annotations
@@ -18,19 +17,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from devboost.core import log
-from devboost.exec.primitives import config
+from devboost.core.errors import NeedsUser
+from devboost.exec.primitives import config, default_apps
 from devboost.exec.resources import resource_path, tsv_rows
 from devboost.exec.userpaths import mise_shims as mise_shims
 from devboost.model import Ctx
+from devboost.modules._credentials import is_interactive
 
 if TYPE_CHECKING:  # runtime import would cycle: _lsp calls refresh_after_lsp
     from devboost.modules._lsp import ServerPin
 
 _SEED_DIR = ("dotfiles", "dot_config", "zed")
 
-#: The OS families Zed is managed on (Z1: Linux only). The single source for Zed.families
-#: and for every path that writes Zed config on another module's behalf.
-SUPPORTED_FAMILIES: tuple[str, ...] = ("fedora", "debian", "arch")
+#: The OS families Zed is managed on. The single source for Zed.families and for every
+#: path that writes Zed config on another module's behalf.
+SUPPORTED_FAMILIES: tuple[str, ...] = ("fedora", "debian", "arch", "macos")
 
 #: Keys re-asserted on every run (spec "Must-have keys"); everything else is the user's.
 _MUST_HAVE: tuple[tuple[str, ...], ...] = (
@@ -145,3 +146,41 @@ def refresh_after_lsp(ctx: Ctx, pins: Sequence[ServerPin]) -> None:
     except Exception as exc:  # the LSP install must never fail because of Zed's config
         # Escape loguru colour markup so a message containing "<...>" can't raise here.
         log.warn("zed: " + str(exc).replace("<", "\\<"))
+
+
+ZED_BUNDLE_ID = "dev.zed.Zed"
+_DEFAULT_APPS = ("data", "macos", "default-apps.tsv")
+
+
+def default_app_rows() -> list[default_apps.Association]:
+    """The file types that open in Zed on macOS (the Zed rows of the shared table)."""
+    return [r for r in default_apps.table(*_DEFAULT_APPS) if r.bundle_id == ZED_BUNDLE_ID]
+
+
+def default_apps_done() -> bool:
+    return default_apps.handled(default_app_rows())
+
+
+def ensure_default_apps(ctx: Ctx) -> None:
+    """macOS: code and text files open in Zed (Zed spec "Default apps").
+
+    macOS 26.4+ asks the user to confirm each file type, so the change is only attempted
+    when someone is there; an unattended run raises NeedsUser (Zed itself is done).
+    """
+    rows = default_app_rows()
+    confirm = default_apps.confirmation_required(ctx.os)
+    can_prompt = is_interactive() or not confirm
+    if can_prompt and confirm and not default_apps.handled(rows):
+        log.info("zed: macOS will ask you to confirm Zed as the default app, once per file type")
+    out = default_apps.apply(ctx, rows, can_prompt=can_prompt)
+    if out.refused:
+        log.warn(
+            f"zed: not the default app for {', '.join(out.refused)} — "
+            "change it in Finder › Get Info › Open with, if you want"
+        )
+    if out.pending:
+        raise NeedsUser(
+            f"Zed is not yet the default app for {len(out.pending)} code/text file types",
+            "run `devboost install zed` in a terminal — macOS asks you to confirm each "
+            "file type once",
+        )
