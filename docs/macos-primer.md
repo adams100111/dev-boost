@@ -40,15 +40,16 @@ revert command.
 | `monitorcontrol` | External-display brightness/volume over DDC | menu bar | `brew uninstall --cask monitorcontrol` |
 | `keka` | Archiver (7z, zip, rar, …) | Finder → right-click → Services, or open the app | `brew uninstall --cask keka` |
 | `quicklook` | Quick Look previews for Markdown and source code | Space on a file in Finder (after enabling, §6) | `brew uninstall --cask qlmarkdown syntax-highlight` |
-| `voxtype` (`base`, every OS) | Push-to-talk dictation | hold Right Option (§8) | `brew uninstall --cask voxtype` |
+| `voxtype` (`base`, every OS) | Push-to-talk dictation | hold Right Option (§8) | remove its Login Item, then `rm -rf /Applications/Voxtype.app ~/.local/bin/voxtype` |
 
 Example: `devboost revert macos-defaults tilesize` restores `com.apple.dock:tilesize` to
 whatever it read before dev-boost first changed it (or deletes the key if it was unset).
 With no keys, it restores everything dev-boost has changed.
 
-**`devboost install` re-applies a reverted key** the next time it runs, unless you leave
-`macos-defaults` out of the profile you install (`devboost install --update` and a plain
-re-run both apply the whole selected profile, `macos-defaults` included).
+**A plain `devboost install` re-applies a reverted key** the next time it runs, unless you
+leave `macos-defaults` out of the profile you install. `devboost install --update` does
+not: it refreshes only Homebrew-managed and self-updating modules, and `macos-defaults` is
+neither, so a reverted key stays reverted until the next plain run.
 
 ## 3. The defaults, key by key
 
