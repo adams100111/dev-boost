@@ -10,6 +10,6 @@ happened to import that submodule first — so it passes or fails by build order
 than by anything in the code (see devboost/exec/primitives/__init__.py for the same fix).
 """
 
-from devboost.passstore import gpg, layout, paths
+from devboost.passstore import git, gpg, layout, notify, paths
 
-__all__ = ["gpg", "layout", "paths"]
+__all__ = ["git", "gpg", "layout", "notify", "paths"]
