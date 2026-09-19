@@ -85,12 +85,17 @@ class _TailscaleMac:
         )
 
     def install(self, ctx: Ctx) -> None:
-        try:
-            _TS_CASK.install(ctx)
-        except PresentUnmanaged:
-            if not _TS_APP.is_dir():
-                raise
+        # The cask is a .pkg: brew cannot --adopt it and would re-run the installer over a
+        # hand-installed app, so an app brew does not manage is left as it is (C-R21).
+        if _TS_APP.is_dir() and not _TS_CASK.verify(ctx):
             log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
+        else:
+            try:
+                _TS_CASK.install(ctx)
+            except PresentUnmanaged:
+                if not _TS_APP.is_dir():
+                    raise
+                log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
         cli = ts_cli()
         if not cli.is_file() or cli.read_text(encoding="utf-8") != _TS_WRAPPER:
             cli.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +124,8 @@ class Tailscale(Module):
     profiles = ("server", "remote")
     requires = (Homebrew,)
     per_os = OsMap(macos=_TailscaleMac())
+    # The tailscale-app cask is a .pkg, which brew installs with sudo (C-R21).
+    needs_sudo_on_macos: ClassVar[bool] = True
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.

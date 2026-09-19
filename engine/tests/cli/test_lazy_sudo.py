@@ -31,9 +31,10 @@ _VERIFIED: dict[tuple[str, ...], Result] = {
 _NO_BREW: dict[tuple[str, ...], Result] = {("brew",): Result(127)}
 
 
-def test_only_the_foundation_modules_need_sudo_on_macos() -> None:
+def test_only_the_foundation_modules_and_tailscale_need_sudo_on_macos() -> None:
+    # tailscale: its cask is a .pkg, which brew installs with sudo (ruling C-R21).
     flagged = {name for name, cls in load().items() if cls.needs_sudo_on_macos}
-    assert flagged == {"xcode-clt", "homebrew", "rosetta"}
+    assert flagged == {"xcode-clt", "homebrew", "rosetta", "tailscale"}
     assert XcodeClt.needs_sudo_on_macos and Homebrew.needs_sudo_on_macos
     assert Rosetta.needs_sudo_on_macos
 

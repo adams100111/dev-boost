@@ -22,6 +22,12 @@ MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 APP_BIN = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
 
+@pytest.fixture(autouse=True)
+def _no_host_tailscale_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: the host's own /Applications/Tailscale.app must not change the outcome.
+    monkeypatch.setattr(server, "_TS_APP", tmp_path / "absent" / "Tailscale.app")
+
+
 def _no_brew_formulae(caroot: Path) -> Scripted:
     return Scripted(answers={
         ("brew", "list"): Result(1),
@@ -106,12 +112,12 @@ def test_tailscale_installs_the_app_cask(tmp_path: Path) -> None:
 def test_tailscale_hand_installed_app_still_gets_its_cli_and_state_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # R6: brew cannot adopt a hand-installed Tailscale.app (PresentUnmanaged). The app is
-    # there, so the wrapper and the connection check still happen, and verify accepts it.
+    # R6: brew reports the cask yet cannot take over the app on disk (PresentUnmanaged).
+    # The app is there, so the wrapper and the connection check still happen.
     app = tmp_path / "Tailscale.app"
     app.mkdir()
     monkeypatch.setattr(server, "_TS_APP", app)
-    ex = _tailscale(tmp_path, "Running", installed=False)
+    ex = _tailscale(tmp_path, "Running")
     ex.answers[("brew", "install", "--cask")] = Result(
         1, stderr="Error: It seems the App source '/x/Tailscale.app' is different from "
         "the one being installed."
@@ -122,6 +128,27 @@ def test_tailscale_hand_installed_app_still_gets_its_cli_and_state_check(
     assert [cli, "status", "--json"] in ex.calls
     verify_ex = _tailscale(tmp_path, "Running", installed=False)
     assert Tailscale().verify(Ctx(os=MAC, ex=verify_ex)) is True
+
+
+def test_tailscale_leaves_a_hand_installed_app_alone_and_writes_its_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C-R21: the cask is a .pkg that brew cannot adopt, so an app brew does not manage is
+    # never reinstalled over; the wrapper and the connection check still happen.
+    app = tmp_path / "Tailscale.app"
+    app.mkdir()
+    monkeypatch.setattr(server, "_TS_APP", app)
+    ex = _tailscale(tmp_path, "Running", installed=False)
+    Tailscale().install(Ctx(os=MAC, ex=ex))
+    assert not any(c[:2] == ["brew", "install"] for c in ex.calls)
+    cli = tmp_path / ".local" / "bin" / "tailscale"
+    assert f'exec "{APP_BIN}" "$@"' in cli.read_text(encoding="utf-8")
+    assert [str(cli), "status", "--json"] in ex.calls
+
+
+def test_tailscale_asks_for_sudo_up_front_on_macos() -> None:
+    # The .pkg cask needs cached sudo; lazy sudo prompts only while tailscale is pending.
+    assert Tailscale.needs_sudo_on_macos is True
 
 
 def test_tailscale_joins_with_the_bundle_key_as_a_plain_client(
