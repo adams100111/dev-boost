@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -162,6 +165,78 @@ def test_backup_log_names_the_matching_local_file(
         assert f"~/{name}.local" in msgs[0]
         others = {".zshrc", ".zprofile", ".bash_profile"} - {name}
         assert not any(f"~/{o}.local" in msgs[0] for o in others), msgs[0]
+
+
+def _digests_file(home: Path) -> Path:
+    return home / ".local" / "state" / "devboost" / "rc-digests.json"
+
+
+def _new_release(tmp_path: Path) -> Path:
+    """A copy of dotfiles/ whose rc sources changed since the user's last apply."""
+    src = tmp_path / "release-src"
+    src.mkdir()
+    for name in ("dot_zshrc", "dot_zprofile", "dot_bash_profile"):
+        shutil.copy(DOT / name, src / name)
+        with (src / name).open("a", encoding="utf-8") as f:
+            f.write("# a newer release added this line\n")
+    return src
+
+
+def test_apply_records_the_rc_file_digests(home: Path) -> None:
+    for name, src in ((".zshrc", "dot_zshrc"), (".zprofile", "dot_zprofile")):
+        (home / name).write_bytes((DOT / src).read_bytes())  # as chezmoi would write them
+    (home / ".bash_profile").write_text("mine\n", encoding="utf-8")  # foreign: not recorded
+    Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor()))
+    state = _digests_file(home)
+    assert json.loads(state.read_text(encoding="utf-8")) == {
+        name: hashlib.sha256((DOT / src).read_bytes()).hexdigest()
+        for name, src in ((".zshrc", "dot_zshrc"), (".zprofile", "dot_zprofile"))
+    }
+    assert (state.parent.stat().st_mode & 0o777) == 0o700
+
+
+def test_a_failed_apply_records_no_digests(home: Path) -> None:
+    (home / ".zshrc").write_bytes((DOT / "dot_zshrc").read_bytes())
+    with pytest.raises(InstallError):
+        Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor(scripts={"chezmoi": Result(1)})))
+    assert not _digests_file(home).exists()
+
+
+def test_an_untouched_file_from_an_older_release_gets_no_backup(
+    home: Path, tmp_path: Path
+) -> None:
+    for name, src in ((".zshrc", "dot_zshrc"), (".zprofile", "dot_zprofile"),
+                      (".bash_profile", "dot_bash_profile")):
+        (home / name).write_bytes((DOT / src).read_bytes())
+    Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor()))  # records what the apply wrote
+    assert back_up_rc_files(home, _new_release(tmp_path)) == []
+
+
+def test_a_user_appended_line_is_backed_up_despite_the_recorded_digest(
+    home: Path, tmp_path: Path
+) -> None:
+    (home / ".zshrc").write_bytes((DOT / "dot_zshrc").read_bytes())
+    Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor()))
+    with (home / ".zshrc").open("a", encoding="utf-8") as f:
+        f.write('export PATH="$HOME/.tool/bin:$PATH"\n')
+    assert [p.name for p in back_up_rc_files(home, _new_release(tmp_path))] == [
+        ".zshrc.pre-devboost"
+    ]
+
+
+@pytest.mark.parametrize("junk", ["{not json", "[1, 2]", '{".zshrc": 5}', ""])
+def test_a_corrupt_digest_file_falls_back_to_the_source_comparison(
+    home: Path, tmp_path: Path, junk: str
+) -> None:
+    (home / ".zshrc").write_bytes((DOT / "dot_zshrc").read_bytes())
+    state = _digests_file(home)
+    state.parent.mkdir(parents=True)
+    state.write_text(junk, encoding="utf-8")
+    assert back_up_rc_files(home, DOT) == []  # equals the source: still no backup
+    # Outdated vs a newer source, and no usable digest: backed up (today's behaviour).
+    assert [p.name for p in back_up_rc_files(home, _new_release(tmp_path))] == [
+        ".zshrc.pre-devboost"
+    ]
 
 
 def test_dotfiles_sets_a_foreign_zshrc_aside_on_macos_before_applying(home: Path) -> None:

@@ -50,13 +50,61 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
+def _rc_digests_path() -> Path:
+    """$XDG_STATE_HOME/devboost/rc-digests.json (default ~/.local/state/devboost)."""
+    base = os.environ.get("XDG_STATE_HOME")
+    root = Path(base) if base else _home() / ".local" / "state"
+    return root / "devboost" / "rc-digests.json"
+
+
+def _read_rc_digests() -> dict[str, str]:
+    """The post-apply digests, by rc file name. Missing or corrupt → {} (never raises)."""
+    try:
+        data = json.loads(_rc_digests_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def record_rc_digests(home: Path) -> None:
+    """Record the sha256 of each managed rc file as the apply just wrote it (M-R26).
+
+    A later run then tells "untouched since dev-boost wrote it, but from an older release"
+    (no backup needed) apart from "someone appended to it" (keep a copy). Atomic write;
+    the state dir is created 0700.
+    """
+    digests: dict[str, str] = {}
+    for name in _TAKEN_OVER:
+        path = home / name
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if _MANAGED_MARKER.encode("utf-8") in data:
+            digests[name] = hashlib.sha256(data).hexdigest()
+    target = _rc_digests_path()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".rc-digests.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(digests, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def back_up_rc_files(home: Path, source: Path) -> list[Path]:
     """Copy each rc file ``apply --force`` would lose to ``<name>.pre-devboost``.
 
     A file is kept when it is foreign (no dev-boost marker) or when it is dev-boost's
-    but its bytes differ from its *source* in dotfiles/ — another tool appended a line
-    that the next ``apply --force`` would silently drop. A file that is exactly the
-    source needs no copy.
+    but has drifted — another tool appended a line that the next ``apply --force`` would
+    silently drop. Drifted means its bytes match neither its *source* in dotfiles/ nor
+    the digest recorded after the last successful apply (``record_rc_digests``), so a
+    file merely left over from an older release needs no copy. With no usable recorded
+    digest, the source comparison alone decides.
 
     A copy, not a move: the original stays in place until ``chezmoi apply --force``
     replaces it, so a failed apply never leaves the Mac without its ``~/.zprofile``
@@ -68,6 +116,7 @@ def back_up_rc_files(home: Path, source: Path) -> list[Path]:
     ``~/<name>.local`` for machine-specific lines.
     """
     kept: list[Path] = []
+    recorded = _read_rc_digests()
     for name, src in _TAKEN_OVER.items():
         path = home / name
         if not (path.is_file() or path.is_symlink()):
@@ -78,8 +127,9 @@ def back_up_rc_files(home: Path, source: Path) -> list[Path]:
             current = b""  # a dangling symlink: nothing of ours, keep it too
         managed = _MANAGED_MARKER.encode("utf-8") in current
         src_path = source / src
-        if managed and not path.is_symlink() and src_path.is_file() and (
-            current == src_path.read_bytes()
+        if managed and not path.is_symlink() and (
+            (src_path.is_file() and current == src_path.read_bytes())
+            or recorded.get(name) == hashlib.sha256(current).hexdigest()
         ):
             continue
         newest: Path | None = None
@@ -329,6 +379,8 @@ class Dotfiles(Module):
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)
+        if ctx.os.family == "macos":
+            record_rc_digests(_home())
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
