@@ -16,7 +16,8 @@ runtime on the target.
   `registry` (`@register` auto-discovery + load-time validation), `settings`, `errors`, `log` (loguru).
 - **`exec/`** — `executor.py` (the `Executor` Protocol + `RealExecutor` + recording `FakeExecutor`) and
   `primitives/` (the typed, idempotent, OS-aware vocabulary: `pkg`, `flatpak`, `copr`, `mise`, `config`,
-  `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`).
+  `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`, `launchd` (LaunchAgents/Daemons), `tcc`
+  (macOS privacy grants), `usermgmt`).
 - **`modules/`** — ~100 typed module classes, one declaration each; `requires` are class references.
 - **`profiles.toml`** (repo root, bundled in the binary) — named module sets; `expand` resolves them
   and `toposort` adds the transitive `requires` closure. `devboost.lock` is the deterministic snapshot.
@@ -34,9 +35,6 @@ The package manager is selected once from `ctx.os`: `Dnf` (Fedora), `Apt` (Debia
 (Arch/Omarchy), `Brew` (macOS — formulae, casks with `--adopt`, taps; never sudo). Per-OS divergence
 is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os` `Installer` strategies —
 resolved `distro → family → default`. No branching in the engine.
-
-Primitives (`exec/primitives/`): `pkg`, `flatpak`, `copr`, `mise`, `config`, `dconf`, `age`, `github`,
-`systemd`, `gpu`, `fs`, `shell`, `launchd` (LaunchAgents/Daemons), `tcc` (macOS privacy grants).
 
 ### User-only steps
 
