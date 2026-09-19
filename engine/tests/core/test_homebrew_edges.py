@@ -13,6 +13,7 @@ from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx, Module
+from devboost.modules import editors, server
 from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
 
@@ -58,7 +59,7 @@ def _planned_on_macos() -> list[str]:
 
 @pytest.mark.parametrize("name", _planned_on_macos())
 def test_a_module_that_calls_brew_requires_homebrew(
-    name: str, monkeypatch: pytest.MonkeyPatch
+    name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Behavioural version of the static check above (ruling C-R19): actually run
     install() under a fake macOS executor and look at what it called. This is what
@@ -66,6 +67,10 @@ def test_a_module_that_calls_brew_requires_homebrew(
     inside a portable module's own install(), invisible to a per_os-only static check.
     """
     monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
+    # Hermetic (core review M2): the host's own /Applications/Tailscale.app or Zed.app
+    # would send those modules down their hand-installed branch, which skips brew.
+    monkeypatch.setattr(server, "_TS_APP", tmp_path / "absent" / "Tailscale.app")
+    monkeypatch.setattr(editors, "_ZED_APP", tmp_path / "absent" / "Zed.app")
     modules = load()
     cls = modules[name]
     ex = FakeExecutor()
