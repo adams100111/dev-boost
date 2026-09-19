@@ -10,10 +10,11 @@ from typing import ClassVar
 from devboost.core import log
 from devboost.core.errors import GithubError, UnsupportedOS
 from devboost.core.registry import register
-from devboost.exec.primitives import age, flatpak, github, pkg, systemd
+from devboost.exec.primitives import flatpak, github, pkg, systemd
 from devboost.model import Ctx, Module
+from devboost.modules import _credentials as creds_src
 from devboost.modules.base import Flatpak
-from devboost.modules.secrets import Secrets, bundle_path, key_path
+from devboost.modules.secrets import Secrets
 from devboost.modules.ssh_setup import SshSetup
 
 
@@ -155,7 +156,12 @@ class ObsidianSync(Module):
         if not repo:
             log.warn("obsidian-sync: DEVBOOST_VAULT_REPO not set — skipping (non-blocking)")
             return
-        creds = age.decrypt(ctx, bundle_path(), key_path())
+        creds = creds_src.github_credentials(ctx)
+        if creds is None:
+            log.warn(
+                "obsidian-sync: no GitHub credentials (bundle or gh) — skipping (non-blocking)"
+            )
+            return
         owner, pat = creds["GIT_USER"], creds["GITHUB_PAT"]
 
         key = _home() / _DEPLOY_KEY

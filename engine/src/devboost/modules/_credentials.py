@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 from devboost.core import log
 from devboost.model import Ctx
@@ -105,6 +106,43 @@ def from_gh(ctx: Ctx) -> Credentials | None:
         "GIT_EMAIL": email,
         "GITHUB_PAT": token.stdout.strip(),
     }
+
+
+def _from_git_credentials() -> Credentials | None:
+    """A github.com line from a (Linux-style) ~/.git-credentials store, if one exists."""
+    path = Path(os.environ["HOME"]) / ".git-credentials"
+    if not path.exists():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.endswith("@github.com") and line.startswith("https://") and ":" in line[8:]:
+            user, _, rest = line[len("https://"):].partition(":")
+            token = rest.rsplit("@", 1)[0]
+            return {"GIT_USER": user, "GIT_EMAIL": "", "GITHUB_PAT": token}
+    return None
+
+
+def github_credentials(ctx: Ctx) -> Credentials | None:
+    """The one place modules get a GitHub token: bundle → gh → ~/.git-credentials.
+
+    Never raises for a missing/unreadable source — callers (ssh-setup, obsidian-sync) are
+    non-blocking and treat None as "try again next run".
+    """
+    from devboost.core.errors import SecretsError
+    from devboost.exec.primitives import age
+    from devboost.modules.secrets import age_key, bundle_path
+
+    if bundle_path().exists():
+        with age_key(ctx) as key:
+            if key is not None:
+                try:
+                    return age.decrypt(ctx, bundle_path(), key)
+                except SecretsError:  # fall through to the next source
+                    log.warn("secrets bundle present but unreadable; trying gh")
+    if gh_is_authenticated(ctx):
+        found = from_gh(ctx)
+        if found:
+            return found
+    return _from_git_credentials()
 
 
 # --- 3. the interactive path -------------------------------------------------------------

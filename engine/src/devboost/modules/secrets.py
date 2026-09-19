@@ -7,6 +7,9 @@ interactive prompt — see modules/_credentials.py and docs/credentials.md.
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from devboost.core import log
@@ -47,6 +50,48 @@ def key_path() -> Path:
     return Path(override) if override else _bootstrap_root() / "age-key.txt"
 
 
+#: Where `devboost secrets import-key` keeps the age identity in the macOS login keychain.
+KEYCHAIN_SERVICE = "devboost-age"
+KEYCHAIN_ACCOUNT = "devboost"
+
+
+@contextmanager
+def age_key(ctx: Ctx) -> Iterator[Path | None]:
+    """The age identity file to decrypt with, wherever it lives.
+
+    A key file (env override or bootstrap dir) wins; off macOS the configured path is
+    always returned. On macOS the key may instead live in the login keychain
+    (`devboost secrets import-key`); it is then materialized as a 0600 temp file only for
+    the duration of the decrypt, and None means "no key anywhere".
+    """
+    explicit = key_path()
+    if explicit.exists() or ctx.os.family != "macos":
+        # Off macOS this is exactly the old behaviour: the configured path, and `age`
+        # itself reports a missing key.
+        yield explicit
+        return
+    res = ctx.ex.run([
+        "security", "find-generic-password",
+        "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w",
+    ])
+    if not res.ok or not res.stdout.strip():
+        yield None
+        return
+    # mkstemp creates the file 0600 already; the fchmod makes that explicit, not assumed.
+    fd, name = tempfile.mkstemp(prefix="devboost-age-")
+    path = Path(name)
+    try:
+        os.fchmod(fd, 0o600)
+        os.write(fd, (res.stdout.strip() + "\n").encode("utf-8"))
+        os.close(fd)
+        fd = -1
+        yield path
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        path.unlink(missing_ok=True)
+
+
 @register
 class Secrets(Module):
     name = "secrets"
@@ -64,18 +109,34 @@ class Secrets(Module):
         # disk) source of GitHub credentials, and `gh auth setup-git` wires git to use it.
         # Requiring the .git-credentials line specifically would report a correctly
         # configured box as unconfigured, and reinstall over it on every run.
-        return creds_src.gh_is_authenticated(ctx)
+        if creds_src.gh_is_authenticated(ctx):
+            return True
+        # macOS never writes ~/.git-credentials: a bundle/manual token lives in the login
+        # keychain behind git's osxkeychain helper instead.
+        if ctx.os.family == "macos":
+            helper = ctx.ex.run(["git", "config", "--global", "credential.helper"])
+            if helper.ok and helper.stdout.strip() == "osxkeychain":
+                return True
+        return False
 
-    def _resolve(self, ctx: Ctx) -> dict[str, str]:
-        """Get credentials from the bundle, else fall back (see modules/_credentials)."""
+    def _resolve(self, ctx: Ctx) -> tuple[dict[str, str], str]:
+        """Credentials plus their source: "bundle", "gh" or "manual".
+
+        Bundle first, else fall back (see modules/_credentials).
+        """
         if bundle_path().exists():
             if not ctx.ex.which("age"):
                 pkg.install(ctx, "age")
-            data = age.decrypt(ctx, bundle_path(), key_path())
+            with age_key(ctx) as key:
+                if key is None:
+                    raise SecretsError(
+                        "secrets bundle present but no age key (file, env, or keychain)"
+                    )
+                data = age.decrypt(ctx, bundle_path(), key)
             for field in age.REQUIRED_FIELDS:
                 if not data.get(field):
                     raise SecretsError(f"missing required field {field}")
-            return data
+            return data, "bundle"
 
         # No bundle. See whether an already-authenticated gh can supply them.
         from_gh = creds_src.from_gh(ctx) if creds_src.gh_is_authenticated(ctx) else None
@@ -85,19 +146,31 @@ class Secrets(Module):
             # operator never chose for this machine. "skip" is respected, not overridden.
             chosen = creds_src.resolve_interactively(ctx, existing=from_gh)
             if chosen:
-                return chosen
+                # "use-gh" returns the gh dict itself; "gh" signs in fresh via gh too.
+                if chosen is from_gh:
+                    return chosen, "gh"
+                gh_token = (
+                    ctx.ex.run(["gh", "auth", "token"]).stdout.strip()
+                    if ctx.ex.which("gh")
+                    else ""
+                )
+                came_from_gh = bool(gh_token) and chosen["GITHUB_PAT"] == gh_token
+                return chosen, "gh" if came_from_gh else "manual"
         elif from_gh:
             # Unattended: nobody to confirm with, and using it beats failing outright.
             log.ok(f"secrets: using the authenticated GitHub CLI ({from_gh['GIT_USER']})")
-            return from_gh
+            return from_gh, "gh"
 
         raise SecretsError(creds_src.NO_CREDENTIALS_HELP)
 
     def install(self, ctx: Ctx) -> None:
-        data = self._resolve(ctx)
+        data, source = self._resolve(ctx)
 
         ctx.ex.run(["git", "config", "--global", "user.name", data["GIT_USER"]])
         ctx.ex.run(["git", "config", "--global", "user.email", data["GIT_EMAIL"]])
+        if ctx.os.family == "macos":
+            self._install_macos(ctx, data, source)
+            return
         ctx.ex.run(["git", "config", "--global", "credential.helper", "store"])
 
         creds = home() / ".git-credentials"
@@ -112,3 +185,22 @@ class Secrets(Module):
         ]
         creds.write_text("\n".join([*kept, line]) + "\n", encoding="utf-8")
         creds.chmod(0o600)
+
+    def _install_macos(self, ctx: Ctx, data: dict[str, str], source: str) -> None:
+        """No plaintext token on disk: gh's helper, or the macOS keychain.
+
+        Downstream modules (ssh-setup, obsidian-sync) get their token from
+        `_credentials.github_credentials` — bundle, then gh — not from a file.
+        """
+        if source == "gh":
+            ctx.ex.run(["gh", "auth", "setup-git"])
+            return
+        ctx.ex.run(["git", "config", "--global", "credential.helper", "osxkeychain"])
+        # The token goes to the helper on stdin — never argv, never a file.
+        ctx.ex.run(
+            ["git", "credential", "approve"],
+            stdin=(
+                "protocol=https\nhost=github.com\n"
+                f"username={data['GIT_USER']}\npassword={data['GITHUB_PAT']}\n\n"
+            ),
+        )

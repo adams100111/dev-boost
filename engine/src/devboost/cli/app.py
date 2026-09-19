@@ -15,6 +15,7 @@ from devboost.cli import accounts as _accounts
 from devboost.cli import devhygiene as dh
 from devboost.cli import host as plat
 from devboost.cli import lifecycle as lc
+from devboost.cli import secrets_cmd as _secrets_cmd
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
 from devboost.cli.permissions import permissions as _permissions
@@ -491,6 +492,7 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
 app.command(name="installer")(_installer)
 app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
+app.add_typer(_secrets_cmd.app, name="secrets")
 
 
 def main() -> None:
