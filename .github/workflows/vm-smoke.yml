@@ -42,3 +42,71 @@ jobs:
         run: |
           extra=""; [ "${{ inputs.full }}" = "true" ] && extra="--full"
           bash scripts/vm-kickstart-smoke.sh "$PWD/netinst.iso" $extra
+
+  # Linux carry-over (D6): covers glow, herdr 0.9.1, herdr-plugins and Ghostty from its three
+  # real sources (COPR on Fedora, snap on Ubuntu, pacman on Arch), plus a clean login shell —
+  # the vm-smoke list scripts/smoke-assert.sh (Task 6) now checks. Runs the engine from
+  # source (no release needed): Fedora/Arch in containers on the ubuntu-24.04 runner (tart
+  # ships neither image, V9), Ubuntu on the runner host itself (real systemd + snapd for the
+  # snap leg, which a container can't provide). Non-blocking: advisory until the images/tools
+  # it depends on (COPR, snap, pacman) prove stable across runs.
+  linux-smoke:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: fedora, runs-on: ubuntu-24.04, container: "fedora:44" }
+          - { name: arch, runs-on: ubuntu-24.04, container: "archlinux:latest" }
+          - { name: ubuntu-host, runs-on: ubuntu-24.04, container: "" }
+    runs-on: ${{ matrix.runs-on }}
+    container: ${{ matrix.container }}
+    env:
+      # dev is a throwaway unprivileged user with NOPASSWD sudo, created only inside the
+      # container legs; the ubuntu-host leg already runs as the ambient (non-root, passwordless
+      # sudo) `runner` account, so nothing needs creating there.
+      RUN_USER: ${{ matrix.container != '' && 'dev' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the dev user (containers only; NOPASSWD sudo)
+        if: matrix.container != ''
+        run: |
+          command -v dnf >/dev/null 2>&1 && dnf install -y sudo shadow-utils tar git
+          command -v pacman >/dev/null 2>&1 && pacman -Sy --noconfirm sudo shadow tar git which
+          useradd -m -s /bin/bash dev
+          echo "dev ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/dev
+          chmod 0440 /etc/sudoers.d/dev
+          chown -R dev:dev "${GITHUB_WORKSPACE}"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - name: uv sync
+        run: |
+          if [ -n "${RUN_USER}" ]; then
+            sudo -u "${RUN_USER}" --preserve-env=PATH -H bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv sync"
+          else
+            bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv sync"
+          fi
+      - name: devboost install cli ghostty
+        run: |
+          if [ -n "${RUN_USER}" ]; then
+            sudo -u "${RUN_USER}" --preserve-env=PATH -H bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv run devboost install cli ghostty"
+          else
+            bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv run devboost install cli ghostty"
+          fi
+      - name: smoke-assert.sh cli ghostty
+        run: |
+          if [ -n "${RUN_USER}" ]; then
+            sudo -u "${RUN_USER}" --preserve-env=PATH -H bash -lc "cd '${GITHUB_WORKSPACE}' && sh scripts/smoke-assert.sh cli ghostty"
+          else
+            bash -lc "cd '${GITHUB_WORKSPACE}' && sh scripts/smoke-assert.sh cli ghostty"
+          fi
+      - name: Fedora — Ghostty came from the scottames/ghostty COPR
+        if: matrix.name == 'fedora'
+        run: dnf copr list --enabled | grep -q 'scottames/ghostty'
+      - name: Ubuntu host — Ghostty came from the snap
+        if: matrix.name == 'ubuntu-host'
+        run: snap list ghostty
+      - name: Arch — Ghostty came from pacman
+        if: matrix.name == 'arch'
+        run: pacman -Q ghostty

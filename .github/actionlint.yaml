@@ -1,0 +1,9 @@
+# actionlint ships a hardcoded runner-label catalogue that lags GitHub's own rollout.
+# `xcode-27` is a real GitHub-hosted label (the macOS 27 Preview image, arm64 —
+# see https://github.com/actions/runner-images, README image table) that is simply too
+# new for actionlint 1.7.x to know about yet. Listing it here (the documented escape
+# hatch for labels actionlint doesn't recognize) silences that false positive without
+# disabling the runner-label check for every other, genuinely-unknown label.
+self-hosted-runner:
+  labels:
+    - xcode-27

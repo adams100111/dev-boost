@@ -1,0 +1,24 @@
+  kickstart-smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install qemu + tooling
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 p7zip-full genisoimage cpio
+      - name: KVM available?
+        id: kvm
+        run: |
+          if [ -w /dev/kvm ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; else
+            echo "::warning::/dev/kvm not available on this runner — the smoke test cannot boot a VM here. Use a KVM-capable (self-hosted / nested-virt) runner."
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Fetch the pinned Fedora netinst ISO
+        if: steps.kvm.outputs.ok == '1'
+        run: |
+          url="$(grep -A3 '\[fedora-44.autoinstall.x86_64\]' catalog.toml | grep -m1 -oP 'url = "\K[^"]+')"
+          echo "fetching $url"
+          curl -fL --retry 3 -o netinst.iso "$url"
+      - name: Boot ks.cfg in Anaconda
+        if: steps.kvm.outputs.ok == '1'
+        run: |
+          extra=""; [ "${{ inputs.full }}" = "true" ] && extra="--full"
+          bash scripts/vm-kickstart-smoke.sh "$PWD/netinst.iso" $extra

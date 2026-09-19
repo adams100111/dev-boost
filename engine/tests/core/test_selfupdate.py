@@ -13,8 +13,10 @@ import pytest
 from devboost import __version__
 from devboost.core import selfupdate
 from devboost.core.selfupdate import (
+    ReleaseAsset,
     cached_latest,
     latest_version,
+    release_asset,
     update_available,
     update_frozen,
     version_tuple,
@@ -165,6 +167,213 @@ def test_cached_latest_refreshes_when_stale(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# release_asset — (os, arch) → asset names
+# ---------------------------------------------------------------------------
+
+_LINUX_X86 = ReleaseAsset("x86_64", "devboost-x86_64", "devboost-x86_64.tar.gz")
+_LINUX_ARM = ReleaseAsset("aarch64", "devboost-aarch64", "devboost-aarch64.tar.gz")
+_DARWIN_ARM = ReleaseAsset("darwin-arm64", "devboost-darwin-arm64", None)
+_NEW_TAG = "https://github.com/adams100111/dev-boost/releases/tag/v9.9.9"
+
+
+@pytest.fixture
+def linux_x86(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the release asset to Linux x86_64 so the test ignores the host OS."""
+    monkeypatch.setattr(selfupdate, "release_asset", lambda *a, **k: _LINUX_X86)
+
+
+def test_release_asset_linux_x86_64() -> None:
+    assert release_asset("Linux", "x86_64") == _LINUX_X86
+    assert release_asset("Linux", "amd64") == _LINUX_X86
+    assert release_asset("Linux", "AMD64") == _LINUX_X86
+
+
+def test_release_asset_linux_aarch64() -> None:
+    assert release_asset("Linux", "aarch64") == _LINUX_ARM
+
+
+def test_release_asset_linux_arm64_alias() -> None:
+    assert release_asset("Linux", "arm64") == _LINUX_ARM
+
+
+def test_release_asset_darwin_arm64() -> None:
+    asset = release_asset("Darwin", "arm64")
+    assert asset == _DARWIN_ARM
+    assert asset.key == "darwin-arm64"
+    assert asset.archive is None
+    assert release_asset("Darwin", "aarch64") == _DARWIN_ARM
+
+
+def test_release_asset_intel_mac_rejected() -> None:
+    with pytest.raises(RuntimeError) as exc:
+        release_asset("Darwin", "x86_64")
+    assert str(exc.value) == "Intel Macs are not supported (Apple Silicon only)"
+
+
+def test_release_asset_unknown_platform() -> None:
+    with pytest.raises(RuntimeError, match="unsupported platform: Linux/riscv64"):
+        release_asset("Linux", "riscv64")
+    with pytest.raises(RuntimeError, match="unsupported platform: Windows/AMD64"):
+        release_asset("Windows", "AMD64")
+
+
+def test_release_asset_defaults_to_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("platform.machine", lambda: "aarch64")
+    assert release_asset() == _LINUX_ARM
+    assert selfupdate._arch() == "aarch64"
+
+
+def _darwin_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checksums: str, files: dict[str, bytes]
+) -> tuple[Path, list[str], selfupdate.FetchFileFn]:
+    monkeypatch.setattr(selfupdate, "release_asset", lambda *a, **k: _DARWIN_ARM)
+
+    def no_archive(*a: object, **k: object) -> Path:
+        raise AssertionError("injection_archive_path must not be called on Darwin")
+
+    monkeypatch.setattr(selfupdate, "injection_archive_path", no_archive)
+    exe = tmp_path / "bin" / "devboost"
+    exe.parent.mkdir()
+    exe.write_bytes(b"old binary")
+    monkeypatch.setattr("sys.executable", str(exe))
+    downloads: list[str] = []
+    fetch = _recording(downloads, _make_fetch_file(files, checksums_override=checksums))
+    return exe, downloads, fetch
+
+
+def _recording(downloads: list[str], inner: selfupdate.FetchFileFn) -> selfupdate.FetchFileFn:
+    """Wrap *inner* so every requested URL is appended to *downloads*."""
+
+    def fetch(url: str, dest: Path) -> None:
+        downloads.append(url)
+        inner(url, dest)
+
+    return fetch
+
+
+def test_update_frozen_darwin_skips_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = b"new darwin binary"
+    checksums = (
+        f"{hashlib.sha256(new).hexdigest()}  devboost-darwin-arm64\n"
+        f"{hashlib.sha256(b'x').hexdigest()}  devboost-x86_64\n"
+    )
+    exe, downloads, fetch = _darwin_setup(
+        tmp_path, monkeypatch, checksums, {"devboost-darwin-arm64": new}
+    )
+    old, ver = update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch)
+    assert (old, ver) == (__version__, "9.9.9")
+    assert [u.rsplit("/", 1)[-1] for u in downloads] == [
+        "checksums.txt",
+        "devboost-darwin-arm64",
+    ]
+    assert all(u.startswith("https://") for u in downloads)
+    assert exe.read_bytes() == new
+    assert exe.stat().st_mode & 0o111
+    # the atomic replace leaves no temp file behind in the binary's directory
+    assert sorted(p.name for p in exe.parent.iterdir()) == ["devboost"]
+
+
+def test_update_frozen_darwin_ignores_missing_archive_checksum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = b"another darwin binary"
+    checksums = f"{hashlib.sha256(new).hexdigest()}  devboost-darwin-arm64\n"
+    exe, downloads, fetch = _darwin_setup(
+        tmp_path, monkeypatch, checksums, {"devboost-darwin-arm64": new}
+    )
+    update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch)
+    assert exe.read_bytes() == new
+
+
+def test_update_frozen_darwin_mismatch_keeps_the_old_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checksums = f"{'0' * 64}  devboost-darwin-arm64\n"
+    exe, downloads, fetch = _darwin_setup(
+        tmp_path, monkeypatch, checksums, {"devboost-darwin-arm64": b"evil"}
+    )
+    with pytest.raises(RuntimeError, match="checksum mismatch for devboost-darwin-arm64"):
+        update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch)
+    assert exe.read_bytes() == b"old binary"
+
+
+def test_update_frozen_darwin_missing_binary_entry_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checksums = f"{hashlib.sha256(b'x').hexdigest()}  devboost-aarch64\n"
+    exe, downloads, fetch = _darwin_setup(
+        tmp_path, monkeypatch, checksums, {"devboost-darwin-arm64": b"x"}
+    )
+    with pytest.raises(RuntimeError, match="no checksum entry for devboost-darwin-arm64"):
+        update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch)
+    assert exe.read_bytes() == b"old binary"
+
+
+def test_update_frozen_refuses_a_downgrade(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    new = b"older binary"
+    checksums = f"{hashlib.sha256(new).hexdigest()}  devboost-darwin-arm64\n"
+    exe, downloads, fetch = _darwin_setup(
+        tmp_path, monkeypatch, checksums, {"devboost-darwin-arm64": new}
+    )
+    old_tag = "https://github.com/adams100111/dev-boost/releases/tag/v0.0.1"
+    with pytest.raises(RuntimeError, match="refusing to downgrade"):
+        update_frozen(fetch_url=lambda u: old_tag, fetch_file=fetch)
+    assert downloads == []
+    assert exe.read_bytes() == b"old binary"
+
+
+def test_update_frozen_linux_unchanged(tmp_path: Path, linux_x86: None) -> None:
+    """The Linux asset still downloads, verifies and replaces the Ventoy archive."""
+    bin_c, tar_c = b"linux bin", b"linux tar"
+    good = (
+        f"{hashlib.sha256(bin_c).hexdigest()}  devboost-x86_64\n"
+        f"{hashlib.sha256(tar_c).hexdigest()}  devboost-x86_64.tar.gz\n"
+    )
+    downloads: list[str] = []
+    fetch = _recording(
+        downloads,
+        _make_fetch_file(
+            {"devboost-x86_64": bin_c, "devboost-x86_64.tar.gz": tar_c},
+            checksums_override=good,
+        ),
+    )
+    exe = tmp_path / "devboost"
+    exe.write_bytes(b"old")
+    archive = tmp_path / "data" / "devboost-x86_64.tar.gz"
+    archive_keys: list[str] = []
+
+    def archive_path(key: str) -> Path:
+        archive_keys.append(key)
+        return archive
+
+    with (
+        patch("sys.executable", str(exe)),
+        patch("devboost.core.selfupdate.injection_archive_path", archive_path),
+    ):
+        update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch)
+    assert [u.rsplit("/", 1)[-1] for u in downloads] == [
+        "checksums.txt",
+        "devboost-x86_64",
+        "devboost-x86_64.tar.gz",
+    ]
+    assert archive_keys == ["x86_64"]
+    assert exe.read_bytes() == bin_c
+    assert archive.read_bytes() == tar_c
+
+    # a checksums.txt without the tar entry still fails on Linux
+    partial = f"{hashlib.sha256(bin_c).hexdigest()}  devboost-x86_64\n"
+    fetch2 = _make_fetch_file(
+        {"devboost-x86_64": bin_c, "devboost-x86_64.tar.gz": tar_c},
+        checksums_override=partial,
+    )
+    with pytest.raises(RuntimeError, match="no checksum entry for devboost-x86_64.tar.gz"):
+        update_frozen(fetch_url=lambda u: _NEW_TAG, fetch_file=fetch2)
+
+
+# ---------------------------------------------------------------------------
 # update_frozen — checksum verification
 # ---------------------------------------------------------------------------
 
@@ -187,7 +396,7 @@ def _make_fetch_file(
     return fetch
 
 
-def test_update_frozen_checksum_mismatch_raises(tmp_path: Path) -> None:
+def test_update_frozen_checksum_mismatch_raises(tmp_path: Path, linux_x86: None) -> None:
     arch = selfupdate._arch()
     bin_name = f"devboost-{arch}"
     tar_name = f"devboost-{arch}.tar.gz"
@@ -213,7 +422,7 @@ def test_update_frozen_checksum_mismatch_raises(tmp_path: Path) -> None:
         update_frozen(fetch_url=fake_fetch_url, fetch_file=fetch_file)
 
 
-def test_update_frozen_missing_checksum_entry_raises(tmp_path: Path) -> None:
+def test_update_frozen_missing_checksum_entry_raises(tmp_path: Path, linux_x86: None) -> None:
     arch = selfupdate._arch()
     bin_name = f"devboost-{arch}"
     tar_name = f"devboost-{arch}.tar.gz"
@@ -234,7 +443,7 @@ def test_update_frozen_missing_checksum_entry_raises(tmp_path: Path) -> None:
         update_frozen(fetch_url=fake_fetch_url, fetch_file=fetch_file)
 
 
-def test_update_frozen_download_failure_raises() -> None:
+def test_update_frozen_download_failure_raises(linux_x86: None) -> None:
     def fake_fetch_url(url: str) -> str:
         return "https://github.com/adams100111/dev-boost/releases/tag/v9.9.9"
 
@@ -245,7 +454,7 @@ def test_update_frozen_download_failure_raises() -> None:
         update_frozen(fetch_url=fake_fetch_url, fetch_file=bad_fetch_file)
 
 
-def test_update_frozen_success(tmp_path: Path) -> None:
+def test_update_frozen_success(tmp_path: Path, linux_x86: None) -> None:
     """Full happy-path: correct checksums → files replaced atomically."""
     arch = selfupdate._arch()
     bin_name = f"devboost-{arch}"
