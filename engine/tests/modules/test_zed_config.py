@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
@@ -182,3 +184,100 @@ def test_lsp_install_does_not_create_zed_settings(home: Path) -> None:
     _shim(home, "ruff")
     PythonLsp().install(CTX)
     assert not _zed.settings_path().exists()
+
+
+# --- I1: Zed is Linux-only (SUPPORTED_FAMILIES) --------------------------------------------
+
+MAC_CTX = Ctx(os=OsInfo("macos", "macos", "aarch64"), ex=FakeExecutor())
+_NEEDS_MERGE = '{"buffer_font_size": 17}'  # lacks every must-have key → a merge would write
+
+
+def test_supported_families_is_the_single_source_for_zed_families() -> None:
+    from devboost.modules.editors import Zed
+
+    assert _zed.SUPPORTED_FAMILIES == ("fedora", "debian", "arch")
+    assert Zed.families == _zed.SUPPORTED_FAMILIES
+
+
+@pytest.mark.parametrize("module", [PythonLsp, DotnetLsp])
+def test_lsp_hook_does_nothing_on_macos(home: Path, module: type) -> None:
+    p = _zed.settings_path()
+    p.parent.mkdir(parents=True)
+    p.write_text(_NEEDS_MERGE, encoding="utf-8")
+    _shim(home, "ruff")
+    tools = home / ".dotnet" / "tools"
+    tools.mkdir(parents=True)
+    (tools / "csharp-ls").write_text("", encoding="utf-8")
+    module().install(MAC_CTX)
+    assert p.read_text(encoding="utf-8") == _NEEDS_MERGE
+    assert not (p.parent / "settings.json.devboost-bak").exists()
+    assert not _zed.keymap_path().exists()
+    assert sorted(x.name for x in p.parent.iterdir()) == ["settings.json"]
+
+
+def test_ensure_config_does_nothing_off_family(home: Path) -> None:
+    assert _zed.ensure_config(MAC_CTX, all_pins()) is False
+    assert not _zed.settings_path().parent.exists()
+
+
+# --- I2: the hook never fails an LSP install ----------------------------------------------
+
+
+def _warnings(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    seen: list[str] = []
+    monkeypatch.setattr(log, "warn", seen.append)
+    return seen
+
+
+def test_lsp_install_survives_non_utf8_settings(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p = _zed.settings_path()
+    p.parent.mkdir(parents=True)
+    body = b'{"buffer_font": "caf\xe9"}'  # latin-1 é
+    p.write_bytes(body)
+    _shim(home, "ruff")
+    seen = _warnings(monkeypatch)
+    PythonLsp().install(CTX)
+    assert p.read_bytes() == body
+    assert len(seen) == 1 and "telemetry" in seen[0]  # NeedsUser names the keys
+
+
+def test_lsp_install_survives_settings_path_being_a_directory(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _zed.settings_path().mkdir(parents=True)
+    seen = _warnings(monkeypatch)
+    DotnetLsp().install(CTX)
+    assert _zed.settings_path().is_dir()
+    assert len(seen) == 1 and seen[0].startswith("zed: ")
+
+
+def test_lsp_install_survives_a_permission_error(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p = _zed.settings_path()
+    p.parent.mkdir(parents=True)
+    p.write_text(_NEEDS_MERGE, encoding="utf-8")
+
+    def _denied(*_: object) -> None:
+        raise PermissionError(13, "Permission denied", str(p))
+
+    monkeypatch.setattr(os, "replace", _denied)
+    seen = _warnings(monkeypatch)
+    PythonLsp().install(CTX)
+    assert p.read_text(encoding="utf-8") == _NEEDS_MERGE
+    assert len(seen) == 1 and "Permission denied" in seen[0]
+    assert not (p.parent / "settings.json.devboost-tmp").exists()
+
+
+def test_hook_warning_with_markup_like_text_does_not_raise(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _zed.seed_files()
+
+    def _boom(*_: object) -> bool:
+        raise RuntimeError("bad <tag> in </path>")
+
+    monkeypatch.setattr(_zed, "ensure_config", _boom)
+    _zed.refresh_after_lsp(CTX, all_pins())  # real log.warn: loguru markup must not raise

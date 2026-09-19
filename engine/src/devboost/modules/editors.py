@@ -75,8 +75,8 @@ class Zed(Module):
     description = "Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs."
     gui = True
     profiles = ("editors",)
-    #: Linux only until milestone Z2 adds "macos" (+ the cask branch in zed_install_argv).
-    families = ("fedora", "debian", "arch")
+    #: Linux only until Z2: adding "macos" there also needs the BrewCask install via pkg.
+    families = _zed.SUPPORTED_FAMILIES
 
     @staticmethod
     def _installed(ctx: Ctx) -> bool:
