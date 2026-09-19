@@ -145,3 +145,4 @@ def test_non_interactive_login_bash_skips_bashrc(frag_home: Path, bin_dir: Path,
     shutil.copy(DOT / "dot_bashrc", frag_home / ".bashrc")
     res = _bash_login(frag_home, bin_dir, 'type -t dev || printf "none"')
     assert res.stdout.strip().splitlines()[-1] == "none", res.stderr
+    assert res.stderr == ""
