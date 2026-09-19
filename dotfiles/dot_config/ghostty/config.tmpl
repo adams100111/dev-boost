@@ -1,0 +1,57 @@
+# ~/.config/ghostty/config — dev-boost managed Ghostty configuration (the default terminal).
+# devboost — managed by chezmoi; edit dotfiles/dot_config/ghostty/config.tmpl in the dev-boost
+# repo. Rendered per OS by chezmoi: the macOS-only lines sit in the darwin blocks.
+
+# Theme — Catppuccin Mocha (a built-in theme; theme names are Title Case since Ghostty 1.2)
+theme = Catppuccin Mocha
+
+# Font — JetBrainsMono Nerd Font (installed by the nerd-fonts module)
+font-family = "JetBrainsMono Nerd Font Mono"
+font-size = 13
+
+window-padding-x = 8
+window-padding-y = 8
+{{- if eq .chezmoi.os "darwin" }}
+# macOS: the tab bar lives in the native titlebar. (window-decoration = none would also
+# remove the traffic lights and the rounded corners.)
+macos-titlebar-style = tabs
+# Left Option is Alt (readline, fzf and herdr Alt bindings); right Option keeps typing
+# accents and special characters.
+macos-option-as-alt = left
+{{- else }}
+window-decoration = none
+gtk-single-instance = false
+{{- end }}
+
+# Shell integration — bash or zsh, detected. Over ssh, forward TERM/COLORTERM and install
+# Ghostty's terminfo on the remote host, so tools there render correctly.
+shell-integration = detect
+shell-integration-features = ssh-env,ssh-terminfo
+# A desktop notification when a long command finishes while Ghostty is not focused.
+notify-on-command-finish = unfocused
+
+# Key bindings. A bare Ctrl+V is deliberately NOT bound: `herdr --remote` owns image paste.
+keybind = ctrl+shift+c=copy_to_clipboard
+keybind = ctrl+shift+v=paste_from_clipboard
+keybind = ctrl+shift+n=new_window
+keybind = ctrl+shift+t=new_tab
+keybind = ctrl+shift+right=next_tab
+keybind = ctrl+shift+left=previous_tab
+keybind = ctrl+shift+z=toggle_split_zoom
+keybind = ctrl+equal=increase_font_size:1
+keybind = ctrl+minus=decrease_font_size:1
+keybind = ctrl+zero=reset_font_size
+{{- if eq .chezmoi.os "darwin" }}
+# macOS: the Cmd twin of every binding above — both work. Tabs use Cmd+Shift+arrow
+# because Cmd+arrow is line start/end in the shell.
+keybind = super+c=copy_to_clipboard
+keybind = super+v=paste_from_clipboard
+keybind = super+n=new_window
+keybind = super+t=new_tab
+keybind = super+shift+right=next_tab
+keybind = super+shift+left=previous_tab
+keybind = super+shift+z=toggle_split_zoom
+keybind = super+equal=increase_font_size:1
+keybind = super+minus=decrease_font_size:1
+keybind = super+zero=reset_font_size
+{{- end }}

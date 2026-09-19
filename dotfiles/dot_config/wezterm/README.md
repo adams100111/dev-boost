@@ -1,5 +1,8 @@
 # WezTerm Config
 
+**Opt-in and deprecated** (`devboost install optional-terminals`) — Ghostty is the default
+terminal on every OS.
+
 Modular WezTerm config tuned for heavy agentic coding + multi-server access.
 Catppuccin theme that follows the OS light/dark preference, a **top** tab bar +
 status (workspace · host · clock), and a background **resource alert** when RAM/disk

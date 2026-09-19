@@ -1,4 +1,5 @@
--- Leader-driven keymap. Leader = CTRL+Space.
+-- Leader-driven keymap. Leader = CTRL+Space (CTRL+A on macOS, which keeps Ctrl+Space for
+-- input sources).
 --
 -- Panes
 --   LEADER v        split left/right
@@ -33,14 +34,25 @@
 --   LEADER r        reload configuration
 --   CTRL+SHIFT+f    search scrollback
 --   CTRL+SHIFT+click  open the link under the mouse (SHIFT bypasses tmux's mouse grab)
+--   (macOS: SUPER twins — CMD+SHIFT+D, CMD+F, CMD+click)
 local wezterm = require("wezterm")
 local act = wezterm.action
 local workspaces = require("config.workspaces")
+local is_mac = wezterm.target_triple:find("darwin") ~= nil
 
 local M = {}
 
 function M.apply(config)
-  config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
+  -- macOS keeps Ctrl+Space for switching input sources, so the leader is Ctrl+A there.
+  if is_mac then
+    config.leader = { key = "a", mods = "CTRL", timeout_milliseconds = 1000 }
+  else
+    config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
+  end
+  -- Left Option is Alt (ALT+h/j/k/l pane keys, readline, fzf); right Option still composes
+  -- accents. (The macOS default, made explicit.)
+  config.send_composed_key_when_left_alt_is_pressed = false
+  config.send_composed_key_when_right_alt_is_pressed = true
 
   -- Hyperlinks: WezTerm opens links on the LAPTOP (it runs the local URL handler), so
   -- this works over SSH. The catch is tmux with `mouse on` grabs the click before
@@ -121,6 +133,17 @@ function M.apply(config)
       key = tostring(i),
       mods = "LEADER",
       action = act.ActivateTab(i - 1),
+    })
+  end
+
+  if is_mac then
+    -- macOS: the Cmd twin of each CTRL+SHIFT binding (both work).
+    table.insert(keys, { key = "D", mods = "SUPER|SHIFT", action = act.DetachDomain("CurrentPaneDomain") })
+    table.insert(keys, { key = "f", mods = "SUPER", action = act.Search({ CaseInSensitiveString = "" }) })
+    table.insert(config.mouse_bindings, {
+      event = { Up = { streak = 1, button = "Left" } },
+      mods = "SUPER",
+      action = act.OpenLinkAtMouseCursor,
     })
   end
 
