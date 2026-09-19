@@ -14,7 +14,8 @@
 #     http://<this-laptop-tailscale-ip>:8931/mcp
 # The Tailscale IP is auto-detected, so this script is portable across machines.
 #
-# Normally started by the systemd user unit (see ../../config/systemd/user/).
+# Normally started by the systemd user unit on Linux (see ../../config/systemd/user/) and
+# by the dev.devboost.browser-mcp LaunchAgent on macOS (devboost install browser-mcp).
 # Run by hand to watch/debug: `browser-mcp`  (Ctrl-C to stop).
 set -euo pipefail
 
@@ -36,8 +37,11 @@ fi
 # an ephemeral profile either way, so a `chrome` browser never touches your real
 # logged-in profile.
 BROWSER_CHANNEL="${BROWSER_CHANNEL:-}"
+CHROME_APP="${CHROME_APP:-/Applications/Google Chrome.app}"
 if [ -z "${BROWSER_CHANNEL}" ]; then
-  if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; then
+  if command -v google-chrome >/dev/null 2>&1 \
+    || command -v google-chrome-stable >/dev/null 2>&1 \
+    || [ -d "${CHROME_APP}" ]; then
     BROWSER_CHANNEL=chrome
   else
     BROWSER_CHANNEL=chromium
