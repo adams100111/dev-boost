@@ -80,7 +80,8 @@ def test_env_sh_is_posix_and_shell_bash_sources_it_after_path() -> None:
     text = SHELL_BASH.read_text(encoding="utf-8")
     line = '[[ -r "${HOME}/.config/devboost/env.sh" ]] && source "${HOME}/.config/devboost/env.sh"'
     assert line in text
-    assert text.index(".local/bin") < text.index(line)  # `command -v zed` needs ~/.local/bin
+    env = ENV_SH.read_text(encoding="utf-8")
+    assert env.index(".local/bin") < env.index("command -v zed")  # zed lookup needs ~/.local/bin
 
 
 def test_git_core_editor_stays_unset() -> None:

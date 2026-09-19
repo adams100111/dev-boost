@@ -253,15 +253,12 @@ def _dotfiles_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "dotfiles"
 
 
-def test_bashrc_puts_dotnet_tools_on_path() -> None:
+def test_env_puts_dotnet_tools_on_path() -> None:
     """`dotnet tool install -g` (aspire, csharp-ls, csharpier) installs into ~/.dotnet/tools.
-    The shell config must add it to PATH or those tools are "not found" in an interactive
+    The shared env must add it to PATH or those tools are "not found" in an interactive
     shell — which is exactly what happened to `aspire` after `devboost install full`."""
-    frag = (_dotfiles_dir() / "dot_config" / "devboost" / "shell.bash").read_text(
-        encoding="utf-8"
-    )
-    assert ".dotnet/tools" in frag
-    assert 'PATH="${HOME}/.dotnet/tools:${PATH}"' in frag
+    env = (_dotfiles_dir() / "dot_config" / "devboost" / "env.sh").read_text(encoding="utf-8")
+    assert '_devboost_path_prepend "${HOME}/.dotnet/tools"' in env
 
 
 def test_bashrc_sources_the_portable_fragment() -> None:
