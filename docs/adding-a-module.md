@@ -103,3 +103,9 @@ truly diverge. The OS-agnostic majority is untouched.
   otherwise raise `NeedsUser(reason, how_to_fix)`.
 - Default apps: add rows to `data/macos/default-apps.tsv` and call
   `default_apps.apply(ctx, rows, can_prompt=…)`.
+- A GUI app that is one cask: subclass `CaskApp` (`modules/_cask.py`) and set `cask`, plus
+  optionally `launch`, `tcc`, `min_macos`.
+- Version gates: override `supported_on(os_info)` (the plan reports `unsupported-os`); use
+  `core.macver.macos_version`.
+- A setting you change on the user's machine must be revertible; see `macos_defaults.py`
+  (snapshot first, `devboost revert`).

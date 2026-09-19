@@ -8,6 +8,13 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **macOS desktop (M5)** — `macos-defaults` with snapshot + `devboost revert
+  macos-defaults [key…]`, open-files limit, firewall, Time Machine exclusions,
+  Raycast/AeroSpace (+config)/AltTab/Thaw/MonitorControl/Keka/Stats/Quick Look, code files
+  open in Zed, Voxtype dictation on every OS (+ opt-in `voxtype-arabic`), opt-in `ios`
+  (Xcode 27), `macos-extras` and `android-emulator`, desktop checks in `doctor`.
+  BetterDisplay is not shipped (paid for business use). See
+  [docs/macos-primer.md](docs/macos-primer.md).
 - **macOS catalog (M3)** — `devboost install` on a Mac installs the workstation:
   `xcode-clt`, `homebrew`, `rosetta` modules; casks for the GUI apps; .NET 10 in `~/.dotnet`;
   Android SDK via the cmdline-tools cask; ddev (tap) + mkcert; the Tailscale app as a

@@ -6,6 +6,8 @@ each milestone. **Status: M3 — the workstation.** `devboost install` (the `mac
 installs the whole catalog; Docker and the scheduled jobs arrive in M4, the desktop layer
 in M5, `curl … | bash` in M6.
 
+- Desktop layer, iOS and extras (M5): see [macos-primer.md](macos-primer.md).
+
 ## Requirements
 
 - Apple Silicon (Intel is refused). macOS 27 Golden Gate or 26 Tahoe; 15 is best-effort.

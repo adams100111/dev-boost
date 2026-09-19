@@ -71,7 +71,9 @@ Two of those deserve a note:
 installing ours would be a downgrade that then fights `omarchy refresh herdr`), `wezterm`
 and `nerd-fonts` (Omarchy's terminal is **foot**, themed by `omarchy theme set` and routed
 through `xdg-terminal-exec`), `flameshot` (Hyprland capture goes through
-`omarchy capture ...`), `va-hwaccel`, `thermald` and `power-profiles-daemon`.
+`omarchy capture ...`), `va-hwaccel`, `thermald` and `power-profiles-daemon`, and
+`voxtype` — Omarchy installs `voxtype-bin` from its own Install › AI › Dictation menu;
+dev-boost still ships the shared `~/.config/voxtype/config.toml`.
 
 The `omarchy` profile is `full` minus `gnome` and `multimedia` — Arch ships codecs
 unencumbered, so the RPM Fusion / restricted-extras swaps that profile exists to perform
