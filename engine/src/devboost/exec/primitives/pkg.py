@@ -223,6 +223,11 @@ _SUDO_REFUSED = (
 )
 
 
+def _token(name: str) -> str:
+    """The bare formula/cask token of a possibly tap-qualified name (`user/tap/token`)."""
+    return name.rsplit("/", 1)[-1]
+
+
 class Brew:
     """macOS. Formulae and casks via Homebrew — never under sudo (brew refuses root).
 
@@ -306,11 +311,18 @@ class Brew:
         """The cask's app is in place but brew does not list the cask as installed."""
         return not self.cask_installed(ctx, cask) and self._bundle_present(ctx, cask)
 
+    # Presence is probed by the bare token; install/upgrade/info/trust keep the
+    # tap-qualified name, which is what selects (and auto-taps) the third-party tap.
+    # Homebrew 7.0.4 cmd/list.rb keeps a named cask only if Caskroom/<name> exists, and
+    # that directory is the token, so `brew list --cask --versions nikitabobko/tap/aerospace`
+    # exits 1 even with AeroSpace installed. A formula's rack is Cellar/<token> too, and
+    # a qualified formula name fails outright once its tap is gone (Formulary.to_rack).
+
     def installed(self, ctx: Ctx, pkg: str) -> bool:
-        return self._brew(ctx, "list", "--formula", "--versions", pkg).ok
+        return self._brew(ctx, "list", "--formula", "--versions", _token(pkg)).ok
 
     def cask_installed(self, ctx: Ctx, cask: str) -> bool:
-        return self._brew(ctx, "list", "--cask", "--versions", cask).ok
+        return self._brew(ctx, "list", "--cask", "--versions", _token(cask)).ok
 
     def upgrade(self, ctx: Ctx, *pkgs: str) -> None:
         if not pkgs:

@@ -46,7 +46,10 @@ class _Brew(FakeExecutor):
     ) -> Result:
         super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
         if list(argv[:2]) == ["brew", "list"]:
-            return Result(0) if argv[-1] in self.installed else Result(1)
+            # Like brew 7.0.4: `list` finds Caskroom/<token> or Cellar/<token> only, so a
+            # tap-qualified name is never listed.
+            name = argv[-1]
+            return Result(0) if "/" not in name and name in self.installed else Result(1)
         if list(argv[:2]) == ["brew", "info"]:
             cask = argv[-1]
             body = {"casks": [{"token": cask, "auto_updates": cask in self.auto_updates}]}

@@ -58,9 +58,12 @@ class _Brew(FakeExecutor):
         super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
         a = list(argv)
         if a[:2] == ["brew", "list"] and "--cask" in a:
+            # Real brew 7.0.4 (cmd/list.rb): a named cask is listed only when
+            # Caskroom/<name> exists, and that dir is the bare token — so a tap-qualified
+            # name is never "installed", whatever is on disk.
             return Result(0) if a[-1] in self.present else Result(1)
         if a[:3] == ["brew", "install", "--cask"]:
-            self.present.add(a[-1])
+            self.present.add(a[-1].rsplit("/", 1)[-1])  # Caskroom/<token>
             return Result(0)
         if a[:2] == ["brew", "info"]:
             cask = a[-1]
@@ -98,22 +101,36 @@ def test_betterdisplay_is_not_shipped() -> None:
 
 
 @pytest.mark.usefixtures("interactive")
-def test_tapped_cask_installs_and_verifies_fully_qualified() -> None:
-    """`nikitabobko/tap/aerospace` auto-taps on install; brew resolves the same
-    tap-qualified name for `list`/`info`/`upgrade` once the tap exists locally, so
-    CaskInstall uses one consistent name throughout (M5-D6: wraps `_brew.BrewCask`)."""
+def test_tapped_cask_installs_qualified_and_verifies_by_token() -> None:
+    """C2: `nikitabobko/tap/aerospace` installs (and trusts) by its qualified name, but
+    `brew list --cask --versions nikitabobko/tap/aerospace` always exits 1 on Homebrew
+    7.0.4, so presence is probed with the bare token `aerospace`."""
     ex = _Brew()
     ctx = Ctx(os=MAC, ex=ex)
     apps.Aerospace().install(ctx)
     assert ex.calls == [
-        ["brew", "list", "--cask", "--versions", "nikitabobko/tap/aerospace"],
+        ["brew", "list", "--cask", "--versions", "aerospace"],
         ["brew", "trust", "--cask", "nikitabobko/tap/aerospace"],
         ["brew", "install", "--cask", "-y", "--adopt", "nikitabobko/tap/aerospace"],
         ["open", "-g", "-a", "AeroSpace"],
     ]
     ex.calls.clear()
-    apps.Aerospace().verify(ctx)
-    assert ex.calls == [["brew", "list", "--cask", "--versions", "nikitabobko/tap/aerospace"]]
+    assert apps.Aerospace().verify(ctx) is True
+    assert ex.calls == [["brew", "list", "--cask", "--versions", "aerospace"]]
+
+
+@pytest.mark.usefixtures("interactive")
+def test_installed_tapped_cask_is_not_reinstalled_or_reopened() -> None:
+    """C2 regression: once installed, a re-run (plain or --update) neither re-trusts nor
+    re-opens AeroSpace, and its post-install verify passes. (A plain re-run's `brew
+    install --cask` of an installed cask is brew's own no-op, BrewCask's design.)"""
+    ex = _Brew(present={"aerospace"}, auto_updates={"nikitabobko/tap/aerospace"})
+    for force in (False, True):
+        apps.Aerospace().install(Ctx(os=MAC, ex=ex, force=force))
+    assert not [c for c in ex.calls if c[:2] == ["brew", "trust"]]
+    assert not [c for c in ex.calls if c[:2] == ["brew", "upgrade"]]  # auto_updates
+    assert not [c for c in ex.calls if c[0] == "open"]
+    assert apps.Aerospace().verify(Ctx(os=MAC, ex=ex)) is True
 
 
 def test_app_without_launch_is_not_opened() -> None:
