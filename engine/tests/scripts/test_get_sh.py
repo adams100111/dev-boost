@@ -10,8 +10,11 @@ the real ``sudo`` or the real home.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
+import signal
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,8 +41,10 @@ class Harness:
     curl_log: Path
     exec_log: Path
     order_log: Path
+    curl_args_log: Path
     brew_prefix: Path
     tty: Path
+    tmpdir: Path
 
     def urls(self) -> list[str]:
         if not self.curl_log.exists():
@@ -55,6 +60,19 @@ class Harness:
         if not self.exec_log.exists():
             return []
         return self.exec_log.read_text(encoding="utf-8").splitlines()
+
+    def curl_argvs(self) -> list[str]:
+        """One line per curl invocation, holding that call's whole argv."""
+        if not self.curl_args_log.exists():
+            return []
+        return self.curl_args_log.read_text(encoding="utf-8").splitlines()
+
+    def leaked_temp_dirs(self) -> list[str]:
+        """What ``mktemp -d`` left behind. ``mktemp`` is stubbed to hand out dirs under
+        ``tmpdir``, so anything still in there after the run is a leak. (Pinning
+        ``TMPDIR`` alone would not do: macOS ``mktemp -d`` with no template ignores it
+        and uses the per-user ``/var/folders/…`` dir.)"""
+        return sorted(q.name for q in self.tmpdir.iterdir())
 
     @property
     def installed(self) -> Path:
@@ -99,6 +117,9 @@ def _make_harness(
     uid: str = "1000",
     brew: bool = True,
     corrupt: str | None = None,
+    no_tty: bool = False,
+    fail_install: bool = False,
+    kill_int_on: str | None = None,
     **extra_env: str,
 ) -> Harness:
     canned = tmp_path / "canned"
@@ -108,9 +129,12 @@ def _make_harness(
     curl_log = logs / "curl.log"
     exec_log = logs / "exec.log"
     order_log = logs / "order.log"
+    curl_args_log = logs / "curl-args.log"
     brew_prefix = tmp_path / "brewprefix"
     tty = tmp_path / "tty-file"
     tty.write_text("", encoding="utf-8")
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir()
 
     for asset in ASSETS:
         (canned / asset).write_text(_canned_binary(exec_log), encoding="utf-8")
@@ -150,24 +174,51 @@ def _make_harness(
     stub.add("sw_vers", f'echo "{mac_version}"')
     stub.add("sysctl", f'echo "{arm64}"')
     stub.add("id", f'echo "{uid}"')
+    # A mktemp whose output we control, so "was the download dir cleaned up?" is
+    # observable — and so no test ever litters the host's real temp dir.
+    stub.add(
+        "mktemp",
+        f'd="{tmpdir}/dl.$$"\nmkdir -p "$d"\nchmod 700 "$d"\nprintf "%s\\n" "$d"',
+    )
     stub.add("sudo", f'printf "sudo %s\\n" "$*" >> "{order_log}"\nexit 0')
+    kill_clause = ""
+    if kill_int_on is not None:
+        # Hang here so the test can signal the whole process group mid-download, the way
+        # a real Ctrl-C arrives while curl is still streaming.
+        kill_clause = (
+            f'if [ "${{url##*/}}" = "{kill_int_on}" ]; then\n'
+            f'  : > "{curl_log}.hanging"\n'
+            "  sleep 30\n"
+            "fi\n"
+        )
     stub.add(
         "curl",
-        "url=\"\"\nout=\"\"\n"
+        f'printf "%s\\n" "$*" >> "{curl_args_log}"\n'
+        'url=""\nout=""\n'
         'while [ $# -gt 0 ]; do\n'
         '  case "$1" in\n'
         '    -o) out="$2"; shift 2 ;;\n'
+        '    --proto|--proto-redir) shift 2 ;;\n'
         '    -*) shift ;;\n'
         '    *) url="$1"; shift ;;\n'
         "  esac\n"
         "done\n"
         f'printf "%s\\n" "$url" >> "{curl_log}"\n'
-        f'src="{canned}/${{url##*/}}"\n'
+        + kill_clause
+        + f'src="{canned}/${{url##*/}}"\n'
         '[ -f "$src" ] || exit 22\n'
         'if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi\n',
     )
+    if fail_install:
+        # Force a `set -e` abort mid-gs_main, after the download dir exists.
+        stub.add("install", 'echo "install: refused" >&2\nexit 1')
 
-    env = stub.env(GS_BREW_PREFIX=str(brew_prefix), GS_TTY=str(tty), **extra_env)
+    env = stub.env(
+        GS_BREW_PREFIX=str(brew_prefix),
+        GS_TTY=str(tmp_path / "absent-tty") if no_tty else str(tty),
+        TMPDIR=str(tmpdir),
+        **extra_env,
+    )
     return Harness(
         env=env,
         home=tmp_path / "home",
@@ -175,8 +226,10 @@ def _make_harness(
         curl_log=curl_log,
         exec_log=exec_log,
         order_log=order_log,
+        curl_args_log=curl_args_log,
         brew_prefix=brew_prefix,
         tty=tty,
+        tmpdir=tmpdir,
     )
 
 
@@ -313,6 +366,23 @@ def test_darwin_macos_28_warns_newer(stub_path: StubPath, tmp_path: Path) -> Non
     assert h.installed.is_file()
 
 
+@pytest.mark.parametrize("reported", ["", "beta"])
+def test_darwin_unreadable_version_refused(
+    stub_path: StubPath, tmp_path: Path, reported: str
+) -> None:
+    """The version gate fails CLOSED: an unreadable or unparseable sw_vers is not
+    evidence of a supported macOS."""
+    h = _make_harness(stub_path, tmp_path, mac_version=reported)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: the macOS version could not be read — dev-boost needs macOS 15 or newer "
+        "(27 recommended)" in _stderr(proc)
+    )
+    assert h.urls() == []
+    assert not h.installed.exists()
+
+
 # --------------------------------------------------------------------------- root
 
 
@@ -369,6 +439,11 @@ def test_darwin_usb_profile_refused(stub_path: StubPath, tmp_path: Path) -> None
     assert proc.returncode == 1
     assert "get.sh: the USB builder is Linux-only" in _stderr(proc)
     assert h.exec_lines() == []
+    # The refusal fires before anything is fetched, installed or linked.
+    assert h.urls() == []
+    assert not h.installed.exists()
+    assert not h.link.exists()
+    assert not (h.home / ".local" / "share" / "devboost").exists()
 
 
 def test_darwin_none_installs_only(stub_path: StubPath, tmp_path: Path) -> None:
@@ -418,6 +493,130 @@ def test_missing_release_reports_cleanly(stub_path: StubPath, tmp_path: Path) ->
     assert proc.returncode == 1
     assert "no published release yet" in _stderr(proc)
     assert not h.installed.exists()
+
+
+# --------------------------------------------------------------------------- temp dir
+
+
+def test_temp_dir_cleaned_after_success(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.leaked_temp_dirs() == []
+
+
+def test_temp_dir_cleaned_after_checksum_mismatch(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, corrupt="devboost-darwin-arm64")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert h.leaked_temp_dirs() == []
+
+
+def test_temp_dir_cleaned_on_sigint(stub_path: StubPath, tmp_path: Path) -> None:
+    """Ctrl-C mid-download must not leave a partial, unverified binary behind. The
+    RETURN trap alone does not cover this: a default-disposition SIGINT kills the shell
+    outright, running no trap at all."""
+    h = _make_harness(stub_path, tmp_path, kill_int_on="devboost-darwin-arm64")
+    hanging = Path(f"{h.curl_log}.hanging")
+    with subprocess.Popen(
+        [str(GET_SH)],
+        env=h.env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as proc:
+        deadline = time.monotonic() + 30
+        while not hanging.exists() and time.monotonic() < deadline:
+            if proc.poll() is not None:
+                raise AssertionError("get.sh exited before the download started")
+            time.sleep(0.05)
+        assert hanging.exists(), "the stubbed download never started"
+        assert h.leaked_temp_dirs(), "the download dir should exist while downloading"
+        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+        proc.wait(timeout=30)
+    assert proc.returncode != 0
+    assert h.leaked_temp_dirs() == []
+    assert not h.installed.exists()
+
+
+def test_temp_dir_cleaned_on_errexit_abort(stub_path: StubPath, tmp_path: Path) -> None:
+    """A `set -e` abort mid-gs_main (here: a failing `install`) fires no RETURN trap."""
+    h = _make_harness(stub_path, tmp_path, fail_install=True)
+    proc = _run_get_sh(h)
+    assert proc.returncode != 0
+    assert h.leaked_temp_dirs() == []
+    assert not h.link.exists()
+
+
+# --------------------------------------------------------------------------- transport
+
+
+def test_curl_pins_https_on_the_first_hop_and_on_redirects(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    h = _make_harness(stub_path, tmp_path, brew=False)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    argvs = h.curl_argvs()
+    # The release fetches plus the Homebrew installer fetch — every single one.
+    assert len(argvs) == 3
+    for argv in argvs:
+        assert "--proto =https,file" in argv, argv
+        assert "--proto-redir =https" in argv, argv
+
+
+def test_non_default_base_warns_and_names_the_host(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(
+        stub_path, tmp_path, DEVBOOST_RELEASE_BASE="https://mirror.example/dl"
+    )
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    err = _stderr(proc)
+    assert "get.sh: WARNING: DEVBOOST_RELEASE_BASE overrides the official release." in err
+    assert (
+        "get.sh: WARNING: devboost AND its checksums will be fetched from: mirror.example"
+        in err
+    )
+    # The warning precedes the first fetch.
+    assert err.index("WARNING") < err.index("downloading devboost-")
+
+
+def test_default_base_does_not_warn(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert "WARNING" not in _stderr(proc)
+
+
+# --------------------------------------------------------------------------- no tty
+
+
+def test_darwin_no_tty_refuses_before_sudo(stub_path: StubPath, tmp_path: Path) -> None:
+    """With no usable tty the Homebrew bootstrap cannot prompt: say so, and never let a
+    raw shell redirection error reach the user."""
+    h = _make_harness(stub_path, tmp_path, brew=False, no_tty=True)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    err = _stderr(proc)
+    assert (
+        "get.sh: no terminal available for the sudo prompt — install Homebrew first, "
+        "then re-run this script" in err
+    )
+    assert "No such file or directory" not in err
+    assert "sudo failed" not in err
+    assert h.order() == []
+    assert h.urls() == []
+
+
+def test_darwin_exec_without_tty_falls_through(stub_path: StubPath, tmp_path: Path) -> None:
+    """Brew is present, so no prompt is needed; an unopenable tty must not break the
+    install — the exec just keeps the piped stdin."""
+    h = _make_harness(stub_path, tmp_path, no_tty=True, GS_TEST_READ_STDIN="1")
+    proc = _run_get_sh(h, stdin=b"FROM-PIPE\n")
+    assert proc.returncode == 0, _stderr(proc)
+    assert "stdin=FROM-PIPE" in h.exec_lines()
+    assert "No such file or directory" not in _stderr(proc)
 
 
 # --------------------------------------------------------------------------- lint
