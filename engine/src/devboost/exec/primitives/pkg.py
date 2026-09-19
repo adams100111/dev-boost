@@ -312,6 +312,20 @@ class Brew:
     def cask_installed(self, ctx: Ctx, cask: str) -> bool:
         return self._brew(ctx, "list", "--cask", "--versions", cask).ok
 
+    def formula_linked(self, ctx: Ctx, formula: str) -> bool:
+        """True when the formula's keg is linked into the brew prefix (``linked_keg``).
+
+        Unknown counts as linked: a failed or unparsable ``brew info`` must not trigger a
+        `brew link --overwrite` that was never asked for.
+        """
+        res = self._brew(ctx, "info", "--json=v2", "--formula", formula)
+        if not res.ok:
+            return True
+        try:
+            return json.loads(res.stdout)["formulae"][0].get("linked_keg") is not None
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return True
+
     def upgrade(self, ctx: Ctx, *pkgs: str) -> None:
         if not pkgs:
             return
@@ -430,6 +444,13 @@ def cask_installed(ctx: Ctx, cask: str) -> bool:
     if ctx.os.family != "macos":
         return False
     return Brew().cask_installed(ctx, cask)
+
+
+def formula_linked(ctx: Ctx, formula: str) -> bool:
+    """True when the brew formula is linked (always True off macOS; never raises)."""
+    if ctx.os.family != "macos":
+        return True
+    return Brew().formula_linked(ctx, formula)
 
 
 def upgrade(ctx: Ctx, *pkgs: str) -> None:

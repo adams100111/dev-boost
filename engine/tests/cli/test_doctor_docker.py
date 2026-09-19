@@ -47,6 +47,16 @@ def test_colima_without_rosetta_notes_the_slowdown() -> None:
     assert "qemu" in doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
 
 
+def test_the_rosetta_note_matches_the_flag_colima_actually_gets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Minor: the note must track `rosetta_usable` (what decides --vz-rosetta), not
+    `rosetta_present` — from macOS 28 they disagree."""
+    monkeypatch.setattr(doctor, "rosetta_usable", lambda ctx: False)
+    ex = RuleExecutor(rules=[SHOW])  # Rosetta IS installed, but this macOS cannot use it
+    assert "qemu" in doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
+
+
 def test_bad_selection_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
     def bad() -> None:
         raise ConfigError("unknown docker runtime 'podman'")
@@ -66,26 +76,35 @@ def test_only_macos_runs_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert "docker-runtime" in mac_names
 
 
+DOWN = (("info",), Result(1))
+
+
 def test_apple_m4_gets_the_sigill_hint() -> None:
-    ex = RuleExecutor(rules=[SHOW, M4_BRAND])
+    ex = RuleExecutor(rules=[SHOW, DOWN, M4_BRAND])
     detail = doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
     assert "SIGILL" in detail and "132" in detail and ".NET 10" in detail
 
 
 def test_apple_m5_gets_the_sigill_hint_too() -> None:
-    ex = RuleExecutor(rules=[SHOW, M5_BRAND])
+    ex = RuleExecutor(rules=[SHOW, DOWN, M5_BRAND])
     assert "SIGILL" in doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
 
 
+def test_a_healthy_check_carries_no_hint() -> None:
+    """Minor: the hint is for a check that failed — a healthy runtime says only that."""
+    check = doctor._docker_runtime_check(Ctx(os=MAC, ex=RuleExecutor(rules=[SHOW, M4_BRAND])))
+    assert check.ok is True and check.detail.endswith("healthy")
+
+
 def test_non_m4_m5_chip_has_no_sigill_hint() -> None:
-    ex = RuleExecutor(rules=[SHOW, (("machdep.cpu.brand_string",),
-                                    Result(0, stdout="Apple M3 Max\n"))])
+    ex = RuleExecutor(rules=[SHOW, DOWN, (("machdep.cpu.brand_string",),
+                                          Result(0, stdout="Apple M3 Max\n"))])
     assert "SIGILL" not in doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
 
 
 def test_sigill_hint_does_not_invent_an_env_var_workaround() -> None:
     """M4-D20: no confirmed env-var workaround exists (dotnet/runtime#133030) — the hint
     must point at an image/SDK update, never at a flag."""
-    ex = RuleExecutor(rules=[SHOW, M4_BRAND])
+    ex = RuleExecutor(rules=[SHOW, DOWN, M4_BRAND])
     detail = doctor._docker_runtime_check(Ctx(os=MAC, ex=ex)).detail
     assert "DOTNET_" not in detail

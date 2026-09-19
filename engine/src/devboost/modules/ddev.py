@@ -82,6 +82,13 @@ class _DdevMac:
     def install(self, ctx: Ctx) -> None:
         present = [f for f in ("ddev", "mkcert") if pkg.installed(ctx, f)]
         if ctx.force and present:
+            # Trust the tap before the upgrade too, not only before the first install: the
+            # trust store follows XDG_CONFIG_HOME, so a ddev installed from a bootstrap
+            # shell (store in ~/.homebrew) is untrusted from a shell whose env.sh sets it,
+            # and `brew upgrade` then fails with UntrustedTapError (final review M3). The
+            # step is idempotent; a re-run that upgrades nothing still never calls it.
+            if "ddev" in present:
+                _trust_ddev_tap(ctx)
             pkg.upgrade(ctx, *present)
         if "ddev" not in present:
             _trust_ddev_tap(ctx)

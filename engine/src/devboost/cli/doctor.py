@@ -14,7 +14,7 @@ from pathlib import Path
 from devboost.core.errors import DevbootError
 from devboost.exec.primitives import age
 from devboost.model import Ctx
-from devboost.modules._docker_runtime import rosetta_present, selected_runtime
+from devboost.modules._docker_runtime import rosetta_usable, selected_runtime
 from devboost.modules.secrets import age_key, bundle_path
 from devboost.passstore import approve as pass_approve
 from devboost.passstore import audit as pass_audit
@@ -235,15 +235,18 @@ def _docker_runtime_check(ctx: Ctx) -> Check:
         else f"{rt.name} engine not reachable on context {rt.context_name} — "
         "run: devboost install docker"
     )
-    if rt.name == "colima" and not rosetta_present(ctx):
-        detail += "; Rosetta absent — amd64 images run under qemu (slower)"
-    if _apple_m4_or_m5(ctx):
+    if rt.name == "colima" and not rosetta_usable(ctx):
+        # `rosetta_usable` is exactly what decides Colima's --vz-rosetta (M4-D8): from
+        # macOS 28, Rosetta may be installed yet unusable for Linux containers.
+        detail += "; Rosetta unavailable — amd64 images run under qemu (slower)"
+    if not ok and _apple_m4_or_m5(ctx):
         # M4-D20 carry-over: SME on Apple M4/M5 chips can crash .NET 10 guests with
         # SIGILL (exit 132). No env-var workaround is confirmed to fix this — a real
         # fix needs a patched .NET 10 image/SDK (dotnet/runtime#122608, #133030; both
         # `DOTNET_EnableArm64Sve=0` and `GLIBC_TUNABLES=glibc.cpu.name=generic` were
         # tried and did NOT work, because the probe is in the native runtime, not
-        # JIT-gated) — so do not invent a flag here.
+        # JIT-gated) — so do not invent a flag here. Only on a check that FAILED: a
+        # healthy runtime needs no troubleshooting hint.
         detail += ("; Apple M4/M5: if .NET containers exit with 132 (SIGILL), "
                    "update the .NET 10 image/SDK to the latest patch")
     return Check("docker-runtime", ok, detail)

@@ -25,6 +25,7 @@ from devboost.core.userconfig import DockerRuntimeName
 from devboost.exec.primitives import config, launchd, pkg
 from devboost.model import Ctx
 from devboost.modules._docker_runtime import (
+    atomic_write_json,
     contains,
     docker_config_path,
     engine_verified,
@@ -153,9 +154,11 @@ class Colima:
         missing = [f for f in FORMULAE if not pkg.installed(ctx, f)]
         if missing:
             pkg.install(ctx, *missing)
-        if pkg.cask_installed(ctx, "docker-desktop"):
-            # Docker Desktop's cask links its own docker/docker-compose into the brew
-            # prefix (plan D14); take the names back for the formulae.
+        if pkg.cask_installed(ctx, "docker-desktop") or not pkg.formula_linked(ctx, "docker"):
+            # Docker Desktop's cask ships its own docker/docker-compose (and _docker_desktop
+            # unlinks the formulae before installing it), so `docker` can be left unlinked
+            # even after the cask is gone or was installed by hand (final review M2): take
+            # the names back for the formulae whenever the formula is not linked.
             res = pkg.brew_link(ctx, "docker", "docker-compose", overwrite=True)
             if not res.ok:
                 log.warn("colima: `brew link --overwrite docker docker-compose` failed; "
@@ -175,9 +178,11 @@ class Colima:
                     f"in {path}",
                     f"sudo chown -R \"$USER\" '{probe}', then re-run",
                 )
-            config.json_merge(
-                ctx, str(path), {"cliPluginsExtraDirs": [*current, CLI_PLUGINS_DIR]}
-            )
+            # Atomic (final review M5): this file holds the registry `auths`/`credsStore`,
+            # so a crash mid-write must never truncate it. Keeps the file's mode.
+            data = read_json(path)
+            data["cliPluginsExtraDirs"] = [*current, CLI_PLUGINS_DIR]
+            atomic_write_json(path, data)
 
     def start_args(self, ctx: Ctx) -> list[str]:
         size = vm_size(ctx)

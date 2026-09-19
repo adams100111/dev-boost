@@ -262,6 +262,11 @@ class DockerBuildCacheGc(Module):
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
             return
+        if self.verify(ctx):
+            # Already capped: a user's own defaultKeepStorage (or gc policy) is theirs to
+            # keep, even under --force, and restarting docker.service would stop their
+            # containers (final review M1 — this is what the macOS strategy does).
+            return
         # Deep merge preserves any existing daemon.json keys (e.g. the NVIDIA runtime)
         # AND any other keys the user has under "builder" itself (a shallow merge would
         # replace the whole "builder" object with just ours). Restart only when the file
