@@ -8,13 +8,20 @@ from devboost.core.errors import InstallError
 from devboost.exec.executor import Result
 from devboost.model import Ctx
 
-#: Our own commits/pushes must not re-trigger the post-commit hook (D10).
-NO_HOOK_ENV: dict[str, str] = {"DEVBOOST_PASS_HOOK": "off"}
+#: Every git call on the store: our own commits/pushes must not re-trigger the post-commit
+#: hook (D10), and no commit is ever signed (D6) — a global commit.gpgsign would pop pinentry
+#: in an unattended run. Set through git's env config so it also covers the commits
+#: `pull --rebase` replays and the ones `pass` makes itself.
+NO_HOOK_ENV: dict[str, str] = {
+    "DEVBOOST_PASS_HOOK": "off",
+    "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign", "GIT_CONFIG_VALUE_0": "false",
+}
 
 #: Network ops never prompt (D2): a missing credential fails fast instead of blocking on a
-#: username prompt, so the caller can report NeedsUser("gh auth login").
+#: username / passphrase / host-key prompt, so the caller can report NeedsUser.
 NET_ENV: dict[str, str] = {
     **NO_HOOK_ENV, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": "",
+    "GIT_SSH_COMMAND": "ssh -o BatchMode=yes",
 }
 
 
@@ -55,6 +62,11 @@ def commit(ctx: Ctx, store: Path, message: str) -> bool:
     if not res.ok:
         raise InstallError("pass-store", f"git commit -m {message!r}", res.code)
     return True
+
+
+def pin_hooks_path(ctx: Ctx, store: Path) -> None:
+    """Hooks come from the store's own `.git/hooks`, even under a global core.hooksPath."""
+    _git(ctx, store, "config", "--local", "core.hooksPath", ".git/hooks")
 
 
 def ahead(ctx: Ctx, store: Path) -> int:

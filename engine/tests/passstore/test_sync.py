@@ -50,7 +50,7 @@ def _notifications(ex: RuleExecutor) -> list[list[str]]:
 
 def test_hook_is_a_logic_free_stub_and_idempotent(tmp_path: Path) -> None:
     s = _store(tmp_path)
-    assert sync.install_hook(s, "/bin/devboost") is True
+    assert sync.install_hook(_ctx(_ex()), s, "/bin/devboost") is True
     hook = s.root / ".git" / "hooks" / "post-commit"
     text = hook.read_text(encoding="utf-8")
     assert text.startswith("#!/bin/sh\n") and sync.HOOK_MARK in text
@@ -58,8 +58,17 @@ def test_hook_is_a_logic_free_stub_and_idempotent(tmp_path: Path) -> None:
     assert "\n/bin/devboost pass sync --push-only --quiet" in text
     assert text.rstrip().endswith("&")
     assert hook.stat().st_mode & 0o111
-    assert sync.install_hook(s, "/bin/devboost") is False
+    assert sync.install_hook(_ctx(_ex()), s, "/bin/devboost") is False
     assert sync.hook_installed(s)
+
+
+def test_install_hook_pins_core_hooks_path(tmp_path: Path) -> None:
+    """A global core.hooksPath would silently disable the store's hook (minor d)."""
+    s = _store(tmp_path)
+    ex = _ex()
+    sync.install_hook(_ctx(ex), s, "/bin/devboost")
+    assert ["git", "-C", str(s.root), "config", "--local", "core.hooksPath",
+            ".git/hooks"] in ex.calls
 
 
 def test_hook_and_unit_quote_paths_with_spaces() -> None:
@@ -72,7 +81,7 @@ def test_foreign_hook_is_backed_up(tmp_path: Path) -> None:
     s = _store(tmp_path)
     hook = s.root / ".git" / "hooks" / "post-commit"
     hook.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
-    sync.install_hook(s, "/bin/devboost")
+    sync.install_hook(_ctx(_ex()), s, "/bin/devboost")
     assert (hook.parent / "post-commit.devboost-backup").read_text(encoding="utf-8").endswith(
         "echo mine\n")
 

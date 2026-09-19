@@ -44,12 +44,8 @@ def identity(ctx: Ctx) -> Identity:
 
 
 def pass_env(store: Store) -> dict[str, str]:
-    # `pass` makes its own git commits: never sign them (D6), never prompt for credentials.
-    env = {
-        "PASSWORD_STORE_DIR": str(store.root), **git.NET_ENV,
-        "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign",
-        "GIT_CONFIG_VALUE_0": "false",
-    }
+    # `pass` makes its own git commits: NET_ENV never signs them (D6), never prompts.
+    env = {"PASSWORD_STORE_DIR": str(store.root), **git.NET_ENV}
     try:  # pinentry-curses needs to know the terminal when gpg asks for the passphrase
         env["GPG_TTY"] = os.ttyname(0)
     except OSError:

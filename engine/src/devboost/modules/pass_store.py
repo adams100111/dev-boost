@@ -119,7 +119,7 @@ class PassStore(Module):
         enroll.ensure_clone(ctx, store, paths.pass_repo(cfg))
         bin_ = paths.devboost_bin()
         # Sync is wired BEFORE enrollment: a pending device learns of its approval by itself.
-        sync.install_hook(store, bin_)
+        sync.install_hook(ctx, store, bin_)
         sync.install_scheduler(ctx, bin_)
         enroll.import_device_keys(ctx, store)
         enroll.ensure_access(ctx, store, paths.device_name(cfg),

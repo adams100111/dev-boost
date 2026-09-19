@@ -134,6 +134,7 @@ def test_genesis_initialises_store_to_this_device(tmp_path: Path) -> None:
     )} == {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign",
            "GIT_CONFIG_VALUE_0": "false", "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "",
            "SSH_ASKPASS": ""}  # pass's own commits: unsigned, never prompting (D6)
+    assert list(ex.envs[i]).count("GIT_CONFIG_COUNT") == 1
     assert store.record("devices", "lap") is not None
 
 

@@ -20,8 +20,12 @@ def _ctx(ex: RuleExecutor, os_: OsInfo = FEDORA) -> Ctx:
     return Ctx(os=os_, ex=ex)
 
 
-NET = {"DEVBOOST_PASS_HOOK": "off", "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "",
-       "SSH_ASKPASS": ""}
+#: Every store git call: hook off, and git's own config never signs a commit — including
+#: the commits `pull --rebase` replays (I3), which `-c` on `commit` alone would not cover.
+LOCAL = {"DEVBOOST_PASS_HOOK": "off", "GIT_CONFIG_COUNT": "1",
+         "GIT_CONFIG_KEY_0": "commit.gpgsign", "GIT_CONFIG_VALUE_0": "false"}
+NET = {**LOCAL, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": "",
+       "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"}
 
 
 def test_network_git_calls_disable_the_hook_and_never_prompt() -> None:
@@ -40,7 +44,22 @@ def test_network_git_calls_disable_the_hook_and_never_prompt() -> None:
 def test_local_git_calls_disable_the_hook() -> None:
     ex = RuleExecutor(rules=[(("diff", "--cached"), Result(1))])
     git.commit(_ctx(ex), S, "m")
-    assert ex.envs and all(e == {"DEVBOOST_PASS_HOOK": "off"} for e in ex.envs)
+    assert ex.envs and all(e == LOCAL for e in ex.envs)
+
+
+def test_pull_rebase_never_signs_replayed_commits() -> None:
+    ex = RuleExecutor()
+    git.pull(_ctx(ex), S)
+    env = ex.envs[0]
+    assert (env["GIT_CONFIG_COUNT"], env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"]) == (
+        "1", "commit.gpgsign", "false")
+
+
+def test_pin_hooks_path_pins_the_store_hooks_dir() -> None:
+    ex = RuleExecutor()
+    git.pin_hooks_path(_ctx(ex), S)
+    assert ex.calls == [["git", "-C", "/s", "config", "--local", "core.hooksPath",
+                         ".git/hooks"]]
 
 
 def test_commit_only_when_staged() -> None:

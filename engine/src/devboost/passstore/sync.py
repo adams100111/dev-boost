@@ -75,7 +75,9 @@ def hook_installed(store: Store) -> bool:
     return p.exists() and HOOK_MARK in p.read_text(encoding="utf-8")
 
 
-def install_hook(store: Store, bin_: str) -> bool:
+def install_hook(ctx: Ctx, store: Store, bin_: str) -> bool:
+    """Write the hook (True if it changed) and pin core.hooksPath so git runs it."""
+    git.pin_hooks_path(ctx, store.root)
     p = _hook_path(store)
     body = hook_script(bin_)
     if p.exists():
