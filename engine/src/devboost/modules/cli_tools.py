@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import copr, pkg
-from devboost.model import Ctx
+from devboost.model import AptRepo, Ctx
 from devboost.modules._pkgmodule import PackageModule
 
 # --- Debian/Ubuntu install scripts (run via `sh -c`) -------------------------------------
@@ -291,6 +292,31 @@ class Direnv(PackageModule):
     profiles = ("cli",)
     cmd = "direnv"
     fedora_pkg = "direnv"
+
+
+# Charm's own apt repo (glow README): Ubuntu 24.04 has no glow and 26.04 ships 2.x.
+_CHARM_APT = AptRepo(
+    list_line=(
+        "deb [signed-by=/etc/apt/keyrings/repo-charm-sh.gpg] https://repo.charm.sh/apt/ * *"
+    ),
+    key_url="https://repo.charm.sh/apt/gpg.key",
+)
+
+
+@register
+class Glow(PackageModule):
+    name = "glow"
+    category = "cli"
+    description = "Render Markdown in the terminal (READMEs, plans; herdr-file-viewer uses it)."
+    profiles = ("cli",)
+    cmd = "glow"
+    fedora_pkg = "glow"
+
+    def install_linux(self, ctx: Ctx) -> None:
+        if ctx.os.family == "debian":
+            pkg.install(ctx, "glow", source=OsMap(debian=_CHARM_APT))
+            return
+        super().install_linux(ctx)
 
 
 @register

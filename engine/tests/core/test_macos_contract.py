@@ -47,8 +47,6 @@ KNOWN_GAPS: dict[str, str] = {
     "dotnet-sdk": "M3",
     "expo": "M3",
     "fresh-lsp": "M3",
-    "herdr": "M3",
-    "herdr-plugins": "M3",
     "laravel-lsp": "M3",
     "obsidian-sync": "M4",
     "pi-harness": "M3",

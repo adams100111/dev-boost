@@ -75,7 +75,7 @@ from devboost.modules.herdr import _PLUGINS, HerdrPlugins  # noqa: E402
 
 def test_herdr_plugins_requires_herdr() -> None:
     assert Herdr in HerdrPlugins.requires
-    assert HerdrPlugins.profiles == ("optional-agents", "brain-tools")
+    assert HerdrPlugins.profiles == ("cli", "optional-agents", "brain-tools")
 
 
 def test_herdr_plugins_pins_a_ref_for_every_entry() -> None:

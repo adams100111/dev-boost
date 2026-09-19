@@ -32,7 +32,7 @@ base = ["xcode-clt","homebrew","rosetta",
         "pass","pass-store"]
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
-        "fastfetch","claude-code"]
+        "fastfetch","claude-code","herdr-plugins","glow"]
 shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
          "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]

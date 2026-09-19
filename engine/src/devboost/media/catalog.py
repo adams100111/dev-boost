@@ -12,14 +12,16 @@ hold arbitrary tooling pins without breaking the structured OS loader.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 from devboost.core.errors import MediaError
+from devboost.core.osinfo import OsInfo
 from devboost.core.settings import settings
 from devboost.media.config import IsoSpec
 
@@ -58,7 +60,18 @@ class HerdrSpec:
     """Pinned herdr release (from the ``[herdr]`` block in catalog.toml)."""
 
     version: str
-    assets: dict[str, HerdrAsset]  # arch ("x86_64"|"aarch64") -> asset
+    assets: dict[str, HerdrAsset]  # "<os>-<arch>" (see asset_key) -> asset
+
+
+_ASSET_KEY = re.compile(r"^(linux|macos)-(x86_64|aarch64)$")
+
+
+def asset_key(os_info: OsInfo) -> str:
+    """The catalog key of a pinned binary for this host: ``<os>-<arch>``.
+
+    Keyed by OS *and* arch (never arch alone), so a Mac can never pick a Linux binary.
+    """
+    return f"{'macos' if os_info.family == 'macos' else 'linux'}-{os_info.arch}"
 
 
 class _IsoRow(BaseModel):
@@ -89,6 +102,14 @@ class _HerdrAssetRow(BaseModel):
 class _HerdrRow(BaseModel):
     version: str
     assets: dict[str, _HerdrAssetRow] = Field(min_length=1)
+
+    @field_validator("assets")
+    @classmethod
+    def _os_arch_keys(cls, v: dict[str, _HerdrAssetRow]) -> dict[str, _HerdrAssetRow]:
+        bad = sorted(k for k in v if not _ASSET_KEY.match(k))
+        if bad:
+            raise ValueError(f"asset keys must be <linux|macos>-<arch>, got {bad}")
+        return v
 
 
 _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
