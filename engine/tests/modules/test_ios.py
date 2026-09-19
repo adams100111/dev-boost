@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from devboost.core.errors import InstallError, NeedsUser
@@ -23,6 +25,13 @@ RUNTIMES = (
     "iOS 27.0 (27.0 - 23A5287e) - com.apple.CoreSimulator.SimRuntime.iOS-27-0\n"
 )
 PASSWORD = "s3cret-apple-pw"
+GIB = 1024**3
+
+
+@pytest.fixture(autouse=True)
+def plenty_of_space(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Never read the real disk: the free-space pre-check is patched per test.
+    monkeypatch.setattr(ios, "_free_bytes", lambda _path: 500 * GIB)
 
 
 @pytest.fixture
@@ -54,7 +63,7 @@ def test_gated_on_xcodes_minimum_macos() -> None:
         is False
 
 
-def test_xcode_install_is_interactive_then_license_and_first_launch(creds: None) -> None:
+def test_xcode_install_is_interactive_then_license_and_first_launch(tty: None) -> None:
     ex = RuleExecutor()
     ios.Xcode().install(Ctx(os=MAC, ex=ex))
     assert ex.calls == [
@@ -65,9 +74,7 @@ def test_xcode_install_is_interactive_then_license_and_first_launch(creds: None)
     assert ex.interactive[0] is True  # never capture xcodes: it may prompt (Apple ID/2FA)
 
 
-def test_apple_id_secrets_never_reach_argv_env_or_the_error(
-    creds: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_apple_id_secrets_never_reach_argv_env_or_the_error(creds: None) -> None:
     ex = RuleExecutor(rules=[(("xcodes", "install"), Result(1))])
     with pytest.raises(NeedsUser) as err:
         ios.Xcode().install(Ctx(os=MAC, ex=ex))
@@ -101,13 +108,59 @@ def test_a_terminal_alone_is_enough_to_let_xcodes_prompt(tty: None) -> None:
     assert ex.interactive[0] is True
 
 
-def test_unattended_xcodes_failure_is_blocked_on_the_login_not_failed(creds: None) -> None:
-    # With no terminal, a 2FA prompt reads EOF and xcodes exits non-zero: that is a login
-    # only the user can finish, so the run reports `blocked`, never a crash or a hang.
-    ex = RuleExecutor(rules=[(("xcodes", "install"), Result(1))])
-    with pytest.raises(NeedsUser, match="2FA"):
+def test_unattended_xcodes_runs_detached_from_stdin(creds: None) -> None:
+    # No human: xcodes gets no terminal and an empty stdin, so a 2FA or password prompt
+    # reads EOF at once instead of waiting on an inherited pipe or tty.
+    ex = RuleExecutor()
+    ios.Xcode().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls[0][:2] == ["xcodes", "install"]
+    assert ex.interactive[0] is False
+    assert ex.stdins[0] == ""
+
+
+def test_unattended_xcodes_failure_is_blocked_not_failed(creds: None) -> None:
+    secret_echo = f"Apple ID dev@example.com password {PASSWORD}"
+    ex = RuleExecutor(rules=[(("xcodes", "install"), Result(1, secret_echo, secret_echo))])
+    with pytest.raises(NeedsUser, match="could not finish unattended") as err:
         ios.Xcode().install(Ctx(os=MAC, ex=ex))
+    assert "2FA, network or disk" in str(err.value)
+    assert "terminal" in err.value.how_to_fix
+    assert "dev@example.com" not in str(err.value)  # xcodes' output is never copied
+    assert PASSWORD not in str(err.value)
+    assert ex.interactive == [False] and ex.stdins == [""]
     assert len(ex.calls) == 1  # no sudo steps after a failed download
+
+
+def test_unattended_runtime_install_runs_detached_from_stdin(creds: None) -> None:
+    ex = RuleExecutor(rules=[(("runtimes", "install"), Result(1, "x", "y"))])
+    with pytest.raises(NeedsUser, match="could not finish unattended"):
+        ios.IosTooling().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls[-1] == ["xcodes", "runtimes", "install", "iOS 27.0"]
+    assert ex.interactive[-1] is False and ex.stdins[-1] == ""
+
+
+def test_xcode_needs_40_gib_free_in_home(tty: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ios, "_free_bytes", lambda _path: 39 * GIB)
+    ex = RuleExecutor()
+    with pytest.raises(NeedsUser, match="40 GiB"):
+        ios.Xcode().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls == []
+
+
+def test_xcode_proceeds_with_exactly_40_gib_free(
+    tty: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Path] = []
+
+    def free(path: Path) -> int:
+        seen.append(path)
+        return 40 * GIB
+
+    monkeypatch.setattr(ios, "_free_bytes", free)
+    ex = RuleExecutor()
+    ios.Xcode().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls[0][:2] == ["xcodes", "install"]
+    assert seen == [Path.home()]
 
 
 def test_attended_xcodes_failure_is_an_install_error(tty: None) -> None:
@@ -145,7 +198,7 @@ def test_xcode_verify_is_false_without_xcodes() -> None:
     assert ios.Xcode().verify(Ctx(os=MAC, ex=ex)) is False
 
 
-def test_ios_tooling_installs_formulae_then_the_runtime(creds: None) -> None:
+def test_ios_tooling_installs_formulae_then_the_runtime(tty: None) -> None:
     ex = RuleExecutor()
     ios.IosTooling().install(Ctx(os=MAC, ex=ex))
     assert ex.calls == [
