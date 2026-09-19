@@ -18,9 +18,12 @@ _UNSAFE = re.compile(
 def clean(text: str, limit: int = 64) -> str:
     """A remote-sourced string (a record's name / os) made safe to show in a notification:
     no control / invisible characters, no leading `-` (never read as an option), at most
-    *limit* chars, and `&`, `<`, `>` escaped (notify-send bodies are markup)."""
-    short = _UNSAFE.sub("", text).strip().lstrip("-").strip()[:limit]
-    return short.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    *limit* chars. Markup escaping is the notifier's business (see `_native_argv`)."""
+    return _UNSAFE.sub("", text).strip().lstrip("-").strip()[:limit]
+
+
+def _markup(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def ntfy(ctx: Ctx, title: str, body: str, *, priority: str = "default") -> bool:
@@ -33,15 +36,25 @@ def ntfy(ctx: Ctx, title: str, body: str, *, priority: str = "default") -> bool:
     return ctx.ex.run(argv).ok
 
 
-def _native_argv(os_info: OsInfo, title: str, body: str) -> list[str] | None:
-    """P2 seam: macOS returns an osascript argv here; Linux uses libnotify."""
+#: AppleScript that takes the title and body as run-handler arguments: they are never
+#: parsed as script text, so no quoting can break out of them (R1).
+_OSASCRIPT = (
+    "on run argv",
+    "display notification (item 2 of argv) with title (item 1 of argv)",
+    "end run",
+)
+
+
+def _native_argv(os_info: OsInfo, title: str, body: str) -> list[str]:
+    """macOS: osascript (title/body as argv); Linux: libnotify (the body is markup)."""
     if os_info.family == "macos":
-        return None
-    return ["notify-send", "--app-name=devboost", title, body]
+        script = [arg for line in _OSASCRIPT for arg in ("-e", line)]
+        return ["osascript", *script, title, body]
+    return ["notify-send", "--app-name=devboost", title, _markup(body)]
 
 
 def native(ctx: Ctx, title: str, body: str) -> bool:
     argv = _native_argv(ctx.os, title, body)
-    if argv is None or not ctx.ex.which(argv[0]):
+    if not ctx.ex.which(argv[0]):
         return False
     return ctx.ex.run(argv).ok
