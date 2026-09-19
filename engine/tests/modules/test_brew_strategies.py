@@ -33,8 +33,12 @@ class _Listed(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         if list(argv[:2]) == ["brew", "list"]:
             # Like brew 7.0.4: `list` finds Caskroom/<token> or Cellar/<token> only, so a
             # tap-qualified name is never listed.

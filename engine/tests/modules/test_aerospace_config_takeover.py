@@ -47,9 +47,10 @@ class ApplyEx(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd,
-                          interactive=interactive)
+                          interactive=interactive, timeout=timeout)
         if list(argv[:2]) == ["chezmoi", "apply"] and not (self.home / LEGACY).exists():
             (self.home / XDG).parent.mkdir(parents=True, exist_ok=True)
             (self.home / XDG).write_text(RENDERED, encoding="utf-8")

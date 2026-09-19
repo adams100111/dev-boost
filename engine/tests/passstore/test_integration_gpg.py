@@ -58,6 +58,7 @@ class _DeviceEx(RealExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         merged = {
             "HOME": str(self.home),
@@ -66,7 +67,9 @@ class _DeviceEx(RealExecutor):
             "GNUPGHOME": str(self.gnupg),
             **(env or {}),
         }
-        return super().run(argv, sudo=sudo, stdin=stdin, env=merged, cwd=cwd, interactive=False)
+        return super().run(
+            argv, sudo=sudo, stdin=stdin, env=merged, cwd=cwd, interactive=False, timeout=timeout
+        )
 
 
 @dataclass

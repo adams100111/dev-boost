@@ -93,6 +93,19 @@ def test_data_services_verify_reads_bundled_compose() -> None:
     assert DataServices().verify(_ctx()) is True
 
 
+def test_data_services_compose_images_are_fully_qualified() -> None:
+    # M4-D3 carry-over: an unqualified `postgres:18` can resolve against a registry
+    # mirror a runtime or corporate network has configured for docker.io — pin the
+    # registry explicitly so `data-services` always pulls the intended image.
+    text = DataServices()._compose().read_text(encoding="utf-8")
+    for image in (
+        "docker.io/library/postgres:18",
+        "docker.io/valkey/valkey:8.1",
+        "docker.io/dbgate/dbgate:7.2.0",
+    ):
+        assert f"image: {image}" in text, image
+
+
 def test_expo_verify_reads_bundled_template() -> None:
     assert Expo().verify(_ctx()) is True
 
@@ -160,5 +173,6 @@ def test_playwright_wires_mcp_with_chromium_browser(
     Playwright().install(Ctx(os=OsInfo("ubuntu", "debian", "aarch64"), ex=ex))
     assert [
         "claude", "mcp", "add", "playwright", "--",
-        "npx", "@playwright/mcp@latest", "--browser", "chromium",
+        "npx", "@playwright/mcp@0.0.82", "--browser", "chromium",
     ] in ex.calls
+    assert ["npm", "install", "-g", "playwright", "@playwright/mcp@0.0.82"] in ex.calls

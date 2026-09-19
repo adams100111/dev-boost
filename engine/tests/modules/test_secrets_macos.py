@@ -44,8 +44,12 @@ class _GhEx(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         if list(argv[:3]) == ["gh", "api", "user"]:
             return Result(0, stdout=_GH_USER)
         if list(argv[:3]) == ["gh", "auth", "token"]:
@@ -78,8 +82,12 @@ def test_macos_bundle_source_uses_osxkeychain(home: Path) -> None:
             env: Mapping[str, str] | None = None,
             cwd: Path | None = None,
             interactive: bool = False,
+            timeout: float | None = None,
         ) -> Result:
-            super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+            super().run(
+                argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+                timeout=timeout,
+            )
             stdins.append(stdin)
             return Result(0, stdout=_JSON) if argv[0] == "age" else Result(0)
 
@@ -153,8 +161,12 @@ class _StdinEx(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         self.stdins.append(stdin)
         self.envs.append(env)
         for prefix, res in self.replies.items():
@@ -277,6 +289,7 @@ def test_github_credentials_reads_bundle_with_keychain_key(home: Path) -> None:
             env: Mapping[str, str] | None = None,
             cwd: Path | None = None,
             interactive: bool = False,
+            timeout: float | None = None,
         ) -> Result:
             if argv[0] == "age":
                 key = Path(argv[argv.index("-i") + 1])

@@ -210,9 +210,9 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 | android-sdk | cask `android-commandlinetools`; `ANDROID_HOME=~/Library/Android/sdk` via `env.sh` (not `/etc/profile.d`) |
 | tailscale | cask `tailscale-app` (a `.pkg`; brew runs its installer with sudo, so `tailscale` sets `needs_sudo_on_macos`); CLI through a `~/.local/bin/tailscale` wrapper that execs the app binary (Tailscale KB 1080); no `--ssh` (Mac is a fleet client); extension approval → `NeedsUser` |
 | playwright | skip the dnf system-deps step |
-| ddev | BrewTap + formula; `mkcert -install` |
+| ddev | `brew trust --tap ddev/ddev` (Homebrew 7 untrusted-tap guard) + BrewTap + formula; `mkcert -install` |
 | docker, docker-build-gc | `DockerRuntime` (§4) |
-| aspire-gc, restic-backup, restic-b2, obsidian-sync, browser-mcp | `launchd.user_agent` (same schedules); restic path resolved via `which` (not `/usr/bin/restic`) |
+| aspire-gc, restic-backup, restic-b2, obsidian-sync, browser-mcp | `launchd.user_agent` (same schedules); restic path resolved via `which` (not `/usr/bin/restic`); `StartCalendarInterval` hourly `{Minute:0}` / daily `{Hour:0,Minute:0}`; logs `~/Library/Logs/devboost/`; browser-mcp is a macOS-only module in `remote` (KeepAlive on failure) |
 | ssh-setup | no longer requires an age bundle: PAT via `gh auth token`; key file + `UseKeychain yes` + `ssh-add --apple-use-keychain` |
 | chezmoi-repo | `chezmoi init --apply --force` (also fixes a Linux tty hang); no repo configured → `NeedsUser` |
 | claude-notify | ntfy **and** a native notification (`osascript -e 'display notification …'`) on Darwin |
@@ -423,7 +423,7 @@ dotfiles/
 | Resources | `colima start --vm-type vz [--vz-rosetta when Rosetta present, §0] --mount-type virtiofs --cpu C --memory M --disk 100` | `orb config set` | `settings-store.json` |
 | Autostart | `brew services start colima` | login item | auto-start setting |
 | Context | `colima` | `orbstack` | `desktop-linux` |
-| `/var/run/docker.sock` | `sudo ln -sf ~/.colima/default/docker.sock /var/run/docker.sock` | managed | managed |
+| `/var/run/docker.sock` | root LaunchDaemon `dev.devboost.docker-sock` (`ln -sf` at boot; `/var/run` is emptied at boot) | managed | managed |
 | Daemon config | `docker:` in `~/.colima/default/colima.yaml` + restart | `~/.orbstack/config/docker.json` + `orb restart docker` | Docker Desktop `daemon.json` |
 
 Colima sizing `C = max(2, ncpu // 2)`, `M = max(4, ram_gib // 4)` GiB (this Mac: 5 CPU,
@@ -431,6 +431,11 @@ Colima sizing `C = max(2, ncpu // 2)`, `M = max(4, ram_gib // 4)` GiB (this Mac:
 `~/.config/devboost/config.toml` > `colima`; `Settings.docker_runtime:
 Literal["colima","orbstack","docker-desktop"]`. **Verify:** `docker info` succeeds on the
 selected runtime's context.
+
+Colima's config dir is resolved as Colima does, and a fresh Mac pins `~/.config/colima`
+(plan D10). The VM is created once with `colima start <flags>` and then handed to `brew
+services` (D11). `colima.yaml` is merged with PyYAML (D12). Docker Desktop's
+`settings-store.json` keys are matched case-insensitively (D14).
 
 **`devboost docker use <runtime>`:** (1) warn that images/volumes/ddev DBs live in each
 runtime's VM, offer `ddev snapshot --all`; (2) `ddev poweroff`; (3) stop old runtime +
@@ -535,7 +540,7 @@ Each milestone PR ships its own docs; a PR is not done without them.
 | M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0, `devboost permissions`, `devboost secrets import-key` | engine runs on Darwin |
 | M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone (the terminal set's macOS strategies are pulled forward from M3) |
 | M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | the workstation from a clone; Docker/timers `blocked` until M4 (with Z2) |
-| M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) | ddev, Aspire, data-services |
+| M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) (`build-gc` = `docker-build-gc`, a daemon-config cap, not a timer) | ddev, Aspire, data-services |
 | M5 | Desktop: `macos-defaults` (+revert), limits, firewall, Time Machine exclusions, casks (Raycast, AeroSpace + config, AltTab, Thaw, monitor tools, Keka, Stats, Quick Look), `default-apps`, `voxtype` (+ opt-in `voxtype-arabic`); opt-in `ios`, `macos-extras`, `android-emulator`; primer | full desktop + iOS |
 | M6 | Delivery: darwin binary, `get.sh`, self-update, CI matrix, tart `vm-test-macos.sh`, final docs | fresh Mac via `curl … \| bash` |
 

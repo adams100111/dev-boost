@@ -74,6 +74,10 @@ the binary just runs; a binary you instead fetch with a **browser** is quarantin
 Gatekeeper — clear it first: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`.
 From a clone (or for what's not yet automated on macOS): see [docs/macos.md](docs/macos.md).
 
+Docker on a Mac is Colima by default (free for work use); see
+[docs/docker-runtimes.md](docs/docker-runtimes.md) for OrbStack / Docker Desktop and
+`devboost docker use`.
+
 Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
 
 ## Quick start — from the repo
@@ -139,12 +143,13 @@ enrollment on NVIDIA when Secure Boot is on.
 | `android-sdk` | react-native | Android SDK (cmdline-tools + platform/build-tools) + JDK via mise. |
 | `android-studio` | macos-extras | Android Studio (Apache-2.0 + Google SDK terms). |
 | `aspire` | dotnet | Aspire CLI (dotnet global tool). |
-| `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd --user timer). |
+| `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd timer / launchd agent). |
 | `atuin` | cli |  |
 | `bash` | shell | bash 5 as a tool on macOS (/bin/bash is 3.2); zsh stays the login shell. |
 | `bash-config` | shell | Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
+| `browser-mcp` | remote | Opt-in: Playwright MCP on the tailnet for remote Claude Code sessions (systemd unit / launchd agent). |
 | `browser-view` | brain-host | Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device. |
 | `bruno` | apps | Bruno API client. |
 | `btop` | cli |  |
@@ -261,7 +266,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python-lsp` | editors | basedpyright + ruff for Python (fresh). |
 | `quicklook` | macos-desktop | Quick Look previews for Markdown and source code (GPL-3.0). |
 | `raycast` | macos-desktop | Raycast — launcher and clipboard/window tools (free plan; OK for work). |
-| `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer. |
+| `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly (systemd timer / launchd agent). |
 | `restic-backup` | system | Restic backup user service + timer. |
 | `ripgrep` | cli | Fast recursive search (rg). |
 | `rosetta` | base | Rosetta 2 — runs Intel-only apps and fast amd64 containers (macOS ≤ 27). |

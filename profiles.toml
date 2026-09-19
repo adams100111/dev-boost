@@ -23,8 +23,9 @@ omarchy = ["base","cli","shell","editors","python","web","laravel","dotnet","dat
 orca = ["orca-ide"]
 orca-box = ["orca-ide","orca-serve"]
 # macOS workstation default (`devboost install` on a Mac) — spec §2 Profiles. Linux-only
-# members fall out via `families`; macOS-provided ones report provided-by-macos. M5
-# appends "macos-desktop"; the Docker runtime and launchd timers report blocked until M4.
+# members fall out via `families`; macOS-provided ones report provided-by-macos. Docker
+# (Colima by default; `devboost docker use` switches it), ddev, Aspire, data-services and
+# the launchd timers install like everything else as of M4; M5 appends "macos-desktop".
 macos = ["base","cli","shell","editors","python","web","laravel","dotnet","data",
          "devops","react-native","apps","dev-hygiene","remote","claude","codex","pi",
          "macos-desktop"]
@@ -50,6 +51,8 @@ cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydock
         "fastfetch","claude-code","herdr-plugins","glow"]
 shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
          "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
+# browser-mcp is NOT here: it puts an unauthenticated code-execution port (tcp:8931) on the
+# tailnet, so it is opt-in by name only — `devboost install browser-mcp` (C-M4-SEC2).
 remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]

@@ -13,7 +13,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
-from devboost.modules._pending import MacosPending
+from devboost.modules._launchd_jobs import LaunchdTimer
 from devboost.modules.macos import Homebrew
 
 
@@ -412,9 +412,15 @@ class ResticBackup(Module):
     category = "system"
     description = "Restic backup user service + timer."
     profiles = ("system",)
-    per_os = OsMap(macos=MacosPending(
-        "M4", "run `restic backup --files-from ~/.config/devboost/restic-include` by hand"
-    ))
+    requires = (Homebrew,)  # macOS brews restic (M4-D9); Linux plans drop Homebrew
+    per_os = OsMap(
+        macos=LaunchdTimer(
+            "restic-backup",
+            'exec restic backup --files-from "$HOME/.config/devboost/restic-include"',
+            "daily",
+            formulae=("restic",),
+        )
+    )
 
     def verify(self, ctx: Ctx) -> bool:
         if (s := self.os_strategy(ctx)) is not None:

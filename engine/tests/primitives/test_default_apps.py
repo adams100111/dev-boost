@@ -49,8 +49,12 @@ class _LaunchServices(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         a = list(argv)
         if a[:2] == ["utiluti", "get-uti"]:
             uti = self.utis.get(a[2])

@@ -36,7 +36,11 @@ class Executor(Protocol):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
-    ) -> Result: ...
+        timeout: float | None = None,
+    ) -> Result:
+        """Run ``argv``. ``timeout`` (seconds) bounds the call: an expired timeout kills
+        the child and comes back as a failed ``Result`` (code 124), never an exception."""
+        ...
 
     def which(self, cmd: str) -> bool: ...
 
@@ -94,6 +98,7 @@ class RealExecutor:
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         cmd = (["sudo", *argv]) if sudo else list(argv)
         # Start from the full process environment so that PATH, HOME, USER, etc. are
@@ -117,7 +122,9 @@ class RealExecutor:
                 # reads a secret (`gh auth login`, an editor) needs the tty: capturing its
                 # output hides the prompt and it blocks forever on input nobody can see.
                 # Nothing is captured, so stdout/stderr come back empty by construction.
-                completed = subprocess.run(cmd, env=effective, cwd=cwd, check=False)
+                completed = subprocess.run(
+                    cmd, env=effective, cwd=cwd, check=False, timeout=timeout
+                )
                 return Result(code=completed.returncode)
             proc = subprocess.run(
                 cmd,
@@ -127,7 +134,11 @@ class RealExecutor:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=timeout,
             )
+        except subprocess.TimeoutExpired:
+            # subprocess.run has already killed the child. Same code as coreutils timeout.
+            return Result(code=124, stderr=f"{cmd[0]}: timed out after {timeout}s")
         except (FileNotFoundError, NotADirectoryError, PermissionError) as exc:
             # The command (or sudo) was not found / not executable.  Report this as the
             # conventional shell "command not found" exit code (127) rather than raising,
@@ -164,6 +175,7 @@ class FakeExecutor:
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         recorded = (["sudo", *argv]) if sudo else list(argv)
         self.calls.append(recorded)
@@ -196,14 +208,17 @@ class DemotingExecutor:
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         if sudo:
             return self._inner.run(
-                argv, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+                argv, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+                timeout=timeout,
             )
         wrapped = ["sudo", "-u", self._user, "-H", *argv]
         return self._inner.run(
-            wrapped, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+            wrapped, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
         )
 
     def which(self, cmd: str) -> bool:
@@ -232,10 +247,12 @@ class NoPromptSudoExecutor:
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         cmd = ["sudo", "-n", *argv] if sudo else list(argv)
         return self._inner.run(
-            cmd, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+            cmd, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
         )
 
     def which(self, cmd: str) -> bool:

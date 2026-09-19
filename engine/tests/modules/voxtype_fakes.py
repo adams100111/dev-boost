@@ -68,9 +68,10 @@ class VoxtypeExecutor(RuleExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd,
-                          interactive=interactive)
+                          interactive=interactive, timeout=timeout)
         args = list(argv)
         if args and args[0] == "install" and args[-1] == str(vox.bin_path()) and res.ok:
             self.installed = True

@@ -1,9 +1,10 @@
 """Every module must have a macOS answer: installable, dropped, provided, or a known gap.
 
 KNOWN_GAPS maps each module with no macOS path yet to the milestone that brings it
-(spec §11). M2 cleared the terminal set and M3 the catalog; what is left is the Docker
-runtime and the launchd timers (M4, each declared `MacosPending`). A new module must
-arrive with its macOS answer; the map must be empty by the end of M5 (§9).
+(spec §11). M2 cleared the terminal set, M3 the catalog, and M4 the Docker runtime and
+the launchd timers (the last entries, each formerly `MacosPending`) — the dict is empty.
+It stays typed `dict[str, str]` for whichever module a later milestone marks pending; a
+new module must still arrive with its macOS answer (§9).
 """
 
 from __future__ import annotations
@@ -23,14 +24,7 @@ from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
 from tests.conftest import HOST_APP_PATHS
 
-KNOWN_GAPS: dict[str, str] = {
-    "aspire-gc": "M4",
-    "docker": "M4",
-    "docker-build-gc": "M4",
-    "obsidian-sync": "M4",
-    "restic-b2": "M4",
-    "restic-backup": "M4",
-}
+KNOWN_GAPS: dict[str, str] = {}
 
 
 def resolvable_on_macos(cls: type[Module]) -> bool:
@@ -89,8 +83,7 @@ def _plan(profile: str, os_info: OsInfo, tmp_path: Path) -> list[PlannedModule]:
 
 
 def test_known_gaps_have_an_owner() -> None:
-    # M3 closed the catalog: every gap left is the Docker runtime / launchd timers (C-R8a).
-    assert set(KNOWN_GAPS.values()) == {"M4"}
+    assert not KNOWN_GAPS  # M4 closed the macOS catalog
 
 
 def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:
