@@ -1,7 +1,7 @@
 # Zed as the default editor — design
 
 **Date:** 2026-09-18 · **Status:** approved (grilling) · **Depends on:**
-[macOS support](2026-09-18-macos-support-design.md) M1/M3 for the macOS cask and `duti`;
+[macOS support](2026-09-18-macos-support-design.md) M1/M3 for the macOS cask and `utiluti`;
 Linux parts land independently.
 
 ## Goal
@@ -22,7 +22,7 @@ Claude, Codex and Pi as in-editor agents. VS Code becomes opt-in.
 | Language servers | Point Zed at **dev-boost's pinned binaries** (`lsp.<server>.binary.path` → mise pins in `data/fresh/*-lsp.tsv`); Zed's own download only where a custom path isn't supported |
 | C# | `csharp-ls` (licence-safe; C# Dev Kit/Roslyn not used by default) |
 | `$VISUAL` / `$EDITOR` | `VISUAL="zed --wait"` only in a local GUI session; `EDITOR=fresh` otherwise; git `core.editor` unset so git follows `$VISUAL` → `$EDITOR` |
-| Default apps (macOS) | `duti`: code/text extensions open in Zed |
+| Default apps (macOS) | `utiluti` (duti is unmaintained): code/text extensions open in Zed; macOS 26.4+ confirms each type — applied only when interactive, once per type, recorded; shared primitive with M5 `default-apps` |
 
 ## Config
 
@@ -112,4 +112,4 @@ importing VS Code settings via `zed: import vs code settings`), README editors s
 | # | PR | Notes |
 |---|---|---|
 | Z1 | Linux: `zed` module, seeded config, JSONC-aware merge, LSP pin wiring, `env.sh` VISUAL, profile change (VS Code opt-in), docs | lands independently |
-| Z2 | macOS: cask + `duti` default apps | after macOS M3 |
+| Z2 | macOS: cask + `utiluti` default apps | shipped with macOS M3 (one PR) |

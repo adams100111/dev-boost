@@ -26,7 +26,7 @@ engine branching.
 | Shell | zsh on macOS, bash on Linux; shared POSIX core; zsh-autosuggestions + zsh-syntax-highlighting |
 | Terminal | **Ghostty default on every OS** (cross-OS change); foot stays on Omarchy (`provided_by`); WezTerm opt-in + deprecated |
 | Docker | Colima (default) / OrbStack / Docker Desktop, switchable with full reconfigure |
-| Desktop | `macos-defaults` (+ revert), maxfiles limit, firewall, Raycast, AeroSpace + AltTab, Thaw, MonitorControl + BetterDisplay, Keka, Stats, Quick Look plugins, `duti` |
+| Desktop | `macos-defaults` (+ revert), maxfiles limit, firewall, Raycast, AeroSpace + AltTab, Thaw, MonitorControl + BetterDisplay, Keka, Stats, Quick Look plugins, `utiluti` |
 | iOS | Opt-in `ios` profile (xcodes + simulator runtime + CocoaPods/watchman) |
 | Secrets | gh + keychain for GitHub; age bundle optional (key in keychain); `pass` default (companion spec) |
 | Editor | Zed default on every OS (companion spec); VS Code opt-in |
@@ -128,7 +128,10 @@ Version-dependent behavior is data, keyed on `OsInfo.version_id` (major):
   `per_os.macos` strategy — the fields above do not reach them. Full list in §2.
 - Ordering: `PackageModule`, `FlatpakApp` and every module whose macOS strategy uses brew
   add `Homebrew` to `requires`; `Homebrew` is `families=("macos",)`, so Linux plans drop it
-  (as `Flatpak` is dropped on Arch — `core/plan.py`).
+  (as `Flatpak` is dropped on Arch — `core/plan.py`). A strategy that uses brew declares
+  `uses_brew = True`; `tests/core/test_homebrew_edges.py` enforces the edge. A macOS path
+  owned by a later milestone is `MacosPending(milestone, workaround)` (reported `blocked`,
+  still a gap).
 - `provided_by=("macos",)` → `provided-by-macos`; `families` drops Linux-only modules.
 
 ### Errors
@@ -159,7 +162,7 @@ tool only), **zsh-autosuggestions** + **zsh-syntax-highlighting** (module `zsh-p
 `families=("macos",)` since zsh is the shell only on macOS; sourced by `shell.zsh`; **from
 Homebrew formulae, no plugin manager** — `--update` upgrades them (`self_updating = True`);
 this supersedes the unimplemented `2026-07-29-zsh-optional-shell-design.md`, which vendored
-plugins at pinned git refs (D13)), **duti**, **xcodes**
+plugins at pinned git refs (D13)), **utiluti**, **xcodes**
 (homebrew-core), **mkcert**. ddev via `BrewTap("ddev/ddev")` → `ddev/ddev/ddev`.
 
 ### Casks
@@ -189,16 +192,16 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 ### Per-OS strategies (`per_os.macos`) — including custom-install modules
 | Module | macOS strategy |
 |---|---|
-| build-tools | requires `xcode-clt` |
+| build-tools | requires `xcode-clt` + brew `cmake` |
 | lazygit, lazydocker, sd | brew formula (today: COPR / curl installer / `linux-gnu` asset + `grep -P` + BSD-incompatible `install -D`) |
-| herdr | catalog pin for `herdr-macos-aarch64`; replace `install -D` with `mkdir -p` + `install -m` (BSD-safe) |
+| herdr | catalog pin 0.9.1 keyed `<os>-<arch>` (`linux-x86_64`, `linux-aarch64`, `macos-aarch64`); `shasum`/`sha256sum`; `mkdir -p` + `install -m` |
 | nerd-fonts | cask; verify cask (not `fc-list`) |
 | wezterm | cask `wezterm@nightly`; skip `.desktop`/icons |
 | ghostty | cask; verify cask (no binary on PATH) |
 | vscode, jetbrains-toolbox | cask |
 | dotnet-sdk | Microsoft `dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet` (no sudo; same pin as Linux; verify `~/.dotnet/dotnet --list-sdks` has `10.`) |
 | android-sdk | cask `android-commandlinetools`; `ANDROID_HOME=~/Library/Android/sdk` via `env.sh` (not `/etc/profile.d`) |
-| tailscale | cask `tailscale-app`; symlink `/Applications/Tailscale.app/Contents/MacOS/Tailscale` → `~/.local/bin/tailscale`; no `--ssh` (Mac is a fleet client); extension approval → `NeedsUser` |
+| tailscale | cask `tailscale-app` (a `.pkg`; brew runs its installer with sudo, so `tailscale` sets `needs_sudo_on_macos`); CLI through a `~/.local/bin/tailscale` wrapper that execs the app binary (Tailscale KB 1080); no `--ssh` (Mac is a fleet client); extension approval → `NeedsUser` |
 | playwright | skip the dnf system-deps step |
 | ddev | BrewTap + formula; `mkcert -install` |
 | docker, docker-build-gc | `DockerRuntime` (§4) |
@@ -221,7 +224,7 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 | `timemachine-exclusions` | `tmutil addexclusion` for `~/Library/Caches`, `~/.colima`, `~/.gradle`, `~/.npm`, `~/.cache`, `~/.nuget/packages`, `~/Library/Developer/Xcode/DerivedData`; `node_modules`/`vendor` via sticky exclusions from a login agent sweep of `~/repos` | `tmutil isexcluded` |
 | `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`, `monitorcontrol`, `betterdisplay`, `keka` | casks | cask installed |
 | `quicklook` | `qlmarkdown`, `syntax-highlight` | casks installed |
-| `default-apps` | `duti` table: code/text extensions → Zed (`dev.zed.Zed`) | `duti -x <ext>` |
+| `default-apps` | utiluti table (`data/macos/default-apps.tsv`, shared with the Zed module) … macOS 26.4+ confirms each change: applied only when interactive, once per UTI, recorded in `~/.local/state/devboost/default-apps.json` | `utiluti type <uti> --bundle-id` |
 | `aerospace-config`, `ghostty` keybinds | via dotfiles (§3) | — |
 | `xcode` (opt-in `ios`) | `xcodes install <pin> --select --experimental-unxip --empty-trash`; `sudo xcodebuild -license accept`; `-runFirstLaunch` | `xcodes installed <pin>` + selected |
 | `ios-tooling` (opt-in `ios`) | brew `cocoapods`, `watchman`; `xcodes runtimes install "iOS <pin>"` | `pod`, `watchman`, `xcrun simctl list runtimes` |
@@ -288,7 +291,8 @@ Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (o
   `keycastr`, `linearmouse`, `android-studio`, `expo-orbit`, `herd`, `wezterm`.
 - New `macos` = `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`,
   `data`, `devops`, `react-native`, `apps`, `macos-desktop`, `dev-hygiene`, `remote`,
-  `claude`, `codex`, `pi` (Linux-only members fall out via `families`).
+  `claude`, `codex`, `pi` (Linux-only members fall out via `families`). (M3 ships it without
+  `macos-desktop`; M5 appends it.)
 - README tables regenerated.
 
 ### Privacy permissions (TCC)
@@ -426,6 +430,8 @@ dbgate — are multi-arch.)
 `devboost install --update` on macOS runs `brew upgrade --formula` for the plan's
 formulae. Casks with `auto_updates` (VS Code, Obsidian, Ghostty, Raycast, …) update
 themselves — no `--greedy`. No background upgrades. `softwareupdate` is never automatic.
+A named `brew upgrade --cask` is greedy in Homebrew 7, so dev-boost checks `auto_updates`
+first and skips those casks.
 
 ## 7. Delivery
 
@@ -463,7 +469,7 @@ All via `FakeExecutor`; no real brew in CI.
   every module in expanded `macos` + `macos-extras` + `ios` + `optional-terminals` +
   `voxtype-arabic` + `android-emulator` resolves (brew / cask /
   `per_os.macos` / cross-platform) or is `families`-dropped or `provided_by`. xfail
-  allow-list empties by M5.
+  allow-list empties by M5. `KNOWN_GAPS` maps each gap to its owning milestone.
 - `DockerRuntime`: per-runtime argv; switch path incl. snapshot prompt; selection
   precedence.
 - `macos-defaults`: typed argv, snapshot/revert, restart-only-on-change.
@@ -500,7 +506,7 @@ Each milestone PR ships its own docs; a PR is not done without them.
 |---|---|---|
 | M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0, `devboost permissions`, `devboost secrets import-key` | engine runs on Darwin |
 | M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone (the terminal set's macOS strategies are pulled forward from M3) |
-| M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | most of the workstation |
+| M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | the workstation from a clone; Docker/timers `blocked` until M4 (with Z2) |
 | M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) | ddev, Aspire, data-services |
 | M5 | Desktop: `macos-defaults` (+revert), limits, firewall, Time Machine exclusions, casks (Raycast, AeroSpace + config, AltTab, Thaw, monitor tools, Keka, Stats, Quick Look), `default-apps`, `voxtype` (+ opt-in `voxtype-arabic`); opt-in `ios`, `macos-extras`, `android-emulator`; primer | full desktop + iOS |
 | M6 | Delivery: darwin binary, `get.sh`, self-update, CI matrix, tart `vm-test-macos.sh`, final docs | fresh Mac via `curl … \| bash` |

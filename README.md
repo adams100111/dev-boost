@@ -60,8 +60,8 @@ sudo devboost installer            # wizard: pick the USB, confirm the wipe
 `-- usb` also downloads the Ventoy injection archive, so `installer` works with no clone/build; it
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
 
-**macOS (Apple Silicon):** preview — see [docs/macos.md](docs/macos.md) (`devboost install
-terminal` from a clone; `curl … | bash` lands in M6).
+**macOS (Apple Silicon):** `devboost install` from a clone installs the workstation — see
+[docs/macos.md](docs/macos.md) (Docker in M4; `curl … | bash` in M6).
 
 Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
 
@@ -78,11 +78,11 @@ enrollment on NVIDIA when Secure Boot is on.
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
-| `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc`, `pass`, `pass-store` |
+| `base` | `xcode-clt`, `homebrew`, `rosetta`, `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc`, `pass`, `pass-store` |
 | `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server`, `browser-view` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
 | `claude` | `claude-code`, `claude-plugins`, `claude-skills`, `claude-mcp` |
-| `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code` |
+| `cli` | `eza`, `bat`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `lazydocker`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `tpm`, `tmux-persist`, `herdr`, `mosh`, `fastfetch`, `claude-code`, `herdr-plugins`, `glow` |
 | `codex` | `codex-code`, `codex-config`, `codex-plugins`, `codex-mcp`, `codex-skills` |
 | `data` | `data-services` |
 | `dev-hygiene` | `aspire-gc` |
@@ -96,7 +96,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-theme` | `gnome-theme-bundle` |
 | `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
 | `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
-| `macos` | `terminal` |
+| `macos` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `dev-hygiene`, `remote`, `claude`, `codex`, `pi` |
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
 | `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
@@ -108,7 +108,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
 | `remote` | `tailscale`, `mosh` |
-| `security-cli` | `pass`, `pass-store` (alias — both are in `base`) |
+| `security-cli` | `pass`, `pass-store` |
 | `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `zsh-config`, `zsh-plugins`, `bash`, `ghostty`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
 | `system` | `snapper`, `snapper-dnf-hook`, `grub-btrfs`, `btrfs-assistant`, `btrfsmaintenance`, `fwupd`, `power-profiles-daemon`, `thermald`, `smartmontools`, `dnf-automatic-security`, `restic-backup`, `earlyoom`, `swapfile`, `gpu-detect` |
@@ -138,7 +138,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `chezmoi-repo` | base | Clone + apply the managed dotfiles repo via the credential store. |
 | `claude-code` | cli | Claude Code CLI (npm; node via mise). |
 | `claude-mcp` | cli | Register user-global MCP servers (google-docs, fathom). |
-| `claude-notify` | shell | Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks. |
+| `claude-notify` | shell | Notify on Claude task-done / needs-input: macOS notification + ntfy (phone). |
 | `claude-plugins` | cli | Register Claude marketplaces + install enabled plugins; resolve CLICKUP token. |
 | `claude-skills` | cli | Reproduce lockfile-tracked skills via `npx skills add`. |
 | `claude-statusline` | shell | Point Claude Code's statusLine at the managed ~/.claude/statusline.sh. |
@@ -176,7 +176,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `fastfetch` | cli |  |
 | `fd` | base |  |
 | `fedora-third-party` | base | Enable Fedora third-party repositories. |
-| `ffmpeg-full` | multimedia | Swap ffmpeg-free for the full ffmpeg from RPM Fusion (Fedora-only). |
+| `ffmpeg-full` | multimedia | Full ffmpeg: RPM Fusion's on Fedora (swaps ffmpeg-free), Homebrew's on macOS. |
 | `ffmpeg-ubuntu` | multimedia | ffmpeg from Ubuntu universe (Ubuntu/Debian-only). |
 | `flameshot` | apps | Flameshot screenshots. |
 | `flatpak` | base | Configure the (unfiltered) Flathub remote. |
@@ -188,6 +188,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gh` | cli |  |
 | `ghostty` | shell | GPU-accelerated terminal — the default on every OS (Omarchy keeps foot). |
 | `git` | base |  |
+| `glow` | cli | Render Markdown in the terminal (READMEs, plans; herdr-file-viewer uses it). |
 | `gnome-aesthetics-bundle` | gnome | Opt-in aesthetic extras (fonts + theming helpers). |
 | `gnome-extensions` | gnome | Install + enable the functional GNOME extension set (session-free via gext). |
 | `gnome-manager-apps` | gnome | GNOME Tweaks + Extensions app + Extension Manager (flatpak). |
@@ -197,6 +198,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `grub-btrfs` | system | Boot into BTRFS snapshots from GRUB. |
 | `herdr` | cli | herdr — agent-aware terminal multiplexer (pinned binary). |
 | `herdr-plugins` | optional-agents | Curated, pinned herdr plugin set. |
+| `homebrew` | base | Homebrew — the macOS package manager (analytics off). |
 | `htop` | base |  |
 | `jetbrains-toolbox` | optional-editors | JetBrains Toolbox app. |
 | `jq` | base |  |
@@ -228,6 +230,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer. |
 | `restic-backup` | system | Restic backup user service + timer. |
 | `ripgrep` | cli | Fast recursive search (rg). |
+| `rosetta` | base | Rosetta 2 — runs Intel-only apps and fast amd64 containers (macOS ≤ 27). |
 | `rpmfusion` | base | Enable RPM Fusion free + nonfree + AppStream metadata. |
 | `sd` | cli |  |
 | `secrets` | base | Configure git identity + GitHub access (age bundle, gh, or prompt). |
@@ -246,6 +249,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `tmux-persist` | cli | tmux-resurrect + tmux-continuum — restore tmux sessions across a reboot. |
 | `tpm` | cli | tmux plugin manager. |
 | `unzip` | base |  |
+| `utiluti` | cli | utiluti — sets which app opens a file type (macOS default apps). |
 | `uv` | python | uv — fast Python package/project manager. |
 | `va-hwaccel` | multimedia | GPU-aware VA-API hardware acceleration (Intel/AMD/NVIDIA); cross-distro. |
 | `vlc` | apps | VLC media player. |
@@ -255,6 +259,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `wezterm` | shell | GPU terminal + multiplexer (nightly) — opt-in, deprecated: Ghostty is the default and herdr the multiplexer. |
 | `wget` | base |  |
 | `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste). |
+| `xcode-clt` | base | Xcode Command Line Tools (clang, make, git) — installed without a dialog. |
 | `yq` | cli |  |
 | `zed` | editors | Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs. |
 | `zoxide` | cli |  |

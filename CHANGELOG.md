@@ -8,6 +8,16 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **macOS catalog (M3)** — `devboost install` on a Mac installs the workstation:
+  `xcode-clt`, `homebrew`, `rosetta` modules; casks for the GUI apps; .NET 10 in `~/.dotnet`;
+  Android SDK via the cmdline-tools cask; ddev (tap) + mkcert; the Tailscale app as a
+  fleet client; herdr pinned per OS and arch; the agent CLIs, LSPs and dev stacks.
+  Modules M4 owns (Docker, scheduled jobs) report `blocked` with a workaround.
+- **Zed on macOS (Z2)** — `zed` cask, the same seeded config, and Zed as the default app
+  for code/text files (`utiluti`; macOS 26.4+ asks once per file type).
+- `glow` and `herdr-plugins` are in the `cli` profile on every OS.
+- `~/.config/devboost/local.sh`: your own `EDITOR`/`VISUAL` and other overrides, read last.
+- `devboost doctor`: Rosetta status (Intel-only apps from macOS 28).
 - **macOS shell, terminal & dotfiles (M2)** — `devboost install terminal` runs on an
   Apple Silicon Mac: every terminal-set module installs through Homebrew
   (`BrewFormula`/`BrewCask` strategies, `per_os.macos`), zsh config (`shell.zsh`,
@@ -39,6 +49,12 @@ git history and the GitHub release notes.
   `VISUAL="zed --wait"` in local GUI sessions. See [docs/zed.md](docs/zed.md).
 
 ### Changed
+- herdr 0.7.5 → 0.9.1 on every OS; catalog pins are keyed `<os>-<arch>`.
+- `devboost install --update` on macOS upgrades Homebrew casks too, except apps that
+  update themselves.
+- `chezmoi-repo` runs `chezmoi init --apply --force`; a missing repo URL is `blocked`,
+  not a failure.
+- The Claude notify hook also shows a native macOS notification.
 - **Ghostty is the default terminal on every OS**; WezTerm moved to the opt-in
   `optional-terminals` profile (deprecated) and its Ctrl+V smart paste was retired (herdr
   owns image paste).
@@ -50,6 +66,7 @@ git history and the GitHub release notes.
 - `vscode` moved from `editors` to the opt-in `optional-editors` profile.
 
 ### Fixed
+- The executor finds mise's shims where mise puts them (`MISE_DATA_DIR`, `XDG_DATA_HOME`).
 - `.chezmoiignore` no longer fails on macOS (`.chezmoi.osRelease` is Linux-only).
 - Ghostty config: `theme = Catppuccin Mocha` (Title Case) and `toggle_split_zoom` — the old
   values were rejected by Ghostty 1.3.
