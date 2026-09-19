@@ -14,6 +14,7 @@ from pathlib import Path
 from devboost.core.errors import DevbootError
 from devboost.exec.primitives import age
 from devboost.model import Ctx
+from devboost.modules._docker_runtime import rosetta_present, selected_runtime
 from devboost.modules.secrets import age_key, bundle_path
 from devboost.passstore import approve as pass_approve
 from devboost.passstore import audit as pass_audit
@@ -113,6 +114,7 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
     if ctx.os.family == "macos":
         checks.append(_permissions_check(ctx))
         checks.append(_rosetta_check(ctx))
+        checks.append(_docker_runtime_check(ctx))
     return checks
 
 
@@ -206,6 +208,45 @@ def _rosetta_check(ctx: Ctx) -> Check:
     return Check(
         "rosetta", True, f"macOS {ctx.os.version_id} limits Rosetta to legacy games; {found}"
     )
+
+
+def _apple_m4_or_m5(ctx: Ctx) -> bool:
+    """True on an Apple M4/M5 chip (``sysctl -n machdep.cpu.brand_string``, e.g. "Apple M4 Pro").
+
+    Read-only probe; a failed sysctl (unlikely, but not a hard requirement here) is just
+    treated as "not M4/M5" rather than raised.
+    """
+    res = ctx.ex.run(["sysctl", "-n", "machdep.cpu.brand_string"])
+    return res.ok and any(f"Apple M{n}" in res.stdout for n in (4, 5))
+
+
+def _docker_runtime_check(ctx: Ctx) -> Check:
+    """macOS: the selected Docker runtime answers on its context (spec §8)."""
+    try:
+        rt = selected_runtime()
+    except DevbootError as exc:
+        return Check("docker-runtime", False, str(exc))
+    if not rt.installed(ctx):
+        return Check("docker-runtime", True, f"{rt.name} not installed (devboost install docker)")
+    ok = rt.verify(ctx)
+    detail = (
+        f"{rt.name} (context {rt.context_name}) healthy"
+        if ok
+        else f"{rt.name} engine not reachable on context {rt.context_name} — "
+        "run: devboost install docker"
+    )
+    if rt.name == "colima" and not rosetta_present(ctx):
+        detail += "; Rosetta absent — amd64 images run under qemu (slower)"
+    if _apple_m4_or_m5(ctx):
+        # M4-D20 carry-over: SME on Apple M4/M5 chips can crash .NET 10 guests with
+        # SIGILL (exit 132). No env-var workaround is confirmed to fix this — a real
+        # fix needs a patched .NET 10 image/SDK (dotnet/runtime#122608, #133030; both
+        # `DOTNET_EnableArm64Sve=0` and `GLIBC_TUNABLES=glibc.cpu.name=generic` were
+        # tried and did NOT work, because the probe is in the native runtime, not
+        # JIT-gated) — so do not invent a flag here.
+        detail += ("; Apple M4/M5: if .NET containers exit with 132 (SIGILL), "
+                   "update the .NET 10 image/SDK to the latest patch")
+    return Check("docker-runtime", ok, detail)
 
 
 def all_ok(checks: list[Check]) -> bool:
