@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo, OsMap, detect, family_of, is_headless, normalize_arch
 
 
@@ -101,3 +102,13 @@ def test_osmap_macos_resolves_by_family() -> None:
     m: OsMap[str] = OsMap(fedora="fd-find", macos="fd", default="x")
     assert m.get(mac) == "fd"
     assert OsMap[str](default="x").get(mac) == "x"
+
+
+def test_conftest_pins_only_argumentless_detect(tmp_path: Path) -> None:
+    # conftest's autouse _linux_host: bare detect() is Fedora on any host, while a call
+    # with arguments really parses (system defaults to Linux, so this holds on a Mac too).
+    rel = tmp_path / "os-release"
+    rel.write_text("ID=arch\n", encoding="utf-8")
+    assert osinfo.detect().distro == "fedora"
+    assert osinfo.detect(os_release_path=str(rel)).distro == "arch"
+    assert osinfo.detect(system="Darwin", mac_version="27.0").family == "macos"

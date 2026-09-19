@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +16,34 @@ _REAL_DETECT = osinfo.detect
 
 @pytest.fixture(autouse=True)
 def _linux_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests are host-independent: an argument-less detect() sees Fedora on any machine."""
+    """Tests are host-independent: an argument-less detect() sees Fedora on any machine.
 
-    def _pinned(*args: Any, **kwargs: Any) -> osinfo.OsInfo:
-        if "system" in kwargs:
-            return _REAL_DETECT(*args, **kwargs)
-        return osinfo.OsInfo("fedora", "fedora", "x86_64", headless=False)
+    A call with any argument reaches the real detect(), with ``system`` defaulting to
+    "Linux" so e.g. an ``os_release_path=`` fixture is really parsed, even on a Mac.
+    """
+
+    def _pinned(
+        os_release_path: str | None = None,
+        machine: str | None = None,
+        env: Mapping[str, str] | None = None,
+        default_target_link: str | None = None,
+        system: str | None = None,
+        mac_version: str | None = None,
+    ) -> OsInfo:
+        given: dict[str, Any] = {
+            k: v
+            for k, v in {
+                "os_release_path": os_release_path,
+                "machine": machine,
+                "env": env,
+                "default_target_link": default_target_link,
+                "mac_version": mac_version,
+            }.items()
+            if v is not None
+        }
+        if not given and system is None:
+            return OsInfo("fedora", "fedora", "x86_64", headless=False)
+        return _REAL_DETECT(**given, system=system or "Linux")
 
     monkeypatch.setattr(osinfo, "detect", _pinned)
 
