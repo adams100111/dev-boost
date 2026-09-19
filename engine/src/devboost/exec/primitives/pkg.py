@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from devboost.core import log
 from devboost.core.errors import InstallError, PresentUnmanaged, UnsupportedOS
@@ -384,6 +384,48 @@ def cask_auto_updates(ctx: Ctx, cask: str) -> bool:
     if ctx.os.family != "macos":
         return False
     return Brew().cask_auto_updates(ctx, cask)
+
+
+BrewServiceVerb = Literal["start", "stop", "restart"]
+
+
+def brew_services(ctx: Ctx, verb: BrewServiceVerb, formula: str) -> Result:
+    """`brew services <verb> <formula>` (macOS). The result is returned, not raised on:
+    stopping a service that is not running fails harmlessly, so the caller decides."""
+    return _brew_or_raise(ctx, "brew services")._brew(ctx, "services", verb, formula)
+
+
+def service_running(ctx: Ctx, formula: str) -> bool:
+    """True when Homebrew reports the formula's service running.
+
+    Reads ``brew services info --json`` — never a launchd label, which Homebrew 7 renamed
+    to ``sh.brew.<formula>`` (spec §0).
+    """
+    res = _brew_or_raise(ctx, "brew services")._brew(
+        ctx, "services", "info", "--json", formula
+    )
+    if not res.ok:
+        return False
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return False
+    entries = data if isinstance(data, list) else [data]
+    return any(
+        isinstance(e, dict) and e.get("name") == formula and e.get("running") is True
+        for e in entries
+    )
+
+
+def brew_link(ctx: Ctx, *formulae: str, overwrite: bool = False) -> Result:
+    """`brew link [--overwrite] <formulae>` — take a binary name back from a cask."""
+    args = ["link", *(["--overwrite"] if overwrite else []), *formulae]
+    return _brew_or_raise(ctx, "brew link")._brew(ctx, *args)
+
+
+def brew_unlink(ctx: Ctx, *formulae: str) -> Result:
+    """`brew unlink <formulae>` — free a binary name for a cask that ships its own."""
+    return _brew_or_raise(ctx, "brew unlink")._brew(ctx, "unlink", *formulae)
 
 
 #: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).
