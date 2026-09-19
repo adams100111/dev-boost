@@ -12,8 +12,12 @@ and the tool waits for the answer. So:
 
 Whether a change took is read back from LaunchServices (``type <uti> --bundle-id``), not
 taken from utiluti's exit code: a declined dialog may still exit 0. Bundle ids compare
-case-insensitively, as LaunchServices does. A ``type set`` that exits non-zero is a tool
-failure, not an answer: it is warned about and left unrecorded, so the next run retries.
+case-insensitively, as LaunchServices does. A ``get-uti`` or ``type set`` that exits
+non-zero is a tool failure, not an answer: it is warned about and left unrecorded, so the
+next run retries it. Until this process ends such an extension is *deferred* — it counts
+as handled, so the run that hit the failure still finishes (the failure was warned about).
+An extension whose UTI is dynamic (``dyn.*``: no installed app declares the type) has
+nothing to set; it is skipped with its own log line and recorded, never shown as declined.
 The state is written atomically after every resolved type, so an interrupted run keeps
 the answers already given.
 """
@@ -46,14 +50,36 @@ class Association:
 class Outcome:
     changed: list[str] = field(default_factory=list)  # UTIs now opening in the app
     already: list[str] = field(default_factory=list)  # UTIs that already did
-    refused: list[str] = field(default_factory=list)  # declined, or no UTI for the extension
+    refused: list[str] = field(default_factory=list)  # extensions whose dialog was declined
     pending: list[str] = field(default_factory=list)  # extensions waiting for a person
-    failed: list[str] = field(default_factory=list)  # UTIs utiluti could not set (retried)
+    failed: list[str] = field(default_factory=list)  # extensions utiluti failed on (retried)
+    dynamic: list[str] = field(default_factory=list)  # extensions with a dyn.* UTI (skipped)
+
+
+#: Extensions (per app) a utiluti failure left unresolved in THIS process: handled for the
+#: rest of the run, retried by the next one. Never persisted.
+_deferred: dict[str, set[str]] = {}
 
 
 def table(*parts: str) -> list[Association]:
-    """(extension, bundle id) rows of a bundled TSV (e.g. data/macos/default-apps.tsv)."""
-    return [Association(c[0].lstrip("."), c[1]) for c in tsv_rows(*parts, min_cols=2)]
+    """(extension, bundle id) rows of a bundled TSV (e.g. data/macos/default-apps.tsv).
+
+    Cells are stripped, a leading dot dropped and extensions lower-cased; blank and ``#``
+    lines are skipped. An extension listed twice is an error: a type has one default app."""
+    out: list[Association] = []
+    where: dict[str, str] = {}
+    for cols in tsv_rows(*parts, min_cols=2):
+        ext = cols[0].strip().lstrip(".").lower()
+        app = cols[1].strip()
+        if not ext or ext.startswith("#") or not app:
+            continue
+        if ext in where:
+            raise ValueError(
+                f"{'/'.join(parts)}: .{ext} is listed twice ({where[ext]} and {app})"
+            )
+        where[ext] = app
+        out.append(Association(ext, app))
+    return out
 
 
 def confirmation_required(os_info: OsInfo) -> bool:
@@ -65,10 +91,15 @@ def confirmation_required(os_info: OsInfo) -> bool:
 
 
 def state_path() -> Path:
-    state = os.environ.get("XDG_STATE_HOME") or str(
-        Path(os.environ["HOME"]) / ".local" / "state"
-    )
-    return Path(state) / "devboost" / "default-apps.json"
+    """$XDG_STATE_HOME/devboost/default-apps.json. A relative XDG_STATE_HOME is ignored (XDG
+    spec), and so is an unset HOME: the state then lives under Path.home()."""
+    xdg = os.environ.get("XDG_STATE_HOME", "")
+    if xdg and Path(xdg).is_absolute():
+        state = Path(xdg)
+    else:
+        home = os.environ.get("HOME")
+        state = (Path(home) if home else Path.home()) / ".local" / "state"
+    return state / "devboost" / "default-apps.json"
 
 
 def _load() -> dict[str, list[str]]:
@@ -100,7 +131,14 @@ def _record(seen: dict[str, list[str]], app: str, exts: Sequence[str]) -> None:
 def handled(rows: Sequence[Association]) -> bool:
     """True when every row's extension has been handled for its app (set, kept, declined)."""
     seen = _load()
-    return all(r.ext in seen.get(r.bundle_id, []) for r in rows)
+    return all(
+        r.ext in seen.get(r.bundle_id, []) or r.ext in _deferred.get(r.bundle_id, set())
+        for r in rows
+    )
+
+
+def _defer(app: str, exts: Sequence[str]) -> None:
+    _deferred.setdefault(app, set()).update(exts)
 
 
 def _ask(ctx: Ctx, *args: str) -> str | None:
@@ -126,8 +164,17 @@ def apply(ctx: Ctx, rows: Sequence[Association], *, can_prompt: bool) -> Outcome
         if row.ext in seen.get(row.bundle_id, []):
             continue
         uti = _ask(ctx, "get-uti", row.ext)
-        if uti is None:
-            out.refused.append(row.ext)
+        if uti is None:  # a tool failure, not an answer: retried by the next run
+            log.warn(
+                f"utiluti could not look up the type of .{row.ext}; "
+                "dev-boost will try again on the next run"
+            )
+            out.failed.append(row.ext)
+            _defer(row.bundle_id, [row.ext])
+            continue
+        if uti.startswith("dyn."):  # no installed app declares it: nothing to set
+            log.skip(f"default apps: .{row.ext} has no declared file type ({uti})")
+            out.dynamic.append(row.ext)
             _record(seen, row.bundle_id, [row.ext])
             continue
         groups.setdefault((row.bundle_id, uti), []).append(row.ext)
@@ -142,11 +189,12 @@ def apply(ctx: Ctx, rows: Sequence[Association], *, can_prompt: bool) -> Outcome
                 f"utiluti could not make {app} open {uti} ({', '.join(exts)}); "
                 "dev-boost will try again on the next run"
             )
-            out.failed.append(uti)
+            out.failed.extend(exts)
+            _defer(app, exts)
             continue
         elif _opens_in(ctx, uti, app):
             out.changed.append(uti)
         else:  # the dialog was declined: the old handler is still there
-            out.refused.append(uti)
+            out.refused.extend(exts)
         _record(seen, app, exts)
     return out

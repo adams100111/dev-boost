@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import NeedsUser, PresentUnmanaged
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.registry import load
+from devboost.core.runner import run_plan
 from devboost.exec.executor import Result
 from devboost.exec.primitives import default_apps
 from devboost.model import Ctx
@@ -24,12 +26,6 @@ MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 MAC_26_3 = OsInfo("macos", "macos", "aarch64", version_id="26.3")
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 _CASK_INSTALL = ["brew", "install", "--cask", "-y", "--adopt", "zed"]
-
-
-@pytest.fixture(autouse=True)
-def _no_host_zed_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Hermetic: the host's own /Applications/Zed.app must not change the outcome.
-    monkeypatch.setattr(editors, "_ZED_APP", tmp_path / "absent" / "Zed.app")
 
 
 def _mac(cask_installed: bool = False) -> Scripted:
@@ -167,3 +163,39 @@ def test_update_after_the_user_answered_asks_nothing_again(
     ex.answers[("brew", "info")] = Result(0, stdout='{"casks": [{"auto_updates": true}]}')
     Zed().install(Ctx(os=MAC, ex=ex, force=True))  # no NeedsUser: every type is handled
     assert not any(c[0] == "utiluti" for c in ex.calls)
+
+
+# --- utiluti failures warn; a refusal names extensions ----------------------------------
+
+
+def test_a_utiluti_set_failure_only_warns_and_zed_finishes_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Core review: a failed `type set` used to leave default_apps_done() False, so the
+    # runner marked zed `fail` (verify-failed-after-install) and the run exited 1.
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    monkeypatch.setattr(_zed, "is_interactive", lambda: True)
+    ex = _mac(cask_installed=True)
+    ex.answers[("utiluti", "type", "set", "test.py")] = Result(1, stderr="boom")
+    [result] = run_plan([PlannedModule("zed")], load(), Ctx(os=MAC, ex=ex))
+    assert result.status == "ok", result
+    assert any("test.py" in w and "try again" in w for w in warned)
+    # The next run (a new process) retries only the failed type.
+    monkeypatch.setattr(default_apps, "_deferred", {})
+    assert Zed().verify(Ctx(os=MAC, ex=Scripted())) is False
+    again = _mac(cask_installed=True)
+    Zed().install(Ctx(os=MAC, ex=again))
+    assert [again.calls[i][3] for i in _sets(again)] == ["test.py"]
+
+
+def test_the_refusal_warning_names_extensions_not_utis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    monkeypatch.setattr(_zed, "is_interactive", lambda: True)
+    Zed().install(Ctx(os=MAC, ex=_mac()))  # every read-back misses: all declined
+    [msg] = [w for w in warned if "not the default app" in w]
+    assert ".py" in msg and ".md" in msg
+    assert "test." not in msg  # no UTI strings

@@ -165,7 +165,9 @@ def ensure_default_apps(ctx: Ctx) -> None:
     """macOS: code and text files open in Zed (Zed spec "Default apps").
 
     macOS 26.4+ asks the user to confirm each file type, so the change is only attempted
-    when someone is there; an unattended run raises NeedsUser (Zed itself is done).
+    when someone is there; an unattended run raises NeedsUser (Zed itself is done). A
+    utiluti failure is only a warning (from default_apps): Zed finishes, and the next run
+    retries the affected file types.
     """
     rows = default_app_rows()
     confirm = default_apps.confirmation_required(ctx.os)
@@ -175,7 +177,7 @@ def ensure_default_apps(ctx: Ctx) -> None:
     out = default_apps.apply(ctx, rows, can_prompt=can_prompt)
     if out.refused:
         log.warn(
-            f"zed: not the default app for {', '.join(out.refused)} — "
+            f"zed: not the default app for {', '.join('.' + e for e in out.refused)} — "
             "change it in Finder › Get Info › Open with, if you want"
         )
     if out.pending:

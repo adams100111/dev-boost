@@ -79,8 +79,30 @@ ROWS = [Association(e, ZED) for e in ("yaml", "yml", "py")]
 def test_the_bundled_table_has_the_zed_rows() -> None:
     rows = default_apps.table("data", "macos", "default-apps.tsv")
     zed = [r.ext for r in rows if r.bundle_id == ZED]
-    assert {"md", "json", "py", "ts", "tsx", "php", "cs"} <= set(zed)
+    assert {"md", "json", "py", "tsx", "php", "cs"} <= set(zed)
+    # .ts (and .mts) is MPEG-2 transport-stream video on macOS: claiming it would open
+    # camera/Blu-ray video in Zed (modules review M5).
+    assert not {"ts", "mts", "m2ts"} & set(zed)
     assert len(zed) == len(set(zed))  # no duplicate extensions
+
+
+def _table_from(monkeypatch: pytest.MonkeyPatch, text: str) -> list[Association]:
+    rows = [line.split("\t") for line in text.splitlines()
+            if line.strip() and not line.startswith("#")]
+    monkeypatch.setattr(default_apps, "tsv_rows", lambda *parts, min_cols: [
+        r for r in rows if len(r) >= min_cols
+    ])
+    return default_apps.table("data", "macos", "default-apps.tsv")
+
+
+def test_table_rows_are_normalised(monkeypatch: pytest.MonkeyPatch) -> None:
+    text = "# header\n\n  .MD \t dev.zed.Zed \n   # indented comment\t x\nPy\tdev.zed.Zed\n"
+    assert _table_from(monkeypatch, text) == [Association("md", ZED), Association("py", ZED)]
+
+
+def test_a_duplicate_extension_is_an_error_at_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match=r"\.md is listed twice"):
+        _table_from(monkeypatch, "md\tdev.zed.Zed\n.MD\tcom.example.Other\n")
 
 
 @pytest.mark.parametrize(
@@ -114,7 +136,7 @@ def test_a_declined_type_is_never_asked_again() -> None:
     # utiluti exits 0 on a declined dialog; the read-back shows the old handler.
     ex = _LaunchServices(UTIS, refuse={"public.python-script"})
     out = default_apps.apply(Ctx(os=MAC, ex=ex), ROWS, can_prompt=True)
-    assert out.refused == ["public.python-script"]
+    assert out.refused == ["py"]  # extensions, as the user knows them
     assert out.changed == ["public.yaml"]
     assert default_apps.handled(ROWS)
     again = _LaunchServices(UTIS)
@@ -122,20 +144,66 @@ def test_a_declined_type_is_never_asked_again() -> None:
     assert again.sets == []
 
 
+def _next_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A new process: nothing deferred by the previous run survives."""
+    monkeypatch.setattr(default_apps, "_deferred", {})
+
+
 def test_a_failed_set_is_not_recorded_and_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     warned: list[str] = []
     monkeypatch.setattr(log, "warn", warned.append)
     ex = _LaunchServices(UTIS, broken={"public.python-script"})
     out = default_apps.apply(Ctx(os=MAC, ex=ex), ROWS, can_prompt=True)
-    assert out.failed == ["public.python-script"]
+    assert out.failed == ["py"]
     assert out.changed == ["public.yaml"] and out.refused == []
     assert len(warned) == 1 and "public.python-script" in warned[0]
+    saved = json.loads(default_apps.state_path().read_text(encoding="utf-8"))
+    assert saved == {ZED: ["yaml", "yml"]}  # py is not recorded
+    assert default_apps.handled(ROWS)  # deferred: this run can finish
+    _next_run(monkeypatch)
     assert not default_apps.handled(ROWS)
     again = _LaunchServices(UTIS)
     out = default_apps.apply(Ctx(os=MAC, ex=again), ROWS, can_prompt=True)
     assert again.sets == [("public.python-script", ZED, True)]
     assert out.changed == ["public.python-script"]
     assert default_apps.handled(ROWS)
+
+
+def test_a_failed_uti_lookup_is_warned_not_recorded_and_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # C-R26: a get-uti that exits non-zero is a tool failure, not a declined type.
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    utis = {k: v for k, v in UTIS.items() if k != "py"}
+    out = default_apps.apply(Ctx(os=MAC, ex=_LaunchServices(utis)), ROWS, can_prompt=True)
+    assert out.failed == ["py"] and out.refused == []
+    assert len(warned) == 1 and ".py" in warned[0]
+    saved = json.loads(default_apps.state_path().read_text(encoding="utf-8"))
+    assert saved == {ZED: ["yaml", "yml"]}
+    assert default_apps.handled(ROWS)  # deferred for this run only
+    _next_run(monkeypatch)
+    assert not default_apps.handled(ROWS)
+    again = _LaunchServices(UTIS)
+    out = default_apps.apply(Ctx(os=MAC, ex=again), ROWS, can_prompt=True)
+    assert again.sets == [("public.python-script", ZED, True)]
+    assert default_apps.handled(ROWS)
+
+
+def test_a_dynamic_uti_is_skipped_not_declined(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Core review M4: no installed app declares the type, so there is nothing to set.
+    skipped: list[str] = []
+    warned: list[str] = []
+    monkeypatch.setattr(log, "skip", skipped.append)
+    monkeypatch.setattr(log, "warn", warned.append)
+    utis = {**UTIS, "py": "dyn.ah62d4rv4ge81e5pe"}
+    ex = _LaunchServices(utis)
+    out = default_apps.apply(Ctx(os=MAC, ex=ex), ROWS, can_prompt=True)
+    assert out.dynamic == ["py"] and out.refused == [] and out.failed == []
+    assert ex.sets == [("public.yaml", ZED, True)]  # no dialog for the dyn.* type
+    assert len(skipped) == 1 and ".py" in skipped[0] and warned == []
+    _next_run(monkeypatch)
+    assert default_apps.handled(ROWS)  # settled: not asked again
 
 
 def test_an_interrupted_run_keeps_the_answers_already_given() -> None:
@@ -193,6 +261,26 @@ def test_missing_utiluti_is_an_install_error() -> None:
 def test_state_lives_under_xdg_state_home(tmp_path: Path) -> None:
     assert default_apps.state_path() == (
         tmp_path / ".local" / "state" / "devboost" / "default-apps.json"
+    )
+
+
+def test_a_relative_xdg_state_home_is_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/state")  # invalid per the XDG spec
+    assert default_apps.state_path() == (
+        tmp_path / ".local" / "state" / "devboost" / "default-apps.json"
+    )
+
+
+def test_an_unset_home_falls_back_to_path_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("XDG_STATE_HOME")
+    monkeypatch.delenv("HOME")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "pw"))
+    assert default_apps.state_path() == (
+        tmp_path / "pw" / ".local" / "state" / "devboost" / "default-apps.json"
     )
 
 
