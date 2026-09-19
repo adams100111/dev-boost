@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 
@@ -43,7 +44,8 @@ def test_probe_on_macos(bin_dir: Path, make_bin: MakeBin) -> None:
              "EOF")
     make_bin("df", DF)
     # used = total - (free + inactive + speculative) * page size → 57 %; 875921296 KiB → 835 G
-    assert _probe(bin_dir, {}) == "57 8 835"
+    # TTL=0: this test wants a fresh value every call, not whatever a prior test cached.
+    assert _probe(bin_dir, {"DEVBOOST_RESOURCES_TTL": "0"}) == "57 8 835"
 
 
 def test_probe_on_linux(bin_dir: Path, make_bin: MakeBin, tmp_path: Path) -> None:
@@ -53,6 +55,116 @@ def test_probe_on_linux(bin_dir: Path, make_bin: MakeBin, tmp_path: Path) -> Non
     meminfo.write_text("MemTotal:       16000000 kB\nMemAvailable:    4000000 kB\n",
                        encoding="utf-8")
     assert _probe(bin_dir, {"DEVBOOST_MEMINFO": str(meminfo)}) == "75 8 835"
+
+
+# ── Caching (M-R22): six starship `[custom.*]` modules each shell out to this probe on
+# every prompt, so a cold probe (vm_stat/sysctl/df) is dozens of spawns per prompt on
+# macOS. These tests count live-probe invocations via fake binaries that append their
+# own name to a shared log file, so "hit the cache" means the log doesn't grow.
+
+def _make_macos_bins(make_bin: MakeBin, call_log: Path) -> None:
+    make_bin("uname", "echo Darwin")
+    make_bin("sysctl", f'echo sysctl >> "{call_log}"\necho 25769803776')
+    make_bin("vm_stat", f'echo vm_stat >> "{call_log}"\ncat <<\'EOF\'\n'
+             "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+             "Pages free:                                    37107.\n"
+             "Pages active:                                 631665.\n"
+             "Pages inactive:                               629739.\n"
+             "Pages speculative:                               466.\n"
+             "EOF")
+    make_bin("df", f'echo df >> "{call_log}"\n{DF}')
+
+
+@pytest.fixture
+def cache_env(tmp_path: Path, make_bin: MakeBin) -> tuple[Path, dict[str, str]]:
+    """A macOS probe wired to a private XDG_CACHE_HOME and a call-count log."""
+    call_log = tmp_path / "calls.log"
+    call_log.write_text("", encoding="utf-8")
+    _make_macos_bins(make_bin, call_log)
+    return call_log, {"XDG_CACHE_HOME": str(tmp_path / "xdgcache")}
+
+
+def test_probe_caches_within_ttl(bin_dir: Path, cache_env: tuple[Path, dict[str, str]]) -> None:
+    call_log, env = cache_env
+    assert _probe(bin_dir, env) == "57 8 835"
+    assert _probe(bin_dir, env) == "57 8 835"  # within the 2s default TTL → cache hit
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["sysctl", "vm_stat", "df"]  # only the first call actually probed
+
+
+def test_probe_refreshes_after_ttl(bin_dir: Path, cache_env: tuple[Path, dict[str, str]]) -> None:
+    call_log, env = cache_env
+    env = {**env, "DEVBOOST_RESOURCES_TTL": "1"}
+    assert _probe(bin_dir, env) == "57 8 835"
+    time.sleep(1.2)
+    assert _probe(bin_dir, env) == "57 8 835"
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["sysctl", "vm_stat", "df"] * 2  # both calls probed live
+
+
+def test_probe_ttl_zero_always_probes(bin_dir: Path,
+                                       cache_env: tuple[Path, dict[str, str]]) -> None:
+    call_log, env = cache_env
+    env = {**env, "DEVBOOST_RESOURCES_TTL": "0"}
+    assert _probe(bin_dir, env) == "57 8 835"
+    assert _probe(bin_dir, env) == "57 8 835"
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["sysctl", "vm_stat", "df"] * 2  # TTL=0 disables the cache entirely
+
+
+def test_probe_cache_dir_is_0700(bin_dir: Path, cache_env: tuple[Path, dict[str, str]]) -> None:
+    _call_log, env = cache_env
+    _probe(bin_dir, env)
+    cache_dir = Path(env["XDG_CACHE_HOME"]) / "devboost"
+    assert (cache_dir.stat().st_mode & 0o777) == 0o700
+
+
+def test_probe_meminfo_override_bypasses_cache(bin_dir: Path, make_bin: MakeBin,
+                                                tmp_path: Path) -> None:
+    make_bin("uname", "echo Linux")
+    call_log = tmp_path / "calls.log"
+    call_log.write_text("", encoding="utf-8")
+    make_bin("df", f'echo df >> "{call_log}"\n{DF}')
+    env = {"XDG_CACHE_HOME": str(tmp_path / "xdgcache")}
+    meminfo_a = tmp_path / "meminfo_a"
+    meminfo_a.write_text("MemTotal:       16000000 kB\nMemAvailable:    4000000 kB\n",
+                         encoding="utf-8")
+    meminfo_b = tmp_path / "meminfo_b"
+    meminfo_b.write_text("MemTotal:       16000000 kB\nMemAvailable:    8000000 kB\n",
+                         encoding="utf-8")
+    assert _probe(bin_dir, {**env, "DEVBOOST_MEMINFO": str(meminfo_a)}) == "75 8 835"
+    # Same TTL window, but a different DEVBOOST_MEMINFO — a cache hit would wrongly
+    # replay the first (75%) reading; the seam must always read live.
+    assert _probe(bin_dir, {**env, "DEVBOOST_MEMINFO": str(meminfo_b)}) == "50 8 835"
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["df", "df"]  # both calls probed live — never cached
+
+
+def test_probe_corrupt_cache_falls_back_to_live_probe(
+    bin_dir: Path, cache_env: tuple[Path, dict[str, str]],
+) -> None:
+    call_log, env = cache_env
+    cache_dir = Path(env["XDG_CACHE_HOME"]) / "devboost"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "resources").write_text("not a cache line\n", encoding="utf-8")
+    assert _probe(bin_dir, env) == "57 8 835"
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["sysctl", "vm_stat", "df"]  # ignored the corrupt line, probed live
+
+
+def test_probe_cache_write_failure_falls_back_silently(
+    bin_dir: Path, cache_env: tuple[Path, dict[str, str]],
+) -> None:
+    call_log, env = cache_env
+    cache_root = Path(env["XDG_CACHE_HOME"])
+    cache_root.mkdir(parents=True)
+    cache_root.chmod(0o500)  # can't create the devboost/ subdir under it
+    try:
+        assert _probe(bin_dir, env) == "57 8 835"
+    finally:
+        cache_root.chmod(0o700)
+    calls = call_log.read_text(encoding="utf-8").split()
+    assert calls == ["sysctl", "vm_stat", "df"]
 
 
 @pytest.fixture

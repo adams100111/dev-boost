@@ -8,8 +8,48 @@
 #          the data volume (/ is the sealed system volume there and reads almost empty).
 # `df -Pk` is POSIX on both, so no GNU-only flags.
 #
+# Self-caches for DEVBOOST_RESOURCES_TTL seconds (default 2; 0 disables) in a per-user
+# file under XDG_CACHE_HOME, never a shared /tmp — starship alone calls this probe from
+# six separate `when`/`command` gates per prompt, which without a cache is dozens of
+# vm_stat/sysctl/df spawns every time you hit Enter. DEVBOOST_MEMINFO (a test seam)
+# always bypasses the cache entirely, so tests stay deterministic. A cache read or
+# write that fails for any reason (missing, corrupt, unwritable) falls back silently
+# to a live probe — the gauges must never error out over a cache problem.
+#
 # devboost — managed by chezmoi; edit dotfiles/dot_local/bin/executable_devboost-resources.
 set -eu
+
+ttl=${DEVBOOST_RESOURCES_TTL:-2}
+# ${HOME:-} first: under `set -u`, using $HOME bare inside XDG_CACHE_HOME's own
+# fallback would abort the whole probe if HOME happens to be unset.
+home=${HOME:-}
+cache_dir=${XDG_CACHE_HOME:-$home/.cache}/devboost
+cache_file=$cache_dir/resources
+
+use_cache=1
+[ -z "${DEVBOOST_MEMINFO:-}" ] || use_cache=0
+[ "$ttl" -gt 0 ] 2>/dev/null || use_cache=0
+
+if [ "$use_cache" -eq 1 ]; then
+  now=$(date +%s)
+  if cached=$(cat "$cache_file" 2>/dev/null); then
+    # shellcheck disable=SC2046 # splitting "<epoch> <ram> <used%> <free-G>" is the point
+    set -- $cached
+    if [ "$#" -eq 4 ]; then
+      ok=1
+      for f in "$1" "$2" "$3" "$4"; do
+        case $f in '' | *[!0-9]*) ok=0 ;; esac
+      done
+      if [ "$ok" -eq 1 ]; then
+        age=$((now - $1))
+        if [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]; then
+          printf '%s %s %s\n' "$2" "$3" "$4"
+          exit 0
+        fi
+      fi
+    fi
+  fi
+fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
   total=$(sysctl -n hw.memsize)
@@ -27,4 +67,16 @@ else
   mnt=/
 fi
 
-df -Pk "$mnt" | awk -v ram="$ram" 'NR == 2 { sub("%", "", $5); printf "%s %s %d\n", ram, $5, $4 / 1048576 }'
+out=$(df -Pk "$mnt" | awk -v ram="$ram" 'NR == 2 { sub("%", "", $5); printf "%s %s %d", ram, $5, $4 / 1048576 }')
+printf '%s\n' "$out"
+
+if [ "$use_cache" -eq 1 ]; then
+  # Best-effort, atomic (write a tmp file in the same dir, then rename) — never let a
+  # cache-write problem fail the probe itself.
+  if mkdir -p "$cache_dir" 2>/dev/null && chmod 700 "$cache_dir" 2>/dev/null; then
+    tmp="$cache_dir/.resources.$$"
+    if printf '%s %s\n' "$now" "$out" > "$tmp" 2>/dev/null; then
+      mv "$tmp" "$cache_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    fi
+  fi
+fi
