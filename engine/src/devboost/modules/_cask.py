@@ -7,13 +7,15 @@ login item / extension and the app can ask for its permissions), `min_macos`/
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.macver import macos_version
 from devboost.core.osinfo import OsInfo, OsMap
-from devboost.model import Ctx, Module
+from devboost.model import Ctx, Module, TccGrant
 from devboost.modules._brew import BrewCask
+from devboost.modules._credentials import is_interactive
 from devboost.modules.macos import Homebrew  # M5-D1 — Homebrew lives in modules.macos
 
 
@@ -29,18 +31,28 @@ class CaskInstall:
     it: `open` can be the trigger for a one-time TCC permission prompt, so repeating it
     on every unattended re-run would be a duplicate, surprising side effect (M5-D6:
     "install twice with force -> no duplicate side effects, no prompts").
+
+    Launching the app can pop a TCC permission dialog (Accessibility, Screen Recording,
+    Input Monitoring — see `tcc`): never on an unwatched desktop (global constraint:
+    "nothing waits on a prompt nobody can see"), matching the precedent in
+    `server.py` (Tailscale), `ddev.py` (mkcert -install) and `ios.py` (xcodes sign-in).
+    Unattended, a fresh install of an app that needs a grant raises `NeedsUser` instead
+    of opening it (reported `blocked`); an app with no `tcc` just skips the launch —
+    nothing points the user at it, but nothing needs their attention either.
     """
 
     cask: str
     launch: str | None = None
+    #: TCC grants this app needs, threaded through from the owning `CaskApp` — used only
+    #: to decide the unattended NeedsUser path below. Excluded from equality/repr: the
+    #: `CaskApp.per_os.macos == CaskInstall(cask, launch)` contract (task-6-brief.md) is
+    #: still just the two positional fields.
+    tcc: tuple[TccGrant, ...] = field(default=(), compare=False, repr=False)
+    #: The registered module name, for the `devboost permissions --confirm <name>` hint.
+    module_name: str = field(default="", compare=False, repr=False)
 
     #: Read by the macOS contract test: a module using this strategy must require Homebrew.
     uses_brew: ClassVar[bool] = True
-
-    @property
-    def token(self) -> str:
-        """The short name brew lists an installed cask under (e.g. `aerospace`)."""
-        return self.cask.rsplit("/", 1)[-1]
 
     def _brew_cask(self) -> BrewCask:
         return BrewCask(self.cask)
@@ -56,10 +68,21 @@ class CaskInstall:
             # UntrustedTapError on install until the tap is explicitly trusted — a
             # Homebrew 7 gate, non-interactive and idempotent (`brew trust --cask`
             # just records the grant; a repeat is a no-op, not a prompt).
-            ctx.ex.run(["brew", "trust", "--cask", self.cask])
+            result = ctx.ex.run(["brew", "trust", "--cask", self.cask])
+            if not result.ok:
+                raise InstallError("brew", f"brew trust --cask {self.cask}", result.code)
         self._brew_cask().install(ctx)
-        if not already and self.launch is not None:
-            ctx.ex.run(["open", "-g", "-a", self.launch])
+        if already or self.launch is None:
+            return
+        if not is_interactive():
+            if self.tcc:
+                raise NeedsUser(
+                    f"{self.launch} is installed but needs its permissions granted",
+                    f"open {self.launch} once and grant its permissions, then "
+                    f"`devboost permissions --confirm {self.module_name}`",
+                )
+            return
+        ctx.ex.run(["open", "-g", "-a", self.launch])
 
 
 class CaskApp(Module):
@@ -76,7 +99,9 @@ class CaskApp(Module):
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         if "cask" in cls.__dict__:
-            cls.per_os = OsMap(macos=CaskInstall(cls.cask, cls.launch))
+            cls.per_os = OsMap(
+                macos=CaskInstall(cls.cask, cls.launch, tcc=cls.tcc, module_name=cls.name)
+            )
 
     @classmethod
     def supported_on(cls, os_info: OsInfo) -> bool:

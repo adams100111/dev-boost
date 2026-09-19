@@ -15,6 +15,7 @@ from devboost.core.registry import register
 from devboost.model import Ctx, Module, TccGrant
 from devboost.modules._brew import BrewCask
 from devboost.modules._cask import CaskApp
+from devboost.modules._credentials import is_interactive
 from devboost.modules.macos import Homebrew  # M5-D1 — Homebrew lives in modules.macos
 from devboost.modules.shell import Dotfiles
 
@@ -106,7 +107,16 @@ class _QuickLookInstall:
     """Two casks, each a Quick Look app extension (M5-D6's wrap-BrewCask discipline
     applies to each). `qlmanage -r` restarts the Quick Look server so Finder picks the
     new extensions up; it only runs when this call actually installed one of them, so a
-    force `--update` re-run of an already-registered pair does not touch it again."""
+    force `--update` re-run of an already-registered pair does not touch it again.
+
+    Neither `open` nor `qlmanage -r` pops a TCC dialog these modules would need a grant
+    for (`quicklook` declares no `tcc`), but `open` still visibly launches an app and
+    `qlmanage -r` restarts a system service — both gated behind
+    `_credentials.is_interactive()` (global constraint: nothing pops on an unwatched
+    desktop). Unattended, the casks still install; the extensions register themselves
+    the next time the user actually opens Finder or the apps by hand — no NeedsUser,
+    since there is nothing only a human can unblock here.
+    """
 
     uses_brew: ClassVar[bool] = True
 
@@ -122,9 +132,10 @@ class _QuickLookInstall:
             already = strat.verify(ctx)
             strat.install(ctx)
             if not already:
-                ctx.ex.run(["open", "-g", "-a", app])
                 installed_now = True
-        if installed_now:
+                if is_interactive():
+                    ctx.ex.run(["open", "-g", "-a", app])
+        if installed_now and is_interactive():
             ctx.ex.run(["qlmanage", "-r"])
 
 

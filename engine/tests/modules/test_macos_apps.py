@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import build_plan
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx, TccGrant
+from devboost.modules import _cask
 from devboost.modules import macos_apps as apps
 from devboost.modules._cask import CaskApp, CaskInstall
 
@@ -67,6 +69,20 @@ class _Brew(FakeExecutor):
         return Result(0)
 
 
+@pytest.fixture
+def interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A human is at the terminal: `open`/`qlmanage -r` may run (ddev/ios/server precedent)."""
+    monkeypatch.setattr(_cask, "is_interactive", lambda: True)
+    monkeypatch.setattr(apps, "is_interactive", lambda: True)
+
+
+@pytest.fixture
+def unattended(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nobody is watching: no dialog-popping `open`/`qlmanage -r` may run."""
+    monkeypatch.setattr(_cask, "is_interactive", lambda: False)
+    monkeypatch.setattr(apps, "is_interactive", lambda: False)
+
+
 def test_desktop_cask_table() -> None:
     mods = load()
     for name, (cask, launch, services) in DESKTOP.items():
@@ -81,6 +97,7 @@ def test_betterdisplay_is_not_shipped() -> None:
     assert "betterdisplay" not in load()  # paid for business use (D3)
 
 
+@pytest.mark.usefixtures("interactive")
 def test_tapped_cask_installs_and_verifies_fully_qualified() -> None:
     """`nikitabobko/tap/aerospace` auto-taps on install; brew resolves the same
     tap-qualified name for `list`/`info`/`upgrade` once the tap exists locally, so
@@ -108,6 +125,7 @@ def test_app_without_launch_is_not_opened() -> None:
     ]
 
 
+@pytest.mark.usefixtures("interactive")
 def test_install_twice_with_force_has_no_duplicate_side_effects() -> None:
     """M5-D6's required test: install a cask twice under `--update` (force=True). The
     second run must not re-open the app (a duplicate side effect, and a possible
@@ -150,6 +168,7 @@ def test_linux_drops_every_cask_app(tmp_path: Path) -> None:
     assert build_plan(names, load(), FEDORA, gpu_marker=tmp_path / "none") == []
 
 
+@pytest.mark.usefixtures("interactive")
 def test_quicklook_installs_both_extensions_and_registers_them() -> None:
     ex = _Brew()
     apps.Quicklook().install(Ctx(os=MAC, ex=ex))
@@ -164,6 +183,7 @@ def test_quicklook_installs_both_extensions_and_registers_them() -> None:
     ]
 
 
+@pytest.mark.usefixtures("interactive")
 def test_quicklook_install_twice_with_force_registers_extensions_only_once() -> None:
     ex = _Brew()
     ctx = Ctx(os=MAC, ex=ex, force=True)
@@ -172,6 +192,45 @@ def test_quicklook_install_twice_with_force_registers_extensions_only_once() -> 
     apps.Quicklook().install(ctx)  # already present -> upgrade path, no reopen/re-register
     assert [c for c in ex.calls if c[:1] == ["open"]] == []
     assert [c for c in ex.calls if c == ["qlmanage", "-r"]] == []
+
+
+@pytest.mark.usefixtures("unattended")
+def test_unattended_fresh_install_of_a_tcc_app_raises_needs_user_and_never_opens() -> None:
+    """Raycast needs Accessibility. Unattended, opening it would pop a TCC dialog nobody
+    can answer — global constraint — so the install is reported `blocked` instead."""
+    ex = _Brew()
+    with pytest.raises(NeedsUser) as exc_info:
+        apps.Raycast().install(Ctx(os=MAC, ex=ex))
+    assert [c for c in ex.calls if c[:1] == ["open"]] == []
+    assert ["brew", "install", "--cask", "-y", "--adopt", "raycast"] in ex.calls  # still installed
+    assert "Raycast once" in exc_info.value.how_to_fix
+    assert "devboost permissions --confirm raycast" in exc_info.value.how_to_fix
+
+
+@pytest.mark.usefixtures("unattended")
+def test_unattended_fresh_install_without_tcc_just_skips_the_launch() -> None:
+    """Stats has `launch` but no `tcc`: nothing only a human can unblock, so it installs
+    cleanly unattended — no `open`, no `NeedsUser`."""
+    ex = _Brew()
+    apps.Stats().install(Ctx(os=MAC, ex=ex))  # must not raise
+    assert [c for c in ex.calls if c[:1] == ["open"]] == []
+    assert ["brew", "install", "--cask", "-y", "--adopt", "stats"] in ex.calls
+
+
+@pytest.mark.usefixtures("interactive")
+def test_interactive_fresh_install_of_a_tcc_app_opens_once() -> None:
+    ex = _Brew()
+    apps.Raycast().install(Ctx(os=MAC, ex=ex))  # must not raise
+    assert [c for c in ex.calls if c[:1] == ["open"]] == [["open", "-g", "-a", "Raycast"]]
+
+
+@pytest.mark.usefixtures("unattended")
+def test_quicklook_unattended_skips_open_and_qlmanage() -> None:
+    ex = _Brew()
+    apps.Quicklook().install(Ctx(os=MAC, ex=ex))
+    assert [c for c in ex.calls if c[:1] == ["open"]] == []
+    assert ["qlmanage", "-r"] not in ex.calls
+    assert ["brew", "install", "--cask", "-y", "--adopt", "qlmarkdown"] in ex.calls
 
 
 def test_tcc_grants_name_the_app_the_user_sees() -> None:
