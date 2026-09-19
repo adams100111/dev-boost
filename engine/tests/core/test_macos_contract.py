@@ -1,11 +1,18 @@
 """Every module must have a macOS answer: installable, dropped, provided, or a known gap.
 
-KNOWN_GAPS is the M1 baseline of modules with no macOS path yet. M3–M5 add macOS
-strategies and delete names from it; it must be empty by the end of M5 (spec §9).
+KNOWN_GAPS is the list of modules with no macOS path yet. M2 cleared the `terminal` set
+(the `macos` profile); M3–M5 add the rest and delete names from it. It must be empty by
+the end of M5 (spec §9).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from devboost.core.graph import toposort
+from devboost.core.osinfo import OsInfo
+from devboost.core.plan import PlannedModule, build_plan
+from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load
 from devboost.model import Module
 from devboost.modules._pkgmodule import PackageModule
@@ -110,3 +117,33 @@ def test_no_new_macos_gaps() -> None:
 def test_known_gaps_are_still_gaps() -> None:
     fixed = KNOWN_GAPS - unresolved()
     assert not fixed, f"now resolvable — remove from KNOWN_GAPS: {sorted(fixed)}"
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+MAC = OsInfo("macos", "macos", "aarch64", headless=False)
+FEDORA = OsInfo("fedora", "fedora", "x86_64", headless=False)
+
+
+def _plan(profile: str, os_info: OsInfo, tmp_path: Path) -> list[PlannedModule]:
+    modules = load()
+    names = expand([profile], load_profiles(REPO_ROOT / "profiles.toml"), modules)
+    return build_plan(toposort(names, modules), modules, os_info, gpu_marker=tmp_path / "none")
+
+
+def test_the_macos_profile_plans_cleanly_on_a_mac(tmp_path: Path) -> None:
+    modules = load()
+    reasons = {p.name: p.skip_reason for p in _plan("macos", MAC, tmp_path)}
+    assert not sorted(n for n in reasons if not resolvable_on_macos(modules[n]))
+    assert not [n for n, r in reasons.items() if r == "unsupported-os"]
+    for want in ("ghostty", "zsh-config", "zsh-plugins", "bash", "dotfiles", "starship",
+                 "nerd-fonts", "fresh", "claude-statusline"):
+        assert reasons.get(want, "missing") is None, want
+    assert reasons["curl"] == reasons["unzip"] == "provided-by-macos"
+    assert "bash-config" not in reasons and "wezterm" not in reasons
+
+
+def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> None:
+    reasons = {p.name: p.skip_reason for p in _plan("terminal", FEDORA, tmp_path)}
+    assert not {n: r for n, r in reasons.items() if r is not None}
+    assert "bash-config" in reasons and "ghostty" in reasons
+    assert not {"zsh-config", "zsh-plugins", "bash"} & set(reasons)
