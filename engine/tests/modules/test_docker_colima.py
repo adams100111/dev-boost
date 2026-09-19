@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from devboost.core.errors import ConfigError, InstallError
+from devboost.core import log
+from devboost.core.errors import ConfigError, InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.exec.primitives import launchd
@@ -131,7 +132,7 @@ def test_first_configure_creates_the_vm_then_hands_it_to_brew_services(tmp_path:
     tee = calls.index(["sudo", "tee", str(plist)])
     body = ctx.ex.stdins[tee]  # type: ignore[attr-defined]
     assert plistlib.loads(body.encode("utf-8"))["ProgramArguments"] == [
-        "/bin/ln", "-sf", str(home / "default" / "docker.sock"), str(col.DOCKER_SOCK)
+        "/bin/ln", "-shf", str(home / "default" / "docker.sock"), str(col.DOCKER_SOCK)
     ]
 
 
@@ -268,8 +269,9 @@ def test_socket_daemon_current_is_a_read_only_probe(tmp_path: Path) -> None:
     loaded = (("launchctl", "print"), Result(0))
     assert col.socket_daemon_current(_ctx(loaded)) is False  # no plist yet
     ctx = _ctx((("launchctl", "print"), Result(1)))
-    (tmp_path / ".config" / "colima" / "default").mkdir(parents=True)
-    (tmp_path / ".config" / "colima" / "default" / "colima.yaml").write_text("cpu: 5\n")
+    vm_dir = tmp_path / ".config" / "colima" / "default"
+    vm_dir.mkdir(parents=True)
+    (vm_dir / "colima.yaml").write_text("cpu: 5\n", encoding="utf-8")
     col.Colima().configure(ctx)  # the fake `sudo tee` writes nothing; write the file by hand
     plist = tmp_path / "LaunchDaemons" / f"{col.SOCKET_LABEL}.plist"
     plist.parent.mkdir(parents=True)
@@ -279,5 +281,132 @@ def test_socket_daemon_current_is_a_read_only_probe(tmp_path: Path) -> None:
     assert col.socket_daemon_current(probe) is True
     assert not any(c[0] == "sudo" for c in _calls(probe))
     assert col.socket_daemon_current(_ctx((("launchctl", "print"), Result(1)))) is False
-    plist.write_text(plist.read_text(encoding="utf-8").replace("-sf", "-s"), encoding="utf-8")
+    plist.write_text(plist.read_text(encoding="utf-8").replace("-shf", "-sf"), encoding="utf-8")
     assert col.socket_daemon_current(_ctx(loaded)) is False
+
+
+# ── fix round 1: one Colima home for the shell and brew services ─────────────
+def _service_view(monkeypatch: pytest.MonkeyPatch) -> Path:
+    """What Colima resolves under launchd (no XDG_CONFIG_HOME, no COLIMA_HOME)."""
+    with monkeypatch.context() as m:
+        m.delenv("XDG_CONFIG_HOME", raising=False)
+        m.delenv("COLIMA_HOME", raising=False)
+        return col.colima_home()
+
+
+def test_default_home_is_the_same_under_brew_services(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = col.ensure_colima_home()
+    assert home == tmp_path / ".config" / "colima"
+    assert _service_view(monkeypatch) == home == col.service_colima_home()
+
+
+def test_custom_xdg_pins_dot_colima(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    home = col.ensure_colima_home()
+    assert home == tmp_path / ".colima"
+    assert not (tmp_path / "xdg" / "colima").exists()
+    assert col.colima_home() == home == _service_view(monkeypatch)
+
+
+def test_unset_colima_home_dir_pins_dot_colima(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COLIMA_HOME", str(tmp_path / "ch"))  # not created yet
+    home = col.ensure_colima_home()
+    assert home == tmp_path / ".colima"
+    assert col.colima_home() == home == _service_view(monkeypatch)
+
+
+def test_an_existing_colima_home_elsewhere_needs_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "ch").mkdir()
+    monkeypatch.setenv("COLIMA_HOME", str(tmp_path / "ch"))
+    with pytest.raises(NeedsUser, match="brew services"):
+        col.ensure_colima_home()
+
+
+def test_colima_home_equal_to_the_service_home_is_fine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".colima").mkdir()
+    monkeypatch.setenv("COLIMA_HOME", str(tmp_path / ".colima"))
+    assert col.ensure_colima_home() == tmp_path / ".colima"
+
+
+def test_an_existing_vm_under_a_custom_xdg_needs_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "xdg" / "colima").mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    with pytest.raises(NeedsUser, match="mv"):
+        col.ensure_colima_home()
+    assert not (tmp_path / ".colima").exists()
+
+
+def test_configure_refuses_a_split_home_before_any_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "ch").mkdir()
+    monkeypatch.setenv("COLIMA_HOME", str(tmp_path / "ch"))
+    ctx = _ctx(*SIZE)
+    with pytest.raises(NeedsUser):
+        col.Colima().configure(ctx)
+    assert _calls(ctx) == []
+
+
+# ── fix round 1: least privilege and checked results ─────────────────────────
+def test_release_socket_without_a_daemon_or_link_never_sudos() -> None:
+    ctx = _ctx((("launchctl", "print"), Result(1)))
+    col.Colima().release_socket(ctx)
+    assert not any(c[0] == "sudo" for c in _calls(ctx))
+
+
+def test_a_root_owned_docker_config_needs_the_user(tmp_path: Path) -> None:
+    cfg = tmp_path / ".docker" / "config.json"
+    cfg.parent.mkdir()
+    cfg.write_text("{}", encoding="utf-8")
+    cfg.chmod(0o444)
+    ctx = _ctx()
+    try:
+        with pytest.raises(NeedsUser, match="config.json"):
+            col.Colima().install(ctx)
+    finally:
+        cfg.chmod(0o644)
+    assert not any(c[:2] == ["sudo", "tee"] for c in _calls(ctx))
+
+
+def _warnings(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    seen: list[str] = []
+    monkeypatch.setattr(log, "warn", seen.append)
+    return seen
+
+
+def test_a_failed_first_stop_is_warned(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _warnings(monkeypatch)
+    ctx = _ctx(*SIZE, (("colima", "stop"), Result(1)), (("launchctl", "print"), Result(1)))
+    col.Colima().configure(ctx)
+    assert any("colima stop" in w for w in seen)
+
+
+def test_a_failed_link_is_warned(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _warnings(monkeypatch)
+    col.Colima().install(_ctx((("link", "--overwrite"), Result(1))))
+    assert any("brew link" in w for w in seen)
+
+
+def test_rosetta_unavailable_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(log, "info", seen.append)
+    col.Colima().start_args(_ctx(*SIZE, (("-x86_64",), Result(1))))
+    assert any("qemu" in m for m in seen)
+
+
+def test_merge_daemon_config_keeps_the_file_mode(tmp_path: Path) -> None:
+    p = _yaml(tmp_path, "cpu: 5\n")
+    p.chmod(0o640)
+    assert col.Colima().merge_daemon_config(_ctx(), GC) is True
+    assert p.stat().st_mode & 0o777 == 0o640
+    assert [f.name for f in p.parent.iterdir()] == ["colima.yaml"]  # no temp file left
