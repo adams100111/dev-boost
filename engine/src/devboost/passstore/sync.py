@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import shlex
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -40,7 +41,9 @@ class SyncResult:
 
 class _State(BaseModel):
     notified: list[str] = []
-    push_failed_head: str = ""
+    # HEAD a failure was last announced at; None = nothing outstanding (HEAD may be "").
+    push_failed_head: str | None = None
+    conflict_head: str | None = None
     pull_failing: bool = False
     last_sync: str = ""
 
@@ -53,8 +56,14 @@ def hook_script(bin_: str) -> str:
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARK} — push each commit in the background; all logic lives in devboost.\n"
-        f'"{bin_}" pass sync --push-only --quiet </dev/null >/dev/null 2>&1 &\n'
+        f"{shlex.quote(bin_)} pass sync --push-only --quiet </dev/null >/dev/null 2>&1 &\n"
     )
+
+
+def _systemd_quote(arg: str) -> str:
+    """One ExecStart word: double-quoted, with systemd's `\\`, `"`, `%` and `$` escaped."""
+    escaped = arg.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    return '"' + escaped.replace("$", "$$") + '"'
 
 
 def _hook_path(store: Store) -> Path:
@@ -84,7 +93,7 @@ def install_hook(store: Store, bin_: str) -> bool:
 
 def service_unit(bin_: str) -> str:
     return ("[Unit]\nDescription=devboost pass store sync\n\n[Service]\nType=oneshot\n"
-            f"ExecStart={bin_} pass sync --quiet\n")
+            f"ExecStart={_systemd_quote(bin_)} pass sync --quiet\n")
 
 
 def timer_unit() -> str:
@@ -120,8 +129,8 @@ def _load() -> _State:
         return _State()
     try:
         return _State.model_validate_json(p.read_text(encoding="utf-8"))
-    except ValidationError:
-        return _State()
+    except (ValidationError, OSError, UnicodeDecodeError):
+        return _State()  # unreadable state only costs a repeated notice; never raise
 
 
 def _save(state: _State) -> None:
@@ -160,10 +169,12 @@ def last_sync() -> str:
 
 
 def _notify_pending(ctx: Ctx, store: Store, device: str, state: _State) -> None:
+    pending = {f"{r.name}:{r.fingerprint}": r for r in store.records("pending")}
+    # Forget requests that were approved or withdrawn, so a re-request is announced again.
+    state.notified = [k for k in state.notified if k in pending]
     if not enroll.is_workstation(enroll.local_access(ctx, store, device)):
         return  # only workstations can approve, so only they are asked
-    for rec in store.records("pending"):
-        key = f"{rec.name}:{rec.fingerprint}"
+    for key, rec in pending.items():
         if key in state.notified:
             continue
         notify.native(ctx, f"pass: {rec.name} wants access",
@@ -177,13 +188,17 @@ def _pull(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
     res = git.pull(ctx, store.root)
     if res.ok:
         state.pull_failing = False
+        state.conflict_head = None
         return None
     files = git.conflicted(ctx, store.root)
     if files:
         git.abort_rebase(ctx, store.root)
-        _log(f"conflict in {', '.join(files)} — rebase aborted")
-        notify.native(ctx, "pass sync: conflict",
-                      f"Conflict in {', '.join(files)}. Run: devboost pass sync --resolve")
+        head = git.head(ctx, store.root)
+        _log(f"conflict in {', '.join(files)} at {head} — rebase aborted")
+        if state.conflict_head != head:
+            notify.native(ctx, "pass sync: conflict",
+                          f"Conflict in {', '.join(files)}. Run: devboost pass sync --resolve")
+            state.conflict_head = head
         return SyncResult("conflict", ", ".join(files))
     _log(f"pull failed (exit {res.code})")
     if not state.pull_failing:
@@ -205,7 +220,7 @@ def _push(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
                               f"git push failed (exit {res.code}); will retry")
                 state.push_failed_head = head
             return SyncResult("push-failed", f"exit {res.code}")
-    state.push_failed_head = ""
+    state.push_failed_head = None
     return None
 
 
@@ -213,6 +228,10 @@ def _sync(ctx: Ctx, store: Store, device: str, state: _State, push_only: bool) -
     if not push_only:
         failed = _pull(ctx, store, state)
         if failed is not None:
+            if failed.status == "pull-failed":
+                # Still push: a store whose first push never landed has no remote branch,
+                # so every pull fails until something is pushed.
+                _push(ctx, store, state)
             return failed
     failed = _push(ctx, store, state)
     if failed is not None:

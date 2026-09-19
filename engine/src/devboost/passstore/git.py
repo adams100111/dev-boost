@@ -58,7 +58,11 @@ def commit(ctx: Ctx, store: Path, message: str) -> bool:
 
 
 def ahead(ctx: Ctx, store: Path) -> int:
-    out = _lines(_git(ctx, store, "rev-list", "--count", "@{u}..HEAD"))
+    """Commits to push. No upstream yet (the first push never landed) → those on no remote."""
+    res = _git(ctx, store, "rev-list", "--count", "@{u}..HEAD")
+    if not res.ok:
+        res = _git(ctx, store, "rev-list", "--count", "HEAD", "--not", "--remotes=origin")
+    out = _lines(res)
     return int(out[0]) if out and out[0].isdigit() else 0
 
 

@@ -69,6 +69,16 @@ def test_ahead_and_conflicted_parse_output() -> None:
     assert git.ahead(_ctx(RuleExecutor(rules=[(("rev-list",), Result(128))])), S) == 0
 
 
+def test_ahead_without_upstream_counts_commits_on_no_remote() -> None:
+    ex = RuleExecutor(rules=[
+        (("rev-list", "@{u}..HEAD"), Result(128)),
+        (("rev-list", "--remotes=origin"), Result(0, "2\n")),
+    ])
+    assert git.ahead(_ctx(ex), S) == 2
+    assert ex.calls[-1] == ["git", "-C", str(S), "rev-list", "--count", "HEAD", "--not",
+                            "--remotes=origin"]
+
+
 def test_history_queries() -> None:
     ex = RuleExecutor(rules=[
         (("-SAAAA",), Result(0, "c1\nc2\n")),

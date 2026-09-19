@@ -55,10 +55,17 @@ def test_hook_is_a_logic_free_stub_and_idempotent(tmp_path: Path) -> None:
     text = hook.read_text(encoding="utf-8")
     assert text.startswith("#!/bin/sh\n") and sync.HOOK_MARK in text
     assert len(text.splitlines()) == 3
-    assert '"/bin/devboost" pass sync --push-only --quiet' in text and text.rstrip().endswith("&")
+    assert "\n/bin/devboost pass sync --push-only --quiet" in text
+    assert text.rstrip().endswith("&")
     assert hook.stat().st_mode & 0o111
     assert sync.install_hook(s, "/bin/devboost") is False
     assert sync.hook_installed(s)
+
+
+def test_hook_and_unit_quote_paths_with_spaces() -> None:
+    assert "\n'/opt/my apps/devboost' pass sync" in sync.hook_script("/opt/my apps/devboost")
+    unit = sync.service_unit('/opt/my apps/a"b$c%d')
+    assert 'ExecStart="/opt/my apps/a\\"b$$c%%d" pass sync --quiet' in unit
 
 
 def test_foreign_hook_is_backed_up(tmp_path: Path) -> None:
@@ -71,7 +78,7 @@ def test_foreign_hook_is_backed_up(tmp_path: Path) -> None:
 
 
 def test_units_content() -> None:
-    assert "ExecStart=/bin/devboost pass sync --quiet" in sync.service_unit("/bin/devboost")
+    assert 'ExecStart="/bin/devboost" pass sync --quiet' in sync.service_unit("/bin/devboost")
     t = sync.timer_unit()
     assert "OnCalendar=*:0/15" in t and "Persistent=true" in t and "WantedBy=timers.target" in t
 
@@ -176,3 +183,88 @@ def test_resolve_guidance_lists_registry_fingerprints(tmp_path: Path) -> None:
     s.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_ME, os="fedora"), "K")
     text = sync.resolve_guidance(_ctx(_ex()), s)
     assert FP_ME in text and f"pass init {FP_ME}" in text and "git rebase --continue" in text
+
+
+PUSH = ("push", "--quiet", "--set-upstream", "origin", "HEAD")
+
+
+def _pushed(ex: RuleExecutor, s: Store) -> bool:
+    return ["git", "-C", str(s.root), *PUSH] in ex.calls
+
+
+def _state(tmp_path: Path) -> str:
+    return (tmp_path / "state" / "devboost" / "pass-sync.json").read_text(encoding="utf-8")
+
+
+def test_push_only_without_upstream_pushes_commits_on_no_remote(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    ex = _ex((("rev-list", "@{u}..HEAD"), Result(128)),
+             (("rev-list", "--remotes=origin"), Result(0, "1\n")))
+    assert sync.run(_ctx(ex), s, "desk", push_only=True).status == "ok"
+    assert _pushed(ex, s)
+
+
+def test_failed_pull_without_conflict_still_pushes(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    ex = _ex((("pull",), Result(1)), (("rev-list", "@{u}..HEAD"), Result(128)),
+             (("rev-list", "--remotes=origin"), Result(0, "1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "pull-failed"
+    assert _pushed(ex, s)
+
+
+def test_conflict_notifies_once_per_head(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    ex = _ex((("pull",), Result(1)), (("--diff-filter=U",), Result(0, ".gpg-id\n")),
+             (("rev-parse",), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "conflict"
+    assert sync.run(_ctx(ex), s, "desk").status == "conflict"
+    assert len(_notifications(ex)) == 1
+    ex.rules[2] = (("rev-parse",), Result(0, "h2\n"))
+    sync.run(_ctx(ex), s, "desk")
+    assert len(_notifications(ex)) == 2
+
+
+def test_recovered_pull_rearms_the_notice(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    ex = _ex((("pull",), Result(1)))
+    assert sync.run(_ctx(ex), s, "desk").status == "pull-failed"
+    ex.rules[0] = (("pull",), Result(0))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    assert '"pull_failing": false' in _state(tmp_path)
+    ex.rules[0] = (("pull",), Result(1))
+    sync.run(_ctx(ex), s, "desk")
+    assert len(_notifications(ex)) == 2
+
+
+def test_successful_push_clears_failed_head(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    ex = _ex((("push",), Result(1)), (("rev-list",), Result(0, "1\n")),
+             (("rev-parse",), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "push-failed"
+    ex.rules[0] = (("push",), Result(0))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    assert '"push_failed_head": null' in _state(tmp_path)
+    ex.rules[0] = (("push",), Result(1))
+    sync.run(_ctx(ex), s, "desk")
+    assert len(_notifications(ex)) == 2
+
+
+def test_notified_prunes_requests_no_longer_pending(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    rec = DeviceRecord(name="lap", fingerprint=FP_NEW, os="ubuntu")
+    s.write_record("pending", rec, "K")
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")
+    s.record_path("pending", "lap").unlink()
+    sync.run(_ctx(ex), s, "desk")
+    assert "lap:" not in _state(tmp_path)
+    s.write_record("pending", rec, "K")
+    sync.run(_ctx(ex), s, "desk")
+    assert len(_notifications(ex)) == 2
+
+
+def test_unreadable_state_does_not_raise(tmp_path: Path) -> None:
+    state = tmp_path / "state" / "devboost" / "pass-sync.json"
+    state.parent.mkdir(parents=True)
+    state.write_bytes(b"\xff\xfe not json")
+    assert sync.run(_ctx(_ex()), _store(tmp_path), "desk").status == "ok"
