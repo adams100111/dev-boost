@@ -85,8 +85,7 @@ class VoxEx(RuleExecutor):
         rest = args[1:]
         if rest[:2] == ["setup", "--download"] and res.ok:
             name = rest[rest.index("--model") + 1]
-            vox.model_file(name).parent.mkdir(parents=True, exist_ok=True)
-            vox.model_file(name).write_bytes(_fake_model(name))
+            _download_to(env, name)
         elif rest == ["setup", "app-bundle"]:
             _write_bundle(self.version)
         elif rest == ["--version"]:
@@ -94,6 +93,14 @@ class VoxEx(RuleExecutor):
                 return Result(0, f"voxtype {self.version}\n")
             return Result(127, "", "no such file")
         return res
+
+
+def _download_to(env: Mapping[str, str] | None, name: str) -> None:
+    """Where voxtype writes a model: $XDG_DATA_HOME/voxtype/models (the env it was given)."""
+    base = Path(env["XDG_DATA_HOME"]) if env and "XDG_DATA_HOME" in env else None
+    target = (base / "voxtype" / "models" / f"ggml-{name}.bin") if base else vox.model_file(name)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(_fake_model(name))
 
 
 def _scripts(ex: FakeExecutor) -> list[str]:
@@ -109,12 +116,37 @@ def test_model_paths_follow_xdg_data_home(tmp_path: Path) -> None:
     )
 
 
-def test_model_download_is_skipped_when_present() -> None:
+def test_model_download_is_skipped_when_present_and_verified() -> None:
     vox.model_file("small.en").parent.mkdir(parents=True)
-    vox.model_file("small.en").touch()
+    vox.model_file("small.en").write_bytes(_fake_model("small.en"))
     ex = FakeExecutor()
     vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
     assert ex.calls == []
+
+
+def test_a_model_on_disk_that_fails_its_hash_is_downloaded_again() -> None:
+    vox.model_file("small.en").parent.mkdir(parents=True)
+    vox.model_file("small.en").write_bytes(b"truncated by a Ctrl-C")
+    ex = VoxEx()
+    vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
+    assert sum(c[1:3] == ["setup", "--download"] for c in ex.calls) == 1
+    assert vox.model_file("small.en").read_bytes() == _fake_model("small.en")
+
+
+def test_a_model_without_a_pinned_hash_is_refused() -> None:
+    ex = VoxEx()
+    with pytest.raises(InstallError, match="no pinned sha256"):
+        vox.download_model(Ctx(os=MAC, ex=ex), "medium.en")
+    assert ex.calls == []
+
+
+def test_the_model_is_renamed_into_place_only_after_its_hash_matches() -> None:
+    ex = VoxEx()
+    vox.download_model(Ctx(os=MAC, ex=ex), "small.en")
+    staging = Path(ex.envs[-1]["XDG_DATA_HOME"])
+    assert staging.parent == vox.models_dir()  # same filesystem: the rename is atomic
+    assert not staging.exists()  # the private download dir is gone
+    assert vox.model_file("small.en").read_bytes() == _fake_model("small.en")
 
 
 def test_a_downloaded_model_must_match_its_pinned_sha256(
@@ -123,7 +155,8 @@ def test_a_downloaded_model_must_match_its_pinned_sha256(
     monkeypatch.setattr(vox, "MODEL_SHA256", {"small.en": "0" * 64})
     with pytest.raises(InstallError, match="sha256"):
         vox.download_model(Ctx(os=MAC, ex=VoxEx()), "small.en")
-    assert not vox.model_file("small.en").exists()  # the bad file is not left to "verify"
+    assert not vox.model_file("small.en").exists()  # never moved into place
+    assert list(vox.models_dir().iterdir()) == []  # and the download dir is removed
 
 
 def test_a_model_missing_after_download_fails() -> None:

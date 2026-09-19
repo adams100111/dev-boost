@@ -67,8 +67,8 @@ def test_arabic_dictation_binding_only_with_the_marker(tmp_path: Path) -> None:
     marker.parent.mkdir(parents=True)
     marker.touch()
     assert _main(tmp_path)["ctrl-alt-d"] == (
-        f"exec-and-forget {tmp_path}/.local/bin/voxtype record toggle --model large-v3-turbo"
-    )  # the pinned binary (voxtype.bin_path), not a Homebrew one
+        'exec-and-forget "$HOME/.local/bin/voxtype" record toggle --model large-v3-turbo'
+    )  # the pinned binary (voxtype.bin_path), quoted for bash; never a Homebrew one
 
 
 def test_macos_apply_writes_the_aerospace_config(chezmoi_apply: Apply) -> None:

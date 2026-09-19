@@ -37,7 +37,13 @@ from devboost.core.settings import settings
 from devboost.exec.primitives import pkg
 from devboost.media.catalog import ReleaseAsset, voxtype_pin
 from devboost.model import Ctx, Module, TccGrant
-from devboost.modules.shell import Dotfiles
+from devboost.modules import _credentials
+from devboost.modules.shell import (
+    _TAKEN_OVER_CONFIGS,
+    Dotfiles,
+    back_up_taken_over,
+    record_rc_digest,
+)
 
 MODEL = "small.en"
 ARABIC_MODEL = "large-v3-turbo"
@@ -97,26 +103,42 @@ def _sha256(path: Path) -> str:
 
 
 def download_model(ctx: Ctx, name: str) -> None:
-    """Fetch *name* with voxtype, then hold it to its pinned SHA-256 (skipped if present)."""
-    path = model_file(name)
-    if path.exists():
-        return
-    # voxtype falls back to a legacy ~/Library/Application Support/voxtype when the XDG
-    # dir does not exist yet; creating it first keeps the models where model_file() looks.
-    models_dir().mkdir(parents=True, exist_ok=True)
-    res = ctx.ex.run([_exe(ctx), "setup", "--download", "--model", name, "--quiet"])
-    if not res.ok:
-        raise InstallError("voxtype", f"voxtype setup --download --model {name}", res.code)
-    if not path.is_file():
-        raise InstallError(
-            "voxtype", f"model {name}: not found at {path} after the download", 1
-        )
+    """Fetch *name* with voxtype and hold it to its pinned SHA-256.
+
+    A model already on disk is re-hashed, and fetched again when it does not match (an
+    interrupted run, or a file some other tool left). The download goes to a private
+    directory next to the models (voxtype honours an absolute ``XDG_DATA_HOME``) and is
+    renamed into place only after the hash matches, so a daemon never loads an unverified
+    file. A name with no pinned digest is refused.
+    """
     want = MODEL_SHA256.get(name)
     if want is None:
-        return
-    if _sha256(path) != want:
+        raise InstallError("voxtype", f"model {name}: no pinned sha256, refusing it", 1)
+    path = model_file(name)
+    if path.is_file():
+        if _sha256(path) == want:
+            return
+        log.warn(f"voxtype: {path} does not match its pinned sha256 — downloading it again")
         path.unlink()
-        raise InstallError("voxtype", f"model {name}: sha256 mismatch, file removed", 1)
+    # voxtype falls back to a legacy ~/Library/Application Support/voxtype when the XDG
+    # dir does not exist yet; creating it keeps the daemon reading where model_file() looks.
+    models_dir().mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix=".devboost-download-", dir=models_dir()))
+    try:
+        res = ctx.ex.run([_exe(ctx), "setup", "--download", "--model", name, "--quiet"],
+                         env={"XDG_DATA_HOME": str(tmp)})
+        if not res.ok:
+            raise InstallError("voxtype", f"voxtype setup --download --model {name}", res.code)
+        got = tmp / "voxtype" / "models" / path.name
+        if not got.is_file():
+            raise InstallError(
+                "voxtype", f"model {name}: not found at {got} after the download", 1
+            )
+        if _sha256(got) != want:
+            raise InstallError("voxtype", f"model {name}: sha256 mismatch, file removed", 1)
+        os.replace(got, path)  # same filesystem: atomic
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # --- verified downloads (both OSes) -------------------------------------------------------
@@ -305,18 +327,53 @@ def arabic_marker() -> Path:
     return _home() / ".config" / "devboost" / "voxtype-arabic"
 
 
+#: The shared config, relative to HOME (a key of shell._TAKEN_OVER_CONFIGS).
+_CONFIG_REL = ".config/voxtype/config.toml"
+
+
 def _config_file() -> Path:
-    return _home() / ".config" / "voxtype" / "config.toml"
+    return _home() / _CONFIG_REL
+
+
+def _restart_marker() -> Path:
+    """Present while the running daemon still has the old config (verify reads it)."""
+    base = os.environ.get("XDG_STATE_HOME") or str(_home() / ".local" / "state")
+    return Path(base) / "devboost" / "voxtype-restart-pending"
 
 
 def _restart_daemon(ctx: Ctx) -> None:
+    """Load the new config: clears the pending marker, or raises NeedsUser.
+
+    macOS relaunches the Login Item app only when a human is at the terminal: the quit is
+    an Apple event (it may raise an Automation prompt) and `open` launches an app (M5-D6).
+    """
+    ok = True
     if ctx.os.family == "macos":
-        ctx.ex.run(["osascript", "-e", f'tell application id "{BUNDLE_ID}" to quit'])
-        ctx.ex.run(["open", "-g", "-b", BUNDLE_ID])
-        if ctx.ex.which("aerospace"):
-            ctx.ex.run(["aerospace", "reload-config"])
+        if ctx.ex.which("aerospace") and not ctx.ex.run(["aerospace", "reload-config"]).ok:
+            log.warn("voxtype-arabic: `aerospace reload-config` failed — Ctrl+Alt+D is not "
+                     "bound until AeroSpace reloads its config")
+        if not _credentials.is_interactive():
+            raise NeedsUser(
+                "Voxtype must restart to load the Arabic model config",
+                "quit Voxtype and reopen /Applications/Voxtype.app, or re-run "
+                "`devboost install voxtype-arabic` in a terminal",
+            )
+        quit_ = ctx.ex.run(["osascript", "-e", f'tell application id "{BUNDLE_ID}" to quit'])
+        if not quit_.ok:
+            ok = False
+            log.warn(f"voxtype-arabic: could not quit Voxtype ({quit_.stderr.strip()})")
+        if not ctx.ex.run(["open", "-g", "-b", BUNDLE_ID]).ok:
+            ok = False
+            log.warn("voxtype-arabic: could not reopen Voxtype.app")
+        fix = "quit Voxtype and reopen /Applications/Voxtype.app"
     else:
-        ctx.ex.run(["systemctl", "--user", "restart", "voxtype.service"])
+        if not ctx.ex.run(["systemctl", "--user", "restart", "voxtype.service"]).ok:
+            ok = False
+            log.warn("voxtype-arabic: `systemctl --user restart voxtype.service` failed")
+        fix = "run `systemctl --user restart voxtype.service`"
+    if not ok:
+        raise NeedsUser("Voxtype did not restart with the Arabic model config", fix)
+    _restart_marker().unlink(missing_ok=True)
 
 
 @register
@@ -336,10 +393,13 @@ class VoxtypeArabic(Module):
             and model_file(ARABIC_MODEL).exists()
             and cfg.is_file()
             and f'secondary_model = "{ARABIC_MODEL}"' in cfg.read_text(encoding="utf-8")
+            and not _restart_marker().exists()
         )
 
     def install(self, ctx: Ctx) -> None:
-        if not ctx.ex.which("voxtype"):
+        # macOS: the pinned binary itself (a leftover brew 0.7.5 on PATH does not count).
+        present = bin_path().exists() if ctx.os.family == "macos" else ctx.ex.which("voxtype")
+        if not present:
             raise NeedsUser(
                 "Voxtype is not installed",
                 "install it first — `devboost install voxtype` (Omarchy: menu → Install → "
@@ -351,17 +411,45 @@ class VoxtypeArabic(Module):
         marker = arabic_marker()
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
+        if ctx.os.distro == "omarchy":
+            self._omarchy(ctx)
+            return
+        home, src = _home(), settings.root / "dotfiles"
+        # Same rule as the dotfiles module: a config the user changed is kept as
+        # config.toml.pre-devboost before the forced apply replaces it.
+        back_up_taken_over(home, src, {_CONFIG_REL: _TAKEN_OVER_CONFIGS[_CONFIG_REL]},
+                           self.name)
         targets = [str(_config_file())]
         if ctx.os.family == "macos":
-            targets.append(str(_home() / ".config" / "aerospace" / "aerospace.toml"))
+            targets.append(str(home / ".config" / "aerospace" / "aerospace.toml"))
         # --parent-dirs: a targeted apply fails when a target's directory does not exist yet
         # (`stat …/.config/aerospace: no such file or directory`, chezmoi 2.72).
         res = ctx.ex.run([
             "chezmoi", "apply", "--force", "--parent-dirs",
-            "--source", str(settings.root / "dotfiles"), "--destination", str(_home()),
-            *targets,
+            "--source", str(src), "--destination", str(home), *targets,
         ])
         if not res.ok:
             raise InstallError("voxtype-arabic", "chezmoi apply (voxtype/aerospace config)",
                                res.code)
+        try:
+            record_rc_digest(home, _CONFIG_REL)  # what dev-boost wrote, for the next backup
+        except OSError as exc:
+            log.warn(f"voxtype-arabic: could not record the config digest ({exc})")
+        restart = _restart_marker()
+        restart.parent.mkdir(parents=True, exist_ok=True)
+        restart.touch()
         _restart_daemon(ctx)
+
+    @staticmethod
+    def _omarchy(ctx: Ctx) -> None:
+        """Omarchy owns ~/.config/voxtype (`.chezmoiignore`): never rewrite it, say how."""
+        cfg = _config_file()
+        if cfg.is_file() and f'secondary_model = "{ARABIC_MODEL}"' in cfg.read_text(
+            encoding="utf-8"
+        ):
+            return
+        raise NeedsUser(
+            "Omarchy manages ~/.config/voxtype/config.toml, so dev-boost leaves it alone",
+            f'add `secondary_model = "{ARABIC_MODEL}"` and `cold_model_timeout_secs = 60` '
+            "under [whisper] in that file, then restart Voxtype from the Omarchy menu",
+        )
