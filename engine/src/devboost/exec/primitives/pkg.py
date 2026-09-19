@@ -264,7 +264,12 @@ class Brew:
             raise InstallError("brew", f"brew upgrade --cask {' '.join(casks)}", res.code)
 
     def cask_auto_updates(self, ctx: Ctx, cask: str) -> bool:
-        """True when the cask declares ``auto_updates`` (the app updates itself)."""
+        """True when the cask declares ``auto_updates`` (the app updates itself).
+
+        Any failure (brew exits non-zero, unparsable JSON, no such cask) answers False:
+        the caller then runs `brew upgrade --cask`, which at worst re-downloads an app
+        that would have updated itself — safer than silently never upgrading it.
+        """
         res = self._brew(ctx, "info", "--json=v2", "--cask", cask)
         if not res.ok:
             return False

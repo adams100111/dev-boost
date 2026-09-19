@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -57,8 +61,37 @@ def ts_cli() -> Path:
     return Path(os.environ["HOME"]) / ".local" / "bin" / "tailscale"
 
 
+@contextmanager
+def _auth_key_file(key: str) -> Iterator[str]:
+    """The auth key as a ``--auth-key`` value that keeps it off argv (``ps`` shows argv).
+
+    The key goes to a 0600 file in a private (0700) temp dir, removed afterwards; the
+    Tailscale CLI documents ``--auth-key=file:<path>`` as "a path to a file containing the
+    auth key". The CLI reads it itself, before it talks to the daemon, so the file is the
+    invoking user's even when `tailscale up` runs under sudo (root can read it).
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="devboost-tailscale-"))
+    try:
+        path = tmp / "authkey"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key)
+        yield f"--auth-key=file:{path}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _ts_app_running(ctx: Ctx) -> bool:
+    """Whether the Tailscale app is running. On macOS the CLI is the app binary, so
+    `status` against a stopped app may start the GUI — a probe must never do that."""
+    return ctx.ex.run(["pgrep", "-x", "Tailscale"]).ok
+
+
 def _ts_state(ctx: Ctx) -> str:
-    """BackendState from `tailscale status --json` ("Running", "NeedsLogin", …); "" if none."""
+    """BackendState from `tailscale status --json` ("Running", "NeedsLogin", …); "" if none
+    — also when the app is not running, which is never started just to ask."""
+    if not _ts_app_running(ctx):
+        return ""
     res = ctx.ex.run([str(ts_cli()), "status", "--json"])
     try:
         data = json.loads(res.stdout) if res.stdout.strip() else None
@@ -117,7 +150,9 @@ class _TailscaleMac:
             return
         key = _secret(ctx, "TAILSCALE_AUTHKEY")
         if key and state == "NeedsLogin":
-            if ctx.ex.run([str(cli), "up", f"--authkey={key}"]).ok:
+            with _auth_key_file(key) as auth_arg:
+                joined = ctx.ex.run([str(cli), "up", auth_arg]).ok
+            if joined:
                 return
             raise NeedsUser(
                 "the TAILSCALE_AUTHKEY in the secrets bundle was rejected (expired or revoked)",
@@ -162,6 +197,17 @@ class Tailscale(Module):
             return s.verify(ctx)
         return ctx.ex.which("tailscale")
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "macos":
+            return super().sudo_needed(ctx)
+        # Only the .pkg cask needs root: when it is not installed and no app is there,
+        # or, under --force, when brew would upgrade it. Connecting and approving never
+        # need a password, so an installed-but-unapproved Tailscale does not ask for one.
+        managed = _TS_CASK.verify(ctx)
+        if ctx.force and managed:
+            return True
+        return not managed and not _TS_APP.is_dir()
+
     def install(self, ctx: Ctx) -> None:
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
@@ -173,7 +219,8 @@ class Tailscale(Module):
         # the one-time interactive `tailscale up` to the operator — never block install.
         key = _secret(ctx, "TAILSCALE_AUTHKEY")
         if key:
-            ctx.ex.run(["tailscale", "up", "--ssh", f"--authkey={key}"], sudo=True)
+            with _auth_key_file(key) as auth_arg:
+                ctx.ex.run(["tailscale", "up", "--ssh", auth_arg], sudo=True)
         else:
             log.warn(
                 "tailscale: no TAILSCALE_AUTHKEY in secrets — "

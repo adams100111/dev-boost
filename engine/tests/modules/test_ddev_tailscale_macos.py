@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -172,16 +174,87 @@ def test_tailscale_asks_for_sudo_up_front_on_macos() -> None:
     assert Tailscale.needs_sudo_on_macos is True
 
 
+def _record_key_files(
+    ex: Scripted, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[Path, str, int, int]]:
+    """While each call runs, read any `--auth-key=file:` it names: (path, text, file mode,
+    dir mode). The file only exists during the call."""
+    seen: list[tuple[Path, str, int, int]] = []
+    real = ex.run
+
+    def run(argv: Sequence[str], **kw: Any) -> Result:
+        for arg in argv:
+            if arg.startswith("--auth-key=file:"):
+                path = Path(arg.removeprefix("--auth-key=file:"))
+                seen.append((path, path.read_text(encoding="utf-8"),
+                             path.stat().st_mode & 0o777, path.parent.stat().st_mode & 0o777))
+        return real(argv, **kw)
+
+    monkeypatch.setattr(ex, "run", run)
+    return seen
+
+
 def test_tailscale_joins_with_the_bundle_key_as_a_plain_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(server, "_secret", lambda ctx, field: "tskey-abc")
     ex = _tailscale(tmp_path, "NeedsLogin")
+    seen = _record_key_files(ex, monkeypatch)
     Tailscale().install(Ctx(os=MAC, ex=ex))
     cli = str(tmp_path / ".local" / "bin" / "tailscale")
-    assert [cli, "up", "--authkey=tskey-abc"] in ex.calls
+    ups = [c for c in ex.calls if c[:2] == [cli, "up"]]
+    assert len(ups) == 1 and len(ups[0]) == 3 and ups[0][2].startswith("--auth-key=file:")
+    # The key never appears on argv (`ps` shows argv); it sits in a private 0600 file
+    # that is gone once `tailscale up` returns.
+    assert not any("tskey-abc" in arg for c in ex.calls for arg in c)
+    [(path, text, file_mode, dir_mode)] = seen
+    assert (text, file_mode, dir_mode) == ("tskey-abc", 0o600, 0o700)
+    assert not path.exists() and not path.parent.exists()
     assert not any("--ssh" in c for c in ex.calls)
     assert not any(c[0] == "sudo" for c in ex.calls)
+
+
+def test_tailscale_removes_the_key_file_when_up_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "_secret", lambda ctx, field: "tskey-old")
+    ex = _tailscale(tmp_path, "NeedsLogin")
+    seen = _record_key_files(ex, monkeypatch)
+    ex.answers[(str(tmp_path / ".local" / "bin" / "tailscale"), "up")] = Result(1)
+    with pytest.raises(NeedsUser):
+        Tailscale().install(Ctx(os=MAC, ex=ex))
+    [(path, _, _, _)] = seen
+    assert not path.parent.exists()
+
+
+def test_tailscale_verify_never_starts_a_stopped_app(tmp_path: Path) -> None:
+    # On macOS the CLI is the app binary: `status` against a stopped app may launch the GUI.
+    ex = _tailscale(tmp_path, "Running")
+    ex.answers[("pgrep", "-x", "Tailscale")] = Result(1)
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
+    (tmp_path / ".local" / "bin" / "tailscale").write_text("x", encoding="utf-8")
+    assert Tailscale().verify(Ctx(os=MAC, ex=ex)) is False
+    assert not any(c[1:2] == ["status"] for c in ex.calls)
+    assert ["pgrep", "-x", "Tailscale"] in ex.calls
+
+
+def test_tailscale_sudo_needed_only_without_the_app_or_its_cask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Installed but not approved (state NeedsLogin) needs the user, never a password.
+    assert Tailscale().sudo_needed(Ctx(os=MAC, ex=_tailscale(tmp_path, "NeedsLogin"))) is False
+    absent = _tailscale(tmp_path, None, installed=False)
+    assert Tailscale().sudo_needed(Ctx(os=MAC, ex=absent)) is True
+    # --force upgrades a brew-managed .pkg cask, which runs its installer with sudo.
+    forced = Ctx(os=MAC, ex=_tailscale(tmp_path, "Running"), force=True)
+    assert Tailscale().sudo_needed(forced) is True
+    # A hand-installed app is left alone (C-R21), even under --force: no sudo.
+    app = tmp_path / "Tailscale.app"
+    app.mkdir()
+    monkeypatch.setattr(server, "_TS_APP", app)
+    assert Tailscale().sudo_needed(Ctx(os=MAC, ex=absent)) is False
+    hand = _tailscale(tmp_path, "Running", installed=False)
+    assert Tailscale().sudo_needed(Ctx(os=MAC, ex=hand, force=True)) is False
 
 
 def test_tailscale_awaiting_approval_needs_the_user(

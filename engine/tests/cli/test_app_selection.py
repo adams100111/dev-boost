@@ -101,7 +101,7 @@ def test_install_update_forces_run_over_filtered_plan(
     captured_force = False
     captured_names: list[str] = []
 
-    def fake_run_plan(plan, modules, ctx):  # type: ignore[no-untyped-def]
+    def fake_run_plan(plan, modules, ctx, **_):  # type: ignore[no-untyped-def]
         nonlocal captured_force, captured_names
         captured_force = ctx.force
         captured_names = [pm.name for pm in plan]

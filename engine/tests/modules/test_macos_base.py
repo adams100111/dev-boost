@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import build_plan
@@ -35,15 +36,48 @@ LISTING = (
 )
 
 
+#: `softwareupdate --list` as a beta macOS prints it: the beta is the highest number
+#: (27.1), and its "beta 2" would win a naive all-digits comparison against 26.4.
+BETA_LISTING = (
+    "Software Update Tool\n\nFinding available software\n"
+    "Software Update found the following new or updated software:\n"
+    "* Label: Command Line Tools beta 2 for Xcode 27.1-27.1\n"
+    "\tTitle: Command Line Tools beta 2 for Xcode 27.1, Version: 27.1, Size: 915000KiB, "
+    "Recommended: YES, \n"
+    "* Label: Command Line Tools for Xcode 26.4-26.4\n"
+    "\tTitle: Command Line Tools for Xcode 26.4, Version: 26.4, Size: 900000KiB, "
+    "Recommended: YES, \n"
+    "* Label: Command Line Tools for Xcode 26.10-26.10\n"
+    "\tTitle: Command Line Tools for Xcode 26.10, Version: 26.10, Size: 901000KiB, "
+    "Recommended: YES, \n"
+)
+#: The CLT is absent until installed: `xcode-select -p` fails.
+_NO_CLT: dict[tuple[str, ...], Result] = {
+    ("xcode-select", "-p"): Result(
+        2, stderr="xcode-select: error: unable to get active developer directory"
+    ),
+}
+
+
 def test_clt_label_picks_the_newest_command_line_tools() -> None:
     assert clt_label(LISTING) == "Command Line Tools for Xcode 27.0-27.0"
     assert clt_label("No new software available.") is None
 
 
+def test_clt_label_picks_the_highest_non_beta_by_version() -> None:
+    # 26.10 > 26.4 numerically; the 27.1 beta is never picked unasked.
+    assert clt_label(BETA_LISTING) == "Command Line Tools for Xcode 26.10-26.10"
+    only_beta = "* Label: Command Line Tools beta 3 for Xcode 27.1-27.1\n"
+    assert clt_label(only_beta) is None
+
+
 def test_xcode_clt_installs_the_offered_label_and_cleans_up() -> None:
-    ex = Scripted(answers={("softwareupdate", "--list"): Result(0, stdout=LISTING)})
+    ex = Scripted(answers={
+        **_NO_CLT, ("softwareupdate", "--list"): Result(0, stdout=LISTING),
+    })
     XcodeClt().install(Ctx(os=MAC, ex=ex))
     assert ex.calls == [
+        ["xcode-select", "-p"],
         ["sudo", "touch", macos.CLT_PLACEHOLDER],
         ["softwareupdate", "--list"],
         ["sudo", "softwareupdate", "--install", "Command Line Tools for Xcode 27.0-27.0"],
@@ -53,10 +87,45 @@ def test_xcode_clt_installs_the_offered_label_and_cleans_up() -> None:
 
 
 def test_xcode_clt_without_an_offer_needs_the_user() -> None:
-    ex = Scripted(answers={("softwareupdate", "--list"): Result(0, stdout="No new software")})
+    ex = Scripted(answers={
+        **_NO_CLT, ("softwareupdate", "--list"): Result(0, stdout="No new software"),
+    })
     with pytest.raises(NeedsUser, match="xcode-select --install"):
         XcodeClt().install(Ctx(os=MAC, ex=ex))
     assert ex.calls[-1] == ["sudo", "rm", "-f", macos.CLT_PLACEHOLDER]
+
+
+def test_xcode_clt_a_failing_softwareupdate_list_is_an_install_error() -> None:
+    ex = Scripted(answers={**_NO_CLT, ("softwareupdate", "--list"): Result(1)})
+    with pytest.raises(InstallError, match="softwareupdate --list"):
+        XcodeClt().install(Ctx(os=MAC, ex=ex))
+    assert ex.calls[-1] == ["sudo", "rm", "-f", macos.CLT_PLACEHOLDER]
+
+
+def test_xcode_clt_warns_when_the_switch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    ex = Scripted(answers={
+        **_NO_CLT,
+        ("softwareupdate", "--list"): Result(0, stdout=LISTING),
+        ("xcode-select", "--switch"): Result(1),
+    })
+    XcodeClt().install(Ctx(os=MAC, ex=ex))  # the CLT is installed; the switch is advisory
+    assert len(warned) == 1 and "xcode-select --switch" in warned[0]
+    assert ex.calls[-1] == ["sudo", "rm", "-f", macos.CLT_PLACEHOLDER]
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_xcode_clt_install_is_a_no_op_when_present(force: bool) -> None:
+    # --force on a set-up Mac: softwareupdate offers no CLT, which must not block the run.
+    ex = Scripted(answers={("softwareupdate", "--list"): Result(0, stdout="No new software")})
+    XcodeClt().install(Ctx(os=MAC, ex=ex, force=force))
+    assert ex.calls == [["xcode-select", "-p"]]
+
+
+def test_xcode_clt_sudo_needed_only_when_absent() -> None:
+    assert XcodeClt().sudo_needed(Ctx(os=MAC, ex=Scripted(), force=True)) is False
+    assert XcodeClt().sudo_needed(Ctx(os=MAC, ex=Scripted(answers=dict(_NO_CLT)))) is True
 
 
 def test_xcode_clt_verify_asks_xcode_select() -> None:
@@ -78,6 +147,14 @@ def test_homebrew_verify_needs_the_prefix_and_analytics_off() -> None:
     assert Homebrew().verify(Ctx(os=MAC, ex=_brew(prefix="/usr/local"))) is False
     none = Scripted(answers={("brew",): Result(127)})
     assert Homebrew().verify(Ctx(os=MAC, ex=none)) is False
+
+
+def test_homebrew_sudo_needed_only_when_brew_is_absent() -> None:
+    # analytics on is fixed without root: no reason to ask for the password.
+    assert Homebrew().sudo_needed(Ctx(os=MAC, ex=_brew(state="enabled"))) is False
+    assert Homebrew().sudo_needed(Ctx(os=MAC, ex=_brew(), force=True)) is False
+    none = Scripted(answers={("brew",): Result(127)})
+    assert Homebrew().sudo_needed(Ctx(os=MAC, ex=none)) is True
 
 
 def test_existing_homebrew_only_gets_analytics_turned_off() -> None:
@@ -124,11 +201,19 @@ def test_rosetta_from_28_has_nothing_to_install() -> None:
     assert ex.calls == []
 
 
+_NO_ROSETTA: dict[tuple[str, ...], Result] = {
+    ("arch",): Result(1, stderr="Bad CPU type in executable"),
+}
+
+
 def test_rosetta_install_accepts_the_licence_with_sudo() -> None:
-    ex = Scripted()
+    ex = Scripted(answers=dict(_NO_ROSETTA))
     Rosetta().install(Ctx(os=MAC, ex=ex))
-    assert ex.calls == [["sudo", "softwareupdate", "--install-rosetta", "--agree-to-license"]]
-    failing = Scripted(answers={("softwareupdate",): Result(1)})
+    assert ex.calls == [
+        ["arch", "-x86_64", "/usr/bin/true"],
+        ["sudo", "softwareupdate", "--install-rosetta", "--agree-to-license"],
+    ]
+    failing = Scripted(answers={**_NO_ROSETTA, ("softwareupdate",): Result(1)})
     with pytest.raises(InstallError):
         Rosetta().install(Ctx(os=MAC, ex=failing))
 
@@ -142,7 +227,24 @@ def test_intel_only_apps_come_from_system_profiler() -> None:
     ex = Scripted(answers={("system_profiler",): Result(0, stdout=json.dumps(body))})
     assert macos.intel_only_apps(Ctx(os=MAC28, ex=ex)) == ["OldApp"]
     bad = Scripted(answers={("system_profiler",): Result(0, stdout="nope")})
-    assert macos.intel_only_apps(Ctx(os=MAC28, ex=bad)) == []
+    assert macos.intel_only_apps(Ctx(os=MAC28, ex=bad)) is None  # could not list
+    failed = Scripted(answers={("system_profiler",): Result(1)})
+    assert macos.intel_only_apps(Ctx(os=MAC28, ex=failed)) is None
+    empty = Scripted(answers={("system_profiler",): Result(0, stdout='{"x": 1}')})
+    assert macos.intel_only_apps(Ctx(os=MAC28, ex=empty)) == []
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_rosetta_install_is_a_no_op_when_present(force: bool) -> None:
+    ex = Scripted()  # `arch -x86_64 /usr/bin/true` succeeds: Rosetta runs Intel binaries
+    Rosetta().install(Ctx(os=MAC, ex=ex, force=force))
+    assert ex.calls == [["arch", "-x86_64", "/usr/bin/true"]]
+
+
+def test_rosetta_sudo_needed_only_when_absent() -> None:
+    assert Rosetta().sudo_needed(Ctx(os=MAC, ex=Scripted(), force=True)) is False
+    assert Rosetta().sudo_needed(Ctx(os=MAC, ex=Scripted(answers=dict(_NO_ROSETTA)))) is True
+    assert Rosetta().sudo_needed(Ctx(os=MAC28, ex=Scripted(answers=dict(_NO_ROSETTA)))) is False
 
 
 def test_mac_major() -> None:
