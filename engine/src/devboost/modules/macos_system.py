@@ -79,6 +79,15 @@ SOCKETFILTERFW = "/usr/libexec/ApplicationFirewall/socketfilterfw"
 _FW_STATE = re.compile(r"\(State = (\d+)\)")
 
 
+def firewall_marker() -> Path:
+    """Written when macos-firewall turns the firewall on. Nothing else records that the
+    user chose this module (`devboost.lock` lists every registered one), so doctor reads
+    it to tell drift (FAIL) from a firewall the user simply never asked dev-boost for."""
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.environ["HOME"], ".local",
+                                                            "state")
+    return Path(base) / "devboost" / "macos-firewall"
+
+
 def firewall_enabled(ctx: Ctx) -> bool:
     """True when the application firewall is on.
 
@@ -114,6 +123,12 @@ class MacosFirewall(Module):
             raise InstallError(
                 self.name, f"sudo {SOCKETFILTERFW} --setglobalstate on", res.code
             )
+        try:
+            marker = firewall_marker()
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.touch()
+        except OSError as exc:  # bookkeeping only: doctor then warns instead of failing
+            log.warn(f"{self.name}: could not record the firewall marker ({exc})")
 
 
 # --- timemachine-exclusions ---------------------------------------------------------------

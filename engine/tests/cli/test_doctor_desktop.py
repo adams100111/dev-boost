@@ -8,10 +8,13 @@ import pytest
 from devboost.cli import doctor_desktop
 from devboost.cli.doctor import run_checks
 from devboost.cli.doctor_desktop import desktop_checks
+from devboost.core.errors import InstallError
 from devboost.core.macver import macos_version
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
+from devboost.media import catalog
 from devboost.model import Ctx, Module
+from devboost.modules import macos_system
 from tests.passstore.fakes import RuleExecutor
 
 MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
@@ -40,10 +43,53 @@ def test_the_check_names() -> None:
     ]
 
 
-def test_firewall_off_fails() -> None:
+def test_firewall_off_fails_once_devboost_has_turned_it_on() -> None:
+    marker = macos_system.firewall_marker()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()  # macos-firewall ran here: an off firewall now is drift
     off = _checks(RuleExecutor(rules=[FW_OFF]))["firewall"]
     assert off[0] is False and "devboost install macos-firewall" in off[1]
     assert _checks(RuleExecutor(rules=[FW_ON]))["firewall"] == (True, "on")
+
+
+def test_firewall_off_only_warns_when_the_user_never_chose_macos_firewall() -> None:
+    """Minor 7: nothing records the profiles a user picked (devboost.lock lists every
+    registered module), so the signal is macos-firewall's own marker, written when its
+    install succeeds. Without it an off firewall is the user's choice: WARN, not FAIL."""
+    assert not macos_system.firewall_marker().exists()
+    ok, detail = _checks(RuleExecutor(rules=[FW_OFF]))["firewall"]
+    assert ok is True and detail.startswith("WARN") and "macos-firewall" in detail
+
+
+def test_macos_firewall_install_leaves_the_marker() -> None:
+    macos_system.MacosFirewall().install(Ctx(os=MAC, ex=RuleExecutor()))
+    assert macos_system.firewall_marker().is_file()
+
+
+def test_a_failed_firewall_install_leaves_no_marker() -> None:
+    with pytest.raises(InstallError):
+        macos_system.MacosFirewall().install(
+            Ctx(os=MAC, ex=RuleExecutor(rules=[(("--setglobalstate",), Result(1))]))
+        )
+    assert not macos_system.firewall_marker().exists()
+
+
+def test_version_gated_warns_instead_of_crashing_without_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Minor 5: Xcode's supported_on reads catalog.toml (xcode_pin raises MediaError when
+    it is missing); doctor reports that as WARN, never a traceback."""
+
+    class _NoCatalog:
+        catalog_path = tmp_path / "missing" / "catalog.toml"
+
+    monkeypatch.setattr("devboost.media.catalog.settings", _NoCatalog())
+    catalog.xcode_pin.cache_clear()
+    try:
+        ok, detail = _checks(RuleExecutor(rules=[FW_ON]))["version-gated"]
+    finally:
+        catalog.xcode_pin.cache_clear()
+    assert ok is True and detail.startswith("WARN") and "xcode" in detail
 
 
 def test_everything_else_warns_without_failing() -> None:

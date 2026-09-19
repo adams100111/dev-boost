@@ -258,7 +258,8 @@ Automation permission prompt). Open the app, find its menu-bar icon → Settings
   watchers, big monorepos) via a root LaunchDaemon, applied immediately (no reboot
   needed).
 - **`devboost doctor`** reports the desktop's health: firewall (fails the check if it's
-  off — everything else here is informational), FileVault, System Integrity Protection,
+  off after `macos-firewall` turned it on; a WARN if you never installed that module —
+  everything else here is informational), FileVault, System Integrity Protection,
   whether a Time Machine destination is configured, iCloud Desktop & Documents sync (a
   hint to keep repos out of `~/Desktop`/`~/Documents` if it's on — cloud sync fights with
   `node_modules` churn), the battery charge limit (macOS 26.4+, GUI-only, no CLI),

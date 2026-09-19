@@ -1,6 +1,7 @@
 """doctor — the macOS desktop checks (spec §8, desktop half; D22).
 
-Only a disabled firewall fails: dev-boost manages it (macos-firewall). FileVault, SIP,
+Only a disabled firewall fails, and only once macos-firewall has turned it on here (its
+marker): then dev-boost manages it and "off" is drift. Otherwise it is a WARN. FileVault, SIP,
 Time Machine, iCloud Desktop & Documents and the battery charge limit are the user's
 choice, so they are reported as WARN/hint lines that never fail `doctor`. A probe that
 fails is reported as WARN too: doctor must not reassure on a check it could not make.
@@ -11,20 +12,26 @@ fails is reported as WARN too: doctor must not reassure on a check it could not 
 from __future__ import annotations
 
 from devboost.cli.doctor import Check
+from devboost.core.errors import DevbootError
 from devboost.core.macver import macos_version
 from devboost.core.registry import load
 from devboost.exec.primitives import macdefaults, pkg
 from devboost.exec.primitives.macdefaults import Value
 from devboost.model import Ctx
-from devboost.modules.macos_system import firewall_enabled
+from devboost.modules.macos_system import firewall_enabled, firewall_marker
 
 #: The first macOS with a battery charge limit (System Settings → Battery → Charging).
 _CHARGE_LIMIT_SINCE = (26, 4)
 
 
 def _firewall(ctx: Ctx) -> Check:
-    on = firewall_enabled(ctx)
-    return Check("firewall", on, "on" if on else "off — run `devboost install macos-firewall`")
+    if firewall_enabled(ctx):
+        return Check("firewall", True, "on")
+    if firewall_marker().exists():
+        return Check("firewall", False, "off — dev-boost turned it on earlier; run "
+                     "`devboost install macos-firewall`")
+    return Check("firewall", True,
+                 "WARN off — `devboost install macos-firewall` turns it on")
 
 
 def _filevault(ctx: Ctx) -> Check:
@@ -75,12 +82,23 @@ def _hotkeys(ctx: Ctx) -> Check:
 
 
 def _gated(ctx: Ctx) -> Check:
-    gated = sorted(
-        name for name, cls in load().items()
-        if (not cls.families or "macos" in cls.families) and not cls.supported_on(ctx.os)
-    )
-    detail = (", ".join(gated) + " — not supported on this macOS version") if gated else "none"
-    return Check("version-gated", True, detail)
+    gated: list[str] = []
+    unknown: list[str] = []
+    for name, cls in sorted(load().items()):
+        if cls.families and "macos" not in cls.families:
+            continue
+        try:
+            if not cls.supported_on(ctx.os):
+                gated.append(name)
+        except DevbootError:  # e.g. xcode's pin: catalog.toml missing or invalid
+            unknown.append(name)
+    parts: list[str] = []
+    if unknown:
+        parts.append(f"WARN could not check {', '.join(unknown)} (catalog.toml missing or "
+                     "invalid)")
+    if gated:
+        parts.append(", ".join(gated) + " — not supported on this macOS version")
+    return Check("version-gated", True, "; ".join(parts) or "none")
 
 
 def checks(ctx: Ctx) -> list[Check]:
