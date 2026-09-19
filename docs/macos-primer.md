@@ -191,6 +191,13 @@ hold **Left Shift + the hotkey**. The secondary model loads only while you are d
 Arabic and is evicted from memory after 60 s idle, so it costs **no RAM** the rest of the
 time — only the primary `small.en` model (466 MB) stays resident.
 
+**`Voxtype.app` holds a copy of the binary, not a symlink.** `devboost install` rebuilds
+it (`voxtype setup app-bundle`) only when its version differs from the installed
+`voxtype --version` — but upstream's own setup step **resets the Accessibility and Input
+Monitoring grants** whenever it rebuilds the bundle, so a `brew upgrade`-driven Voxtype
+update means re-granting both permissions afterwards (run `devboost permissions` to be
+walked through it again).
+
 ## 9. Privacy permissions
 
 macOS never lets a script grant a privacy permission — a human has to click "Allow" in
