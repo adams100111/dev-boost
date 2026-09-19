@@ -196,7 +196,10 @@ it (`voxtype setup app-bundle`) only when its version differs from the installed
 `voxtype --version` — but upstream's own setup step **resets the Accessibility and Input
 Monitoring grants** whenever it rebuilds the bundle, so a `brew upgrade`-driven Voxtype
 update means re-granting both permissions afterwards (run `devboost permissions` to be
-walked through it again).
+walked through it again). That rebuild adds a Login Item and opens Voxtype.app, which
+asks for permissions, so an unattended run (over ssh, first boot, or
+`DEVBOOST_NONINTERACTIVE=1`) installs the binary and model but reports Voxtype as
+`blocked` until you run `devboost install voxtype` in a terminal.
 
 ## 9. Privacy permissions
 

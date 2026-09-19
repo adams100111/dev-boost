@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import InstallError
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import build_plan
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
+from devboost.modules import _credentials
 from devboost.modules import voxtype as vox
 from tests.passstore.fakes import RuleExecutor
 
@@ -44,6 +45,12 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(vox, "MODEL_SHA256", {
         n: hashlib.sha256(_fake_model(n)).hexdigest() for n in (vox.MODEL, vox.ARABIC_MODEL)
     })
+
+
+@pytest.fixture
+def attended(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Someone is at the terminal: `setup app-bundle` (prompts, `open`) may run."""
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: True)
 
 
 def _write_bundle(version: str) -> None:
@@ -181,6 +188,7 @@ def _vt(*args: str) -> list[str]:
     return [str(vox.bin_path()), *args]
 
 
+@pytest.mark.usefixtures("attended")
 def test_macos_installs_the_verified_binary_model_then_app_bundle(tmp_path: Path) -> None:
     ex = VoxEx()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
@@ -202,6 +210,7 @@ def test_macos_installs_the_verified_binary_model_then_app_bundle(tmp_path: Path
     assert vox.models_dir().is_dir()  # made first, so voxtype never falls back to ~/Library
 
 
+@pytest.mark.usefixtures("attended")
 def test_the_macos_path_never_touches_homebrew() -> None:
     ex = VoxEx()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
@@ -212,6 +221,7 @@ def test_the_macos_path_never_touches_homebrew() -> None:
     assert not getattr(vox.MacosVoxtype, "uses_brew", False)
 
 
+@pytest.mark.usefixtures("attended")
 def test_macos_skips_the_download_when_the_pinned_version_is_installed() -> None:
     ex = VoxEx(installed=True)
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
@@ -238,6 +248,7 @@ def test_macos_verify_is_false_without_the_binary() -> None:
     assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxEx())) is False
 
 
+@pytest.mark.usefixtures("attended")
 def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
     """M5-D6: `setup app-bundle` copies the binary, resets the TCC grants, adds the Login
     Item and launches the app, so a forced re-run must not repeat it for a current bundle."""
@@ -251,6 +262,7 @@ def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
     assert not [c for c in ex.calls if c[0] in {"open", "osascript", "sudo", "brew"}]
 
 
+@pytest.mark.usefixtures("attended")
 def test_macos_force_rebuilds_a_stale_bundle() -> None:
     _write_bundle("0.9.0")
     vox.model_file("small.en").parent.mkdir(parents=True)
@@ -260,10 +272,25 @@ def test_macos_force_rebuilds_a_stale_bundle() -> None:
     assert ex.calls[-1] == _vt("setup", "app-bundle")
 
 
+@pytest.mark.usefixtures("attended")
 def test_macos_app_bundle_failure_is_an_install_error() -> None:
     ex = VoxEx(rules=[(("app-bundle",), Result(1))])
     with pytest.raises(InstallError, match="app-bundle"):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex))
+
+
+def test_unattended_macos_installs_binary_and_model_but_never_the_app_bundle() -> None:
+    """C1: `setup app-bundle` sends System Events an Apple event and opens Voxtype.app
+    (Automation + TCC prompts), so with nobody watching it must not run at all."""
+    ex = VoxEx()
+    ctx = Ctx(os=MAC, ex=ex)
+    with pytest.raises(NeedsUser, match="devboost install voxtype"):
+        vox.Voxtype().install(ctx)
+    assert _vt("setup", "app-bundle") not in ex.calls
+    assert not [c for c in ex.calls if c[-1:] == ["app-bundle"]]
+    assert ex.installed  # the verified binary is in place
+    assert vox.model_file("small.en").is_file()  # and so is the verified model
+    assert vox.Voxtype().verify(ctx) is False  # the next attended run finishes it
 
 
 def test_macos_checksum_failure_installs_nothing() -> None:

@@ -2,12 +2,13 @@
 
 macOS: the pinned universal release binary (SHA-256 in catalog.toml) in ~/.local/bin, then
 upstream's `voxtype setup app-bundle`, which wraps the daemon in /Applications/Voxtype.app
-with a Login Item. Upstream warns that a plain launchd service never receives Microphone
-access (D14). Not the peteonrails tap cask: it is stuck on 0.7.5, which reads its config and
-models from ~/Library/Application Support, not the XDG paths the dotfiles write. Linux: the
-upstream RPM/DEB (pinned + hashed), or the AUR on Arch, or the raw binary on aarch64, plus a
-systemd user service. Omarchy ships it through its own menu (provided_by). No step needs
-Homebrew, and only the Linux package/group steps need root.
+with a Login Item. That step raises Automation and TCC prompts, so it runs only when
+someone is at the terminal. Upstream warns that a plain launchd service never receives
+Microphone access (D14). Not the peteonrails tap cask: it is stuck on 0.7.5, which reads
+its config and models from ~/Library/Application Support, not the XDG paths the dotfiles
+write. Linux: the upstream RPM/DEB (pinned + hashed), or the AUR on Arch, or the raw
+binary on aarch64, plus a systemd user service. Omarchy ships it through its own menu
+(provided_by). No step needs Homebrew, and only the Linux package/group steps need root.
 
 Whisper models come from Hugging Face through `voxtype setup --download`, which checks
 only their size and magic bytes (upstream publishes no digest for them), so each model
@@ -234,6 +235,14 @@ class MacosVoxtype:
         # Monitoring grants, re-adds the Login Item and launches the app (M5-D6).
         if _bundle_current(ctx):
             return
+        # Upstream's app-bundle step sends System Events an Apple event (Automation prompt)
+        # and `open`s Voxtype.app, which asks for Accessibility, Input Monitoring and the
+        # Microphone: never on a desktop nobody is watching (global constraint).
+        if not _credentials.is_interactive():
+            raise NeedsUser(
+                "Voxtype.app needs its Login Item and permissions set up",
+                "finish Voxtype setup in a terminal: `devboost install voxtype`",
+            )
         res = ctx.ex.run([_exe(ctx), "setup", "app-bundle"])
         if not res.ok:
             raise InstallError("voxtype", "voxtype setup app-bundle", res.code)
