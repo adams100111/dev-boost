@@ -1,4 +1,4 @@
-"""End to end with real gpg + pass + git: genesis → enroll → approve → decrypt → revoke.
+"""End to end with real gpg + pass + git: genesis → enroll → approve → sync → decrypt → revoke.
 
 Each simulated device has its own HOME (git identity) and GNUPGHOME. GNUPGHOMEs are short
 /tmp paths (the gpg-agent socket path is length-limited) and their agents are killed on
@@ -22,7 +22,7 @@ from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import RealExecutor, Result
 from devboost.model import Ctx
-from devboost.passstore import approve, enroll, git
+from devboost.passstore import approve, enroll, git, gpg, sync
 from devboost.passstore.layout import Store
 
 pytestmark = pytest.mark.skipif(
@@ -146,6 +146,8 @@ def test_enroll_approve_decrypt_revoke_rotate(origin: str, make_device: MakeDevi
     assert entry is not None and {"web/github", "harness/tg"} <= set(entry.entries)
     assert a.store.record("revoked", "bravo") is not None
     assert len(a.store.gpg_ids()) == 1
+    assert sync.run(a.ctx, a.store, "alpha").status == "ok"  # drops bravo's public key (I1)
+    assert entry.fingerprint not in gpg.public_fingerprints(a.ctx)
 
     assert a.pass_("insert", "-m", "web/new", stdin="fresh\n").ok
     assert git.push(a.ctx, a.store.root).ok
@@ -171,3 +173,26 @@ def test_scoped_server_reads_only_its_folder(origin: str, make_device: MakeDevic
     assert enroll.local_access(srv.ctx, srv.store, "srv").state == "enrolled"
     assert "chat_id: C" in srv.pass_("show", "harness/tg").stdout
     assert not srv.pass_("show", "web/github").ok
+
+
+def test_new_device_syncs_keys_writes_and_the_other_device_reads(
+    origin: str, make_device: MakeDevice
+) -> None:
+    """I8: B's sync imports + trusts A's key (D7), so B can write entries A can read."""
+    a = _genesis(origin, make_device)
+    b = make_device("bravo")
+    _request(b, origin)
+    approve.approve(a.ctx, a.store, "alpha", "bravo", lambda r: True)
+    alpha = a.store.record("devices", "alpha")
+    assert alpha is not None
+    assert alpha.fingerprint not in gpg.public_fingerprints(b.ctx)
+
+    assert sync.run(b.ctx, b.store, "bravo").status == "ok"
+    assert alpha.fingerprint in gpg.public_fingerprints(b.ctx)  # imported by the sync
+    assert enroll.local_access(b.ctx, b.store, "bravo").state == "enrolled"
+
+    assert b.pass_("insert", "-m", "web/from-bravo", stdin="written on bravo\n").ok
+    assert sync.run(b.ctx, b.store, "bravo", push_only=True).status == "ok"
+
+    assert sync.run(a.ctx, a.store, "alpha").status == "ok"
+    assert a.pass_("show", "web/from-bravo").stdout.strip() == "written on bravo"
