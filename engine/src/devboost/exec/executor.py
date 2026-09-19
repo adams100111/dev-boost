@@ -208,3 +208,35 @@ class DemotingExecutor:
 
     def which(self, cmd: str) -> bool:
         return self._inner.which(cmd)
+
+
+class NoPromptSudoExecutor:
+    """Run ``sudo=True`` commands as ``sudo -n``: fail fast, never prompt (ruling C-R18).
+
+    A macOS run that found no pending step needing root does not ask for the password up
+    front (ruling C-R3). If a step asks for root anyway (a module missing its
+    ``needs_sudo_on_macos`` flag), plain ``sudo`` would prompt on a /dev/tty that the
+    captured subprocess hides, and the run would hang. ``sudo -n`` fails at once with
+    "a password is required" instead, and the runner reports that module as failed.
+    """
+
+    def __init__(self, inner: Executor) -> None:
+        self._inner = inner
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        sudo: bool = False,
+        stdin: str | None = None,
+        env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
+        interactive: bool = False,
+    ) -> Result:
+        cmd = ["sudo", "-n", *argv] if sudo else list(argv)
+        return self._inner.run(
+            cmd, sudo=False, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+        )
+
+    def which(self, cmd: str) -> bool:
+        return self._inner.which(cmd)

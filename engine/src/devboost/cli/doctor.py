@@ -197,7 +197,12 @@ def _rosetta_check(ctx: Ctx) -> Check:
         why = "Intel-only apps, fast amd64 containers"
         return Check("rosetta", True, f"not installed — `devboost install rosetta` ({why})")
     apps = macos.intel_only_apps(ctx)
-    found = f"Intel-only apps that will not run: {', '.join(apps)}" if apps else "none found"
+    if apps is None:
+        found = "could not list Intel-only apps (system_profiler failed)"
+    elif apps:
+        found = f"Intel-only apps that will not run: {', '.join(apps)}"
+    else:
+        found = "no Intel-only apps found"
     return Check(
         "rosetta", True, f"macOS {ctx.os.version_id} limits Rosetta to legacy games; {found}"
     )

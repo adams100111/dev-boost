@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from devboost.core import log
@@ -25,16 +25,31 @@ class RunResult:
     blocks_dependents: bool = True
 
 
+def module_ctx(ctx: Ctx, name: str, forced: Collection[str] | None) -> Ctx:
+    """The context one module runs with: ``--force`` applies only to the ``forced`` names.
+
+    ``forced=None`` forces every module (``--update`` force-refreshes its whole filtered
+    plan). ``devboost install --force ripgrep`` forces ripgrep, not the dependencies the
+    plan added for it (xcode-clt, homebrew): reinstalling those was never asked for.
+    """
+    if not ctx.force or forced is None or name in forced:
+        return ctx
+    return replace(ctx, force=False)
+
+
 def run_plan(
     plan: list[PlannedModule],
     modules: Mapping[str, type[Module]],
     ctx: Ctx,
+    *,
+    forced: Collection[str] | None = None,
 ) -> list[RunResult]:
     # Tracks modules that either failed or were blocked; used to propagate cascades.
     failed_or_blocked: set[str] = set()
     results: list[RunResult] = []
     for pm in plan:
-        result = _run_one(pm, modules[pm.name](), ctx, failed_or_blocked)
+        mctx = module_ctx(ctx, pm.name, forced)
+        result = _run_one(pm, modules[pm.name](), mctx, failed_or_blocked)
         if result.status in ("fail", "blocked") and result.blocks_dependents:
             failed_or_blocked.add(pm.name)
         results.append(result)

@@ -64,3 +64,44 @@ def test_needs_user_blocks_dependents() -> None:
 
 def test_present_unmanaged_is_a_skip_not_a_failure() -> None:
     assert _run(_UnmanagedMod)["unmanaged-mod"] == ("skip", "present-unmanaged")
+
+
+class _Present(Module):
+    """Installed; records the force flag each install() saw."""
+
+    name: ClassVar[str] = "present-dep"
+    seen: ClassVar[list[bool]] = []
+
+    def verify(self, ctx: Ctx) -> bool:
+        return True
+
+    def install(self, ctx: Ctx) -> None:
+        type(self).seen.append(ctx.force)
+
+
+class _PresentSelected(_Present):
+    name: ClassVar[str] = "present-selected"
+    requires = (_Present,)
+
+
+def test_force_reaches_only_the_forced_modules() -> None:
+    # `install --force present-selected` reinstalls it, not the dependency the plan added.
+    _Present.seen.clear()
+    modules = {"present-dep": _Present, "present-selected": _PresentSelected}
+    plan = [PlannedModule("present-dep"), PlannedModule("present-selected")]
+    ctx = Ctx(os=MAC, ex=FakeExecutor(), force=True)
+    results = run_plan(plan, modules, ctx, forced={"present-selected"})
+    assert [(r.name, r.status, r.detail) for r in results] == [
+        ("present-dep", "skip", "already-installed"),
+        ("present-selected", "ok", ""),
+    ]
+    assert _Present.seen == [True]  # only the selected module's install ran, forced
+
+
+def test_forced_none_forces_every_module() -> None:
+    # --update force-refreshes its whole filtered plan.
+    _Present.seen.clear()
+    modules = {"present-dep": _Present, "present-selected": _PresentSelected}
+    plan = [PlannedModule("present-dep"), PlannedModule("present-selected")]
+    run_plan(plan, modules, Ctx(os=MAC, ex=FakeExecutor(), force=True))
+    assert _Present.seen == [True, True]

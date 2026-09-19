@@ -10,6 +10,7 @@ import pytest
 
 from devboost.cli import app as cli_app
 from devboost.cli import host as plat
+from devboost.core import log
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule
 from devboost.core.registry import load
@@ -60,17 +61,43 @@ def test_needs_sudo_ignores_skipped_and_unflagged_modules() -> None:
     assert cli_app._needs_sudo(plan, load(), ctx) is False
 
 
-def test_needs_sudo_true_under_force_even_when_verified() -> None:
-    # --force reinstalls without consulting verify, so the installer's sudo steps run.
+def test_needs_sudo_false_under_force_when_the_foundation_is_present() -> None:
+    # Forced foundation installs are no-ops when present: nothing runs sudo.
     ctx = Ctx(os=MAC, ex=Scripted(answers=dict(_VERIFIED)), force=True)
-    assert cli_app._needs_sudo(_plan("rosetta"), load(), ctx) is True
+    plan = _plan("xcode-clt", "homebrew", "rosetta")
+    assert cli_app._needs_sudo(plan, load(), ctx) is False
+    assert cli_app._needs_sudo(plan, load(), ctx, forced={"homebrew"}) is False
 
 
-def test_needs_sudo_treats_a_raising_verify_as_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_needs_sudo_false_when_only_brew_analytics_are_on() -> None:
+    answers = {**_VERIFIED, ("brew", "analytics", "state"): Result(0, stdout="enabled")}
+    ctx = Ctx(os=MAC, ex=Scripted(answers=answers))
+    assert cli_app._needs_sudo(_plan("xcode-clt", "homebrew"), load(), ctx) is False
+
+
+def test_needs_sudo_under_force_reaches_only_the_forced_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The default probe counts a forced module as pending; one not forced is probed as is.
+    seen: list[bool] = []
+
+    def _probe(self: object, ctx: Ctx) -> bool:
+        seen.append(ctx.force)
+        return ctx.force
+
+    monkeypatch.setattr(Homebrew, "sudo_needed", _probe)
+    ctx = Ctx(os=MAC, ex=Scripted(answers=dict(_VERIFIED)), force=True)
+    assert cli_app._needs_sudo(_plan("homebrew"), load(), ctx, forced={"jq"}) is False
+    assert cli_app._needs_sudo(_plan("homebrew"), load(), ctx, forced={"homebrew"}) is True
+    assert cli_app._needs_sudo(_plan("homebrew"), load(), ctx, forced=None) is True
+    assert seen == [False, True, True]
+
+
+def test_needs_sudo_treats_a_raising_probe_as_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(self: object, ctx: Ctx) -> bool:
         raise RuntimeError("probe blew up")
 
-    monkeypatch.setattr(Homebrew, "verify", _boom)
+    monkeypatch.setattr(Homebrew, "sudo_needed", _boom)
     ctx = Ctx(os=MAC, ex=Scripted(answers=dict(_VERIFIED)))
     assert cli_app._needs_sudo(_plan("homebrew"), load(), ctx) is True
 
@@ -89,7 +116,9 @@ def _wire(
         host_calls.append(list(argv))
         return subprocess.CompletedProcess(argv, 0)
 
-    def _fake_run_plan(plan: list[PlannedModule], modules: Any, ctx: Ctx) -> list[Any]:
+    def _fake_run_plan(
+        plan: list[PlannedModule], modules: Any, ctx: Ctx, **_: Any
+    ) -> list[Any]:
         plans.append(plan)
         return []
 
@@ -142,3 +171,164 @@ def test_mac_session_without_sudo_keeps_awake_only(monkeypatch: pytest.MonkeyPat
     with plat.mac_session(MAC, dry_run=False, sudo=False):
         pass
     assert seen == ["caffeinate"]
+
+
+# --- --force / --offline end to end: the real runner, a fully set-up Mac -------------
+
+#: A Mac with everything present: CLT (xcode-select -p ok), brew at /opt/homebrew with
+#: analytics off, Rosetta, and every formula installed. softwareupdate offers no CLT.
+_SET_UP: dict[tuple[str, ...], Result] = {
+    **_VERIFIED,
+    ("softwareupdate", "--list"): Result(0, stderr="No new software available.\n"),
+    ("brew", "info"): Result(0, stdout='{"casks": [{"auto_updates": false}]}'),
+}
+
+
+def _wire_runner(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[tuple[str, ...], Result]
+) -> tuple[list[list[str]], Scripted]:
+    """Like `_wire`, but the REAL run_plan runs against one Scripted executor."""
+    host_calls: list[list[str]] = []
+    ex = Scripted(answers=dict(answers))
+
+    def _fake_subprocess_run(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        host_calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
+    monkeypatch.setattr("devboost.core.osinfo.detect", lambda: MAC)
+    monkeypatch.setattr(cli_app, "RealExecutor", lambda: ex)
+    monkeypatch.setattr("devboost.exec.primitives.pkg.refresh_index", lambda ctx: None)
+    monkeypatch.setattr(plat, "keep_awake", lambda: host_calls.append(["caffeinate"]))
+    monkeypatch.setattr("subprocess.run", _fake_subprocess_run)  # SudoKeepalive's sudo
+    return host_calls, ex
+
+
+def test_force_on_a_set_up_mac_blocks_nothing_and_never_asks_for_sudo(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # Final review I1: --force used to force xcode-clt too, whose softwareupdate offered
+    # no CLT → NeedsUser → xcode-clt, homebrew and ripgrep all blocked, and a sudo prompt.
+    host_calls, ex = _wire_runner(monkeypatch, _SET_UP)
+    results = cli_app._run(["ripgrep"], profiles_file.parent, dry_run=False, force=True)
+    status = {r.name: r.status for r in results}
+    assert status == {"xcode-clt": "skip", "homebrew": "skip", "ripgrep": "ok"}
+    assert ["sudo", "-v"] not in host_calls
+    assert not any(c[:1] == ["softwareupdate"] for c in ex.calls)
+    assert not any(c[:1] == ["sudo"] for c in ex.calls)
+    assert ["brew", "upgrade", "--formula", "ripgrep"] in ex.calls  # the selection IS forced
+
+
+def test_force_on_a_selected_foundation_module_is_a_no_op(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    host_calls, ex = _wire_runner(monkeypatch, _SET_UP)
+    results = cli_app._run(
+        ["xcode-clt", "rosetta"], profiles_file.parent, dry_run=False, force=True
+    )
+    assert {r.name: r.status for r in results} == {"xcode-clt": "ok", "rosetta": "ok"}
+    assert ["sudo", "-v"] not in host_calls
+    assert not any(c[:1] in (["softwareupdate"], ["sudo"]) for c in ex.calls)
+
+
+def test_offline_on_a_mac_skips_network_modules_and_asks_nothing(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # Homebrew missing: its installer needs the network, so --offline skips it — and a
+    # skipped module is never a reason to ask for the password.
+    host_calls, ex = _wire_runner(monkeypatch, {**_NO_BREW, ("xcode-select", "-p"): Result(0)})
+    results = cli_app._run(
+        ["homebrew"], profiles_file.parent, dry_run=False, force=False, offline=True
+    )
+    status = {r.name: (r.status, r.detail) for r in results}
+    assert status["homebrew"] == ("skip", "needs-network")
+    assert ["sudo", "-v"] not in host_calls
+    assert not any(c[:1] == ["curl"] for c in ex.calls)
+
+
+def test_without_a_sudo_prompt_mac_sudo_steps_fail_fast(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # Ruling C-R18: no password was asked for, so a sudo step runs as `sudo -n`.
+    def _fake_run_plan(plan: Any, modules: Any, ctx: Ctx, **_: Any) -> list[Any]:
+        ctx.ex.run(["true"], sudo=True)
+        return []
+
+    _, ex = _wire_runner(monkeypatch, _SET_UP)
+    monkeypatch.setattr(cli_app, "run_plan", _fake_run_plan)
+    cli_app._run(["homebrew"], profiles_file.parent, dry_run=False, force=False)
+    assert ex.calls[-1] == ["sudo", "-n", "true"]
+
+
+def test_with_a_sudo_prompt_mac_sudo_steps_use_the_cached_timestamp(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    def _fake_run_plan(plan: Any, modules: Any, ctx: Ctx, **_: Any) -> list[Any]:
+        ctx.ex.run(["true"], sudo=True)
+        return []
+
+    host_calls, ex = _wire_runner(monkeypatch, _NO_BREW)
+    monkeypatch.setattr(cli_app, "run_plan", _fake_run_plan)
+    cli_app._run(["homebrew"], profiles_file.parent, dry_run=False, force=False)
+    assert ["sudo", "-v"] in host_calls
+    assert ex.calls[-1] == ["sudo", "true"]
+
+
+def test_run_passes_the_final_plan_to_added_dependencies(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    seen: list[tuple[list[PlannedModule], list[str]]] = []
+    real = cli_app._added_dependencies
+
+    def _spy(plan: list[PlannedModule], selected: Any) -> list[str]:
+        seen.append((list(plan), list(selected)))
+        return real(plan, selected)
+
+    _wire(monkeypatch, MAC, _VERIFIED)
+    monkeypatch.setattr(cli_app, "_added_dependencies", _spy)
+    cli_app._run(["ripgrep"], profiles_file.parent, dry_run=False, force=False)
+    [(plan, selected)] = seen
+    assert selected == ["ripgrep"]
+    assert [pm.name for pm in plan] == ["xcode-clt", "homebrew", "ripgrep"]
+
+
+def _infos(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    seen: list[str] = []
+    monkeypatch.setattr(log, "info", seen.append)
+    return seen
+
+
+def test_update_on_a_mac_does_not_announce_dependencies_it_drops(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # Core review M1: xcode-clt and homebrew are dropped by the --update filter, so the
+    # "+N required dependencies added" line must not name them.
+    _, plans = _wire(monkeypatch, MAC, _VERIFIED)
+    infos = _infos(monkeypatch)
+    cli_app._run(["ripgrep"], profiles_file.parent, dry_run=False, force=False, update=True)
+    assert [pm.name for pm in plans[0]] == ["ripgrep"]
+    assert not any("required dependencies" in m for m in infos)
+
+
+def test_install_announces_only_dependencies_that_will_run(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    _wire(monkeypatch, MAC, _VERIFIED)
+    infos = _infos(monkeypatch)
+    cli_app._run(["ripgrep"], profiles_file.parent, dry_run=False, force=False)
+    assert "+2 required dependencies added: xcode-clt, homebrew" in infos
+
+
+def test_added_dependencies_skips_entries_the_plan_only_skips() -> None:
+    plan = [PlannedModule("curl", skip_reason="provided-by-macos"), *_plan("homebrew", "jq")]
+    assert cli_app._added_dependencies(plan, ["jq"]) == ["homebrew"]
+
+
+def test_update_with_nothing_to_refresh_says_so(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    _, plans = _wire(monkeypatch, FEDORA, {})
+    infos = _infos(monkeypatch)
+    cli_app._run(["docker"], profiles_file.parent, dry_run=False, force=False, update=True)
+    assert plans == [[]]
+    assert "nothing to update in selection" in infos

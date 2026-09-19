@@ -24,6 +24,9 @@ CLT_DIR = "/Library/Developer/CommandLineTools"
 #: While this file exists, `softwareupdate --list` offers the CLT (Homebrew's installer
 #: uses the same trick); otherwise only the GUI prompt of `xcode-select --install` does.
 CLT_PLACEHOLDER = "/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+#: Homebrew's own documented one-liner, left unpinned on purpose: install.sh tracks the
+#: current brew release and macOS support, so a pinned commit would go stale and fail on a
+#: new macOS. It is fetched over HTTPS from Homebrew's repository, like brew's own updates.
 BREW_INSTALLER = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 BREW_PREFIX = "/opt/homebrew"
 #: Rosetta 2 runs amd64 container images (Docker/Colima VMs) and Intel-only tools and apps.
@@ -32,14 +35,28 @@ BREW_PREFIX = "/opt/homebrew"
 ROSETTA_LAST_FULL_MAJOR = 27
 
 _LABEL = re.compile(r"^\s*\*\s*Label:\s*(Command Line Tools.*?)\s*$")
+_BETA = re.compile(r"\bbeta\b", re.IGNORECASE)
+#: The Xcode version a label ends with: "Command Line Tools for Xcode-16.2" → "16.2".
+_TRAILING_VERSION = re.compile(r"(\d+(?:\.\d+)*)\s*$")
+
+
+def _label_version(label: str) -> tuple[int, ...]:
+    m = _TRAILING_VERSION.search(label)
+    return tuple(int(n) for n in m.group(1).split(".")) if m else ()
 
 
 def clt_label(listing: str) -> str | None:
-    """The newest "Command Line Tools …" label in `softwareupdate --list` output."""
-    labels = [m.group(1) for line in listing.splitlines() if (m := _LABEL.match(line))]
-    if not labels:
-        return None
-    return max(labels, key=lambda label: tuple(int(n) for n in re.findall(r"\d+", label)))
+    """The newest non-beta "Command Line Tools …" label in `softwareupdate --list` output.
+
+    Betas are never installed unasked; a listing that offers only betas yields None, and
+    the user installs the CLT from the dialog instead.
+    """
+    labels = [
+        m.group(1)
+        for line in listing.splitlines()
+        if (m := _LABEL.match(line)) and not _BETA.search(m.group(1))
+    ]
+    return max(labels, key=_label_version) if labels else None
 
 
 def mac_major(os_info: OsInfo) -> int:
@@ -58,15 +75,17 @@ def rosetta_present(ctx: Ctx) -> bool:
     return ctx.ex.run(["arch", "-x86_64", "/usr/bin/true"]).ok
 
 
-def intel_only_apps(ctx: Ctx) -> list[str]:
-    """Installed apps that are Intel-only (they need Rosetta)."""
+def intel_only_apps(ctx: Ctx) -> list[str] | None:
+    """Installed apps that are Intel-only (they need Rosetta); None if they cannot be listed."""
     res = ctx.ex.run(["system_profiler", "-json", "SPApplicationsDataType"])
     if not res.ok:
-        return []
+        return None
     try:
         items = json.loads(res.stdout).get("SPApplicationsDataType", [])
     except (ValueError, AttributeError):
-        return []
+        return None
+    if not isinstance(items, list):
+        return None
     return sorted({
         str(i["_name"])
         for i in items
@@ -87,10 +106,21 @@ class XcodeClt(Module):
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["xcode-select", "-p"]).ok
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        # install() is a no-op once the CLT is present, even under --force.
+        return not self.verify(ctx)
+
     def install(self, ctx: Ctx) -> None:
+        if self.verify(ctx):
+            # Idempotent under --force: once present, `softwareupdate --list` offers no
+            # CLT, and reinstalling is not ours to do (Software Update keeps it current).
+            log.skip(f"{self.name}: already installed — Software Update keeps it current")
+            return
         ctx.ex.run(["touch", CLT_PLACEHOLDER], sudo=True)
         try:
             listing = ctx.ex.run(["softwareupdate", "--list"])
+            if not listing.ok:
+                raise InstallError(self.name, "softwareupdate --list", listing.code)
             label = clt_label(listing.stdout + "\n" + listing.stderr)
             if label is None:
                 raise NeedsUser(
@@ -100,7 +130,12 @@ class XcodeClt(Module):
             res = ctx.ex.run(["softwareupdate", "--install", label], sudo=True)
             if not res.ok:
                 raise InstallError(self.name, f"softwareupdate --install {label!r}", res.code)
-            ctx.ex.run(["xcode-select", "--switch", CLT_DIR], sudo=True)
+            switch = ctx.ex.run(["xcode-select", "--switch", CLT_DIR], sudo=True)
+            if not switch.ok:
+                log.warn(
+                    f"{self.name}: `xcode-select --switch {CLT_DIR}` failed "
+                    f"(exit {switch.code}) — the active developer dir is unchanged"
+                )
         finally:
             ctx.ex.run(["rm", "-f", CLT_PLACEHOLDER], sudo=True)
 
@@ -119,6 +154,11 @@ class Homebrew(Module):
     def _present(self, ctx: Ctx) -> bool:
         res = ctx.ex.run(["brew", "--prefix"], env=BREW_ENV)
         return res.ok and res.stdout.strip() == BREW_PREFIX
+
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        # Only the installer script needs root; turning analytics off never does, so a
+        # present brew with analytics still on is no reason to ask for a password.
+        return not self._present(ctx)
 
     def verify(self, ctx: Ctx) -> bool:
         if not self._present(ctx):
@@ -159,9 +199,16 @@ class Rosetta(Module):
         # doctor` lists the Intel-only apps that will stop working.
         return not rosetta_supported(ctx.os) or rosetta_present(ctx)
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        # install() is a no-op once Rosetta is present, even under --force.
+        return not self.verify(ctx)
+
     def install(self, ctx: Ctx) -> None:
         if not rosetta_supported(ctx.os):
             log.warn(f"rosetta: limited on macOS {ctx.os.version_id} — see `devboost doctor`")
+            return
+        if rosetta_present(ctx):
+            log.skip(f"{self.name}: already installed")  # idempotent under --force
             return
         argv = ["softwareupdate", "--install-rosetta", "--agree-to-license"]
         res = ctx.ex.run(argv, sudo=True)

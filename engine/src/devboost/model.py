@@ -140,6 +140,17 @@ class Module:
             self._require_override("verify")
         return strat.verify(ctx)
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        """Whether this run's install would need root on macOS (read-only probe).
+
+        Read by the macOS sudo pre-check, only for modules flagged ``needs_sudo_on_macos``.
+        The default is conservative: anything not installed, and anything forced, counts.
+        A module whose sudo step depends on less than its whole ``verify`` (Homebrew
+        present with analytics still on needs no root) overrides this with a presence
+        probe, so a re-run does not ask for a password it will never use.
+        """
+        return ctx.force or not self.verify(ctx)
+
     def install(self, ctx: Ctx) -> None:
         strat = self._strategy(ctx)
         if strat is self:

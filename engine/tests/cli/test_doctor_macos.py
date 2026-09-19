@@ -72,6 +72,22 @@ def test_rosetta_check_lists_intel_only_apps_from_28(tmp_path: Path) -> None:
     assert checks["rosetta"].ok is True and "OldApp" in checks["rosetta"].detail
 
 
+def test_rosetta_check_from_28_says_when_it_could_not_list(tmp_path: Path) -> None:
+    # A failed system_profiler is not "no Intel-only apps": the user must not be reassured.
+    ex = FakeExecutor(present={"curl", "brew", "xcode-select"},
+                      scripts={"security": Result(44), "system_profiler": Result(1)})
+    mac28 = OsInfo("macos", "macos", "aarch64", version_id="28.0")
+    checks = {c.name: c for c in run_checks(Ctx(os=mac28, ex=ex), tmp_path)}
+    assert checks["rosetta"].ok is True
+    assert "could not list" in checks["rosetta"].detail
+
+
+def test_rosetta_check_on_27_says_installed(tmp_path: Path) -> None:
+    ex = FakeExecutor(present={"curl", "brew", "xcode-select"}, scripts={"security": Result(44)})
+    checks = {c.name: c for c in run_checks(Ctx(os=MAC, ex=ex), tmp_path)}
+    assert checks["rosetta"].detail == "installed"
+
+
 def test_no_rosetta_check_on_linux(tmp_path: Path) -> None:
     ex = FakeExecutor(present={"curl", "age"})
     assert "rosetta" not in _names(Ctx(os=FEDORA, ex=ex), tmp_path)
