@@ -10,6 +10,7 @@ from devboost.core import log
 from devboost.core.errors import NeedsUser, UnsupportedOS
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
+from devboost.core.settings import settings
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
@@ -203,7 +204,29 @@ class ChezmoiRepo(Module):
                 "set DEVBOOST_DOTFILES_REPO=<git url> (or add DOTFILES_REPO to the secrets "
                 "bundle) and re-run",
             )
+        # Local import: shell.py imports Chezmoi from this module, so importing shell.py at
+        # module scope here would cycle. Reuse Dotfiles' own backup/digest helpers exactly —
+        # an external repo's forced apply can drop a pre-existing or foreign rc file just as
+        # easily as the bundled dotfiles' own apply can (mirrors Dotfiles.install).
+        from devboost.modules.shell import Dotfiles, back_up_rc_files, record_rc_digests
+
+        home = Path(os.environ["HOME"])
+        src = settings.root / "dotfiles"
+        taken_over = Dotfiles._taken_over_for(ctx)
+        if taken_over is not None:
+            for backup in back_up_rc_files(home, src, taken_over):
+                name = backup.name.split(".pre-devboost")[0]
+                log.ok(
+                    f"chezmoi-repo: kept your previous ~/{name} as ~/{backup.name} —"
+                    f" machine-specific lines belong in ~/{name}.local"
+                )
         # --force: never stop at chezmoi's "overwrite?" prompt — under devboost's captured
         # stdio nobody sees it and the run hangs (same reason as the dotfiles module).
         if not ctx.ex.run(["chezmoi", "init", "--apply", "--force", repo]).ok:
             log.warn("chezmoi-repo: init/clone failed — dotfiles not synced (non-blocking)")
+        elif taken_over is not None:
+            # Bookkeeping only: never fail an otherwise successful apply over recording drift.
+            try:
+                record_rc_digests(home, taken_over)
+            except OSError as exc:
+                log.warn(f"chezmoi-repo: could not record rc digests ({exc}) — best-effort only")

@@ -15,6 +15,7 @@ from devboost.modules.cli_tools import Fd, Lazydocker, Lazygit
 from devboost.modules.mise import Mise
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+MAC = OsInfo("macos", "macos", "aarch64")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -130,6 +131,37 @@ def test_chezmoi_repo_reads_url_from_secrets_bundle(
     ChezmoiRepo().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["chezmoi", "init", "--apply", "--force", "https://github.com/user/dotfiles"] in calls
+
+
+def test_chezmoi_repo_backs_up_a_drifted_zshrc_on_macos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C-R23: an external repo's `--force` apply can drop a pre-existing/foreign rc file
+    # exactly like the bundled dotfiles' own apply can — back it up first, same as Dotfiles.
+    monkeypatch.setenv("DEVBOOST_DOTFILES_REPO", "https://github.com/user/dotfiles")
+    (tmp_path / ".zshrc").write_text("mine\n", encoding="utf-8")
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    ChezmoiRepo().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["chezmoi", "init", "--apply", "--force", "https://github.com/user/dotfiles"] in calls
+    # Copied to .pre-devboost before the forced apply; a copy, not a move.
+    assert (tmp_path / ".zshrc.pre-devboost").read_text(encoding="utf-8") == "mine\n"
+    assert (tmp_path / ".zshrc").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_chezmoi_repo_backs_up_a_drifted_bashrc_on_linux(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # FEDORA (not Omarchy) gets _TAKEN_OVER_LINUX ({".bashrc": "dot_bashrc"}) from the same
+    # Dotfiles._taken_over_for dispatch chezmoi-repo now reuses.
+    monkeypatch.setenv("DEVBOOST_DOTFILES_REPO", "https://github.com/user/dotfiles")
+    (tmp_path / ".bashrc").write_text("mine\n", encoding="utf-8")
+    ctx = _ctx()
+    ChezmoiRepo().install(ctx)
+    calls = ctx.ex.calls  # type: ignore[attr-defined]
+    assert ["chezmoi", "init", "--apply", "--force", "https://github.com/user/dotfiles"] in calls
+    assert (tmp_path / ".bashrc.pre-devboost").read_text(encoding="utf-8") == "mine\n"
+    assert (tmp_path / ".bashrc").read_text(encoding="utf-8") == "mine\n"
 
 
 def test_registry_loads_base_and_cli_and_profiles_validate() -> None:
