@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15]
+        os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -30,20 +30,37 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest -n 4
 
+  # The Linux legs build inside an ubuntu:22.04 container on current runners (ruling
+  # C-M6-R1): the ubuntu-22.04 runner image is deprecated, but its glibc (2.35) is the floor
+  # the published Linux binaries promise — a 24.04-native build would need glibc 2.39 and
+  # drop Ubuntu 22.04 and Debian 12. check-glibc-floor.sh fails the leg if it ever slips.
   binary:
     needs: [checks]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             arch: x86_64
+            container: ubuntu:22.04
           - runner: ubuntu-24.04-arm
             arch: aarch64
+            container: ubuntu:22.04
           - runner: macos-15
             arch: darwin-arm64
+            container: ''
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     steps:
+      # A bare ubuntu:22.04 image: git (so checkout clones instead of falling back to the
+      # REST tarball), binutils (objdump — PyInstaller's dependency analysis and the glibc
+      # floor check both need it), and CA certificates for uv's downloads.
+      - name: Build prerequisites (ubuntu:22.04 container)
+        if: matrix.container != ''
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            binutils ca-certificates git
       - uses: actions/checkout@v7
       - name: Check tag matches version
         run: |
@@ -58,6 +75,9 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
+      - name: Check the glibc floor (<= 2.35)
+        if: matrix.arch != 'darwin-arm64'
+        run: bash scripts/check-glibc-floor.sh "dist/devboost-${{ matrix.arch }}" 2.35
       - uses: actions/upload-artifact@v7
         with:
           name: devboost-${{ matrix.arch }}
@@ -90,9 +110,10 @@ jobs:
           ./dist/devboost-darwin-arm64 list macos
           codesign --verify --strict dist/devboost-darwin-arm64
 
+  # Publishing builds nothing, so it has no glibc floor to keep: a plain current runner.
   release:
     needs: [binary, binary-compat]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -105,8 +126,8 @@ jobs:
           cp artifacts/devboost-darwin-arm64/devboost-darwin-arm64 out/
           cp artifacts/devboost-x86_64/devboost-x86_64.tar.gz out/     # Ventoy injection (x86_64)
           cp artifacts/devboost-aarch64/devboost-aarch64.tar.gz out/   # Ventoy injection (aarch64)
-          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-darwin-arm64 \
-              devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
+          # Gate on the build-time hashes: every asset about to be published must match the
+          # per-arch checksums its own build runner wrote, so an arms.txt )
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

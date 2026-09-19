@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, xcode-27]
+        os: [ubuntu-24.04, macos-15, xcode-27]
     continue-on-error: ${{ matrix.os == 'xcode-27' }}
     runs-on: ${{ matrix.os }}
     defaults:
@@ -57,20 +57,33 @@ jobs:
       - name: pytest
         run: uv run pytest -n 4
 
+  # Built the way release.yml builds it: Linux inside ubuntu:22.04 (the glibc 2.35 floor).
   frozen-smoke:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             key: x86_64
+            container: ubuntu:22.04
           - os: macos-15
             key: darwin-arm64
+            container: ''
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
+      - name: Build prerequisites (ubuntu:22.04 container)
+        if: matrix.container != ''
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            binutils ca-certificates git
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
       - name: Verify it runs without a Python runtime
         run: ./dist/devboost-${{ matrix.key }} --version
+      - name: Check the glibc floor (<= 2.35)
+        if: matrix.key != 'darwin-arm64'
+        run: bash scripts/check-glibc-floor.sh "dist/devboost-${{ matrix.key }}" 2.35

@@ -133,7 +133,8 @@ def test_vm_smoke_asserts_ghostty_sources() -> None:
 def test_kickstart_job_unchanged() -> None:
     """The pre-existing `kickstart-smoke` job must stay byte-identical — Task 7 only adds a
     new job, never touches this one. Snapshot taken at T0 (pre-Task-7 file), in
-    fixtures/kickstart-smoke-job.yml."""
+    fixtures/kickstart-smoke-job.yml; the one deliberate change since is its runner,
+    ubuntu-22.04 → ubuntu-24.04 (the 22.04 image's deprecation, ruling C-M6-R1)."""
     fixture = Path(__file__).parent / "fixtures" / "kickstart-smoke-job.yml"
     expected = fixture.read_text(encoding="utf-8")
 
