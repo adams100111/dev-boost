@@ -41,8 +41,10 @@ macOS; downloads the matching `devboost-darwin-arm64` binary from the latest Git
 and verifies it against the release's `checksums.txt`; only then bootstraps Homebrew + the
 CLT (when missing); installs the binary onto PATH (`~/.local/bin/devboost`); and runs
 `devboost install macos`. If the latest release carries no Mac binary — every release before
-v0.2.0 — it stops with `no devboost-darwin-arm64 in release <tag> yet — macOS support ships
-in v0.2.0` and nothing on the machine has changed. See
+v1.0.0 — it stops with `no devboost-darwin-arm64 in release <tag> yet — macOS support starts
+with v1.0.0` and nothing on the machine has changed. A download that fails for any other
+reason (timeout, TLS, DNS) is reported as `downloading devboost-darwin-arm64 failed (network
+error, exit <n>)`, with curl's own message; nothing has changed then either. See
 [docs/credentials.md](credentials.md) for how the first run gets a GitHub token, and
 "Self-update" and "Troubleshooting" below.
 
@@ -252,7 +254,8 @@ run carries on. Run `devboost install` again afterwards.
 | csharp-ls / aspire: "You must install .NET" | open a new shell: env.sh exports DOTNET_ROOT=~/.dotnet |
 | herdr --remote from the Mac disconnects right away | herdr < 0.8 on either end — run devboost install on both machines (pin 0.9.1) |
 | Gatekeeper blocks `devboost-darwin-arm64` ("cannot be opened because the developer cannot be verified") | Only a **browser**-downloaded binary is quarantined — `curl \| bash` never sets `com.apple.quarantine`, so `get.sh` and `self-update` are unaffected. Clear it: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`, then `chmod +x` it. The binary carries PyInstaller's **ad-hoc** signature only — there is no Developer ID and no notarization — so if Gatekeeper still objects after the xattr is cleared, run it from a terminal, or allow it once under System Settings → Privacy & Security. |
-| `get.sh`: `no devboost-darwin-arm64 in release <tag> yet — macOS support ships in v0.2.0` | The latest release predates macOS support (v0.2.0). Nothing was installed — not even Homebrew; re-run once v0.2.0 is out. |
+| `get.sh`: `no devboost-darwin-arm64 in release <tag> yet — macOS support starts with v1.0.0` | The latest release predates macOS support (v1.0.0). Nothing was installed — not even Homebrew; re-run once v1.0.0 is out. |
+| `get.sh`: `downloading devboost-darwin-arm64 failed (network error, exit <n>)` | The release has the binary, but the download itself failed (curl's message follows: a timeout, TLS or DNS error, a reset). Nothing was installed; check the connection and re-run. |
 | `get.sh`: `this shell runs under Rosetta (x86_64) — open a native (arm64) terminal` | Your terminal app is set to "Open using Rosetta" (Finder → Get Info) or you started an `arch -x86_64` shell. Open a native terminal and re-run; nothing was installed. |
 
 ## Linux gate

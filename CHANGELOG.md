@@ -30,7 +30,8 @@ git history and the GitHub release notes.
   Ventoy archive. It downloads and **verifies the binary before installing Homebrew or the
   CLT**, so a missing asset or a checksum failure leaves the Mac untouched; a release with no
   Mac binary is reported as `no devboost-darwin-arm64 in release <tag> yet — macOS support
-  ships in v0.2.0`. It refuses an Intel Mac, a Rosetta-translated shell ("open a native
+  starts with v1.0.0`, and a download that fails for another reason (timeout, TLS, DNS) as a
+  network error with curl's own message, not as a missing asset. It refuses an Intel Mac, a Rosetta-translated shell ("open a native
   (arm64) terminal" — Homebrew's installer aborts under Rosetta) and root, all before any
   network call; refuses the `usb` profile
   on macOS before any network call or filesystem change (it's Linux-only); fails **closed**

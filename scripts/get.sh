@@ -147,6 +147,17 @@ gs_fetch() {
   else gs_err "need curl or wget"; return 1; fi
 }
 
+# gs_not_found RC — true when gs_fetch's exit code RC means "the server has no such file",
+# as opposed to a network, DNS, TLS or timeout failure. curl -f: 22 is an HTTP error
+# (404 …), 37 a file:// path that cannot be read; wget: 8 is a server error response.
+gs_not_found() {
+  if command -v curl >/dev/null 2>&1; then
+    [ "$1" -eq 22 ] || [ "$1" -eq 37 ]
+  else
+    [ "$1" -eq 8 ]
+  fi
+}
+
 gs_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"
   elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$@"
@@ -192,7 +203,7 @@ gs_missing_asset() {
   local asset="$1" os="$2" tag
   tag="$(gs_release_tag)"
   if [ "$os" = darwin ]; then
-    gs_err "no ${asset} in release ${tag} yet — macOS support ships in v0.2.0"
+    gs_err "no ${asset} in release ${tag} yet — macOS support starts with v1.0.0"
   else
     gs_err "no ${asset} in release ${tag} yet"
   fi
@@ -239,7 +250,7 @@ gs_on_signal() {
 }
 
 gs_main() {
-  local os arch tmp profiles bindir link
+  local os arch tmp profiles bindir link rc
   gs_check_base || return 1
   os="$(gs_os)" || return 1
 
@@ -286,8 +297,21 @@ gs_main() {
     gs_missing_asset "devboost-${arch}" "$os"
     return 1
   fi
-  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" 2>/dev/null \
-    || { gs_missing_asset "devboost-${arch}" "$os"; return 1; }
+  # A 404 is a missing asset; anything else (timeout, TLS, reset, DNS) is a network error
+  # and is reported as one, with the downloader's own message, not as a missing asset.
+  rc=0
+  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" 2>"${tmp}/fetch.err" \
+    || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if gs_not_found "$rc"; then
+      gs_missing_asset "devboost-${arch}" "$os"
+    else
+      gs_err "downloading devboost-${arch} failed (network error, exit ${rc}):"
+      sed 's/^/  /' "${tmp}/fetch.err" >&2
+      gs_err "nothing was installed. Check the connection and re-run."
+    fi
+    return 1
+  fi
   gs_verify "$tmp" "devboost-${arch}" || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
   if [ "$os" = linux ]; then
     # The Ventoy injection archive is shipped alongside the binary so the online-installed

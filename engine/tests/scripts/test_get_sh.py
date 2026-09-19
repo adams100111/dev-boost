@@ -222,6 +222,10 @@ def _make_harness(
         '  printf "%s" "$GS_TEST_TAG_URL"; exit 0\n'
         "fi\n"
         + kill_clause
+        # GS_TEST_NET_FAIL=<asset>: that download dies like a timed-out curl (exit 28).
+        + 'if [ "${url##*/}" = "${GS_TEST_NET_FAIL:-}" ]; then\n'
+        '  echo "curl: (28) Operation timed out after 30000 milliseconds" >&2; exit 28\n'
+        "fi\n"
         + f'src="{canned}/${{url##*/}}"\n'
         '[ -f "$src" ] || exit 22\n'
         'if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi\n'
@@ -585,7 +589,8 @@ def test_checksum_mismatch_leaves_the_mac_untouched(stub_path: StubPath, tmp_pat
 
 
 MISSING_MAC_ASSET = (
-    "get.sh: no devboost-darwin-arm64 in release v0.1.80 yet — macOS support ships in v0.2.0"
+    "get.sh: no devboost-darwin-arm64 in release v0.1.80 yet — macOS support starts with "
+    "v1.0.0"
 )
 TAG_URL = "https://github.com/adams100111/dev-boost/releases/tag/v0.1.80"
 
@@ -626,8 +631,8 @@ def test_missing_asset_without_a_resolvable_tag(stub_path: StubPath, tmp_path: P
     proc = _run_get_sh(h)
     assert proc.returncode == 1
     assert (
-        "get.sh: no devboost-darwin-arm64 in release (latest) yet — macOS support ships in "
-        "v0.2.0" in _stderr(proc)
+        "get.sh: no devboost-darwin-arm64 in release (latest) yet — macOS support starts "
+        "with v1.0.0" in _stderr(proc)
     )
 
 
@@ -657,6 +662,49 @@ def test_missing_asset_under_an_overridden_base_names_the_base(
     )
     # No tag probe against github.com for a non-default base.
     assert not [a for a in h.curl_argvs() if "-w" in a.split()]
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "asset"),
+    [("Darwin", "arm64", "devboost-darwin-arm64"), ("Linux", "x86_64", "devboost-x86_64")],
+)
+def test_a_network_error_is_not_reported_as_a_missing_asset(
+    stub_path: StubPath, tmp_path: Path, system: str, machine: str, asset: str
+) -> None:
+    """M1: the asset IS in checksums.txt; its download times out. Say it was the network,
+    show curl's own message, and still touch nothing."""
+    h = _make_harness(
+        stub_path, tmp_path, system=system, machine=machine, brew=False,
+        GS_TEST_TAG_URL=TAG_URL, GS_TEST_NET_FAIL=asset,
+    )
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    err = _stderr(proc)
+    assert f"get.sh: downloading {asset} failed (network error, exit 28):" in err
+    assert "  curl: (28) Operation timed out" in err
+    assert "nothing was installed. Check the connection and re-run." in err
+    assert "no devboost" not in err and "macOS support" not in err
+    assert h.order() == []
+    assert not h.installed.exists()
+    assert not (h.home / ".local").exists()
+    assert h.leaked_temp_dirs() == []
+
+
+def test_a_missing_file_under_a_file_base_is_a_missing_asset(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """The real curl on a file:// base exits 37 (not 22) for an absent file: still missing."""
+    if shutil.which("curl") is None:
+        pytest.skip("curl is not installed")
+    h = _make_harness(stub_path, tmp_path, real_curl=True)
+    (h.canned / "devboost-darwin-arm64").unlink()
+    h.env["DEVBOOST_RELEASE_BASE"] = "file://" + urllib.parse.quote(str(h.canned))
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    err = _stderr(proc)
+    assert "get.sh: no devboost-darwin-arm64 in release at file://" in err
+    assert "network error" not in err
+    assert not h.installed.exists()
 
 
 def test_checksum_entry_is_an_exact_name_match(stub_path: StubPath, tmp_path: Path) -> None:

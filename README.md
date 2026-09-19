@@ -69,9 +69,9 @@ curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/
 Downloads the matching `devboost-darwin-arm64` binary and verifies its SHA256 **first**;
 only then does it bootstrap Homebrew (and the Xcode Command Line Tools) if missing, install
 the binary onto PATH, and run `devboost install macos` — so a missing or bad release leaves
-the Mac untouched. A release that has no Mac binary yet (anything before v0.2.0) is reported
-as `no devboost-darwin-arm64 in release <tag> yet — macOS support ships in v0.2.0`, with
-nothing installed. Apple Silicon only, from a native (arm64) terminal: Intel is refused, and
+the Mac untouched. A release that has no Mac binary yet (anything before v1.0.0) is reported
+as `no devboost-darwin-arm64 in release <tag> yet — macOS support starts with v1.0.0`, and a
+failed download as a network error, with nothing installed either way. Apple Silicon only, from a native (arm64) terminal: Intel is refused, and
 so is a Rosetta-translated shell ("open a native (arm64) terminal"). macOS 27 Golden Gate
 and 26 Tahoe are supported, 15 is best-effort. `curl … | bash` sets no quarantine attribute, so
 the binary just runs; a binary you instead fetch with a **browser** is quarantined by
