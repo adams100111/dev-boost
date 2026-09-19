@@ -21,6 +21,7 @@ from devboost.exec.primitives import (
     pkg,
     shell,
     systemd,
+    tcc,
     usermgmt,
 )
 
@@ -38,5 +39,6 @@ __all__ = [
     "pkg",
     "shell",
     "systemd",
+    "tcc",
     "usermgmt",
 ]

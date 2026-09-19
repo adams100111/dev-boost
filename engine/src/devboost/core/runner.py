@@ -9,6 +9,7 @@ from typing import Literal
 from devboost.core import log
 from devboost.core.errors import NeedsUser, PresentUnmanaged
 from devboost.core.plan import PlannedModule
+from devboost.exec.primitives import tcc
 from devboost.model import Ctx, Module
 
 Status = Literal["ok", "skip", "fail", "blocked"]
@@ -37,6 +38,21 @@ def run_plan(
     return results
 
 
+def _tcc_gate(pm: PlannedModule, mod: Module, ctx: Ctx, ok: RunResult) -> RunResult:
+    """On macOS, a module is only done once the user has granted its app's permissions."""
+    if ctx.os.family != "macos" or not type(mod).tcc:
+        return ok
+    missing = tcc.pending(pm.name, type(mod).tcc)
+    if not missing:
+        return ok
+    hint = tcc.fix_hint(missing)
+    log.warn(
+        f"{pm.name}: needs permissions — {hint}; "
+        f"then `devboost permissions --confirm {pm.name}`"
+    )
+    return RunResult(pm.name, "blocked", f"needs-user: grant permissions → {hint}")
+
+
 def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunResult:
     if pm.skip_reason is not None:
         log.skip(f"{pm.name} ({pm.skip_reason})")
@@ -53,7 +69,7 @@ def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunR
         return RunResult(pm.name, "ok", "dry-run")
     if not ctx.force and mod.verify(ctx):
         log.skip(f"{pm.name} (already installed)")
-        return RunResult(pm.name, "skip", "already-installed")
+        return _tcc_gate(pm, mod, ctx, RunResult(pm.name, "skip", "already-installed"))
     try:
         mod.install(ctx)
     except NeedsUser as exc:
@@ -67,6 +83,6 @@ def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunR
         return RunResult(pm.name, "fail", str(exc))
     if mod.verify(ctx):
         log.ok(f"installed {pm.name}")
-        return RunResult(pm.name, "ok")
+        return _tcc_gate(pm, mod, ctx, RunResult(pm.name, "ok"))
     log.error(f"{pm.name}: verify failed after install")
     return RunResult(pm.name, "fail", "verify-failed-after-install")

@@ -15,6 +15,7 @@ from devboost.cli import devhygiene as dh
 from devboost.cli import lifecycle as lc
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
+from devboost.cli.permissions import permissions as _permissions
 from devboost.cli.selection import select_modules
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
@@ -479,6 +480,7 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
 
 
 app.command(name="installer")(_installer)
+app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
 
 
