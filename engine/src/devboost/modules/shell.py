@@ -15,7 +15,7 @@ from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.core.settings import settings
-from devboost.exec.primitives import copr, flatpak, pkg
+from devboost.exec.primitives import copr, pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules.base import Chezmoi
@@ -186,9 +186,8 @@ class Ghostty(Module):
         if (s := self.os_strategy(ctx)) is not None:
             return s.verify(ctx)
         if ctx.os.family == "debian":
-            return "com.mitchellh.ghostty" in ctx.ex.run(
-                ["flatpak", "list", "--app", "--columns=application"]
-            ).stdout
+            # /snap/bin may not be on devboost's own PATH yet, so ask snap too.
+            return ctx.ex.which("ghostty") or ctx.ex.run(["snap", "list", "ghostty"]).ok
         return ctx.ex.which("ghostty")
 
     def install(self, ctx: Ctx) -> None:
@@ -196,7 +195,14 @@ class Ghostty(Module):
             s.install(ctx)
             return
         if ctx.os.family == "debian":
-            flatpak.install(ctx, "com.mitchellh.ghostty")
+            # Flathub has no Ghostty (com.mitchellh.ghostty is a 404); the snap is the
+            # packaged build for Ubuntu/Debian. Classic confinement: a terminal needs the
+            # user's whole filesystem and shell. snapd ships on Ubuntu desktop.
+            if not ctx.ex.which("snap"):
+                pkg.install(ctx, "snapd")
+            res = ctx.ex.run(["snap", "install", "ghostty", "--classic"], sudo=True)
+            if not res.ok:
+                raise InstallError(self.name, "snap install ghostty --classic", res.code)
         else:
             copr.enable(ctx, "scottames/ghostty")
             pkg.install(ctx, "ghostty")

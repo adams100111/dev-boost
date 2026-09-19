@@ -54,6 +54,9 @@ git history and the GitHub release notes.
 - Ghostty config: `theme = Catppuccin Mocha` (Title Case) and `toggle_split_zoom` — the old
   values were rejected by Ghostty 1.3.
 - `git credential fill` also neutralises `core.askPass`.
+- Ubuntu/Debian: Ghostty installs as a classic snap (`snap install ghostty --classic`);
+  Flathub has no Ghostty. A failed `flatpak install` now fails its module instead of
+  passing silently.
 
 ### Removed
 - `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device

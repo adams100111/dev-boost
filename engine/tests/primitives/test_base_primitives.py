@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import config, copr, flatpak, mise
@@ -62,6 +65,14 @@ def test_flatpak_install_skips_remote_add_when_flathub_present() -> None:
     ctx = _ctx(scripts={"flatpak": Result(0, stdout="flathub\n")}, present={"flatpak"})
     flatpak.install(ctx, "com.mitchellh.ghostty")
     assert not any("remote-add" in c for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_flatpak_install_failure_raises() -> None:
+    """A failed `flatpak install` (e.g. an app id Flathub does not have) is an error."""
+    ctx = _ctx(scripts={"flatpak": Result(1, stdout="flathub\n")}, present={"flatpak"})
+    with pytest.raises(InstallError) as exc:
+        flatpak.install(ctx, "com.example.Missing")
+    assert "com.example.Missing" in exc.value.command
 
 
 def test_mise_use_global() -> None:
