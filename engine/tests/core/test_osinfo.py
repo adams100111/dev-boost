@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from devboost.core.osinfo import OsInfo, OsMap, detect, family_of, is_headless
+from devboost.core import osinfo
+from devboost.core.osinfo import OsInfo, OsMap, detect, family_of, is_headless, normalize_arch
 
 
 def test_family_mapping() -> None:
@@ -18,7 +19,7 @@ def test_detect_reads_os_release(tmp_path: Path) -> None:
     # No DISPLAY and no readable default target → headless.
     info = detect(
         os_release_path=str(p), machine="x86_64", env={},
-        default_target_link=str(tmp_path / "no-such-target"),
+        default_target_link=str(tmp_path / "no-such-target"), system="Linux",
     )
     assert info.distro == "fedora"
     assert info.family == "fedora"
@@ -31,30 +32,30 @@ def test_detect_reads_version_id_and_codename(tmp_path: Path) -> None:
     p.write_text('ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n', encoding="utf-8")
     info = detect(
         os_release_path=str(p), machine="x86_64", env={},
-        default_target_link=str(tmp_path / "no-such-target"),
+        default_target_link=str(tmp_path / "no-such-target"), system="Linux",
     )
     assert info.version_id == "24.04"
     assert info.codename == "noble"
 
 
 def test_is_headless_false_when_display_set(tmp_path: Path) -> None:
-    assert is_headless({"DISPLAY": ":0"}, str(tmp_path / "missing")) is False
+    assert is_headless({"DISPLAY": ":0"}, str(tmp_path / "missing"), system="Linux") is False
 
 
 def test_is_headless_false_when_default_target_graphical(tmp_path: Path) -> None:
     link = tmp_path / "default.target"
     os.symlink("/usr/lib/systemd/system/graphical.target", link)
-    assert is_headless({}, str(link)) is False
+    assert is_headless({}, str(link), system="Linux") is False
 
 
 def test_is_headless_true_when_default_target_multi_user(tmp_path: Path) -> None:
     link = tmp_path / "default.target"
     os.symlink("/usr/lib/systemd/system/multi-user.target", link)
-    assert is_headless({}, str(link)) is True
+    assert is_headless({}, str(link), system="Linux") is True
 
 
 def test_is_headless_true_when_target_unreadable(tmp_path: Path) -> None:
-    assert is_headless({}, str(tmp_path / "missing")) is True
+    assert is_headless({}, str(tmp_path / "missing"), system="Linux") is True
 
 
 def test_osmap_precedence_distro_then_family_then_default() -> None:
@@ -69,3 +70,45 @@ def test_osmap_precedence_distro_then_family_then_default() -> None:
 
     empty: OsMap[str] = OsMap()
     assert empty.get(fedora) is None
+
+
+def test_normalize_arch_maps_apple_and_amd_aliases() -> None:
+    assert normalize_arch("arm64") == "aarch64"
+    assert normalize_arch("amd64") == "x86_64"
+    assert normalize_arch("aarch64") == "aarch64"
+    assert normalize_arch("x86_64") == "x86_64"
+
+
+def test_detect_darwin_reports_macos_family_version_and_normalized_arch(tmp_path: Path) -> None:
+    info = detect(
+        os_release_path=str(tmp_path / "absent"), machine="arm64", env={},
+        default_target_link=str(tmp_path / "absent"), system="Darwin", mac_version="27.0",
+    )
+    assert (info.distro, info.family, info.arch, info.version_id) == (
+        "macos", "macos", "aarch64", "27.0"
+    )
+    assert info.headless is False
+
+
+def test_is_headless_darwin_only_over_ssh(tmp_path: Path) -> None:
+    missing = str(tmp_path / "missing")
+    assert is_headless({}, missing, system="Darwin") is False
+    assert is_headless({"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22"}, missing, system="Darwin")
+    assert is_headless({"SSH_TTY": "/dev/ttys001"}, missing, system="Darwin")
+
+
+def test_osmap_macos_resolves_by_family() -> None:
+    mac = OsInfo("macos", "macos", "aarch64")
+    m: OsMap[str] = OsMap(fedora="fd-find", macos="fd", default="x")
+    assert m.get(mac) == "fd"
+    assert OsMap[str](default="x").get(mac) == "x"
+
+
+def test_conftest_pins_only_argumentless_detect(tmp_path: Path) -> None:
+    # conftest's autouse _linux_host: bare detect() is Fedora on any host, while a call
+    # with arguments really parses (system defaults to Linux, so this holds on a Mac too).
+    rel = tmp_path / "os-release"
+    rel.write_text("ID=arch\n", encoding="utf-8")
+    assert osinfo.detect().distro == "fedora"
+    assert osinfo.detect(os_release_path=str(rel)).distro == "arch"
+    assert osinfo.detect(system="Darwin", mac_version="27.0").family == "macos"

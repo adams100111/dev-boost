@@ -7,7 +7,7 @@ else (primitives, per-OS strategies) is how a module implements those two method
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, NoReturn, Protocol, runtime_checkable
+from typing import ClassVar, Literal, NoReturn, Protocol, runtime_checkable
 
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.exec.executor import Executor
@@ -47,11 +47,32 @@ class AptRepo:  # seam — not implemented for the Fedora-only delivery
 
 
 @dataclass(frozen=True)
+class BrewTap:
+    """A Homebrew tap (third-party formula/cask repository), e.g. ``ddev/ddev``."""
+
+    name: str
+    url: str | None = None
+
+
+@dataclass(frozen=True)
 class Script:
     url: str
 
 
-Source = OsMap[DnfRepo | AptRepo | Script]
+#: System Settings → Privacy & Security anchor ids. ListenEvent = "Input Monitoring",
+#: ScreenCapture = "Screen Recording".
+TccService = Literal["Accessibility", "ListenEvent", "Microphone", "ScreenCapture"]
+
+
+@dataclass(frozen=True)
+class TccGrant:
+    """A macOS privacy permission an app needs; only the user can grant it."""
+
+    service: TccService
+    app: str
+
+
+Source = OsMap[DnfRepo | AptRepo | BrewTap | Script]
 
 
 class Module:
@@ -71,6 +92,12 @@ class Module:
     #: module which does nothing says why. Omarchy, for instance, packages herdr and ships
     #: its own terminal and fonts; reinstalling ours would downgrade or fight the platform.
     provided_by: ClassVar[tuple[str, ...]] = ()
+    #: macOS privacy permissions this module's app needs (scripts cannot grant them;
+    #: the runner reports them as `blocked` with a one-click fix until confirmed).
+    tcc: ClassVar[tuple[TccGrant, ...]] = ()
+    #: True when a custom-install module is verified to work unchanged on macOS (no
+    #: per_os.macos needed). Read by the macOS catalog contract test.
+    portable: ClassVar[bool] = False
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 

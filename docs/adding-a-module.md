@@ -63,3 +63,16 @@ seams). Per-OS differences escalate only where needed:
 
 Adding Ubuntu = implement the `Apt` manager once + fill `debian=` entries only in the modules that
 truly diverge. The OS-agnostic majority is untouched.
+
+## macOS
+
+- Simple tools: `PackageModule` works as-is; set `brew_pkg` when the formula name differs
+  from the module name (e.g. `delta` → `git-delta`), or `brew_cask` for app-only tools.
+- GUI apps: set `cask` on your `FlatpakApp` subclass.
+- Custom install logic: declare `per_os = OsMap(macos=YourMacStrategy())`, or
+  `families = ("fedora", "debian", "arch")` if the module cannot exist on a Mac, or
+  `provided_by = ("macos",)` if macOS already covers it, or `portable = True` once you have
+  verified it runs unchanged.
+- Background jobs: use `launchd.user_agent(...)` (label `launchd.label("<name>")`).
+- Privacy permissions: `tcc = (TccGrant("Accessibility", "AppName"),)`.
+- `tests/core/test_macos_contract.py` fails if you add a module with no macOS answer.

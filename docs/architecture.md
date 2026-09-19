@@ -16,7 +16,8 @@ runtime on the target.
   `registry` (`@register` auto-discovery + load-time validation), `settings`, `errors`, `log` (loguru).
 - **`exec/`** — `executor.py` (the `Executor` Protocol + `RealExecutor` + recording `FakeExecutor`) and
   `primitives/` (the typed, idempotent, OS-aware vocabulary: `pkg`, `flatpak`, `copr`, `mise`, `config`,
-  `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`).
+  `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`, `launchd` (LaunchAgents/Daemons), `tcc`
+  (macOS privacy grants), `usermgmt`).
 - **`modules/`** — ~100 typed module classes, one declaration each; `requires` are class references.
 - **`profiles.toml`** (repo root, bundled in the binary) — named module sets; `expand` resolves them
   and `toposort` adds the transitive `requires` closure. `devboost.lock` is the deterministic snapshot.
@@ -30,9 +31,17 @@ resumable; a failure names the module and the exact failing command.
 
 ## OS dispatch
 
-The package manager is selected once from `ctx.os` (Fedora's `Dnf` implemented; `Apt`/`Pacman` are
-seams). Per-OS divergence is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os`
-`Installer` strategies — resolved `distro → family → default`. No branching in the engine.
+The package manager is selected once from `ctx.os`: `Dnf` (Fedora), `Apt` (Debian/Ubuntu), `Pacman`
+(Arch/Omarchy), `Brew` (macOS — formulae, casks with `--adopt`, taps; never sudo). Per-OS divergence
+is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os` `Installer` strategies —
+resolved `distro → family → default`. No branching in the engine.
+
+### User-only steps
+
+`NeedsUser(reason, how_to_fix)` is reported `blocked` with the fix and never fails the run;
+`PresentUnmanaged` (an app installed outside dev-boost) is a `skip`. Modules declare macOS privacy
+needs as `tcc = (TccGrant(...),)`; the runner blocks them until `devboost permissions --confirm
+<module>`.
 
 ## Delivery
 

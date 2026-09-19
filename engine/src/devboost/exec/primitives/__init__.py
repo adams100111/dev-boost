@@ -16,10 +16,12 @@ from devboost.exec.primitives import (
     fs,
     github,
     gpu,
+    launchd,
     mise,
     pkg,
     shell,
     systemd,
+    tcc,
     usermgmt,
 )
 
@@ -32,9 +34,11 @@ __all__ = [
     "fs",
     "github",
     "gpu",
+    "launchd",
     "mise",
     "pkg",
     "shell",
     "systemd",
+    "tcc",
     "usermgmt",
 ]

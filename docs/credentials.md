@@ -106,3 +106,28 @@ broken and reinstall over it on every run.
 - Prefer a **fine-grained** PAT scoped to the repositories you need, not a classic token
   with blanket `repo` scope.
 - `ssh-setup` exists so day-to-day pushes use your SSH key rather than the token.
+
+## macOS
+
+macOS is gh-first: signing in via the interactive menu runs `gh auth setup-git`, so git
+authenticates through `gh` rather than a plaintext token on disk. If a bundle or manual
+token is used instead, `secrets` sets `credential.helper osxkeychain` and hands the token
+to `git credential approve` on stdin — it is stored in the login keychain, **never** written
+to `~/.git-credentials`.
+
+`devboost secrets import-key <file>` stores an `age-keygen`-format identity file (comment
+lines ignored; it must contain exactly one `AGE-SECRET-KEY-…` line) in the login keychain
+via `security -i` on stdin, so the key itself never appears in argv or `ps`; the file can
+then be deleted. `secrets` reads it back from the keychain when no key file is present.
+
+Modules obtain a GitHub token from exactly one place — `_credentials.github_credentials()`
+— which tries, in order:
+
+1. The `age`-encrypted bundle (its required fields must all be present).
+2. An authenticated `gh` (`gh auth token`).
+3. A `github.com` line in `~/.git-credentials`, if one exists.
+4. `git credential fill`, which on macOS reads the token `secrets` stored via the
+   `osxkeychain` helper.
+
+The first source that yields a complete set wins; callers never raise on failure, since
+`ssh-setup` and `obsidian-sync` treat `None` as "try again next run".

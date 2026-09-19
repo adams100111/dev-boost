@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -38,12 +39,18 @@ class Executor(Protocol):
     def which(self, cmd: str) -> bool: ...
 
 
-def _prepend_mise_dirs(path: str) -> str:
+_HOMEBREW_DIRS = ("/opt/homebrew/bin", "/opt/homebrew/sbin")
+
+
+def _prepend_mise_dirs(path: str, system: str | None = None) -> str:
     """Return *path* with the user tool dirs prepended (if not already present).
 
     Ensures tools found in subprocesses even on a fresh firstboot where the user's shell
     profile has not been sourced: ``mise`` shims (node, pnpm, bun, …), ``~/.local/bin``, and
     ``~/.dotnet/tools`` (where ``dotnet tool install -g`` puts aspire, csharp-ls, csharpier).
+
+    On macOS a ``curl | bash`` run has no brew shellenv yet, so Homebrew's prefix is
+    added too — brew and everything it installs resolve without a new login shell.
     """
     try:
         home = Path.home()
@@ -54,6 +61,8 @@ def _prepend_mise_dirs(path: str) -> str:
         str(home / ".local" / "bin"),
         str(home / ".dotnet" / "tools"),
     ]
+    if (system or platform.system()) == "Darwin":
+        prepend.extend(_HOMEBREW_DIRS)
     existing = path.split(os.pathsep) if path else []
     new_parts = [p for p in prepend if p not in existing]
     return os.pathsep.join([*new_parts, *existing]) if new_parts else path

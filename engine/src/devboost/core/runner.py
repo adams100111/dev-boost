@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from devboost.core import log
+from devboost.core.errors import NeedsUser, PresentUnmanaged
 from devboost.core.plan import PlannedModule
+from devboost.exec.primitives import tcc
 from devboost.model import Ctx, Module
 
 Status = Literal["ok", "skip", "fail", "blocked"]
@@ -18,6 +20,9 @@ class RunResult:
     name: str
     status: Status
     detail: str = ""
+    #: Whether a fail/blocked result stops the modules that require this one. False for
+    #: a TCC-pending result: the install itself succeeded, only the user's grant is owed.
+    blocks_dependents: bool = True
 
 
 def run_plan(
@@ -30,10 +35,27 @@ def run_plan(
     results: list[RunResult] = []
     for pm in plan:
         result = _run_one(pm, modules[pm.name](), ctx, failed_or_blocked)
-        if result.status in ("fail", "blocked"):
+        if result.status in ("fail", "blocked") and result.blocks_dependents:
             failed_or_blocked.add(pm.name)
         results.append(result)
     return results
+
+
+def _tcc_gate(pm: PlannedModule, mod: Module, ctx: Ctx, ok: RunResult) -> RunResult:
+    """On macOS, a module is only done once the user has granted its app's permissions."""
+    if ctx.os.family != "macos" or not type(mod).tcc:
+        return ok
+    missing = tcc.pending(pm.name, type(mod).tcc)
+    if not missing:
+        return ok
+    hint = tcc.fix_hint(missing)
+    log.warn(
+        f"{pm.name}: needs permissions — {hint}; "
+        f"then `devboost permissions --confirm {pm.name}`"
+    )
+    return RunResult(
+        pm.name, "blocked", f"needs-user: grant permissions → {hint}", blocks_dependents=False
+    )
 
 
 def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunResult:
@@ -52,14 +74,20 @@ def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunR
         return RunResult(pm.name, "ok", "dry-run")
     if not ctx.force and mod.verify(ctx):
         log.skip(f"{pm.name} (already installed)")
-        return RunResult(pm.name, "skip", "already-installed")
+        return _tcc_gate(pm, mod, ctx, RunResult(pm.name, "skip", "already-installed"))
     try:
         mod.install(ctx)
+    except NeedsUser as exc:
+        log.warn(f"{pm.name}: needs you — {exc.reason}. Fix: {exc.how_to_fix}")
+        return RunResult(pm.name, "blocked", f"needs-user: {exc.reason} → {exc.how_to_fix}")
+    except PresentUnmanaged as exc:
+        log.skip(f"{pm.name} ({exc.item} already installed outside dev-boost — left untouched)")
+        return RunResult(pm.name, "skip", "present-unmanaged")
     except Exception as exc:  # noqa: BLE001 — surface any module failure as a fail result
         log.error(f"{pm.name}: {exc}")
         return RunResult(pm.name, "fail", str(exc))
     if mod.verify(ctx):
         log.ok(f"installed {pm.name}")
-        return RunResult(pm.name, "ok")
+        return _tcc_gate(pm, mod, ctx, RunResult(pm.name, "ok"))
     log.error(f"{pm.name}: verify failed after install")
     return RunResult(pm.name, "fail", "verify-failed-after-install")

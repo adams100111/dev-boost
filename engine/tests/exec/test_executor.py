@@ -102,3 +102,20 @@ def test_prepend_mise_dirs_includes_dotnet_tools() -> None:
     dotnet = str(Path.home() / ".dotnet" / "tools")
     assert dotnet in parts
     assert parts.index(dotnet) < parts.index("/usr/bin")
+
+
+def test_darwin_path_includes_homebrew_after_user_dirs() -> None:
+    out = _prepend_mise_dirs("/usr/bin", system="Darwin").split(os.pathsep)
+    assert out.index("/opt/homebrew/bin") < out.index("/usr/bin")
+    assert "/opt/homebrew/sbin" in out
+    assert out[0].endswith(".local/share/mise/shims")
+
+
+def test_linux_path_has_no_homebrew() -> None:
+    assert "/opt/homebrew/bin" not in _prepend_mise_dirs("/usr/bin", system="Linux")
+
+
+def test_homebrew_not_duplicated() -> None:
+    path = f"/opt/homebrew/bin{os.pathsep}/usr/bin"
+    out = _prepend_mise_dirs(path, system="Darwin").split(os.pathsep)
+    assert out.count("/opt/homebrew/bin") == 1

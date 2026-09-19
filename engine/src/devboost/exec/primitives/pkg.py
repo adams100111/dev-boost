@@ -11,21 +11,23 @@ import shlex
 from typing import Protocol, runtime_checkable
 
 from devboost.core import log
-from devboost.core.errors import InstallError, UnsupportedOS
+from devboost.core.errors import InstallError, PresentUnmanaged, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
-from devboost.model import AptRepo, Ctx, DnfRepo
+from devboost.exec.executor import Result
+from devboost.model import AptRepo, BrewTap, Ctx, DnfRepo
 
 # A package name: a plain string, or per-OS names resolved distro->family->default.
 Pkg = str | OsMap[str]
-# A third-party install source per OS (DnfRepo for Fedora, AptRepo for Debian/Ubuntu).
-Source = OsMap[DnfRepo | AptRepo]
+# A third-party install source per OS.
+Repo = DnfRepo | AptRepo | BrewTap
+Source = OsMap[Repo]
 
 
 @runtime_checkable
 class PackageManager(Protocol):
     def install(self, ctx: Ctx, *pkgs: str) -> None: ...
     def installed(self, ctx: Ctx, pkg: str) -> bool: ...
-    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None: ...
+    def add_repo(self, ctx: Ctx, repo: Repo) -> None: ...
 
 
 class Dnf:
@@ -38,7 +40,7 @@ class Dnf:
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return ctx.ex.run(["rpm", "-q", pkg]).ok
 
-    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+    def add_repo(self, ctx: Ctx, repo: Repo) -> None:
         if not isinstance(repo, DnfRepo):
             raise TypeError(f"Dnf.add_repo expects DnfRepo, got {type(repo).__name__}")
         body = (
@@ -91,7 +93,7 @@ class Apt:
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return ctx.ex.run(["dpkg", "-s", pkg]).ok
 
-    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+    def add_repo(self, ctx: Ctx, repo: Repo) -> None:
         if not isinstance(repo, AptRepo):
             raise TypeError(f"Apt.add_repo expects AptRepo, got {type(repo).__name__}")
         slug = _apt_slug(repo.list_line)
@@ -163,7 +165,7 @@ class Pacman:
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return ctx.ex.run(["pacman", "-Q", pkg]).ok
 
-    def add_repo(self, ctx: Ctx, repo: DnfRepo | AptRepo) -> None:
+    def add_repo(self, ctx: Ctx, repo: Repo) -> None:
         # Arch third-party software comes from the AUR or a distro-provided repo, not from
         # per-package repo files. A module reaching here has a per-OS Source that simply
         # does not apply to Arch — say so instead of silently doing nothing.
@@ -193,6 +195,75 @@ class Pacman:
             raise InstallError("aur", cmd, result.code)
 
 
+#: Every brew call runs with these. Auto-update is replaced by one explicit `brew update`
+#: per run (refresh_index); cleanup and hints are noise in an unattended install.
+BREW_ENV: dict[str, str] = {
+    "HOMEBREW_NO_AUTO_UPDATE": "1",
+    "HOMEBREW_NO_INSTALL_CLEANUP": "1",
+    "HOMEBREW_NO_ENV_HINTS": "1",
+    "NONINTERACTIVE": "1",
+}
+
+# brew's messages when a cask's app already exists and cannot be taken over
+# (Homebrew 7.0.4, cask/artifact/moved.rb). With --adopt, a hand-installed app whose
+# bundle version differs raises the first; the second is the wording without
+# --adopt/--force, kept as a fallback should brew's flow change.
+_ALREADY_PRESENT = (
+    "is different from the one being installed",
+    "already an App at",
+)
+
+
+class Brew:
+    """macOS. Formulae and casks via Homebrew — never under sudo (brew refuses root).
+
+    ``brew`` is invoked by name: the executor puts ``/opt/homebrew/bin`` on PATH on
+    macOS, so this works before the user's shell has brew's shellenv.
+    """
+
+    def _brew(self, ctx: Ctx, *args: str) -> Result:
+        return ctx.ex.run(["brew", *args], env=BREW_ENV)
+
+    def install(self, ctx: Ctx, *pkgs: str) -> None:
+        if not pkgs:
+            return
+        res = self._brew(ctx, "install", "--formula", "-y", *pkgs)
+        if not res.ok:
+            raise InstallError("brew", f"brew install --formula -y {' '.join(pkgs)}", res.code)
+
+    def install_cask(self, ctx: Ctx, *casks: str) -> None:
+        if not casks:
+            return
+        res = self._brew(ctx, "install", "--cask", "-y", "--adopt", *casks)
+        if res.ok:
+            return
+        output = f"{res.stdout}\n{res.stderr}"
+        if any(marker in output for marker in _ALREADY_PRESENT):
+            raise PresentUnmanaged(", ".join(casks))
+        raise InstallError("brew", f"brew install --cask -y --adopt {' '.join(casks)}", res.code)
+
+    def installed(self, ctx: Ctx, pkg: str) -> bool:
+        return self._brew(ctx, "list", "--formula", "--versions", pkg).ok
+
+    def cask_installed(self, ctx: Ctx, cask: str) -> bool:
+        return self._brew(ctx, "list", "--cask", "--versions", cask).ok
+
+    def upgrade(self, ctx: Ctx, *pkgs: str) -> None:
+        if not pkgs:
+            return
+        res = self._brew(ctx, "upgrade", "--formula", *pkgs)
+        if not res.ok:
+            raise InstallError("brew", f"brew upgrade --formula {' '.join(pkgs)}", res.code)
+
+    def add_repo(self, ctx: Ctx, repo: Repo) -> None:
+        if not isinstance(repo, BrewTap):
+            raise TypeError(f"Brew.add_repo expects BrewTap, got {type(repo).__name__}")
+        args = ["tap", repo.name, *([repo.url] if repo.url else [])]
+        res = self._brew(ctx, *args)
+        if not res.ok:
+            raise InstallError("brew", f"brew {' '.join(args)}", res.code)
+
+
 def manager_for(os_info: OsInfo) -> PackageManager:
     if os_info.family == "fedora":
         return Dnf()
@@ -200,6 +271,8 @@ def manager_for(os_info: OsInfo) -> PackageManager:
         return Apt()
     if os_info.family == "arch":
         return Pacman()
+    if os_info.family == "macos":
+        return Brew()
     raise UnsupportedOS(f"no package manager implemented for {os_info.distro!r}")
 
 
@@ -254,6 +327,30 @@ def install_aur(ctx: Ctx, *pkgs: str) -> None:
     mgr.install_aur(ctx, *pkgs)
 
 
+def _brew_or_raise(ctx: Ctx, what: str) -> Brew:
+    mgr = manager_for(ctx.os)
+    if not isinstance(mgr, Brew):
+        raise UnsupportedOS(f"{what} is macOS-only; detected {ctx.os.distro!r}")
+    return mgr
+
+
+def install_cask(ctx: Ctx, *casks: str) -> None:
+    """Install Homebrew casks (GUI apps). macOS only."""
+    _brew_or_raise(ctx, "casks").install_cask(ctx, *casks)
+
+
+def cask_installed(ctx: Ctx, cask: str) -> bool:
+    """True when the cask is installed; always False off macOS (never raises)."""
+    if ctx.os.family != "macos":
+        return False
+    return Brew().cask_installed(ctx, cask)
+
+
+def upgrade(ctx: Ctx, *pkgs: str) -> None:
+    """Upgrade formulae in place (`devboost install --update` on macOS)."""
+    _brew_or_raise(ctx, "brew upgrade").upgrade(ctx, *pkgs)
+
+
 #: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).
 _APT_LOCK_TIMEOUT = 300
 _APT_LOCK_CONF = "/etc/apt/apt.conf.d/99-devboost-lock-timeout"
@@ -272,7 +369,14 @@ def refresh_index(ctx: Ctx) -> None:
     Also a deliberate no-op on Arch: ``pacman -Sy`` without ``-u`` is a partial upgrade,
     the standard way to break a rolling-release system.  Syncing belongs to the OS updater
     (``omarchy update`` / ``pacman -Syu``), which snapshots first.
+    On macOS it is a single best-effort `brew update`.
     """
+    if ctx.os.family == "macos":
+        # One explicit update per run (auto-update is disabled on every other brew call).
+        res = ctx.ex.run(["brew", "update"], env=BREW_ENV)
+        if not res.ok:
+            log.warn(f"brew update failed (code {res.code}); using the existing index")
+        return
     if ctx.os.family != "debian":
         return
     # Make every apt call WAIT up to _APT_LOCK_TIMEOUT for a held dpkg/apt lock (e.g.

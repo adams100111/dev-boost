@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
@@ -12,9 +13,12 @@ import typer
 from devboost import __version__
 from devboost.cli import accounts as _accounts
 from devboost.cli import devhygiene as dh
+from devboost.cli import host as plat
 from devboost.cli import lifecycle as lc
+from devboost.cli import secrets_cmd as _secrets_cmd
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
+from devboost.cli.permissions import permissions as _permissions
 from devboost.cli.selection import select_modules
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
@@ -56,8 +60,9 @@ AppOpt = Annotated[
 
 #: Per-distro default install target. `full` is the Fedora/Ubuntu workstation aggregate;
 #: an OS that already ships its own desktop, system and multimedia layers gets an
-#: aggregate scoped to what dev-boost actually adds there.
-_DEFAULT_PROFILE = {"omarchy": "omarchy"}
+#: aggregate scoped to what dev-boost actually adds there — Omarchy and macOS each
+#: get their own, narrower default.
+_DEFAULT_PROFILE = {"omarchy": "omarchy", "macos": "macos"}
 
 
 def default_profile(os_info: osinfo.OsInfo | None = None) -> str:
@@ -142,13 +147,15 @@ def _run(
         if not plan:
             log.info("no self-updating tools in selection")
         ctx = Ctx(os=ctx.os, ex=ctx.ex, force=True, dry_run=dry_run)  # force-refresh the kept tools
-    if offline:
-        plan = _apply_offline_filter(plan, modules)
-    elif not dry_run:
-        # Refresh the package index once up front so installs don't fail against a stale
-        # index on a fresh box (no network access happens in offline/dry-run modes).
-        pkg.refresh_index(ctx)
-    results = run_plan(plan, modules, ctx)
+    with plat.mac_session(ctx.os, dry_run=dry_run):
+        if offline:
+            plan = _apply_offline_filter(plan, modules)
+        elif not dry_run:
+            # Refresh the package index once up front so installs don't fail against a
+            # stale index on a fresh box (no network access happens in offline/dry-run
+            # modes).
+            pkg.refresh_index(ctx)
+        results = run_plan(plan, modules, ctx)
     if any(r.status == "fail" for r in results):
         raise typer.Exit(code=1)
     return results
@@ -181,6 +188,10 @@ def main_callback(
     ] = None,
 ) -> None:
     """dev-boost CLI root."""
+    problem = plat.invocation_error(osinfo.detect(), ctx.invoked_subcommand, os.geteuid())
+    if problem is not None:
+        log.error(problem)
+        raise typer.Exit(code=2)
     if ctx.invoked_subcommand not in (None, "self-update"):
         _maybe_warn_update()
 
@@ -479,7 +490,9 @@ def dev(action: Annotated[str, typer.Argument(help="status | gc | down")]) -> No
 
 
 app.command(name="installer")(_installer)
+app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
+app.add_typer(_secrets_cmd.app, name="secrets")
 
 
 def main() -> None:

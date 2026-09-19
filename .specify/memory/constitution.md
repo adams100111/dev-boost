@@ -1,4 +1,9 @@
 <!--
+SYNC IMPACT REPORT (v3.1.0, 2026-09-19)
+v3.0.1 → v3.1.0 (MINOR): Principle VI extended — macOS first-class family; frozen-binary
+constraint adds darwin-arm64.
+
+--- prior report ---
 SYNC IMPACT REPORT (v3.0.1, 2026-06-26)
 PATCH: reworded Principle I + Tech Constraints from TOML "[install] keys / module
 manifest / bash -c strings" to the realized typed-Python model (module classes,
@@ -22,7 +27,7 @@ Principles:
   III. Reproducible — Repo is Source of Truth
   IV.  Unattended by Default
   V.   Test-First (TDD, NON-NEGOTIABLE) — typed, comprehensive
-  VI.  Cross-OS via Data (Fedora is the reference)
+  VI.  Cross-OS via Data (Fedora is the reference Linux; macOS is a first-class family)
 Modified sections:
   • Core Principle I — the engine language is no longer an implementation detail; it
     is strictly-typed Python exposed through Typer. Capability still lives only in
@@ -100,13 +105,15 @@ bootstrap engine runs unattended on a fresh machine — correctness cannot be ch
 by hand after the fact, and static types plus comprehensive tests are the only
 durable guard.
 
-### VI. Cross-OS via Data (Fedora is the reference)
+### VI. Cross-OS via Data (Fedora is the reference Linux; macOS is a first-class family)
 
 OS differences MUST be expressed as typed data — per-OS entries (`OsMap`) resolved by the
 precedence `<distro>` → `<os-family>` → `default`. Fedora is the reference
 implementation; other OSes are schema-supported and may be thinner, but adding
-support MUST never require engine changes. Rationale: portability must not become
-branching logic in the core.
+support MUST never require engine changes. macOS (Apple Silicon) is a first-class
+family resolved through the same `OsMap` precedence (`macos=` entries); it is not a
+Linux derivative and never borrows Linux strategies. Rationale: portability must not
+become branching logic in the core.
 
 ## Technology & Security Constraints
 
@@ -120,9 +127,10 @@ branching logic in the core.
   - The code MUST type-check clean under `mypy --strict`.
   - TOML MUST be parsed only via stdlib `tomllib` — never a hand-rolled parser.
 - **Frozen-binary delivery.** The engine MUST be shipped to targets as a **frozen
-  single-file per-arch binary** (PyInstaller onefile, x86_64 + aarch64) so the target
-  needs NO Python runtime installed — preserving the cold-start / minimal-VPS promise.
-  Pure-Python source MUST NOT be the on-target runtime.
+  single-file per-arch binary** (PyInstaller onefile: Linux x86_64 + aarch64, macOS
+  darwin-arm64) so the target needs NO Python runtime installed — preserving the
+  cold-start / minimal-VPS promise. Pure-Python source MUST NOT be the on-target
+  runtime.
 - **Bash is a non-logic bootstrap stub only.** Shell is permitted solely for the
   thin bootstrap surface that fetches, SHA256-verifies, installs, and execs the frozen
   binary (the public `curl … | bash` one-liner and the Kickstart `%post`). Such stubs
@@ -157,4 +165,4 @@ expanded principles/sections, PATCH for clarifications. Plans and reviews MUST
 verify compliance with these principles; deviations MUST be justified in writing or
 the work is not done. The design spec and `docs/` carry runtime development guidance.
 
-**Version**: 3.0.1 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-26
+**Version**: 3.1.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-09-19

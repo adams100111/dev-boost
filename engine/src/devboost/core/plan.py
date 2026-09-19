@@ -113,7 +113,7 @@ def _provided_by_os(cls: type[Module], os_info: OsInfo) -> bool:
 
 def _supported(cls: type[Module], os_info: OsInfo) -> bool:
     """A per-OS module is unsupported when its per_os map has no entry for this OS."""
-    if not cls.per_os.fedora and not cls.per_os.debian and not cls.per_os.arch \
-            and not cls.per_os.default:
+    p = cls.per_os
+    if not (p.fedora or p.debian or p.arch or p.macos or p.default):
         return True  # uniform module — supported everywhere it can run
-    return cls.per_os.get(os_info) is not None
+    return p.get(os_info) is not None

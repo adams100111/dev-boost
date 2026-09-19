@@ -9,9 +9,10 @@ from pathlib import Path
 from devboost.core import log
 from devboost.core.errors import GithubError
 from devboost.core.registry import register
-from devboost.exec.primitives import age, github
+from devboost.exec.primitives import github
 from devboost.model import Ctx, Module
-from devboost.modules.secrets import Secrets, bundle_path, home, key_path
+from devboost.modules import _credentials as creds_src
+from devboost.modules.secrets import Secrets, home
 
 _BEGIN = "# BEGIN devboost-managed"
 _END = "# END devboost-managed"
@@ -56,6 +57,9 @@ class SshSetup(Module):
     description = "Generate ed25519 key and register it with GitHub (non-blocking)."
     requires = (Secrets,)
     profiles = ("base",)
+    # ssh-keygen ships with macOS; the upload is a urllib call and the token comes from
+    # _credentials.github_credentials — nothing Linux-only on this path.
+    portable = True
 
     def verify(self, ctx: Ctx) -> bool:
         return (home() / ".ssh" / "id_ed25519.pub").exists() and _state_marker().exists()
@@ -79,7 +83,13 @@ class SshSetup(Module):
         pub = ssh / "id_ed25519.pub"
         if not pub.exists():
             return  # keygen deferred to a real run; nothing to upload yet
-        data = age.decrypt(ctx, bundle_path(), key_path())
+        data = creds_src.github_credentials(ctx)
+        if data is None:
+            log.warn(
+                "ssh-setup: no GitHub credentials found (bundle, gh, git credentials) "
+                "— key not uploaded yet"
+            )
+            return  # non-blocking; retried next run
         try:
             ok = github.upload_ssh_key(data["GITHUB_PAT"], pub.read_text(encoding="utf-8"), title)
         except GithubError:

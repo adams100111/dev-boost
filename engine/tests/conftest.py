@@ -1,12 +1,51 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
+
+_REAL_DETECT = osinfo.detect
+
+
+@pytest.fixture(autouse=True)
+def _linux_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests are host-independent: an argument-less detect() sees Fedora on any machine.
+
+    A call with any argument reaches the real detect(), with ``system`` defaulting to
+    "Linux" so e.g. an ``os_release_path=`` fixture is really parsed, even on a Mac.
+    """
+
+    def _pinned(
+        os_release_path: str | None = None,
+        machine: str | None = None,
+        env: Mapping[str, str] | None = None,
+        default_target_link: str | None = None,
+        system: str | None = None,
+        mac_version: str | None = None,
+    ) -> OsInfo:
+        given: dict[str, Any] = {
+            k: v
+            for k, v in {
+                "os_release_path": os_release_path,
+                "machine": machine,
+                "env": env,
+                "default_target_link": default_target_link,
+                "mac_version": mac_version,
+            }.items()
+            if v is not None
+        }
+        if not given and system is None:
+            return OsInfo("fedora", "fedora", "x86_64", headless=False)
+        return _REAL_DETECT(**given, system=system or "Linux")
+
+    monkeypatch.setattr(osinfo, "detect", _pinned)
 
 
 @pytest.fixture
@@ -72,7 +111,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'brain-tools = ["herdr","herdr-plugins"]\n'
         'omarchy = ["omarchy-update-hook"]\n'
         'orca = ["orca-ide"]\n'
-        'orca-box = ["orca-ide","orca-serve"]\n',
+        'orca-box = ["orca-ide","orca-serve"]\n'
+        'macos = ["ripgrep"]\n',
         encoding="utf-8",
     )
     return p

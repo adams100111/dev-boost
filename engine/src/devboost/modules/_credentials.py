@@ -32,6 +32,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
+from urllib.parse import unquote
 
 from devboost.core import log
 from devboost.model import Ctx
@@ -105,6 +107,83 @@ def from_gh(ctx: Ctx) -> Credentials | None:
         "GIT_EMAIL": email,
         "GITHUB_PAT": token.stdout.strip(),
     }
+
+
+def _from_git_credentials() -> Credentials | None:
+    """A github.com line from a (Linux-style) ~/.git-credentials store, if one exists."""
+    path = Path(os.environ["HOME"]) / ".git-credentials"
+    if not path.exists():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.endswith("@github.com") and line.startswith("https://") and ":" in line[8:]:
+            user, _, rest = line[len("https://"):].partition(":")
+            token = rest.rsplit("@", 1)[0]
+            # git's store helper percent-encodes both (an email login is stored as %40).
+            return {"GIT_USER": unquote(user), "GIT_EMAIL": "", "GITHUB_PAT": unquote(token)}
+    return None
+
+
+def _from_git_credential_fill(ctx: Ctx) -> Credentials | None:
+    """Ask git's configured helper (e.g. the macOS keychain) for a github.com login.
+
+    `GIT_TERMINAL_PROMPT=0` makes git fail instead of prompting when no helper has one;
+    the empty askpass vars stop it popping a GUI password dialog in an unattended run.
+    The output carries the token, so it is parsed here and never logged.
+    """
+    res = ctx.ex.run(
+        ["git", "credential", "fill"],
+        stdin="protocol=https\nhost=github.com\n\n",
+        env={"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""},
+    )
+    if not res.ok:
+        return None
+    fields: dict[str, str] = {}
+    for line in res.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            fields[key] = value
+    if not fields.get("password"):
+        return None
+    return {
+        "GIT_USER": fields.get("username", ""),
+        "GIT_EMAIL": "",
+        "GITHUB_PAT": fields["password"],
+    }
+
+
+def github_credentials(ctx: Ctx) -> Credentials | None:
+    """The one place modules get a GitHub token.
+
+    Order: bundle → gh → ~/.git-credentials → git's credential helper (`git credential
+    fill`, which on macOS reads the token `secrets` stored in the login keychain).
+
+    Never raises for a missing/unreadable source — callers (ssh-setup, obsidian-sync) are
+    non-blocking and treat None as "try again next run".
+    """
+    from devboost.core.errors import SecretsError
+    from devboost.exec.primitives import age
+    from devboost.modules.secrets import age_key, bundle_path
+
+    if bundle_path().exists() and not ctx.ex.which("age"):
+        # A lookup never installs anything (Secrets._resolve does); skip the bundle.
+        log.warn("secrets bundle present but `age` is not installed; trying gh")
+    elif bundle_path().exists():
+        with age_key(ctx) as key:
+            if key is not None:
+                try:
+                    data = age.decrypt(ctx, bundle_path(), key)
+                except SecretsError:  # fall through to the next source
+                    log.warn("secrets bundle present but unreadable; trying gh")
+                else:
+                    missing = [f for f in age.REQUIRED_FIELDS if not data.get(f)]
+                    if not missing:
+                        return data
+                    log.warn(f"secrets bundle is missing {', '.join(missing)}; trying gh")
+    if gh_is_authenticated(ctx):
+        found = from_gh(ctx)
+        if found:
+            return found
+    return _from_git_credentials() or _from_git_credential_fill(ctx)
 
 
 # --- 3. the interactive path -------------------------------------------------------------

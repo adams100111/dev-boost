@@ -23,6 +23,10 @@ class PackageModule(Module):
     #: PKGBUILDs, so it is spelled out per module rather than inferred.
     aur_pkg: ClassVar[str | None] = None
     copr_repo: ClassVar[str | None] = None
+    #: Homebrew formula on macOS; None → the module ``name`` (brew names usually match).
+    brew_pkg: ClassVar[str | None] = None
+    #: Homebrew cask on macOS, for tools that ship only as an app. Wins over brew_pkg.
+    brew_cask: ClassVar[str | None] = None
     # A single-package/single-binary install is safe to re-run for an in-place upgrade,
     # so package modules opt into `devboost install --update` by default. A specific
     # subclass with install-time side effects may override this back to False.
@@ -43,10 +47,31 @@ class PackageModule(Module):
         )
         return names.get(ctx.os) or self.fedora_pkg
 
+    def _brew_name(self) -> str:
+        return self.brew_pkg or self.name
+
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family == "macos":
+            # Ask brew, not PATH: macOS ships its own (old) git/curl/… that would
+            # otherwise satisfy a `which` check and never be replaced.
+            if self.brew_cask is not None:
+                return pkg.cask_installed(ctx, self.brew_cask)
+            return pkg.installed(ctx, self._brew_name())
         return ctx.ex.which(self._resolve_cmd(ctx))
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family == "macos":
+            if self.brew_cask is not None:
+                pkg.install_cask(ctx, self.brew_cask)
+                return
+            name = self._brew_name()
+            # `brew install` of an installed formula is a no-op; `--update` (force) means
+            # "bring it current", which on brew is an explicit upgrade.
+            if ctx.force and pkg.installed(ctx, name):
+                pkg.upgrade(ctx, name)
+            else:
+                pkg.install(ctx, name)
+            return
         if ctx.os.family == "fedora" and self.copr_repo is not None:
             copr.enable(ctx, self.copr_repo)
         # An AUR-only tool declares aur_pkg and no arch_pkg: route it to the helper.
