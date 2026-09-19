@@ -6,11 +6,17 @@ from typing import ClassVar
 
 from devboost.core.osinfo import OsMap
 from devboost.exec.primitives import copr, pkg
-from devboost.model import Ctx, Module
+from devboost.model import Ctx, Installer, Module
+from devboost.modules._brew import BrewCask, BrewFormula
 
 
 class PackageModule(Module):
-    """A module installed from a single package, verified by a command on PATH."""
+    """A module installed from a single package, verified by a command on PATH.
+
+    macOS always goes through Homebrew (``brew_pkg`` / ``brew_cask``). A subclass that
+    needs a custom *Linux* path overrides ``install_linux`` / ``verify_linux`` — never
+    ``install`` / ``verify`` — so the Homebrew path stays automatic.
+    """
 
     cmd: ClassVar[str]
     fedora_pkg: ClassVar[str]
@@ -50,28 +56,31 @@ class PackageModule(Module):
     def _brew_name(self) -> str:
         return self.brew_pkg or self.name
 
+    def brew_strategy(self) -> Installer:
+        """How this tool installs on macOS: its cask if it has one, else its formula."""
+        if self.brew_cask is not None:
+            return BrewCask(self.brew_cask)
+        return BrewFormula(self._brew_name())
+
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family == "macos":
             # Ask brew, not PATH: macOS ships its own (old) git/curl/… that would
             # otherwise satisfy a `which` check and never be replaced.
-            if self.brew_cask is not None:
-                return pkg.cask_installed(ctx, self.brew_cask)
-            return pkg.installed(ctx, self._brew_name())
-        return ctx.ex.which(self._resolve_cmd(ctx))
+            return self.brew_strategy().verify(ctx)
+        return self.verify_linux(ctx)
 
     def install(self, ctx: Ctx) -> None:
         if ctx.os.family == "macos":
-            if self.brew_cask is not None:
-                pkg.install_cask(ctx, self.brew_cask)
-                return
-            name = self._brew_name()
-            # `brew install` of an installed formula is a no-op; `--update` (force) means
-            # "bring it current", which on brew is an explicit upgrade.
-            if ctx.force and pkg.installed(ctx, name):
-                pkg.upgrade(ctx, name)
-            else:
-                pkg.install(ctx, name)
+            self.brew_strategy().install(ctx)
             return
+        self.install_linux(ctx)
+
+    def verify_linux(self, ctx: Ctx) -> bool:
+        """Linux: the tool's command is on PATH. Override for a different check."""
+        return ctx.ex.which(self._resolve_cmd(ctx))
+
+    def install_linux(self, ctx: Ctx) -> None:
+        """Linux: the distro package (COPR / AUR aware). Override for a custom path."""
         if ctx.os.family == "fedora" and self.copr_repo is not None:
             copr.enable(ctx, self.copr_repo)
         # An AUR-only tool declares aur_pkg and no arch_pkg: route it to the helper.
