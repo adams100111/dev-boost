@@ -244,6 +244,32 @@ def test_docker_build_gc_idempotent_no_restart_second_run(
     assert not any("restart" in " ".join(c) for c in second.ex.calls)  # type: ignore[attr-defined]
 
 
+def test_docker_build_gc_deep_merges_other_builder_keys_under_force(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A shallow `{**current, **patch}` merge on the top-level "builder" key would replace
+    the user's whole builder object with just ours — losing sibling keys under "builder"
+    (e.g. entitlements) and sibling keys under "builder.gc" (e.g. a policy array) other
+    than "enabled". A deep merge keeps them, even under --force (parity with the macOS
+    _MacBuildGc, which never overrides the user's cap under force either)."""
+    daemon = tmp_path / "daemon.json"
+    daemon.write_text(
+        json.dumps({
+            "builder": {
+                "entitlements": ["network.host"],
+                "gc": {"enabled": True, "policy": [{"keepStorage": "10GB"}]},
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DEVBOOST_DOCKER_DAEMON_JSON", str(daemon))
+    DockerBuildCacheGc().install(Ctx(os=FEDORA, ex=FakeExecutor(), force=True))
+    data = json.loads(daemon.read_text())
+    assert data["builder"]["entitlements"] == ["network.host"]
+    assert data["builder"]["gc"]["policy"] == [{"keepStorage": "10GB"}]
+    assert data["builder"]["gc"]["enabled"] is True
+
+
 def test_docker_build_gc_verify_reflects_cap_presence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

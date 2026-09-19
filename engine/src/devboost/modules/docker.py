@@ -256,7 +256,9 @@ class DockerBuildCacheGc(Module):
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
             return
-        # Read-modify-write merge preserves any existing daemon.json keys (e.g. the NVIDIA
-        # runtime). Restart only when the file actually changed, so re-runs are no-ops.
-        if config.json_merge(ctx, _daemon_json(), BUILDER_GC):
+        # Deep merge preserves any existing daemon.json keys (e.g. the NVIDIA runtime)
+        # AND any other keys the user has under "builder" itself (a shallow merge would
+        # replace the whole "builder" object with just ours). Restart only when the file
+        # actually changed, so re-runs — including under --force — are no-ops.
+        if config.json_merge_deep(ctx, _daemon_json(), BUILDER_GC):
             ctx.ex.run(["systemctl", "restart", "docker.service"], sudo=True)

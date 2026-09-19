@@ -41,6 +41,34 @@ def json_merge(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
     return True
 
 
+def json_merge_deep(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
+    """Like `json_merge`, but merges recursively: a nested object in `patch` merges into
+    the matching object in the current file instead of replacing it outright.
+
+    `json_merge`'s shallow ``{**current, **patch}`` is fine when `patch`'s top-level keys
+    are wholly ours (e.g. a plugin's own config block) — but when a key is a shared
+    object a user might also configure (e.g. Docker's `daemon.json` `builder`, which the
+    NVIDIA runtime setup and dev-boost's own build-cache cap both touch), a shallow merge
+    silently drops the user's other subkeys under it. Used where a merged key is such a
+    shared object.
+    """
+    p = Path(path)
+    current: dict[str, Any] = {}
+    if p.exists():
+        current = json.loads(p.read_text(encoding="utf-8"))
+    merged = deep_merge(current, patch)
+    if merged == current:
+        return False
+    body = json.dumps(merged, indent=2) + "\n"
+    probe = p if p.exists() else next(a for a in p.parents if a.exists())
+    if os.access(probe, os.W_OK):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+    else:
+        ctx.ex.run(["tee", path], sudo=True, stdin=body)
+    return True
+
+
 def ensure_line(ctx: Ctx, path: str, line: str) -> None:
     p = Path(path)
     lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
