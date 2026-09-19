@@ -66,3 +66,35 @@ def test_apply_writes_the_config(chezmoi_apply: Apply, os_name: str, distro: str
     home = chezmoi_apply(os_name, distro)
     cfg = tomllib.loads((home / ".config" / "voxtype" / "config.toml").read_text("utf-8"))
     assert cfg["whisper"]["model"] == "small.en"
+
+
+def test_voxtype_arabic_targeted_apply_renders_both_configs(tmp_path: Path) -> None:
+    """The exact `chezmoi apply <targets>` VoxtypeArabic runs, against real chezmoi."""
+    import os
+    import subprocess
+
+    from devboost.core.osinfo import OsInfo
+    from devboost.exec.executor import FakeExecutor
+    from devboost.model import Ctx
+    from devboost.modules import voxtype as vox
+
+    home = tmp_path / "home"
+    home.mkdir()
+    ex = FakeExecutor(present={"voxtype"})
+    mp = pytest.MonkeyPatch()
+    try:
+        mp.setenv("HOME", str(home))
+        mp.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
+        mp.setattr(vox, "download_model", lambda ctx, name: None)
+        vox.VoxtypeArabic().install(Ctx(os=OsInfo("macos", "macos", "aarch64"), ex=ex))
+    finally:
+        mp.undo()
+    argv = next(c for c in ex.calls if c[:2] == ["chezmoi", "apply"])
+    assert CHEZMOI is not None
+    subprocess.run([CHEZMOI, *argv[1:2], "--no-tty", *argv[2:]], check=True,
+                   capture_output=True, env={**os.environ, "HOME": str(home)})
+    cfg = tomllib.loads((home / ".config" / "voxtype" / "config.toml").read_text("utf-8"))
+    assert cfg["whisper"]["secondary_model"] == "large-v3-turbo"
+    aero = tomllib.loads((home / ".config" / "aerospace" / "aerospace.toml").read_text("utf-8"))
+    assert "ctrl-alt-d" in aero["mode"]["main"]["binding"]
+    assert not (home / ".zshrc").exists()  # only the named targets are applied

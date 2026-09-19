@@ -26,9 +26,10 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 from devboost.core import log
-from devboost.core.errors import InstallError
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
+from devboost.core.settings import settings
 from devboost.exec.primitives import pkg
 from devboost.media.catalog import ReleaseAsset, voxtype_pin
 from devboost.model import Ctx, Module, TccGrant
@@ -267,3 +268,73 @@ class Voxtype(Module):
         debian=LinuxVoxtype("deb"),
         arch=LinuxVoxtype("aur"),
     )
+
+
+# --- voxtype-arabic (opt-in) ---------------------------------------------------------------
+
+
+def arabic_marker() -> Path:
+    """Read by the voxtype and AeroSpace templates (`stat`): Arabic dictation is on."""
+    return _home() / ".config" / "devboost" / "voxtype-arabic"
+
+
+def _config_file() -> Path:
+    return _home() / ".config" / "voxtype" / "config.toml"
+
+
+def _restart_daemon(ctx: Ctx) -> None:
+    if ctx.os.family == "macos":
+        ctx.ex.run(["osascript", "-e", f'tell application id "{BUNDLE_ID}" to quit'])
+        ctx.ex.run(["open", "-g", "-b", BUNDLE_ID])
+        if ctx.ex.which("aerospace"):
+            ctx.ex.run(["aerospace", "reload-config"])
+    else:
+        ctx.ex.run(["systemctl", "--user", "restart", "voxtype.service"])
+
+
+@register
+class VoxtypeArabic(Module):
+    name = "voxtype-arabic"
+    category = "base"
+    description = "Arabic dictation: Whisper large-v3-turbo (1.6 GB), loaded only on demand."
+    requires = (Voxtype,)
+    after = (Dotfiles,)
+    gui = True
+    portable = True  # one install for every OS; only the daemon restart branches
+
+    def verify(self, ctx: Ctx) -> bool:
+        cfg = _config_file()
+        return (
+            arabic_marker().exists()
+            and model_file(ARABIC_MODEL).exists()
+            and cfg.is_file()
+            and f'secondary_model = "{ARABIC_MODEL}"' in cfg.read_text(encoding="utf-8")
+        )
+
+    def install(self, ctx: Ctx) -> None:
+        if not ctx.ex.which("voxtype"):
+            raise NeedsUser(
+                "Voxtype is not installed",
+                "install it first — `devboost install voxtype` (Omarchy: menu → Install → "
+                "AI → Dictation)",
+            )
+        # Model first: the marker switches the rendered config to it, so it must be on
+        # disk (and match its pinned digest) before the config can name it.
+        download_model(ctx, ARABIC_MODEL)
+        marker = arabic_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+        targets = [str(_config_file())]
+        if ctx.os.family == "macos":
+            targets.append(str(_home() / ".config" / "aerospace" / "aerospace.toml"))
+        # --parent-dirs: a targeted apply fails when a target's directory does not exist yet
+        # (`stat …/.config/aerospace: no such file or directory`, chezmoi 2.72).
+        res = ctx.ex.run([
+            "chezmoi", "apply", "--force", "--parent-dirs",
+            "--source", str(settings.root / "dotfiles"), "--destination", str(_home()),
+            *targets,
+        ])
+        if not res.ok:
+            raise InstallError("voxtype-arabic", "chezmoi apply (voxtype/aerospace config)",
+                               res.code)
+        _restart_daemon(ctx)
