@@ -1,0 +1,37 @@
+{{- /* devboost — managed by chezmoi. One Voxtype config for every OS (spec §2). */ -}}
+{{- $arabic := stat (joinPath .chezmoi.homeDir ".config/devboost/voxtype-arabic") -}}
+# devboost — managed by chezmoi (dotfiles/dot_config/voxtype/config.toml.tmpl)
+# Voxtype push-to-talk dictation — https://github.com/peteonrails/voxtype (docs/CONFIGURATION.md)
+# Edit the template in the dev-boost repo, then run: devboost install dotfiles
+
+engine = "whisper"
+
+[hotkey]
+# ── PLACEHOLDER: hotkey ───────────────────────────────────────────────────────────
+# Replace `key` and `mode` below with the values from the author's Omarchy
+# ~/.config/voxtype/config.toml. Linux takes evdev names (SCROLLLOCK, PAUSE, F13, …);
+# macOS takes RIGHTALT, FN, F13 … (macOS ignores `modifiers`). Until then these defaults
+# work: hold the key, speak, release.
+{{- if eq .chezmoi.os "darwin" }}
+key = "RIGHTALT"
+{{- else }}
+key = "SCROLLLOCK"
+{{- end }}
+mode = "push_to_talk"
+# ── END PLACEHOLDER ───────────────────────────────────────────────────────────────
+{{- if and $arabic (ne .chezmoi.os "darwin") }}
+# voxtype-arabic: hold Left Shift with the hotkey to dictate with the Arabic model.
+model_modifier = "LEFTSHIFT"
+{{- end }}
+
+[whisper]
+model = "small.en"
+{{- if $arabic }}
+# voxtype-arabic: large-v3-turbo loads only when asked for (macOS: Ctrl+Alt+D, bound in
+# the AeroSpace config) and is evicted after 60 s idle — no RAM between Arabic dictations.
+language = ["en", "ar"]
+secondary_model = "large-v3-turbo"
+cold_model_timeout_secs = 60
+{{- else }}
+language = "en"
+{{- end }}
