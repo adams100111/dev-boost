@@ -158,6 +158,53 @@ def back_up_rc_files(
     return kept
 
 
+def back_up_once(path: Path) -> Path | None:
+    """Copy *path* to ``<name>.pre-devboost`` the first time something is about to rewrite
+    it in place (e.g. mise's nvm/sdkman migration commenting out a block in a user-owned
+    rc file). A no-op once that backup already exists — later drift is the user's own,
+    same one-shot ``.pre-devboost`` convention ``back_up_rc_files`` uses for the files
+    dev-boost's dotfiles take over wholesale. Returns the backup path, or None when
+    *path* doesn't exist or was already backed up.
+    """
+    if not path.is_file():
+        return None
+    backup = path.with_name(path.name + ".pre-devboost")
+    if backup.exists():
+        return None
+    shutil.copy2(path, backup)
+    return backup
+
+
+def back_up_taken_over(
+    home: Path, source: Path, taken_over: Mapping[str, str] | None, who: str
+) -> None:
+    """Back up rc files ``taken_over`` is about to overwrite and log each one as *who*
+    (the calling module's name, e.g. ``"dotfiles"`` or ``"chezmoi-repo"``). A no-op when
+    *taken_over* is None (nothing taken over on this OS — see ``Dotfiles._taken_over_for``).
+    """
+    if taken_over is None:
+        return
+    for backup in back_up_rc_files(home, source, taken_over):
+        name = backup.name.split(".pre-devboost")[0]
+        log.ok(
+            f"{who}: kept your previous ~/{name} as ~/{backup.name} —"
+            f" machine-specific lines belong in ~/{name}.local"
+        )
+
+
+def record_taken_over(home: Path, taken_over: Mapping[str, str] | None, who: str) -> None:
+    """Record rc digests after a successful forced apply, logged as *who*. Bookkeeping
+    only: an OSError is warned and swallowed, never allowed to fail an otherwise
+    successful apply. A no-op when *taken_over* is None.
+    """
+    if taken_over is None:
+        return
+    try:
+        record_rc_digests(home, taken_over)
+    except OSError as exc:
+        log.warn(f"{who}: could not record rc digests ({exc}) — best-effort only")
+
+
 @register
 class Starship(Module):
     name = "starship"
@@ -391,13 +438,7 @@ class Dotfiles(Module):
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
         taken_over = self._taken_over_for(ctx)
-        if taken_over is not None:
-            for backup in back_up_rc_files(_home(), src, taken_over):
-                name = backup.name.split(".pre-devboost")[0]
-                log.ok(
-                    f"dotfiles: kept your previous ~/{name} as ~/{backup.name} —"
-                    f" machine-specific lines belong in ~/{name}.local"
-                )
+        back_up_taken_over(_home(), src, taken_over, "dotfiles")
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
         # overwritten silently. Without it, chezmoi tries to prompt on /dev/tty for any
@@ -409,14 +450,10 @@ class Dotfiles(Module):
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)
-        if taken_over is not None:
-            # Bookkeeping only (M-R26): a PermissionError on the state dir (mkdir/mkstemp)
-            # or any other OSError reading the rc files back must never fail an otherwise
-            # successful apply — worst case, the next run's drift backup is a bit stricter.
-            try:
-                record_rc_digests(_home(), taken_over)
-            except OSError as exc:
-                log.warn(f"dotfiles: could not record rc digests ({exc}) — best-effort only")
+        # Bookkeeping only (M-R26): a PermissionError on the state dir (mkdir/mkstemp) or
+        # any other OSError reading the rc files back must never fail an otherwise
+        # successful apply — worst case, the next run's drift backup is a bit stricter.
+        record_taken_over(_home(), taken_over, "dotfiles")
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
@@ -478,7 +515,7 @@ class BashConfig(Module):
             # The bashrc content is applied by the dotfiles module (this is a marker check).
             return
         bashrc = _home() / ".bashrc"
-        text = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+        text = bashrc.read_text(encoding="utf-8", errors="replace") if bashrc.exists() else ""
         if _SOURCE_MARKER in text:
             return  # idempotent — never append the block twice
         bashrc.parent.mkdir(parents=True, exist_ok=True)
