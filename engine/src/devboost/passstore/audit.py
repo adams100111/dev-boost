@@ -111,8 +111,14 @@ def audit(ctx: Ctx, store: Store) -> Report:
         if tokens is None or not tokens or not all(gpg.is_key_token(t) for t in tokens):
             unauditable.add(folder or ".")
             continue
+        entry_path = store.root / f"{entry}.gpg"
+        # A pushed `x.gpg -> /some/path` symlink must never reach gpg: that would run
+        # `--list-packets` on an arbitrary local path chosen by whoever can push to the store.
+        if entry_path.is_symlink() or not entry_path.is_file():
+            mismatches.append(Mismatch(entry, (UNREADABLE,), ()))
+            continue
         try:
-            got = gpg.recipients(ctx, store.root / f"{entry}.gpg")
+            got = gpg.recipients(ctx, entry_path)
         except InstallError:
             mismatches.append(Mismatch(entry, (UNREADABLE,), ()))
             continue
@@ -134,8 +140,18 @@ def fix_hint(store: Store, m: Mismatch) -> str:
     """R11: `pass init` with the same ids re-encrypts exactly the entries that differ; a
     revoked recipient could read this entry's old ciphertext, so its secret must change.
 
+    An unreadable entry (a symlink, a non-regular file, a `gpg --list-packets` failure) must
+    never get the `pass init` hint: that command would also fail on the same file. Point at
+    inspecting/restoring it from git history instead.
+
     Folder and entry names are attacker-controlled (anyone with push access), so they're
     shell-quoted before landing in a copy-pasteable command."""
+    if UNREADABLE in m.extra:
+        gpg_rel = shlex.quote(f"{m.entry}.gpg")
+        store_root = shlex.quote(str(store.root))
+        return (f"can't read this entry's recipients — inspect it: "
+                f"git -C {store_root} log -- {gpg_rel}, then restore a good version "
+                f"(git checkout, or `pass insert -f`) or remove the file")
     folder = store.governing_folder(m.entry)
     ids = " ".join(_safe_gpg_ids(store, folder) or ())
     scope = f"-p {shlex.quote(folder)} " if folder else ""

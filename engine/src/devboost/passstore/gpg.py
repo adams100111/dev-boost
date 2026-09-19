@@ -117,8 +117,10 @@ def key_ids_in_file(ctx: Ctx, path: Path) -> dict[str, str]:
 
 def recipients(ctx: Ctx, path: Path) -> set[str]:
     """Long key ids an entry is encrypted to, read from its packets: `--list-only` skips the
-    decryption, so this never needs a secret key or a passphrase (no pinentry)."""
-    res = _must(_gpg(ctx, "--list-only", "--list-packets", str(path)),
+    decryption, so this never needs a secret key or a passphrase (no pinentry). `--pinentry-mode
+    error` is belt-and-braces: it makes it impossible for gpg-agent to ever open a pinentry
+    here, even if some future gpg build's `--list-only` were to need one."""
+    res = _must(_gpg(ctx, "--pinentry-mode", "error", "--list-only", "--list-packets", str(path)),
                 f"gpg --list-packets {path}")
     return {m.upper() for m in _RECIPIENT.findall(res.stdout)}
 

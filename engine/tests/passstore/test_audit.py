@@ -116,6 +116,33 @@ def test_unreadable_entry_is_reported(tmp_path: Path) -> None:
     assert audit.Mismatch("web/ok", ("<unreadable>",), ()) in report.mismatches
 
 
+def test_symlinked_entry_is_unreadable_and_gpg_never_sees_its_target(tmp_path: Path) -> None:
+    """A pushed `x.gpg -> /some/path` symlink must never reach `gpg --list-packets` — that
+    would run it on an arbitrary local path chosen by whoever can push to the store."""
+    s = _store(tmp_path)
+    target = tmp_path / "outside-the-store.gpg"
+    target.write_bytes(b"not a pass entry")
+    (s.root / "web" / "ok.gpg").unlink()
+    (s.root / "web" / "ok.gpg").symlink_to(target)
+    ex = _ex(s)
+    report = audit.audit(Ctx(os=FEDORA, ex=ex), s)
+    assert audit.Mismatch("web/ok", (audit.UNREADABLE,), ()) in report.mismatches
+    assert not any(str(target) in call for call in ex.calls)
+    assert not any(str(s.root / "web/ok.gpg") in call for call in ex.calls)
+
+
+def test_fix_hint_for_an_unreadable_entry_never_suggests_pass_init(tmp_path: Path) -> None:
+    """`pass init` would also fail on a file the audit couldn't even read — the hint must
+    instead point at recovering or removing the file (Findings round, item 3)."""
+    s = _store(tmp_path)
+    m = audit.Mismatch("web/offline", (audit.UNREADABLE,), ())
+    hint = audit.fix_hint(s, m)
+    assert "pass init" not in hint
+    assert "git -C" in hint and "log" in hint
+    assert shlex.quote(str(s.root)) in hint
+    assert shlex.quote("web/offline.gpg") in hint
+
+
 def test_pushed_devices_record_cannot_relabel_a_revoked_key(tmp_path: Path) -> None:
     """A devices/ JSON record naming a revoked fingerprint must not steal its label, and the
     hint must still say to change the secret (Important, fix round 1)."""

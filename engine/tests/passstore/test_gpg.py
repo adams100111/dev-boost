@@ -137,8 +137,8 @@ def test_recipients_reads_packets_without_decrypting(tmp_path: Path) -> None:
     ex = RuleExecutor(rules=[(("--list-packets",), Result(0, PACKETS))])
     got = gpg.recipients(Ctx(os=FEDORA, ex=ex), tmp_path / "e.gpg")
     assert got == {"EB0162C1D881CB89", "00112233AABBCCDD"}
-    assert ex.calls == [["gpg", "--batch", "--list-only", "--list-packets",
-                         str(tmp_path / "e.gpg")]]
+    assert ex.calls == [["gpg", "--batch", "--pinentry-mode", "error", "--list-only",
+                         "--list-packets", str(tmp_path / "e.gpg")]]
     assert not any("--decrypt" in c or "-d" in c for c in ex.calls)
 
 
