@@ -28,6 +28,11 @@ shopt -s globstar
 [[ -d "${HOME}/.dotnet/tools" ]] && export PATH="${HOME}/.dotnet/tools:${PATH}"
 
 # ---------------------------------------------------------------------------
+# POSIX environment shared with other shells (EDITOR / VISUAL, …)
+# ---------------------------------------------------------------------------
+[[ -r "${HOME}/.config/devboost/env.sh" ]] && source "${HOME}/.config/devboost/env.sh"
+
+# ---------------------------------------------------------------------------
 # ripgrep — load the managed config (rg reads config only from this env var)
 # ---------------------------------------------------------------------------
 export RIPGREP_CONFIG_PATH="${HOME}/.config/ripgrep/ripgreprc"
