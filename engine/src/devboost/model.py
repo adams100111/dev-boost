@@ -95,6 +95,9 @@ class Module:
     #: macOS privacy permissions this module's app needs (scripts cannot grant them;
     #: the runner reports them as `blocked` with a one-click fix until confirmed).
     tcc: ClassVar[tuple[TccGrant, ...]] = ()
+    #: True when a custom-install module is verified to work unchanged on macOS (no
+    #: per_os.macos needed). Read by the macOS catalog contract test.
+    portable: ClassVar[bool] = False
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 
