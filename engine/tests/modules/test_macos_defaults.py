@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
@@ -79,7 +80,7 @@ def test_unattended_apply_restarts_nothing_and_says_when_it_applies(
     the Dock on a desktop someone may be using remotely: attended runs only."""
     monkeypatch.setattr(_credentials, "is_interactive", lambda: False)
     infos: list[str] = []
-    monkeypatch.setattr(md.log, "info", infos.append)
+    monkeypatch.setattr(log, "info", infos.append)
     ex = PrefsExecutor()
     assert len(md.apply(_ctx(ex))) == len(md.SETTINGS)  # every key is still written
     assert _kills(ex) == []

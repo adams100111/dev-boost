@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
@@ -279,7 +280,7 @@ def test_tm_verify_tolerates_the_docker_container_it_cannot_exclude(
     """…and verify only warns about it, so a refused Docker path is not permanent drift
     (`verify-failed-after-install` on every run). Any other path still counts."""
     warns: list[str] = []
-    monkeypatch.setattr(ms.log, "warn", warns.append)
+    monkeypatch.setattr(log, "warn", warns.append)
     (tmp_path / DOCKER).mkdir(parents=True)
     (tmp_path / ".npm").mkdir()
     ms.TimemachineExclusions().install(_ctx(RuleExecutor()))
