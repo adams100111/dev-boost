@@ -131,7 +131,13 @@ cmd_shell() {
   printf 'ssh admin@$(tart ip %s)   # password: admin\n' "${name}"
 }
 
-# --- run: boot, wait for the guest agent, drive get.sh + smoke-assert.sh ----
+# --- run: boot, wait for the guest agent, drive get.sh, then smoke-assert.sh -----
+# The guest mount point tart gives a --dir share. The path has spaces, so it is quoted
+# wherever it is a path, and percent-encoded where it is a file:// URL (curl rejects a
+# URL with raw spaces).
+GUEST_SHARE="/Volumes/My Shared Files/dist"
+GUEST_SHARE_URL="file:///Volumes/My%20Shared%20Files/dist"
+
 cmd_run() {
   local os="" name="" local_dir="" profiles="macos"
   while (($#)); do
@@ -146,28 +152,40 @@ cmd_run() {
   [[ -n "${os}" ]] || os="${DEFAULT_OS}"
   [[ -n "${name}" ]] || name="devboost-mac${os}"
 
-  local dir_arg="" guest_cmd share_dir=""
+  local dir_arg="" install_cmd smoke_cmd share_dir=""
   if [[ -n "${local_dir}" ]]; then
     [[ -f "${local_dir}/checksums.txt" || -f "${local_dir}/checksums-darwin-arm64.txt" ]] \
       || die "--local ${local_dir}: missing checksums.txt (or checksums-darwin-arm64.txt)"
-    share_dir="$(mktemp -d)"
-    cp "${ROOT}/scripts/get.sh" "${ROOT}/scripts/smoke-assert.sh" "${share_dir}/"
-    cp "${local_dir}"/devboost-* "${share_dir}/" 2>/dev/null || true
-    if [[ -f "${local_dir}/checksums.txt" ]]; then
-      cp "${local_dir}/checksums.txt" "${share_dir}/checksums.txt"
+    [[ -f "${local_dir}/devboost-darwin-arm64" ]] \
+      || die "--local ${local_dir}: missing devboost-darwin-arm64"
+    if [[ ${DRY} -eq 1 ]]; then
+      share_dir="<staging-dir>"  # nothing is staged in a preview
     else
-      # a raw dist/ only carries the per-arch file — stage the rename, never in dist/ itself.
-      cp "${local_dir}/checksums-darwin-arm64.txt" "${share_dir}/checksums.txt"
+      share_dir="$(mktemp -d)"
+      # shellcheck disable=SC2064  # share_dir must expand now, not at trap time
+      trap "rm -rf '${share_dir}'" EXIT
+      cp "${ROOT}/scripts/get.sh" "${ROOT}/scripts/smoke-assert.sh" "${share_dir}/"
+      cp "${local_dir}/devboost-darwin-arm64" "${share_dir}/"
+      if [[ -f "${local_dir}/checksums.txt" ]]; then
+        cp "${local_dir}/checksums.txt" "${share_dir}/checksums.txt"
+      else
+        # a raw dist/ only carries the per-arch file — stage the rename, never in dist/.
+        cp "${local_dir}/checksums-darwin-arm64.txt" "${share_dir}/checksums.txt"
+      fi
     fi
     dir_arg="--dir=dist:${share_dir}"
-    guest_cmd="DEVBOOST_RELEASE_BASE=file:///Volumes/My\\ Shared\\ Files/dist"
-    guest_cmd+=' bash "/Volumes/My Shared Files/dist/get.sh" -s -- '"${profiles}"
-    guest_cmd+=' && sh "/Volumes/My Shared Files/dist/smoke-assert.sh" '"${profiles}"
+    # A script FILE operand: its arguments are the profiles, with no `-s --` (that form is
+    # only for bash reading the script from stdin, as in `curl | bash -s -- …`).
+    install_cmd="DEVBOOST_RELEASE_BASE=${GUEST_SHARE_URL} bash \"${GUEST_SHARE}/get.sh\" ${profiles}"
+    smoke_cmd="sh \"${GUEST_SHARE}/smoke-assert.sh\" ${profiles}"
   else
-    guest_cmd="curl -fsSL ${RAW_BASE}/smoke-assert.sh -o smoke-assert.sh"
-    guest_cmd+=" && curl -fsSL ${RAW_BASE}/get.sh | bash -s -- ${profiles}"
-    guest_cmd+=" && sh smoke-assert.sh ${profiles}"
+    install_cmd="curl -fsSL ${RAW_BASE}/smoke-assert.sh -o \"\$HOME/smoke-assert.sh\""
+    install_cmd+=" && curl -fsSL ${RAW_BASE}/get.sh | bash -s -- ${profiles}"
+    smoke_cmd="sh \"\$HOME/smoke-assert.sh\" ${profiles}"
   fi
+  # The smoke runs in a SECOND exec: a brand-new zsh login shell (the user's real macOS
+  # shell) started after the install returned, so it sees the PATH the install wired up
+  # (~/.local/bin, Homebrew, mise) — not the PATH of the shell that ran get.sh.
 
   if [[ ${DRY} -eq 1 ]]; then
     if [[ -n "${dir_arg}" ]]; then
@@ -176,8 +194,8 @@ cmd_run() {
       printf '+ tart run --no-graphics %s\n' "${name}"
     fi
     run tart ip --wait 120 "${name}"
-    [[ -n "${dir_arg}" ]] && printf '+ DEVBOOST_RELEASE_BASE=file:///Volumes/My\\ Shared\\ Files/dist\n'
-    printf '+ tart exec -i %s /bin/bash -lc '\''%s'\''\n' "${name}" "${guest_cmd}"
+    printf '+ tart exec -i %s /bin/bash -lc '\''%s'\''\n' "${name}" "${install_cmd}"
+    printf '+ tart exec -i %s /bin/zsh -lc '\''%s'\''\n' "${name}" "${smoke_cmd}"
     return 0
   fi
 
@@ -189,12 +207,19 @@ cmd_run() {
     tart run --no-graphics "${name}" >"${log}" 2>&1 &
   fi
   local run_pid=$!
-  # shellcheck disable=SC2064  # run_pid must expand now, not at trap time
-  trap "kill ${run_pid} >/dev/null 2>&1 || true" EXIT
+  # shellcheck disable=SC2064  # run_pid/log/share_dir must expand now, not at trap time
+  trap "kill ${run_pid} >/dev/null 2>&1 || true; rm -rf '${log}' ${share_dir:+'${share_dir}'}" EXIT
 
-  run tart ip --wait 120 "${name}"
+  if ! tart ip --wait 120 "${name}"; then
+    err "the VM never came up — tart run said:"
+    cat "${log}" >&2
+    exit 1
+  fi
   local rc=0
-  tart exec -i "${name}" /bin/bash -lc "${guest_cmd}" || rc=$?
+  tart exec -i "${name}" /bin/bash -lc "${install_cmd}" || rc=$?
+  if [[ ${rc} -eq 0 ]]; then
+    tart exec -i "${name}" /bin/zsh -lc "${smoke_cmd}" || rc=$?
+  fi
   tart stop "${name}" >/dev/null 2>&1 || true
   exit "${rc}"
 }

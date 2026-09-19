@@ -127,7 +127,7 @@ def _make_harness(
     **extra_env: str,
 ) -> Harness:
     canned = tmp_path / canned_name
-    canned.mkdir()
+    canned.mkdir(parents=True)
     logs = tmp_path / "logs"
     logs.mkdir()
     curl_log = logs / "curl.log"
