@@ -4,7 +4,7 @@ Linux runs Docker's own engine (docker-ce). A Mac needs a Linux VM, and dev-boos
 
 | | **Colima** (default) | OrbStack | Docker Desktop |
 |---|---|---|---|
-| Licence | MIT — free for any use | Free for personal, non-commercial use only; work use needs Pro ($8/user/month) | Free only for companies with **fewer than 250 employees and less than US$10M annual revenue**; otherwise a paid subscription (checked against [orbstack.dev/pricing](https://orbstack.dev/pricing) and [docker.com/pricing/faq](https://www.docker.com/pricing/faq/), 2026-09-19) |
+| Licence | MIT — free for any use ([abiosoft/colima LICENSE](https://github.com/abiosoft/colima/blob/main/LICENSE), 2026-09-19) | Free for personal, non-commercial use only; work use needs Pro ($8/user/month) ([orbstack.dev/pricing](https://orbstack.dev/pricing), 2026-09-19) | Free only for companies with **fewer than 250 employees and less than US$10M annual revenue**; otherwise a paid subscription ([docker.com/pricing/faq](https://www.docker.com/pricing/faq/), 2026-09-19) |
 | Installed as | brew `colima`, `docker`, `docker-compose`, `docker-buildx` | cask `orbstack` | cask `docker-desktop` |
 | VM size | half the CPUs (≥ 2), a quarter of the RAM (≥ 4 GiB), 100 GiB disk — set when the VM is first created | same numbers via `orb config` | same numbers in its settings file |
 | Starts at login | `brew services start colima` | `orb config set app.start_at_login true` | its "Start when you sign in" setting |
