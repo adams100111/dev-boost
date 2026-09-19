@@ -26,8 +26,9 @@ def test_write_user_unit_reloads_only_on_change(tmp_path: Path) -> None:
 
 
 def test_is_active() -> None:
-    ok = Ctx(os=FEDORA, ex=FakeExecutor())
+    ex = FakeExecutor()
+    ok = Ctx(os=FEDORA, ex=ex)
     assert systemd.is_active(ok, "t.timer", user=True)
-    assert ok.ex.calls == [["systemctl", "--user", "is-active", "t.timer"]]  # type: ignore[attr-defined]
+    assert ex.calls == [["systemctl", "--user", "is-active", "t.timer"]]
     bad = Ctx(os=FEDORA, ex=FakeExecutor(scripts={"systemctl": Result(3)}))
     assert not systemd.is_active(bad, "t.timer", user=True)
