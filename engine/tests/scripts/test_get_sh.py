@@ -15,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -113,6 +114,7 @@ def _make_harness(
     system: str = "Darwin",
     machine: str = "arm64",
     arm64: str = "1",
+    translated: str = "0",
     mac_version: str = "27.0",
     uid: str = "1000",
     brew: bool = True,
@@ -120,9 +122,11 @@ def _make_harness(
     no_tty: bool = False,
     fail_install: bool = False,
     kill_int_on: str | None = None,
+    real_curl: bool = False,
+    canned_name: str = "canned",
     **extra_env: str,
 ) -> Harness:
-    canned = tmp_path / "canned"
+    canned = tmp_path / canned_name
     canned.mkdir()
     logs = tmp_path / "logs"
     logs.mkdir()
@@ -172,7 +176,14 @@ def _make_harness(
         f'case "${{1:-}}" in\n  -m) echo "{machine}" ;;\n  *) echo "{system}" ;;\nesac',
     )
     stub.add("sw_vers", f'echo "{mac_version}"')
-    stub.add("sysctl", f'echo "{arm64}"')
+    # `sysctl -n <key>`: proc_translated is 1 only in a Rosetta-translated shell.
+    stub.add(
+        "sysctl",
+        f'case "${{2:-}}" in\n'
+        f'  sysctl.proc_translated) echo "{translated}" ;;\n'
+        f'  *) echo "{arm64}" ;;\n'
+        "esac",
+    )
     stub.add("id", f'echo "{uid}"')
     # A mktemp whose output we control, so "was the download dir cleaned up?" is
     # observable — and so no test ever litters the host's real temp dir.
@@ -191,24 +202,32 @@ def _make_harness(
             "  sleep 30\n"
             "fi\n"
         )
-    stub.add(
-        "curl",
+    # `-w FORMAT` is the release-tag probe: it prints $GS_TEST_TAG_URL as the effective
+    # URL of the latest-release redirect (or fails, like an offline curl, when unset).
+    curl_stub = (
         f'printf "%s\\n" "$*" >> "{curl_args_log}"\n'
-        'url=""\nout=""\n'
+        'url=""\nout=""\nfmt=""\n'
         'while [ $# -gt 0 ]; do\n'
         '  case "$1" in\n'
         '    -o) out="$2"; shift 2 ;;\n'
+        '    -w) fmt="$2"; shift 2 ;;\n'
         '    --proto|--proto-redir) shift 2 ;;\n'
         '    -*) shift ;;\n'
         '    *) url="$1"; shift ;;\n'
         "  esac\n"
         "done\n"
         f'printf "%s\\n" "$url" >> "{curl_log}"\n'
+        'if [ -n "$fmt" ]; then\n'
+        '  [ -n "${GS_TEST_TAG_URL:-}" ] || exit 6\n'
+        '  printf "%s" "$GS_TEST_TAG_URL"; exit 0\n'
+        "fi\n"
         + kill_clause
         + f'src="{canned}/${{url##*/}}"\n'
         '[ -f "$src" ] || exit 22\n'
-        'if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi\n',
+        'if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi\n'
     )
+    if not real_curl:
+        stub.add("curl", curl_stub)
     if fail_install:
         # Force a `set -e` abort mid-gs_main, after the download dir exists.
         stub.add("install", 'echo "install: refused" >&2\nexit 1')
@@ -296,11 +315,35 @@ def test_darwin_arm64_fetches_binary_only(stub_path: StubPath, tmp_path: Path) -
     assert h.exec_lines()[0] == "args=install terminal"
 
 
-def test_darwin_rosetta_shell_counts_as_arm64(stub_path: StubPath, tmp_path: Path) -> None:
-    h = _make_harness(stub_path, tmp_path, machine="x86_64", arm64="1")
+ROSETTA_MSG = (
+    "get.sh: this shell runs under Rosetta (x86_64) — open a native (arm64) terminal "
+    "and re-run"
+)
+
+
+def test_darwin_rosetta_shell_refused(stub_path: StubPath, tmp_path: Path) -> None:
+    """`sysctl.proc_translated` = 1: Homebrew's installer aborts under Rosetta, so get.sh
+    refuses first — before any download, sudo or Homebrew."""
+    h = _make_harness(stub_path, tmp_path, machine="x86_64", translated="1", brew=False)
     proc = _run_get_sh(h)
-    assert proc.returncode == 0, _stderr(proc)
-    assert f"{DEFAULT_BASE}/devboost-darwin-arm64" in h.urls()
+    assert proc.returncode == 1
+    assert ROSETTA_MSG in _stderr(proc)
+    assert h.urls() == []
+    assert h.order() == []
+    assert not h.installed.exists()
+
+
+def test_darwin_x86_64_shell_on_arm64_host_refused_as_rosetta(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """Belt and braces: even if proc_translated reads 0, an x86_64 shell on an arm64 host
+    is translated — the same refusal, not the Intel one."""
+    h = _make_harness(stub_path, tmp_path, machine="x86_64", arm64="1", translated="0")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert ROSETTA_MSG in _stderr(proc)
+    assert "Intel" not in _stderr(proc)
+    assert h.urls() == []
 
 
 def test_darwin_intel_refused(stub_path: StubPath, tmp_path: Path) -> None:
@@ -404,10 +447,37 @@ def test_darwin_bootstraps_homebrew_when_missing(stub_path: StubPath, tmp_path: 
     h = _make_harness(stub_path, tmp_path, brew=False)
     proc = _run_get_sh(h)
     assert proc.returncode == 0, _stderr(proc)
-    assert BREW_INSTALLER in h.urls()
     assert h.order() == ["sudo -v", "brew-installer NONINTERACTIVE=1"]
     assert (h.brew_prefix / "bin" / "brew").is_file()
     assert h.installed.is_file()
+
+
+def test_darwin_fetches_and_verifies_before_homebrew(stub_path: StubPath, tmp_path: Path) -> None:
+    """Ruling C-M6-R2: the release binary is downloaded and verified BEFORE Homebrew and
+    the CLT are installed, so a bad release never leaves a half-provisioned Mac."""
+    h = _make_harness(stub_path, tmp_path, brew=False)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.urls() == [
+        f"{DEFAULT_BASE}/checksums.txt",
+        f"{DEFAULT_BASE}/devboost-darwin-arm64",
+        BREW_INSTALLER,
+    ]
+    err = _stderr(proc)
+    assert err.index("downloading devboost-") < err.index("Homebrew is missing")
+    assert err.index("Homebrew is missing") < err.index("installed ")
+
+
+def test_darwin_homebrew_installer_without_brew_fails(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """An installer that "succeeds" but leaves no brew behind is a failure, not a shrug."""
+    h = _make_harness(stub_path, tmp_path, brew=False)
+    (h.canned / "install.sh").write_text("exit 0\n", encoding="utf-8")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "the Homebrew installer finished, but" in _stderr(proc)
+    assert not h.installed.exists()
 
 
 def test_darwin_skips_homebrew_when_present(stub_path: StubPath, tmp_path: Path) -> None:
@@ -465,6 +535,22 @@ def test_release_base_override(stub_path: StubPath, tmp_path: Path) -> None:
     assert h.urls() == ["file:///x/checksums.txt", "file:///x/devboost-darwin-arm64"]
 
 
+def test_file_base_with_a_space_works_with_real_curl(stub_path: StubPath, tmp_path: Path) -> None:
+    """The D9 rehearsal serves the release from `/Volumes/My Shared Files/dist`. With the
+    REAL curl (unstubbed), a percent-encoded file:// base with a space fetches, verifies
+    and installs."""
+    if shutil.which("curl") is None:
+        pytest.skip("curl is not installed")
+    h = _make_harness(stub_path, tmp_path, real_curl=True, canned_name="My Shared Files")
+    base = "file://" + urllib.parse.quote(str(h.canned))
+    assert "%20" in base
+    h.env["DEVBOOST_RELEASE_BASE"] = base
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.installed.is_file()
+    assert h.exec_lines()[0] == "args=install terminal"
+
+
 def test_release_base_must_not_be_plain_http(stub_path: StubPath, tmp_path: Path) -> None:
     h = _make_harness(stub_path, tmp_path, DEVBOOST_RELEASE_BASE="http://evil.example/dl")
     proc = _run_get_sh(h)
@@ -484,6 +570,109 @@ def test_checksum_mismatch_darwin(stub_path: StubPath, tmp_path: Path) -> None:
     assert not h.installed.exists()
     assert not h.link.exists()
     assert h.exec_lines() == []
+
+
+def test_checksum_mismatch_leaves_the_mac_untouched(stub_path: StubPath, tmp_path: Path) -> None:
+    """Homebrew missing + a tampered binary: no sudo, no Homebrew, no CLT, no devboost."""
+    h = _make_harness(stub_path, tmp_path, brew=False, corrupt="devboost-darwin-arm64")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "get.sh: checksum mismatch: devboost-darwin-arm64" in _stderr(proc)
+    assert h.order() == []
+    assert BREW_INSTALLER not in h.urls()
+    assert not (h.brew_prefix / "bin" / "brew").exists()
+    assert not (h.home / ".local").exists()
+
+
+MISSING_MAC_ASSET = (
+    "get.sh: no devboost-darwin-arm64 in release v0.1.80 yet — macOS support ships in v0.2.0"
+)
+TAG_URL = "https://github.com/adams100111/dev-boost/releases/tag/v0.1.80"
+
+
+@pytest.mark.parametrize("shape", ["no-checksum-entry", "asset-404"])
+def test_release_without_a_mac_asset_says_so_and_touches_nothing(
+    stub_path: StubPath, tmp_path: Path, shape: str
+) -> None:
+    """A-I4: the latest release (today's v0.1.80) ships no Mac binary. Say exactly that,
+    exit non-zero, and leave the machine untouched — no sudo, no Homebrew, no devboost."""
+    h = _make_harness(stub_path, tmp_path, brew=False, GS_TEST_TAG_URL=TAG_URL)
+    (h.canned / "devboost-darwin-arm64").unlink()
+    if shape == "no-checksum-entry":
+        lines = (h.canned / "checksums.txt").read_text(encoding="utf-8").splitlines()
+        kept = [ln for ln in lines if not ln.endswith("  devboost-darwin-arm64")]
+        (h.canned / "checksums.txt").write_text("\n".join(kept) + "\n", encoding="utf-8")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    err = _stderr(proc)
+    assert MISSING_MAC_ASSET in err
+    assert "get.sh: nothing was installed." in err
+    assert "curl:" not in err
+    assert h.order() == []
+    assert BREW_INSTALLER not in h.urls()
+    assert not (h.brew_prefix / "bin" / "brew").exists()
+    assert not (h.home / ".local").exists()
+    assert h.exec_lines() == []
+    assert h.leaked_temp_dirs() == []
+    # The tag probe is pinned to https like every other fetch.
+    probe = [a for a in h.curl_argvs() if "-w" in a.split()]
+    assert probe and all("--proto-redir =https" in a for a in probe)
+
+
+def test_missing_asset_without_a_resolvable_tag(stub_path: StubPath, tmp_path: Path) -> None:
+    """Offline tag probe: still a clear message, naming the latest release generically."""
+    h = _make_harness(stub_path, tmp_path)
+    (h.canned / "devboost-darwin-arm64").unlink()
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: no devboost-darwin-arm64 in release (latest) yet — macOS support ships in "
+        "v0.2.0" in _stderr(proc)
+    )
+
+
+def test_missing_linux_asset_names_the_release(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(
+        stub_path, tmp_path, system="Linux", machine="aarch64", GS_TEST_TAG_URL=TAG_URL
+    )
+    (h.canned / "devboost-aarch64").unlink()
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    err = _stderr(proc)
+    assert "get.sh: no devboost-aarch64 in release v0.1.80 yet" in err
+    assert "macOS" not in err
+    assert not h.installed.exists()
+
+
+def test_missing_asset_under_an_overridden_base_names_the_base(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    h = _make_harness(stub_path, tmp_path, DEVBOOST_RELEASE_BASE="https://mirror.example/dl")
+    (h.canned / "devboost-darwin-arm64").unlink()
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: no devboost-darwin-arm64 in release at https://mirror.example/dl yet"
+        in _stderr(proc)
+    )
+    # No tag probe against github.com for a non-default base.
+    assert not [a for a in h.curl_argvs() if "-w" in a.split()]
+
+
+def test_checksum_entry_is_an_exact_name_match(stub_path: StubPath, tmp_path: Path) -> None:
+    """A regex lookup would let `devboost-darwin-arm64` match a look-alike entry; the
+    lookup is an exact comparison of the name field."""
+    h = _make_harness(stub_path, tmp_path)
+    lines = (h.canned / "checksums.txt").read_text(encoding="utf-8").splitlines()
+    kept = [
+        ln.replace("  devboost-darwin-arm64", "  xdevboost-darwin-arm64")
+        for ln in lines
+    ]
+    (h.canned / "checksums.txt").write_text("\n".join(kept) + "\n", encoding="utf-8")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "no devboost-darwin-arm64 in release" in _stderr(proc)
+    assert not h.installed.exists()
 
 
 def test_missing_release_reports_cleanly(stub_path: StubPath, tmp_path: Path) -> None:

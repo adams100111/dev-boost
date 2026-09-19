@@ -7,9 +7,12 @@
 # No data tarball for the engine — profiles + templates are bundled inside the binary
 # (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/link/exec.
 #
-# macOS notes: only Apple Silicon (a Rosetta-translated shell still counts), macOS 15+,
-# never as root, and Homebrew (which brings the command-line tools) is bootstrapped first
-# after a single `sudo -v` read from the tty — so the whole thing works under `curl | bash`.
+# macOS notes: only Apple Silicon in a native (arm64) shell — a Rosetta-translated shell is
+# refused, because Homebrew's own installer aborts under it — macOS 15+, never as root.
+# Order: every refusal, then fetch + verify the release binary, and only THEN bootstrap
+# Homebrew (which brings the command-line tools) after a single `sudo -v` read from the
+# tty. A missing asset or a checksum failure therefore leaves the Mac untouched, and the
+# whole thing works under `curl | bash`.
 #
 # Only bash 3.2 features: a fresh Mac runs this under /bin/bash 3.2.
 set -Eeuo pipefail
@@ -43,17 +46,25 @@ gs_arch() {
   local os
   os="$(gs_os)" || return 1
   if [ "$os" = darwin ]; then
+    # A Rosetta-translated shell: Homebrew's installer aborts under it ("only supported on
+    # Apple Silicon"), and everything it installed would be x86_64. Refuse up front.
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 1 ]; then
+      gs_err "this shell runs under Rosetta (x86_64) — open a native (arm64) terminal" \
+        "and re-run"
+      return 1
+    fi
     case "$(uname -m)" in
       arm64|aarch64) echo darwin-arm64 ;;
       x86_64|amd64)
-        # A Rosetta-translated shell on Apple Silicon reports x86_64; the host is still
-        # arm64 and gets the arm64 binary. Only a real Intel Mac is refused.
+        # Belt and braces: an x86_64 shell on an arm64 host is translated even if the
+        # proc_translated probe could not be read.
         if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then
-          echo darwin-arm64
+          gs_err "this shell runs under Rosetta (x86_64) — open a native (arm64) terminal" \
+            "and re-run"
         else
           gs_err "Intel Macs are not supported — dev-boost needs Apple Silicon (arm64)"
-          return 1
-        fi ;;
+        fi
+        return 1 ;;
       *) gs_err "unsupported architecture: $(uname -m) (arm64 only on macOS)"; return 1 ;;
     esac
     return 0
@@ -89,17 +100,25 @@ gs_macos_check_version() {
   fi
 }
 
+# gs_macos_precheck — the cheap half of the Homebrew bootstrap, run before any download:
+# when Homebrew is missing, the sudo prompt needs a terminal, so refuse now if there is
+# none rather than after the download.
+gs_macos_precheck() {
+  if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ] && ! ( : <"$GS_TTY" ) 2>/dev/null; then
+    gs_err "no terminal available for the sudo prompt — install Homebrew first," \
+      "then re-run this script"
+    return 1
+  fi
+}
+
 # gs_macos_prereqs — make sure Homebrew is there (it installs the command-line tools too),
-# then put it on PATH. A present Homebrew is left completely alone.
+# then put it on PATH. A present Homebrew is left completely alone. Runs only once the
+# release binary has been downloaded and verified.
 gs_macos_prereqs() {
   if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ]; then
     gs_err "Homebrew is missing — installing it (this also installs the Xcode CLT)."
-    if ! ( : <"$GS_TTY" ) 2>/dev/null; then
-      gs_err "no terminal available for the sudo prompt — install Homebrew first," \
-        "then re-run this script"
-      return 1
-    fi
-    gs_err "macOS needs your password once; nothing after this prompt is interactive."
+    gs_macos_precheck || return 1
+    gs_err "macOS needs your password now (sudo may ask again if the CLT download is slow)."
     # The redirect is this (user) shell's, on purpose: sudo must read the password from
     # the tty, not from the script `curl` is piping into bash. SC2024 is about the
     # opposite case (redirecting *output* into a root-owned path).
@@ -107,10 +126,12 @@ gs_macos_prereqs() {
     sudo -v <"$GS_TTY" || { gs_err "sudo failed — cannot install Homebrew"; return 1; }
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "${GS_CURL_PROTO[@]}" "$GS_BREW_INSTALLER")" \
       || { gs_err "the Homebrew installer failed"; return 1; }
+    if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ]; then
+      gs_err "the Homebrew installer finished, but ${GS_BREW_PREFIX}/bin/brew is missing"
+      return 1
+    fi
   fi
-  if [ -x "${GS_BREW_PREFIX}/bin/brew" ]; then
-    eval "$("${GS_BREW_PREFIX}/bin/brew" shellenv)"
-  fi
+  eval "$("${GS_BREW_PREFIX}/bin/brew" shellenv)"
 }
 
 # --proto/--proto-redir: an https:// release must stay https:// even across a 302, so a
@@ -132,13 +153,50 @@ gs_sha256() {
   else gs_err "need sha256sum or shasum"; return 1; fi
 }
 
+# gs_entry DIR FILE — print FILE's line from DIR/checksums.txt (an exact name match, so a
+# `.` is not a wildcard and one name never matches several lines). Fails when absent.
+gs_entry() {
+  awk -v f="$2" '$2 == f { print; found = 1; exit } END { exit !found }' "$1/checksums.txt"
+}
+
 # gs_verify DIR FILE — verify FILE in DIR against DIR/checksums.txt.
 gs_verify() {
   local dir="$1" file="$2" line
-  line="$(grep -E "  ${file}\$" "${dir}/checksums.txt")" || {
+  line="$(gs_entry "$dir" "$file")" || {
     gs_err "no checksum entry for ${file}"; return 1
   }
   printf '%s\n' "$line" | ( cd "$dir" && gs_sha256 -c - ) >/dev/null
+}
+
+# gs_release_tag — best effort, for error messages only: the tag behind the latest-release
+# redirect (e.g. v0.1.80), or a description of where the release came from.
+gs_release_tag() {
+  local url tag
+  if [ "$GS_BASE" != "$GS_DEFAULT_BASE" ]; then
+    echo "at ${GS_BASE}"
+    return 0
+  fi
+  url="$(curl -fsSLI "${GS_CURL_PROTO[@]}" -o /dev/null -w '%{url_effective}' \
+    "https://github.com/${GS_REPO}/releases/latest" 2>/dev/null || true)"
+  tag="${url##*/}"
+  case "$tag" in
+    v[0-9]*) echo "$tag" ;;
+    *) echo "(latest)" ;;
+  esac
+}
+
+# gs_missing_asset ASSET OS — the release exists but has no ASSET for this host. Say so
+# plainly (a bare curl 404 sends people after the wrong problem). Nothing has been
+# installed at this point.
+gs_missing_asset() {
+  local asset="$1" os="$2" tag
+  tag="$(gs_release_tag)"
+  if [ "$os" = darwin ]; then
+    gs_err "no ${asset} in release ${tag} yet — macOS support ships in v0.2.0"
+  else
+    gs_err "no ${asset} in release ${tag} yet"
+  fi
+  gs_err "nothing was installed."
 }
 
 # gs_check_base — never fetch the release over plaintext. file:// is the local-rehearsal
@@ -203,7 +261,7 @@ gs_main() {
 
   if [ "$os" = darwin ]; then
     gs_macos_check_version || return 1
-    gs_macos_prereqs || return 1
+    gs_macos_precheck || return 1
   fi
 
   gs_warn_base
@@ -222,7 +280,14 @@ gs_main() {
   gs_fetch "${GS_BASE}/checksums.txt" "${tmp}/checksums.txt" \
     || { gs_err "no published release yet (or network error). See README for releasing."
          return 1; }
-  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" || return 1
+  # A release without this host's asset (e.g. a Linux-only release fetched from a Mac):
+  # either checksums.txt has no entry for it, or the asset itself 404s.
+  if ! gs_entry "$tmp" "devboost-${arch}" >/dev/null; then
+    gs_missing_asset "devboost-${arch}" "$os"
+    return 1
+  fi
+  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" 2>/dev/null \
+    || { gs_missing_asset "devboost-${arch}" "$os"; return 1; }
   gs_verify "$tmp" "devboost-${arch}" || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
   if [ "$os" = linux ]; then
     # The Ventoy injection archive is shipped alongside the binary so the online-installed
@@ -230,6 +295,11 @@ gs_main() {
     gs_fetch "${GS_BASE}/devboost-${arch}.tar.gz" "${tmp}/devboost-${arch}.tar.gz" || return 1
     gs_verify "$tmp" "devboost-${arch}.tar.gz" \
       || { gs_err "checksum mismatch: devboost-${arch}.tar.gz"; return 1; }
+  fi
+
+  # Verified. Only now touch the machine: Homebrew + the CLT first (macOS), then devboost.
+  if [ "$os" = darwin ]; then
+    gs_macos_prereqs || return 1
   fi
 
   mkdir -p "${GS_PREFIX}/bin"
