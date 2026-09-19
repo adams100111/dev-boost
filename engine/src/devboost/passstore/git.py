@@ -89,6 +89,22 @@ def subjects_touching(ctx: Ctx, store: Path, since: str, path: str) -> list[str]
     return _lines(_git(ctx, store, "log", "--format=%s", rng, "--", path))
 
 
+def commit_with_subject(ctx: Ctx, store: Path, subject: str) -> str | None:
+    """Newest commit whose subject is exactly *subject* (None if there is none)."""
+    res = _git(ctx, store, "log", "--fixed-strings", f"--grep={subject}", "--format=%H%x00%s")
+    for line in _lines(res):
+        sha, _, subj = line.partition("\0")
+        if subj == subject:
+            return sha
+    return None
+
+
+def resolves(ctx: Ctx, store: Path, rev: str) -> bool:
+    """Does *rev* name a commit in this clone? (A rebase can leave a stored SHA dangling.)"""
+    return bool(rev) and _git(ctx, store, "rev-parse", "--verify", "--quiet",
+                              f"{rev}^{{commit}}").ok
+
+
 def first_commit_with(ctx: Ctx, store: Path, token: str) -> str | None:
     """Oldest commit that changed the number of occurrences of *token* in root .gpg-id."""
     out = _lines(_git(ctx, store, "log", "--reverse", "--format=%H", f"-S{token}", "--",

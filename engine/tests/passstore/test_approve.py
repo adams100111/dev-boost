@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsInfo
-from devboost.exec.executor import Result
+from devboost.exec.executor import RealExecutor, Result
 from devboost.model import Ctx
 from devboost.passstore import approve, sync
 from devboost.passstore.layout import DeviceRecord, Kind, RotationEntry, Store
@@ -378,3 +380,53 @@ def test_approve_marks_the_device_as_seen_for_the_tripwire(tmp_path: Path) -> No
     approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
     state = (tmp_path / "state" / "devboost" / "pass-sync.json").read_text(encoding="utf-8")
     assert FP_NEW in state
+
+
+def _git_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Store:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    s = _store(tmp_path, [FP_ME])
+    shutil.rmtree(s.root / ".git")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(s.root)], check=True)
+    return s
+
+
+def _commit(s: Store, subject: str, files: dict[str, str] | None = None) -> None:
+    for rel, body in (files or {}).items():
+        p = s.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(s.root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(s.root), "-c", "user.name=t", "-c", "user.email=t@x",
+                    "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m",
+                    subject], check=True)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_unrotated_finds_the_revoke_commit_when_after_no_longer_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I7: a rebase rewrites SHAs — the stored `after` may not exist any more."""
+    s = _git_repo(tmp_path, monkeypatch)
+    _commit(s, "Add given password for web/a to store.", {"web/a.gpg": "1", "web/b.gpg": "1"})
+    _commit(s, "devboost: revoke laptop")  # a longer name must not match
+    _commit(s, "Edit password for web/b using vim.", {"web/b.gpg": "2"})  # before lap's revoke
+    _commit(s, "devboost: revoke lap")
+    _commit(s, "Edit password for web/a using vim.", {"web/a.gpg": "2"})
+    s.write_rotation([RotationEntry(device="lap", fingerprint=FP_NEW, revoked_at="t",
+                                    after="0" * 40, entries=["web/a", "web/b"])])
+    ctx = Ctx(os=FEDORA, ex=RealExecutor())
+    assert approve.unrotated(ctx, s) == [approve.Unrotated("lap", "web/b")]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_unrotated_without_any_boundary_keeps_every_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _git_repo(tmp_path, monkeypatch)
+    _commit(s, "Add given password for web/a to store.", {"web/a.gpg": "1"})
+    _commit(s, "Edit password for web/a using vim.", {"web/a.gpg": "2"})
+    s.write_rotation([RotationEntry(device="lap", fingerprint=FP_NEW, revoked_at="t",
+                                    after="0" * 40, entries=["web/a"])])
+    ctx = Ctx(os=FEDORA, ex=RealExecutor())
+    assert approve.unrotated(ctx, s) == [approve.Unrotated("lap", "web/a")]

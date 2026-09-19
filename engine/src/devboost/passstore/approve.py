@@ -240,17 +240,33 @@ def revoke(ctx: Ctx, store: Store, device: str, name: str,
                           after=git.head(ctx, store.root), entries=entries)
     store.move("devices", "revoked", name)
     store.write_rotation([*earlier, entry])
-    enroll.publish(ctx, store, f"devboost: revoke {name}")
+    enroll.publish(ctx, store, revoke_subject(name))
     return entry
+
+
+def revoke_subject(name: str) -> str:
+    return f"devboost: revoke {name}"
+
+
+def _boundary(ctx: Ctx, store: Store, r: RotationEntry) -> str | None:
+    """The commit after which an edit counts as a rotation (I7): the revoke commit, found by
+    its subject (its SHA changes if a pull rebases it), else the stored `after` if it still
+    exists. None → no boundary: nothing counts as rotated."""
+    found = git.commit_with_subject(ctx, store.root, revoke_subject(r.device))
+    if found:
+        return found
+    return r.after if git.resolves(ctx, store.root, r.after) else None
 
 
 def unrotated(ctx: Ctx, store: Store) -> list[Unrotated]:
     out: list[Unrotated] = []
     for r in store.rotation():
+        since = _boundary(ctx, store, r)
         for e in r.entries:
             if not (store.root / f"{e}.gpg").exists():
                 continue  # deleted from the store since — nothing left to rotate here
-            subjects = git.subjects_touching(ctx, store.root, r.after, f"{e}.gpg")
+            subjects = (git.subjects_touching(ctx, store.root, since, f"{e}.gpg")
+                        if since else [])
             if not any(not s.startswith(_AUTOMATED) for s in subjects):
                 out.append(Unrotated(r.device, e))
     return out

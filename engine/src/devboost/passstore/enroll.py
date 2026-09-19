@@ -65,6 +65,10 @@ def local_access(ctx: Ctx, store: Store, device: str) -> Access:
         return Access("no-store", None, None)
     keys = gpg.secret_keys(ctx)
     if not store.gpg_ids():
+        if store.entries() or store.records("devices"):  # I6: broken, not new — never re-init
+            raise ConfigError(f"pass: {store.gpg_id_path()} is missing but the store holds "
+                              "entries / enrolled devices — run `devboost pass sync "
+                              "--resolve` to restore it")
         return Access("genesis", gpg.device_key(keys, device), None)
     by_fp = {k.fingerprint: k for k in keys}
     for rec in store.records("devices"):

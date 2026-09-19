@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -121,10 +123,21 @@ def test_name_collision_refused(tmp_path: Path) -> None:
                              interactive=True)
 
 
+class _PassInitWrites(RuleExecutor):
+    """`pass init <fp>…` writes the root .gpg-id, as the real one does."""
+
+    def run(self, argv: Sequence[str], **kw: Any) -> Result:
+        if list(argv[:2]) == ["pass", "init"] and "-p" not in argv:
+            root = Path(kw["env"]["PASSWORD_STORE_DIR"])
+            (root / ".gpg-id").write_text("\n".join(argv[2:]) + "\n", encoding="utf-8")
+        return super().run(argv, **kw)
+
+
 def test_genesis_initialises_store_to_this_device(tmp_path: Path) -> None:
     store = _store(tmp_path, None)
-    ex = _ex(colons("sec", FP_NEW, UID_NEW))
-    enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    ex = _PassInitWrites(rules=_ex(colons("sec", FP_NEW, UID_NEW)).rules)
+    acc = enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    assert acc.state == "enrolled"
     i = ex.calls.index(["pass", "init", FP_NEW])
     assert ex.envs[i]["PASSWORD_STORE_DIR"] == str(store.root)
     assert ex.envs[i]["DEVBOOST_PASS_HOOK"] == "off"
@@ -292,3 +305,19 @@ def test_adopt_refuses_a_key_registered_under_another_name(tmp_path: Path) -> No
     with pytest.raises(ConfigError, match="'old'"):
         enroll.ensure_access(_ctx(ex), store, "desk", interactive=False)
     assert store.record("devices", "desk") is None
+
+
+@pytest.mark.parametrize("what", ["entry", "device"])
+def test_no_root_gpg_id_is_genesis_only_on_an_empty_store(tmp_path: Path, what: str) -> None:
+    """I6: a store with entries or devices but no .gpg-id is broken, not new."""
+    store = _store(tmp_path, None)
+    if what == "entry":
+        (store.root / "web").mkdir()
+        (store.root / "web" / "a.gpg").write_text("x", encoding="utf-8")
+    else:
+        store.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_OLD, os="x"),
+                           ARMOR)
+    ex = _ex(colons("sec", FP_NEW, UID_NEW))
+    with pytest.raises(ConfigError, match="devboost pass sync --resolve"):
+        enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    assert not any(c[:2] == ["pass", "init"] for c in ex.calls)
