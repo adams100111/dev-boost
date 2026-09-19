@@ -6,6 +6,10 @@ import pytest
 
 from .conftest import DOT, Apply
 
+# Real chezmoi subprocess against the source tree: excluded from the fast lane
+# (`pytest -m "not slow"`).
+pytestmark = pytest.mark.slow
+
 MAC_ONLY = (".zshrc", ".zprofile", ".bash_profile")
 LINUX_ONLY = (".bashrc", ".bash-preexec.sh", ".config/systemd")
 

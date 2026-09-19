@@ -26,10 +26,18 @@ from devboost.modules._pass import pass_show
 from devboost.passstore import approve, audit, enroll, git, gpg, sync
 from devboost.passstore.layout import Store
 
-pytestmark = pytest.mark.skipif(
-    not all(shutil.which(t) for t in ("gpg", "gpgconf", "pass", "git")),
-    reason="needs gpg, pass and git",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not all(shutil.which(t) for t in ("gpg", "gpgconf", "pass", "git")),
+        reason="needs gpg, pass and git",
+    ),
+    # Real gpg-agent/pinentry can wedge (stale socket, loopback pinentry misconfigured, an
+    # agent waiting on a tty that doesn't exist in a subagent sandbox) with no built-in
+    # timeout anywhere in RealExecutor. Bound it so a wedged agent fails the test instead
+    # of hanging the whole run; excluded from the fast lane (`pytest -m "not slow"`).
+    pytest.mark.slow,
+    pytest.mark.timeout(60),
+]
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
 
