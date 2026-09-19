@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from devboost.core.osinfo import OsInfo
@@ -12,6 +13,7 @@ from tests.passstore.fakes import RuleExecutor
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 FP_A = "A" * 24 + "1111111111111111"
 FP_B = "B" * 24 + "2222222222222222"
+FP_C = "C" * 24 + "3333333333333333"
 SUB_A, SUB_B = "AAAA0000AAAA0000", "BBBB0000BBBB0000"
 ARMOR = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n"
 
@@ -62,7 +64,9 @@ def _ex(store: Store) -> RuleExecutor:
 def test_offline_entry_still_encrypted_to_a_revoked_key_is_flagged(tmp_path: Path) -> None:
     s = _store(tmp_path)
     report = audit.audit(Ctx(os=FEDORA, ex=_ex(s)), s)
-    assert report.mismatches == [audit.Mismatch("web/offline", ("bravo (revoked)",), ())]
+    assert report.mismatches == [
+        audit.Mismatch("web/offline", ("bravo (revoked)",), (), True)
+    ]
     assert report.unauditable == []
     hint = audit.fix_hint(s, report.mismatches[0])
     assert "pass init " + FP_A in hint and "pass edit web/offline" in hint
@@ -110,3 +114,48 @@ def test_unreadable_entry_is_reported(tmp_path: Path) -> None:
     ex.rules.insert(0, (("--list-packets", str(s.root / "web/ok.gpg")), Result(2)))
     report = audit.audit(Ctx(os=FEDORA, ex=ex), s)
     assert audit.Mismatch("web/ok", ("<unreadable>",), ()) in report.mismatches
+
+
+def test_pushed_devices_record_cannot_relabel_a_revoked_key(tmp_path: Path) -> None:
+    """A devices/ JSON record naming a revoked fingerprint must not steal its label, and the
+    hint must still say to change the secret (Important, fix round 1)."""
+    s = _store(tmp_path)
+    (s.meta / "devices" / "mallory.json").write_text(
+        DeviceRecord(name="mallory", fingerprint=FP_B, os="fedora").model_dump_json(),
+        encoding="utf-8",
+    )
+    report = audit.audit(Ctx(os=FEDORA, ex=_ex(s)), s)
+    assert report.mismatches == [
+        audit.Mismatch("web/offline", ("bravo (revoked)",), (), True)
+    ]
+    assert "pass edit web/offline" in audit.fix_hint(s, report.mismatches[0])
+
+
+def test_ambiguous_key_id_across_sources_stays_bare(tmp_path: Path) -> None:
+    """A key id two different primaries claim (keyring vs. a store file) must resolve to
+    neither name (Important, fix round 1)."""
+    s = _store(tmp_path)
+    s.write_record("devices", DeviceRecord(name="charlie", fingerprint=FP_C, os="fedora"),
+                    ARMOR)
+    ex = _ex(s)
+    ex.rules.insert(0, (("--show-keys", str(s.key_path("devices", "charlie"))),
+                        Result(0, _keys((FP_C, SUB_A)))))
+    report = audit.audit(Ctx(os=FEDORA, ex=ex), s)
+    ok = next(m for m in report.mismatches if m.entry == "web/ok")
+    assert ok.extra == (SUB_A,) and ok.missing == ("alpha",)
+
+
+def test_fix_hint_quotes_names_with_shell_metacharacters(tmp_path: Path) -> None:
+    """(Minor, fix round 1) folder/entry names are attacker-controlled (push access); the
+    hint must not hand back a copy-pasteable command that breaks out of its argument."""
+    root = tmp_path / "store"
+    folder = "team notes; rm -rf ~"
+    (root / folder).mkdir(parents=True)
+    (root / ".gpg-id").write_text(FP_A + "\n", encoding="utf-8")
+    (root / folder / ".gpg-id").write_text(FP_A + "\n", encoding="utf-8")
+    s = Store(root)
+    entry = f"{folder}/evil; entry"
+    m = audit.Mismatch(entry, ("bravo (revoked)",), (), True)
+    hint = audit.fix_hint(s, m)
+    assert shlex.quote(folder) in hint
+    assert shlex.quote(entry) in hint
