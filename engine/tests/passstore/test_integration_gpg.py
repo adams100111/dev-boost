@@ -22,7 +22,8 @@ from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import RealExecutor, Result
 from devboost.model import Ctx
-from devboost.passstore import approve, enroll, git, gpg, sync
+from devboost.modules._pass import pass_show
+from devboost.passstore import approve, audit, enroll, git, gpg, sync
 from devboost.passstore.layout import Store
 
 pytestmark = pytest.mark.skipif(
@@ -196,3 +197,55 @@ def test_new_device_syncs_keys_writes_and_the_other_device_reads(
 
     assert sync.run(a.ctx, a.store, "alpha").status == "ok"
     assert a.pass_("show", "web/from-bravo").stdout.strip() == "written on bravo"
+
+
+def test_offline_insert_after_revoke_is_flagged_and_fixed(
+    origin: str, make_device: MakeDevice
+) -> None:
+    """Carry-over I5: bravo, offline, still encrypts to its stale .gpg-id after the revoke."""
+    a = _genesis(origin, make_device)
+    b = make_device("bravo")
+    _request(b, origin)
+    approve.approve(a.ctx, a.store, "alpha", "bravo", lambda r: True)
+    assert sync.run(b.ctx, b.store, "bravo").status == "ok"  # imports alpha's key
+    assert audit.audit(a.ctx, a.store).mismatches == []
+
+    assert approve.revoke(a.ctx, a.store, "alpha", "bravo", lambda r: True) is not None
+    # bravo has not pulled the revoke: its .gpg-id still lists both keys
+    assert b.pass_("insert", "-m", "web/offline", stdin="late\n").ok
+    assert sync.run(b.ctx, b.store, "bravo").status == "ok"  # rebased onto the revoke, pushed
+    assert sync.run(a.ctx, a.store, "alpha").status == "ok"  # also deletes bravo's pubkey
+
+    report = audit.audit(a.ctx, a.store)
+    assert len(report.mismatches) == 1
+    mismatch = report.mismatches[0]
+    assert mismatch.entry == "web/offline"
+    assert mismatch.extra == ("bravo (revoked)",)
+    assert mismatch.missing == ()
+    assert mismatch.revoked is True
+    # R11: `pass init` with the same ids re-encrypts exactly the differing entry
+    assert a.pass_("init", *a.store.gpg_ids()).ok
+    assert audit.audit(a.ctx, a.store).mismatches == []
+
+
+def test_unattended_read_uses_the_cache_and_never_prompts(
+    origin: str, make_device: MakeDevice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R12 with real gpg: a passphrase-protected key, read unattended."""
+    a = make_device("alpha")
+    enroll.ensure_clone(a.ctx, a.store, origin)
+    enroll.ensure_access(a.ctx, a.store, "alpha", interactive=True, passphrase="pw")
+    assert a.pass_("insert", "-m", "web/k", stdin="guarded\n").ok
+    dev_ex = a.ctx.ex
+    assert isinstance(dev_ex, _DeviceEx)
+    gnupg = str(dev_ex.gnupg)
+    subprocess.run(["gpgconf", "--homedir", gnupg, "--reload", "gpg-agent"], check=True)
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    monkeypatch.setenv("PASSWORD_STORE_DIR", str(a.store.root))
+    assert pass_show(a.ctx, "web/k", who="t") is None  # uncached: fails fast, skipped
+
+    entry = str(a.store.root / "web" / "k.gpg")
+    unlock = a.ctx.ex.run(["gpg", "--batch", "--pinentry-mode", "loopback",
+                           "--passphrase", "pw", "--decrypt", entry])
+    assert unlock.ok  # caches the passphrase in the agent
+    assert pass_show(a.ctx, "web/k", who="t") == "guarded\n"

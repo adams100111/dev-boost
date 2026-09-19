@@ -18,10 +18,10 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from devboost.core import log
-from devboost.core.errors import DevbootError, UnsupportedOS
-from devboost.exec.primitives import systemd
+from devboost.core.errors import DevbootError
+from devboost.exec.primitives import launchd, systemd
 from devboost.model import Ctx
-from devboost.passstore import enroll, git, gpg, notify
+from devboost.passstore import audit, enroll, git, gpg, notify
 from devboost.passstore.gpg import KeyInfo
 from devboost.passstore.layout import DeviceRecord, Store, now_iso
 from devboost.passstore.paths import state_dir
@@ -29,6 +29,9 @@ from devboost.passstore.paths import state_dir
 SERVICE = "devboost-pass-sync.service"
 TIMER = "devboost-pass-sync.timer"
 HOOK_MARK = "# managed by devboost (pass-store)"
+
+AGENT = launchd.label("pass-sync")
+INTERVAL = 900  # seconds — the same 15 minutes as the systemd timer
 
 SyncStatus = Literal["ok", "skipped", "busy", "no-store", "conflict", "pull-failed",
                      "push-failed"]
@@ -50,6 +53,9 @@ class _State(BaseModel):
     # Fingerprints of device keys this device has seen listed (tripwire, I2); None = not
     # seeded yet — the first sync learns the current set silently.
     known_devices: list[str] | None = None
+    # Recipient audit (R10): HEAD last audited, and entries already announced.
+    audited_head: str | None = None
+    audit_flagged: list[str] = []
 
 
 # --- hook + scheduler -----------------------------------------------------------------
@@ -107,19 +113,33 @@ def timer_unit() -> str:
             "OnCalendar=*:0/15\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n")
 
 
+def agent_args(bin_: str) -> list[str]:
+    return [bin_, "pass", "sync", "--quiet"]
+
+
 def install_scheduler(ctx: Ctx, bin_: str) -> None:
-    """The only OS seam in sync: systemd user timer on Linux, launchd agent in P2."""
+    """The OS seam in sync: a systemd user timer on Linux, a launchd agent on macOS.
+
+    macOS: no RunAtLoad (R2): the agent is loaded mid-install, and an immediate sync would
+    race the installer's own git calls. launchd runs a missed interval once on wake.
+    """
     if ctx.os.family == "macos":
-        # P2: launchd.user_agent(ctx, launchd.label("pass-sync"), [bin_, "pass", "sync",
-        #     "--quiet"], start_interval=900)
-        raise UnsupportedOS("pass sync scheduling on macOS arrives in P2 (launchd agent)")
+        launchd.user_agent(ctx, AGENT, agent_args(bin_), start_interval=INTERVAL)
+        return
     systemd.write_user_unit(ctx, SERVICE, service_unit(bin_))
     systemd.write_user_unit(ctx, TIMER, timer_unit())
     systemd.enable_user_unit(ctx, TIMER, now=True)
 
 
-def scheduler_installed(ctx: Ctx) -> bool:
-    return (systemd._user_unit_dir() / TIMER).exists()
+def scheduler_installed(ctx: Ctx, bin_: str) -> bool:
+    """Installed = what is on disk is exactly what `install_scheduler(bin_)` writes AND the
+    scheduler has it live (R3) — a stale path or an unloaded agent means reinstall."""
+    if ctx.os.family == "macos":
+        return launchd.agent_current(ctx, AGENT, agent_args(bin_), start_interval=INTERVAL)
+    return (systemd.unit_current(SERVICE, service_unit(bin_))
+            and systemd.unit_current(TIMER, timer_unit())
+            and systemd.is_enabled(ctx, TIMER, user=True)
+            and systemd.is_active(ctx, TIMER, user=True))
 
 
 # --- state, log, lock -----------------------------------------------------------------
@@ -257,6 +277,32 @@ def _forget_revoked(ctx: Ctx, store: Store) -> None:
             _log(f"deleting revoked key {fp} failed (exit {res.code})")
 
 
+def _audit(ctx: Ctx, store: Store, state: _State) -> None:
+    """R10: after a pull that moved HEAD, check entries against their .gpg-id; announce only
+    entries not flagged before. Never raises (a sync problem must not block anything)."""
+    head = git.head(ctx, store.root)
+    if not head or head == state.audited_head:
+        return
+    try:
+        report = audit.audit(ctx, store)
+    except (DevbootError, OSError, ValueError) as exc:
+        # A push-controlled `.gpg-id` (bad bytes, a directory in its place, …) must not
+        # crash the sync (or `UnicodeDecodeError`/`IsADirectoryError` escape it un-saved).
+        _log(f"recipient audit failed: {exc}")
+        return
+    state.audited_head = head
+    flagged = sorted(m.entry for m in report.mismatches)
+    new = [e for e in flagged if e not in state.audit_flagged]
+    state.audit_flagged = flagged
+    if not new:
+        return
+    _log(f"recipient audit: {len(flagged)} entries differ from their .gpg-id: "
+         f"{', '.join(notify.printable(e) for e in flagged)}")
+    notify.native(ctx, "pass: entries with the wrong recipients",
+                  f"{notify.clean(', '.join(new), 200)} — encrypted to other keys than their "
+                  ".gpg-id. Run: devboost pass audit")
+
+
 def _pull(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
     """Pull with rebase; a failure result, or None when the pull succeeded."""
     res = git.pull(ctx, store.root)
@@ -320,6 +366,7 @@ def _sync(ctx: Ctx, store: Store, device: str, state: _State, push_only: bool) -
         acc = _access(ctx, store, device)
         _notify_pending(ctx, store, acc, state)
         _tripwire(ctx, store, acc, state)
+        _audit(ctx, store, state)
     state.last_sync = now_iso()
     return SyncResult("ok")
 

@@ -17,12 +17,16 @@ def test_root_is_refused_on_macos_only() -> None:
 
 
 def test_linux_only_commands_refused_on_macos() -> None:
-    for cmd in ("installer", "accounts", "brain", "pass"):
+    for cmd in ("installer", "accounts", "brain"):
         msg = plat.invocation_error(MAC, cmd, euid=501)
         assert msg is not None and "Linux-only" in msg
     assert plat.invocation_error(MAC, "install", euid=501) is None
     assert plat.invocation_error(FEDORA, "installer", euid=1000) is None
     assert plat.invocation_error(FEDORA, "pass", euid=1000) is None
+
+
+def test_pass_is_allowed_on_macos() -> None:
+    assert plat.invocation_error(MAC, "pass", euid=501) is None
 
 
 def test_sudo_keepalive_validates_then_refreshes() -> None:

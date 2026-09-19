@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -123,6 +123,16 @@ class Store:
         self.meta.mkdir(parents=True, exist_ok=True)
         body = json.dumps([e.model_dump() for e in entries], indent=2) + "\n"
         (self.meta / "rotation.json").write_text(body, encoding="utf-8")
+
+    def governing_folder(self, entry: str) -> str:
+        """The folder whose `.gpg-id` pass encrypts *entry* to — the nearest one at or above
+        the entry's folder (`""` = the root)."""
+        parts = PurePosixPath(entry).parts[:-1]
+        for i in range(len(parts), 0, -1):
+            folder = "/".join(parts[:i])
+            if self.gpg_id_path(folder).exists():
+                return folder
+        return ""
 
     def entries(self, folder: str = "") -> list[str]:
         base = self.root / folder if folder else self.root

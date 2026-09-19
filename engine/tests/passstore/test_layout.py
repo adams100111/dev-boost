@@ -94,3 +94,14 @@ def test_record_whose_name_differs_from_its_file_is_skipped(tmp_path: Path) -> N
     (s.meta / "devices" / "evil.json").write_text(spoof.model_dump_json(), encoding="utf-8")
     assert s.record("devices", "evil") is None
     assert [(r.name, r.fingerprint) for r in s.records("devices")] == [("desk", FP)]
+
+
+def test_governing_folder_is_the_nearest_gpg_id(tmp_path: Path) -> None:
+    s = Store(tmp_path)
+    (tmp_path / ".gpg-id").write_text("A" * 40 + "\n", encoding="utf-8")
+    (tmp_path / "harness" / "deep").mkdir(parents=True)
+    (tmp_path / "harness" / ".gpg-id").write_text("B" * 40 + "\n", encoding="utf-8")
+    assert s.governing_folder("web/github") == ""
+    assert s.governing_folder("top") == ""
+    assert s.governing_folder("harness/tg") == "harness"
+    assert s.governing_folder("harness/deep/x") == "harness"

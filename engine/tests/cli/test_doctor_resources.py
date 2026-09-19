@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from devboost.cli.doctor import all_ok, run_checks
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.resources import resource_path, resource_root
@@ -163,3 +164,43 @@ def test_doctor_pass_check_reports_invalid_config(tmp_path: Path) -> None:
     cfg.write_text("device_name = [\n", encoding="utf-8")
     out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
     assert out["pass"][0] is False and "invalid TOML" in out["pass"][1]
+
+
+def test_doctor_flags_entries_with_wrong_recipients(tmp_path: Path) -> None:
+    _pass_store(tmp_path)
+    packets = Result(0, ":pubkey enc packet: version 3, algo 18, keyid 0123456789ABCDEF\n")
+    ex = FakeExecutor(present={"curl", "age"}, scripts={"gpg": packets})
+    out = _checks(tmp_path, ex)
+    assert out["pass-recipients"][0] is False
+    assert "web/github" in out["pass-recipients"][1]
+    assert "pass init" in out["pass-recipients"][1]
+
+
+def test_doctor_recipients_ok_when_entries_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from devboost.passstore import audit
+
+    _pass_store(tmp_path)
+    monkeypatch.setattr(audit, "audit", lambda ctx, store: audit.Report([], []))
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass-recipients"][0] is True
+
+
+def test_doctor_recipients_failure_does_not_hide_other_pass_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raising audit (a malformed store, a broken gpg, …) must fail only pass-recipients —
+    the doctor must still return, and pass / pass-rotation must stay visible."""
+    from devboost.passstore import audit
+
+    _pass_store(tmp_path)
+
+    def boom(ctx: Ctx, store: Store) -> audit.Report:
+        raise InstallError("pass-store", "gpg --list-keys", 2)
+
+    monkeypatch.setattr(audit, "audit", boom)
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass-recipients"][0] is False
+    assert out["pass"][0] is True
+    assert "pass-rotation" in out

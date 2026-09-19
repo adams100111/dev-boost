@@ -14,14 +14,18 @@ from devboost.core.registry import load
 from devboost.core.runner import run_plan
 from devboost.exec.executor import Result
 from devboost.model import Ctx, Module
+from devboost.modules import _pass
 from devboost.modules._pass import pass_fields, pass_line, pass_show
 from devboost.modules.pass_store import Pass, PassStore
+from devboost.passstore import paths, sync
 from devboost.passstore.layout import DeviceRecord, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
+MAC = OsInfo("macos", "macos", "aarch64")
+MAC_INTEL = OsInfo("macos", "macos", "x86_64")
 FP_ME = "A" * 40
 ARMOR = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n"
 
@@ -97,12 +101,51 @@ def test_pass_installs_package_via_apt_on_ubuntu() -> None:
     assert ["sudo", "apt-get", "install", "-y", "pass"] in ex.calls
 
 
+def test_agent_settings_per_os() -> None:
+    from devboost.modules.pass_store import agent_settings
+
+    ttls = {"default-cache-ttl": "28800", "max-cache-ttl": "86400"}
+    assert agent_settings(FEDORA) == ttls
+    assert agent_settings(MAC) == {**ttls, "pinentry-program": "/opt/homebrew/bin/pinentry-mac"}
+    assert agent_settings(MAC_INTEL)["pinentry-program"] == "/usr/local/bin/pinentry-mac"
+
+
+def test_pass_on_macos_brews_missing_formulae_and_sets_pinentry(tmp_path: Path) -> None:
+    conf = tmp_path / "home" / ".gnupg" / "gpg-agent.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text("pinentry-program /usr/local/bin/pinentry-tty\n", encoding="utf-8")
+    ex = RuleExecutor(present={"gpg"})  # pass + pinentry-mac missing
+    Pass().install(Ctx(os=MAC, ex=ex))
+    brew = [c for c in ex.calls if c[0] == "brew" and "install" in c]
+    assert brew and brew[0][-2:] == ["pass", "pinentry-mac"]
+    assert "gnupg" not in brew[0]
+    assert conf.read_text(encoding="utf-8") == (
+        "pinentry-program /opt/homebrew/bin/pinentry-mac\n"
+        "default-cache-ttl 28800\nmax-cache-ttl 86400\n"
+    )
+    assert ["gpgconf", "--reload", "gpg-agent"] in ex.calls
+    ready = RuleExecutor(present={"pass", "gpg", "pinentry-mac"})
+    assert Pass().verify(Ctx(os=MAC, ex=ready))
+    assert not Pass().verify(Ctx(os=MAC, ex=RuleExecutor(present={"pass", "gpg"})))
+
+
+def test_pass_on_linux_still_installs_only_pass(tmp_path: Path) -> None:
+    ex = RuleExecutor(present=set())
+    Pass().install(Ctx(os=FEDORA, ex=ex))
+    installs = [c for c in ex.calls if "install" in c]
+    assert installs and installs[0][-1] == "pass" and "pinentry-mac" not in installs[0]
+
+
+def test_pass_store_runs_on_macos() -> None:
+    assert "macos" in PassStore.families and PassStore.portable and Pass.portable
+
+
 # --- PassStore ------------------------------------------------------------------------
 
 
 def test_pass_store_metadata() -> None:
     assert (PassStore.category, PassStore.profiles) == ("base", ("base",))
-    assert PassStore.families == ("fedora", "debian", "arch")
+    assert PassStore.families == ("fedora", "debian", "arch", "macos")
     assert {m.name for m in PassStore.requires} == {"pass", "secrets", "git"}
 
 
@@ -172,6 +215,15 @@ def test_readers_order_after_pass_store_without_requiring_it() -> None:
 # --- _pass helpers ----------------------------------------------------------------------
 
 
+def test_env_is_none_when_interactive() -> None:
+    assert _pass._env(True) is None
+
+
+def test_env_unattended_without_existing_gpg_opts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+    assert _pass._env(False) == {"PASSWORD_STORE_GPG_OPTS": "--pinentry-mode error"}
+
+
 def test_pass_show_degrades_and_reads() -> None:
     assert pass_show(Ctx(os=FEDORA, ex=RuleExecutor()), "x/y", who="t") is None  # no pass
     failing = RuleExecutor(present={"pass"}, rules=[(("show",), Result(2))])
@@ -179,6 +231,35 @@ def test_pass_show_degrades_and_reads() -> None:
     ok = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "s3cret\nuser: me\n"))])
     assert pass_show(Ctx(os=FEDORA, ex=ok), "x/y", who="t") == "s3cret\nuser: me\n"
     assert ok.calls == [["pass", "show", "x/y"]]
+
+
+def test_unattended_pass_show_never_opens_pinentry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--armor")
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "s3cret\n"))])
+    assert pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t") == "s3cret\n"
+    assert ex.envs[-1] == {"PASSWORD_STORE_GPG_OPTS": "--armor --pinentry-mode error"}
+
+
+def test_interactive_pass_show_may_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    from devboost.modules import _credentials
+
+    monkeypatch.delenv("DEVBOOST_NONINTERACTIVE", raising=False)
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: True)
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "s\n"))])
+    pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t")
+    assert ex.envs[-1] == {}
+
+
+def test_unattended_uncached_read_is_skipped_with_a_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(2))])
+    assert pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t") is None
+    assert len(warned) == 1 and "passphrase is not cached" in warned[0]
 
 
 def test_pass_fields_parses_key_value_lines() -> None:
@@ -197,19 +278,30 @@ def test_pass_line_is_the_first_line_or_none() -> None:
 
 
 def _wired(tmp_path: Path) -> Store:
-    """A clone whose hook and timer are in place, so verify reaches the device lookup."""
+    """A clone whose hook, scheduler and device enrollment are wired for real (via the
+    same `sync.install_hook` / `sync.install_scheduler` the real install path uses, plus
+    an enrolled device record), so `verify()` would pass if not for whatever fault the
+    test injects on top."""
     store = _seed(tmp_path)
-    (store.root / ".git" / "hooks" / "post-commit").write_text(
-        "#!/bin/sh\n# managed by devboost (pass-store)\n", encoding="utf-8")
-    units = tmp_path / "home" / ".config" / "systemd" / "user"
-    units.mkdir(parents=True)
-    (units / "devboost-pass-sync.timer").write_text("x", encoding="utf-8")
+    ctx = Ctx(os=FEDORA, ex=RuleExecutor())  # is-enabled / is-active succeed by default
+    bin_ = paths.devboost_bin()
+    sync.install_hook(ctx, store, bin_)
+    sync.install_scheduler(ctx, bin_)
+    store.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_ME, os="fedora"), "K")
     return store
 
 
 def _bad_toml(tmp_path: Path) -> None:
     (tmp_path / "cfg" / "devboost" / "config.toml").write_text("device_name = [\n",
                                                                 encoding="utf-8")
+
+
+def test_wired_alone_passes_verify(tmp_path: Path) -> None:
+    """Positive control for `_wired()`: absent any injected fault, verify() is True — so
+    the two tests below fail for their named reason, not because the scheduler/hook are
+    unwired."""
+    _wired(tmp_path)
+    assert PassStore().verify(Ctx(os=FEDORA, ex=_ex())) is True
 
 
 def test_verify_is_false_not_raising_on_invalid_config(tmp_path: Path) -> None:

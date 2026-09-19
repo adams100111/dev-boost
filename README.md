@@ -213,7 +213,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `orca-ide` | orca | Orca — multi-agent development environment (stablyai/orca). |
 | `orca-serve` | orca | Run Orca headless (orca-ide serve) as a systemd --user service. |
-| `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max). |
+| `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max; pinentry-mac on macOS). |
 | `pass-store` | base | Shared pass store: clone, enroll/adopt this device's GPG key, push-on-commit + 15-min sync (devboost pass …). |
 | `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
@@ -287,7 +287,7 @@ See **[docs/remote-fleet.md](docs/remote-fleet.md)** for the full operator guide
 | `devboost update [--profile a,b]` | Propose pinned bumps + regenerate `devboost.lock`; never auto-commits. |
 | `devboost self-update` | `git pull` dev-boost, then re-validate. |
 | `devboost dev <status\|gc\|down>` | Dev-environment resource hygiene (orphan Aspire AppHost GC). |
-| `devboost pass <status\|devices\|enroll\|approve\|revoke\|sync>` | The shared pass store: per-device keys, enroll/approve/revoke, auto-sync (Linux; see [docs/pass.md](docs/pass.md)). |
+| `devboost pass <status\|devices\|enroll\|approve\|revoke\|sync\|audit>` | The shared pass store: per-device keys, enroll/approve/revoke, auto-sync, recipient audit (Linux + macOS; see [docs/pass.md](docs/pass.md)). |
 | `devboost installer [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), stages **both the Live (manual) and netinst (zero-touch) ISOs**, downloads + verifies + caches each with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
 
 ## Recovery walkthrough
