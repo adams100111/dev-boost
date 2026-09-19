@@ -12,6 +12,7 @@ from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
 from devboost.modules._pending import MacosPending
 from devboost.modules.macos import Homebrew
 
@@ -37,14 +38,16 @@ class SystemService(Module):
     service: ClassVar[str]
     category = "system"
     profiles = ("system",)
-    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
-    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
-    requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return systemd.is_enabled(ctx, self.service)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         pkg.install(ctx, self.svc_pkg)
         systemd.enable_system_unit(ctx, self.service, now=True)
 
@@ -127,6 +130,9 @@ class Smartmontools(SystemService):
     description = "Disk SMART monitoring."
     svc_pkg = "smartmontools"
     service = "smartd"
+    requires = (Homebrew,)
+    # macOS: the smartctl tool only — no smartd service (launchd would be M4's business).
+    per_os = OsMap(macos=BrewFormula("smartmontools"))
 
 
 @register

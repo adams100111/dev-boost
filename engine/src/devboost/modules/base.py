@@ -13,7 +13,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
-from devboost.modules.macos import Homebrew
+from devboost.modules.macos import Homebrew, XcodeClt
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
 _BUILD_PKGS_FEDORA = (
@@ -128,15 +128,19 @@ class BuildTools(Module):
     category = "base"
     description = "Compiler toolchain + common build dependencies."
     profiles = ("base",)
-    # install()'s fedora/default branch calls pkg.install unconditionally, which is brew
-    # on macOS; not yet macOS-designed (KNOWN_GAPS), but the ordering invariant still
-    # holds if it ever runs.
-    requires = (Homebrew,)
+    # The CLT bring clang/make/git; brew adds the one missing build tool (cmake).
+    requires = (XcodeClt, Homebrew)
+    per_os = OsMap(macos=BrewFormula("cmake"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return all(ctx.ex.which(c) for c in ("gcc", "make", "cmake"))
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             pkg.install(ctx, *_BUILD_PKGS_DEBIAN)
         elif ctx.os.family == "arch":

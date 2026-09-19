@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import mise, pkg
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx, Module
 from devboost.modules import _zed
+from devboost.modules._brew import BrewFormula
 from devboost.modules._lsp import LspModule, all_pins
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
@@ -35,11 +37,18 @@ class Uv(Module):
     category = "python"
     description = "uv — fast Python package/project manager."
     profiles = ("python",)
+    requires = (Homebrew,)
+    per_os = OsMap(macos=BrewFormula("uv"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("uv")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "arch":
             # uv is a first-class Arch package; prefer it over the curl|sh escape hatch so
             # pacman owns the file and `omarchy update` keeps it current.

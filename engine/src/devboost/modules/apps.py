@@ -81,6 +81,7 @@ class Obsidian(FlatpakApp):
     description = "Obsidian notes."
     app_id = "md.obsidian.Obsidian"
     arch_pkg = "obsidian"
+    cask = "obsidian"
 
 
 @register
@@ -89,6 +90,7 @@ class Bruno(FlatpakApp):
     description = "Bruno API client."
     app_id = "com.usebruno.Bruno"
     aur_pkg = "bruno-bin"
+    cask = "bruno"
 
 
 @register
@@ -97,6 +99,7 @@ class Bitwarden(FlatpakApp):
     description = "Bitwarden desktop."
     app_id = "com.bitwarden.desktop"
     arch_pkg = "bitwarden"
+    cask = "bitwarden"
 
 
 @register
@@ -115,6 +118,7 @@ class Localsend(FlatpakApp):
     description = "LocalSend file sharing."
     app_id = "org.localsend.localsend_app"
     arch_pkg = "localsend"
+    cask = "localsend"
 
 
 @register
@@ -123,6 +127,7 @@ class Vlc(FlatpakApp):
     description = "VLC media player."
     app_id = "org.videolan.VLC"
     arch_pkg = "vlc"
+    cask = "vlc"
 
 
 @register

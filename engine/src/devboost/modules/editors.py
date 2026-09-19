@@ -10,7 +10,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, DnfRepo, Module
 from devboost.modules import _zed
-from devboost.modules._brew import BrewFormula
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules._lsp import LspModule, all_pins, seed_base_config
 from devboost.modules.macos import Homebrew
 from devboost.modules.mise import Mise
@@ -58,11 +58,18 @@ class Vscode(Module):
     description = "Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor."
     gui = True
     profiles = ("optional-editors",)
+    requires = (Homebrew,)
+    per_os = OsMap(macos=BrewCask("visual-studio-code"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("code")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "arch":
             # Arch's own `code` package is the OSS rebuild (no Marketplace, no MS
             # branding). The Microsoft build is `visual-studio-code-bin`, which Omarchy
