@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import os
-import stat
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.userconfig import DockerRuntimeName
-from devboost.exec.primitives import config, pkg
+from devboost.exec.primitives import pkg
 from devboost.model import Ctx
 from devboost.modules._docker_runtime import (
+    atomic_write_json,
     engine_up,
     engine_verified,
     json_has,
+    merge_json_file,
     read_json,
     vm_size,
     wait_for_engine,
@@ -34,30 +33,21 @@ def settings_path() -> Path:
     )
 
 
-def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
-    """Durably replace *path* with *data* as JSON: a sibling temp file (``mkstemp``,
-    same directory — same filesystem, so the swap is atomic), fsynced before the swap,
-    then ``os.replace`` into place. Docker Desktop's own restart (``configure``) reads this
-    file back right after devboost writes it, which is exactly the moment a plain
-    truncate-then-write is riskiest: a crash or a lock held mid-write would otherwise leave
-    a truncated/malformed ``settings-store.json`` and silently drop every setting the app
-    or the user ever put there. The original file's permission bits are kept, and the temp
-    file never survives a failed write.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    tmp = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps(data, indent=2) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        if mode is not None:
-            tmp.chmod(mode)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+#: Where the cask links its CLIs (``brew info --json=v2 --cask docker-desktop``, 4.91.0):
+#: outside the brew prefix, so brew needs root when these are not writable (M4-D5a).
+LINK_DIRS: tuple[Path, ...] = (Path("/usr/local/bin"), Path("/usr/local/cli-plugins"))
+
+
+def _writable(path: Path) -> bool:
+    probe = path if path.exists() else next(a for a in path.parents if a.exists())
+    return os.access(probe, os.W_OK)
+
+
+def links_need_root(ctx: Ctx) -> bool:
+    """Read-only: would installing the cask make brew run ``sudo`` for its links?"""
+    if pkg.cask_installed(ctx, CASK):
+        return False
+    return not all(_writable(d) for d in LINK_DIRS)
 
 
 def update_settings(path: Path, values: Mapping[str, object]) -> bool:
@@ -76,7 +66,7 @@ def update_settings(path: Path, values: Mapping[str, object]) -> bool:
             data[key] = value
             changed = True
     if changed:
-        _atomic_write_json(path, data)
+        atomic_write_json(path, data)
     return changed
 
 
@@ -138,7 +128,7 @@ class DockerDesktop:
         return None  # Docker Desktop manages /var/run/docker.sock itself
 
     def merge_daemon_config(self, ctx: Ctx, patch: Mapping[str, Any]) -> bool:
-        return config.json_merge(ctx, str(self.daemon_config_path()), patch)
+        return merge_json_file(self.daemon_config_path(), patch)
 
     def daemon_config_has(self, patch: Mapping[str, Any]) -> bool:
         return json_has(self.daemon_config_path(), patch)

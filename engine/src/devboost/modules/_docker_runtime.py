@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import tempfile
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from devboost.core.errors import InstallError
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.userconfig import DockerRuntimeName, selected_docker_runtime
+from devboost.exec.primitives import config
 from devboost.model import Ctx
 
 # M4-D8: one Rosetta probe for the whole engine — M3's, re-exported (explicit `as` form).
@@ -159,9 +162,65 @@ def read_json(path: Path) -> dict[str, Any]:
     return data
 
 
+def contains(data: Mapping[str, Any], patch: Mapping[str, Any]) -> bool:
+    """Every leaf of ``patch`` is in ``data`` (nested mappings compared key by key), so
+    keys the user added beside ours never make a check fail."""
+    for key, want in patch.items():
+        have = data.get(key)
+        if isinstance(want, Mapping):
+            if not (isinstance(have, Mapping) and contains(have, want)):
+                return False
+        elif have != want:
+            return False
+    return True
+
+
 def json_has(path: Path, patch: Mapping[str, Any]) -> bool:
-    data = read_json(path)
-    return all(data.get(k) == v for k, v in patch.items())
+    return contains(read_json(path), patch)
+
+
+def atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
+    """Durably replace *path* with *data* as JSON: a sibling temp file (``mkstemp``,
+    same directory — same filesystem, so the swap is atomic), fsynced before the swap,
+    then ``os.replace`` into place. A crash or a lock held mid-write must never leave a
+    truncated file behind — the next read would lose every setting in it. The original
+    file's permission bits are kept, and the temp file never survives a failed write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            tmp.chmod(mode)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def merge_json_file(path: Path, patch: Mapping[str, Any]) -> bool:
+    """Deep-merge ``patch`` into the user-owned JSON object at ``path``; True if it changed.
+
+    Nested keys the user set beside ours survive (``config.deep_merge``). The file lives in
+    $HOME, so it is never written as root: an unwritable file (or nearest existing parent)
+    raises ``NeedsUser`` naming it, instead of ``config.json_merge``'s sudo ``tee``.
+    """
+    current = read_json(path)
+    merged = config.deep_merge(current, patch)
+    if merged == current:
+        return False
+    probe = path if path.exists() else next(a for a in path.parents if a.exists())
+    if not os.access(probe, os.W_OK):
+        raise NeedsUser(
+            f"{probe} is not writable by you, so devboost cannot update {path}",
+            f"sudo chown -R \"$USER\" '{probe}', then re-run",
+        )
+    atomic_write_json(path, merged)
+    return True
 
 
 _LICENSE_NOTES: dict[DockerRuntimeName, str] = {

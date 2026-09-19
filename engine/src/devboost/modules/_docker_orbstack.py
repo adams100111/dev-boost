@@ -9,9 +9,15 @@ from typing import Any
 
 from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.userconfig import DockerRuntimeName
-from devboost.exec.primitives import config, pkg
+from devboost.exec.primitives import pkg
 from devboost.model import Ctx
-from devboost.modules._docker_runtime import engine_verified, json_has, vm_size, wait_for_engine
+from devboost.modules._docker_runtime import (
+    engine_verified,
+    json_has,
+    merge_json_file,
+    vm_size,
+    wait_for_engine,
+)
 
 CASK = "orbstack"
 
@@ -62,7 +68,7 @@ class OrbStack:
         return None  # OrbStack manages /var/run/docker.sock itself
 
     def merge_daemon_config(self, ctx: Ctx, patch: Mapping[str, Any]) -> bool:
-        return config.json_merge(ctx, str(self.daemon_config_path()), patch)
+        return merge_json_file(self.daemon_config_path(), patch)
 
     def daemon_config_has(self, patch: Mapping[str, Any]) -> bool:
         return json_has(self.daemon_config_path(), patch)

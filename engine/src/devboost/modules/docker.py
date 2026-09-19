@@ -16,8 +16,14 @@ from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, pkg, systemd
 from devboost.model import AptRepo, Ctx, Module
-from devboost.modules import _docker_colima
-from devboost.modules._docker_runtime import license_note, selected_runtime, use_context
+from devboost.modules import _docker_colima, _docker_desktop
+from devboost.modules._docker_runtime import (
+    DockerRuntime,
+    current_context,
+    license_note,
+    selected_runtime,
+    use_context,
+)
 from devboost.modules.macos import Homebrew, Rosetta
 
 #: Docker's official engine package set on Debian/Ubuntu. `docker.io` (Ubuntu's own
@@ -88,7 +94,34 @@ class _MacDocker:
         rt.install(ctx)
         rt.configure(ctx)
         rt.start(ctx)
-        use_context(ctx, rt.context_name)
+        _point_cli_at(ctx, rt)
+
+
+#: The contexts devboost's runtimes create — switching between these is ours to do.
+_RUNTIME_CONTEXTS = frozenset({"colima", "orbstack", "desktop-linux", "default"})
+
+
+def _point_cli_at(ctx: Ctx, rt: DockerRuntime) -> None:
+    """Make ``rt``'s context the docker CLI's current one — unless it already is, or the
+    user pinned another one with ``DOCKER_CONTEXT`` (which beats config.json anyway)."""
+    pinned = os.environ.get("DOCKER_CONTEXT")
+    if pinned:
+        if pinned != rt.context_name:
+            log.warn(
+                f"docker: DOCKER_CONTEXT={pinned} is set, so the CLI will not use "
+                f"{rt.name} ({rt.context_name}); unset it or run "
+                f"`export DOCKER_CONTEXT={rt.context_name}`"
+            )
+        return
+    previous = current_context(ctx)
+    if previous == rt.context_name:
+        return
+    if previous and previous not in _RUNTIME_CONTEXTS:
+        log.warn(
+            f"docker: switching the CLI from your context '{previous}' to "
+            f"'{rt.context_name}' ({rt.name}); `docker context use {previous}` switches back"
+        )
+    use_context(ctx, rt.context_name)
 
 
 @register
@@ -123,12 +156,19 @@ class Docker(Module):
     def sudo_needed(self, ctx: Ctx) -> bool:
         if ctx.os.family != "macos":
             return super().sudo_needed(ctx)
-        # Read-only. Only Colima runs sudo, and only to (re)write its socket LaunchDaemon;
-        # OrbStack's and Docker Desktop's casks install without a password. --force re-runs
-        # Colima's configure, so it asks up front rather than risk a failing `sudo -n`.
-        if selected_runtime().name != "colima":
-            return False
-        return ctx.force or not _docker_colima.socket_daemon_current(ctx)
+        # Read-only, and never under-reports (M4-D5a): a missed prompt becomes a failing
+        # `sudo -n`, or brew's own sudo hanging on a hidden tty. --force may upgrade or
+        # re-run anything, so it always counts.
+        if ctx.force:
+            return True
+        name = selected_runtime().name
+        if name == "colima":  # (re)writing the socket LaunchDaemon (D13)
+            return not _docker_colima.socket_daemon_current(ctx)
+        if name == "docker-desktop":  # the cask links CLIs into /usr/local (root-owned)
+            return _docker_desktop.links_need_root(ctx)
+        # OrbStack's cask links into the brew prefix and its postflight
+        # (`orbctl _internal brew-postflight`) runs without sudo (brew info, 2.2.3).
+        return False
 
     def install(self, ctx: Ctx) -> None:
         if (s := self.os_strategy(ctx)) is not None:
@@ -166,6 +206,9 @@ def _daemon_json() -> str:
 BUILDER_GC: dict[str, object] = {
     "builder": {"gc": {"enabled": True, "defaultKeepStorage": "20GB"}},
 }
+#: What "the cap is on" means, on both OSes: only builder.gc.enabled — a user's own
+#: defaultKeepStorage, gc policy or other builder keys are theirs to keep.
+_GC_ENABLED: dict[str, object] = {"builder": {"gc": {"enabled": True}}}
 
 
 @dataclass(frozen=True)
@@ -175,10 +218,13 @@ class _MacBuildGc:
     uses_brew: ClassVar[bool] = True  # M4-D9 (Homebrew arrives through Docker)
 
     def verify(self, ctx: Ctx) -> bool:
-        return selected_runtime().daemon_config_has(BUILDER_GC)
+        return selected_runtime().daemon_config_has(_GC_ENABLED)
 
     def install(self, ctx: Ctx) -> None:
         rt = selected_runtime()
+        if rt.daemon_config_has(_GC_ENABLED):
+            return  # already capped — even under --force, never override the user's cap
+        # Deep merge (every runtime): other builder keys survive; restart only on change.
         if rt.merge_daemon_config(ctx, BUILDER_GC):
             rt.restart_engine(ctx)
 
