@@ -111,6 +111,15 @@ class Module:
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 
+    @classmethod
+    def supported_on(cls, os_info: OsInfo) -> bool:
+        """False when this module must not run on *os_info* (e.g. too old a macOS).
+
+        The plan reports a False here as ``unsupported-os`` — a clean, explained skip —
+        rather than letting install fail on a version the app does not support (spec §0).
+        """
+        return True
+
     def os_strategy(self, ctx: Ctx) -> Installer | None:
         """The ``per_os`` strategy declared for the running OS, or None.
 

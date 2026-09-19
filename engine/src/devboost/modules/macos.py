@@ -12,6 +12,7 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError, NeedsUser
+from devboost.core.macver import macos_version
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import register
 from devboost.exec.primitives import remote_script
@@ -60,9 +61,8 @@ def clt_label(listing: str) -> str | None:
 
 
 def mac_major(os_info: OsInfo) -> int:
-    """The macOS major version ("27.0" → 27); 0 when unknown."""
-    head = os_info.version_id.split(".", 1)[0]
-    return int(head) if head.isdigit() else 0
+    """The macOS major version ("27.0" → 27); 0 when unknown. Parsed by core.macver."""
+    return v[0] if (v := macos_version(os_info)) is not None else 0
 
 
 def rosetta_supported(os_info: OsInfo) -> bool:
