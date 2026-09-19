@@ -22,7 +22,6 @@ from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
 
 KNOWN_GAPS: dict[str, str] = {
-    "android-sdk": "M3",
     "aspire": "M3",
     "aspire-gc": "M4",
     "chezmoi-repo": "M3",
@@ -44,7 +43,6 @@ KNOWN_GAPS: dict[str, str] = {
     "docker": "M4",
     "docker-build-gc": "M4",
     "dotnet-lsp": "M3",
-    "dotnet-sdk": "M3",
     "expo": "M3",
     "fresh-lsp": "M3",
     "laravel-lsp": "M3",

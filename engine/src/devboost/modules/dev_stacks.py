@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import os
+import shlex
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
-from devboost.exec.primitives import mise, pkg
+from devboost.exec import userpaths
+from devboost.exec.primitives import mise, pkg, remote_script
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx, Module
 from devboost.modules import _zed
-from devboost.modules._brew import BrewFormula
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules._lsp import LspModule, all_pins
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
@@ -177,6 +182,34 @@ class LaravelLsp(LspModule):
 
 # --- dotnet ------------------------------------------------------------------------------
 
+_DOTNET_INSTALL = "https://dot.net/v1/dotnet-install.sh"
+_DOTNET_CHANNEL = "10.0"  # .NET 10 LTS, the same pin as the Linux packages
+
+
+def _has_sdk(listing: str) -> bool:
+    major = _DOTNET_CHANNEL.split(".", 1)[0] + "."
+    return any(ln.startswith(major) for ln in listing.splitlines())
+
+
+@dataclass(frozen=True)
+class _DotnetUserInstall:
+    """macOS: Microsoft's dotnet-install.sh into ~/.dotnet — no sudo, no .pkg (spec §2).
+
+    The executor puts ~/.dotnet on PATH (dotnet tools install in the same run); env.sh
+    exports DOTNET_ROOT so tools like csharp-ls find the runtime later.
+    """
+
+    def verify(self, ctx: Ctx) -> bool:
+        dotnet = userpaths.dotnet_root(_home()) / "dotnet"
+        out = ctx.ex.run([str(dotnet), "--list-sdks"])
+        return out.ok and _has_sdk(out.stdout)
+
+    def install(self, ctx: Ctx) -> None:
+        remote_script.run_script(
+            ctx, "dotnet-sdk", _DOTNET_INSTALL, "bash",
+            "--channel", _DOTNET_CHANNEL, "--install-dir", str(userpaths.dotnet_root(_home())),
+        )
+
 
 @register
 class DotnetSdk(Module):
@@ -184,16 +217,21 @@ class DotnetSdk(Module):
     category = "dotnet"
     description = ".NET 10 LTS SDK."
     profiles = ("dotnet",)
-    # install()'s else branch calls pkg.install unconditionally, which is brew on macOS;
-    # not yet macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it
-    # ever runs.
+    # macOS installs into ~/.dotnet (no brew), but Homebrew stays first on a Mac: the
+    # foundation every macOS module orders after (and Linux plans drop it).
     requires = (Homebrew,)
+    per_os = OsMap(macos=_DotnetUserInstall())
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         out = ctx.ex.run(["dotnet", "--list-sdks"])
-        return out.ok and any(ln.startswith("10.") for ln in out.stdout.splitlines())
+        return out.ok and _has_sdk(out.stdout)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             # Microsoft's config package wires up the correct prod repo AND its current
             # signing key for the running Ubuntu release; a hand-rolled repo + the
@@ -317,23 +355,58 @@ class DevopsLsp(LspModule):
 
 # --- react-native ------------------------------------------------------------------------
 
+_ANDROID_PACKAGES = "'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'"
+
+
+@dataclass(frozen=True)
+class _AndroidSdkMac:
+    """macOS: Google's command-line tools from the Homebrew cask (sdkmanager lands in
+    /opt/homebrew/bin), the SDK in $ANDROID_HOME (~/Library/Android/sdk, exported by
+    env.sh). No /etc/profile.d on a Mac."""
+
+    uses_brew: ClassVar[bool] = True
+
+    @staticmethod
+    def sdk() -> Path:
+        default = _home() / "Library" / "Android" / "sdk"
+        return Path(os.environ.get("ANDROID_HOME") or str(default))
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (self.sdk() / "platform-tools" / "adb").exists()
+
+    def install(self, ctx: Ctx) -> None:
+        mise.use_global(ctx, "java@temurin-17")
+        BrewCask("android-commandlinetools").install(ctx)
+        sdk = self.sdk()
+        sdk.mkdir(parents=True, exist_ok=True)
+        cmd = f"yes | sdkmanager --sdk_root={shlex.quote(str(sdk))} {_ANDROID_PACKAGES}"
+        res = ctx.ex.run(["sh", "-c", cmd])
+        if not res.ok:
+            raise InstallError("android-sdk", f"sdkmanager {_ANDROID_PACKAGES}", res.code)
+
 
 @register
 class AndroidSdk(Module):
     name = "android-sdk"
     category = "react-native"
     description = "Android SDK (cmdline-tools + platform/build-tools) + JDK via mise."
-    requires = (Mise,)
+    requires = (Mise, Homebrew)
     profiles = ("react-native",)
+    per_os = OsMap(macos=_AndroidSdkMac())
     _CMDLINE_VERSION = "13114758"
 
     def _home_sdk(self) -> Path:
         return Path(os.environ.get("ANDROID_HOME", str(_home() / "Android" / "Sdk")))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return (self._home_sdk() / "platform-tools" / "adb").exists()
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         mise.use_global(ctx, "java@temurin-17")
         if ctx.os.family == "debian":
             # libfuse2 is required by the Android Emulator on Ubuntu (FUSE2 compat layer).
@@ -355,10 +428,7 @@ class AndroidSdk(Module):
             if extracted.is_dir() and not tools.exists():
                 extracted.rename(tools)
         sm = str(tools / "bin" / "sdkmanager")
-        ctx.ex.run(
-            ["sh", "-c", f"yes | {sm} --sdk_root={sdk} 'platform-tools' "
-             "'platforms;android-35' 'build-tools;35.0.0'"]
-        )
+        ctx.ex.run(["sh", "-c", f"yes | {sm} --sdk_root={sdk} {_ANDROID_PACKAGES}"])
         # Persist ANDROID_HOME so shells pick it up after reboot.
         profile_d = Path("/etc/profile.d")
         android_sh = profile_d / "devboost-android.sh"
