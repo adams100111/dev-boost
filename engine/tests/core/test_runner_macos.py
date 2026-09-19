@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import ClassVar
 
 from devboost.core.errors import NeedsUser, PresentUnmanaged
@@ -8,6 +10,7 @@ from devboost.core.plan import PlannedModule
 from devboost.core.runner import run_plan
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx, Module
+from devboost.modules.apps import Obsidian
 from devboost.modules.macos import Rosetta
 from tests.scripted import Scripted
 
@@ -115,7 +118,8 @@ def test_forced_none_forces_every_module() -> None:
 def test_no_sudo_session_blocks_pending_sudo_module_with_the_fix() -> None:
     mac = OsInfo("macos", "macos", "aarch64", version_id="27.0")
     ex = Scripted(answers={("arch", "-x86_64"): Result(1)})  # Rosetta missing
-    [res] = run_plan([PlannedModule("rosetta")], {"rosetta": Rosetta}, Ctx(mac, ex, no_sudo=True))
+    ctx = Ctx(mac, ex, no_sudo=True)
+    [res] = run_plan([PlannedModule("rosetta")], {"rosetta": Rosetta}, ctx)
     assert res.status == "blocked"
     assert res.detail.endswith(
         "run `devboost install rosetta` in a terminal (needs your password)"
@@ -135,3 +139,20 @@ def test_no_sudo_session_leaves_present_or_unflagged_modules_alone() -> None:
         Ctx(MAC, FakeExecutor(), no_sudo=True),
     )
     assert res2.status == "blocked" and "Apple ID" in res2.detail  # its own reason, not sudo
+
+
+def test_no_sudo_hand_installed_cask_app_is_skipped_as_present_unmanaged(
+    tmp_path: Path,
+) -> None:
+    # M3 AF2: obsidian ended as `error` because the --adopt needed sudo.
+    app = tmp_path / "Obsidian.app"
+    app.mkdir()
+    info = json.dumps({"casks": [{"artifacts": [{"app": ["Obsidian.app"], "target": str(app)}]}]})
+    ex = Scripted(
+        answers={("brew", "list"): Result(1), ("brew", "info"): Result(0, stdout=info)}
+    )
+    mac = OsInfo("macos", "macos", "aarch64", version_id="27.0")
+    ctx = Ctx(mac, ex, no_sudo=True)
+    [res] = run_plan([PlannedModule("obsidian")], {"obsidian": Obsidian}, ctx)
+    assert (res.status, res.detail) == ("skip", "present-unmanaged")
+    assert not any("--adopt" in c for c in ex.calls)
