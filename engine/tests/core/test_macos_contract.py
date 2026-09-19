@@ -74,7 +74,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "nerd-fonts",
     "obsidian",
     "obsidian-sync",
-    "pass",
     "pi-harness",
     "playwright",
     "power-profiles-daemon",

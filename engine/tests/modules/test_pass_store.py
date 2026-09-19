@@ -23,6 +23,8 @@ from tests.passstore.fakes import RuleExecutor, colons
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 UBUNTU = OsInfo("ubuntu", "debian", "x86_64")
+MAC = OsInfo("macos", "macos", "aarch64")
+MAC_INTEL = OsInfo("macos", "macos", "x86_64")
 FP_ME = "A" * 40
 ARMOR = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n"
 
@@ -98,12 +100,51 @@ def test_pass_installs_package_via_apt_on_ubuntu() -> None:
     assert ["sudo", "apt-get", "install", "-y", "pass"] in ex.calls
 
 
+def test_agent_settings_per_os() -> None:
+    from devboost.modules.pass_store import agent_settings
+
+    ttls = {"default-cache-ttl": "28800", "max-cache-ttl": "86400"}
+    assert agent_settings(FEDORA) == ttls
+    assert agent_settings(MAC) == {**ttls, "pinentry-program": "/opt/homebrew/bin/pinentry-mac"}
+    assert agent_settings(MAC_INTEL)["pinentry-program"] == "/usr/local/bin/pinentry-mac"
+
+
+def test_pass_on_macos_brews_missing_formulae_and_sets_pinentry(tmp_path: Path) -> None:
+    conf = tmp_path / "home" / ".gnupg" / "gpg-agent.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text("pinentry-program /usr/local/bin/pinentry-tty\n", encoding="utf-8")
+    ex = RuleExecutor(present={"gpg"})  # pass + pinentry-mac missing
+    Pass().install(Ctx(os=MAC, ex=ex))
+    brew = [c for c in ex.calls if c[0] == "brew" and "install" in c]
+    assert brew and brew[0][-2:] == ["pass", "pinentry-mac"]
+    assert "gnupg" not in brew[0]
+    assert conf.read_text(encoding="utf-8") == (
+        "pinentry-program /opt/homebrew/bin/pinentry-mac\n"
+        "default-cache-ttl 28800\nmax-cache-ttl 86400\n"
+    )
+    assert ["gpgconf", "--reload", "gpg-agent"] in ex.calls
+    ready = RuleExecutor(present={"pass", "gpg", "pinentry-mac"})
+    assert Pass().verify(Ctx(os=MAC, ex=ready))
+    assert not Pass().verify(Ctx(os=MAC, ex=RuleExecutor(present={"pass", "gpg"})))
+
+
+def test_pass_on_linux_still_installs_only_pass(tmp_path: Path) -> None:
+    ex = RuleExecutor(present=set())
+    Pass().install(Ctx(os=FEDORA, ex=ex))
+    installs = [c for c in ex.calls if "install" in c]
+    assert installs and installs[0][-1] == "pass" and "pinentry-mac" not in installs[0]
+
+
+def test_pass_store_runs_on_macos() -> None:
+    assert "macos" in PassStore.families and PassStore.portable and Pass.portable
+
+
 # --- PassStore ------------------------------------------------------------------------
 
 
 def test_pass_store_metadata() -> None:
     assert (PassStore.category, PassStore.profiles) == ("base", ("base",))
-    assert PassStore.families == ("fedora", "debian", "arch")
+    assert PassStore.families == ("fedora", "debian", "arch", "macos")
     assert {m.name for m in PassStore.requires} == {"pass", "secrets", "git"}
 
 

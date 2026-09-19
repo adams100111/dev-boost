@@ -23,15 +23,29 @@ from devboost.passstore.layout import Store
 #: Passphrase cached 8 h since last use, 24 h at most (spec: Linux gpg-agent cache).
 AGENT_TTLS: dict[str, str] = {"default-cache-ttl": "28800", "max-cache-ttl": "86400"}
 
+#: Homebrew's default prefix per arch — Apple Silicon /opt/homebrew, Intel /usr/local (R5).
+_BREW_PREFIX: dict[str, str] = {"aarch64": "/opt/homebrew", "x86_64": "/usr/local"}
+#: macOS: command → Homebrew formula (R6). pinentry-mac asks for the passphrase in a dialog
+#: that can keep it in the login keychain.
+MAC_FORMULAE: dict[str, str] = {"pass": "pass", "gpg": "gnupg", "pinentry-mac": "pinentry-mac"}
+
 
 def gnupg_home() -> Path:
     override = os.environ.get("GNUPGHOME")
     return Path(override) if override else Path(os.environ["HOME"]) / ".gnupg"
 
 
+def pinentry_mac(os_info: OsInfo) -> str:
+    return f"{_BREW_PREFIX.get(os_info.arch, '/opt/homebrew')}/bin/pinentry-mac"
+
+
 def agent_settings(os_info: OsInfo) -> dict[str, str]:
-    """P2 seam: macOS adds `pinentry-program /opt/homebrew/bin/pinentry-mac` here."""
-    return dict(AGENT_TTLS)
+    """The gpg-agent.conf keys dev-boost manages: cache TTLs everywhere; on macOS also the
+    pinentry-mac program (a managed key — a different pinentry-program is replaced)."""
+    out = dict(AGENT_TTLS)
+    if os_info.family == "macos":
+        out["pinentry-program"] = pinentry_mac(os_info)
+    return out
 
 
 def _key(line: str) -> str | None:
@@ -74,18 +88,26 @@ def agent_conf_ok(path: Path, settings: Mapping[str, str]) -> bool:
 class Pass(Module):
     name = "pass"
     category = "base"
-    description = "pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max)."
+    description = ("pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max; "
+                   "pinentry-mac on macOS).")
     profiles = ("base",)
+    portable = True  # install is OS-aware: brew formulae + pinentry-mac on macOS
 
     def _conf(self) -> Path:
         return gnupg_home() / "gpg-agent.conf"
 
+    @staticmethod
+    def _needed(ctx: Ctx) -> dict[str, str]:
+        return MAC_FORMULAE if ctx.os.family == "macos" else {"pass": "pass"}
+
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.which("pass") and agent_conf_ok(self._conf(), agent_settings(ctx.os))
+        return (all(ctx.ex.which(c) for c in self._needed(ctx))
+                and agent_conf_ok(self._conf(), agent_settings(ctx.os)))
 
     def install(self, ctx: Ctx) -> None:
-        if not ctx.ex.which("pass"):
-            pkg.install(ctx, "pass")
+        missing = [f for c, f in self._needed(ctx).items() if not ctx.ex.which(c)]
+        if missing:
+            pkg.install(ctx, *missing)
         if ensure_agent_conf(self._conf(), agent_settings(ctx.os)):
             res = ctx.ex.run(["gpgconf", "--reload", "gpg-agent"])
             if not res.ok:  # the new TTLs apply once gpg-agent restarts anyway
@@ -103,8 +125,8 @@ class PassStore(Module):
     )
     requires = (Pass, Secrets, Git)
     profiles = ("base",)
-    # macOS scheduling (launchd) lands in P2 — until then the plan drops this module there.
-    families: ClassVar[tuple[str, ...]] = ("fedora", "debian", "arch")
+    portable = True
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian", "arch", "macos")
 
     def _store(self) -> Store:
         return Store(paths.store_dir())
