@@ -25,6 +25,7 @@ from devboost.core.userconfig import DockerRuntimeName
 from devboost.exec.primitives import config, launchd, pkg
 from devboost.model import Ctx
 from devboost.modules._docker_runtime import (
+    contains,
     docker_config_path,
     engine_verified,
     read_json,
@@ -128,6 +129,10 @@ def socket_daemon_current(ctx: Ctx) -> bool:
 
     Read-only (no sudo) — ``Docker.sudo_needed`` asks this before a run (M4-D5).
     """
+    if not colima_home().exists():
+        # configure's ensure_colima_home may still pick a different home, which changes
+        # the daemon's args: never report "current" before the home exists.
+        return False
     path = launchd.DAEMONS_DIR / f"{SOCKET_LABEL}.plist"
     if not path.exists():
         return False
@@ -243,7 +248,7 @@ class Colima:
         data = _load_yaml(path)
         current = data.get("docker")
         docker: dict[str, Any] = dict(current) if isinstance(current, dict) else {}
-        merged = {**docker, **patch}
+        merged = config.deep_merge(docker, patch)  # user keys beside ours survive
         if merged == docker:
             return False
         data["docker"] = merged
@@ -263,7 +268,7 @@ class Colima:
 
     def daemon_config_has(self, patch: Mapping[str, Any]) -> bool:
         docker = _load_yaml(self.daemon_config_path()).get("docker")
-        return isinstance(docker, dict) and all(docker.get(k) == v for k, v in patch.items())
+        return isinstance(docker, dict) and contains(docker, patch)
 
     def restart_engine(self, ctx: Ctx) -> None:
         if not pkg.service_running(ctx, "colima"):
