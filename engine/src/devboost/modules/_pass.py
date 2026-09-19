@@ -12,7 +12,7 @@ from devboost.model import Ctx
 
 def pass_show(ctx: Ctx, entry: str, *, who: str) -> str | None:
     if not ctx.ex.which("pass"):
-        log.warn(f"{who}: pass not installed — skipping {entry}")
+        log.skip(f"{who}: pass not installed — skipping {entry}")
         return None
     res = ctx.ex.run(["pass", "show", entry])
     if not res.ok or not res.stdout.strip():

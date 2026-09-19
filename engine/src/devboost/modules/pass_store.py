@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
+from devboost.core import log
 from devboost.core.errors import DevbootError
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import register
@@ -86,7 +87,10 @@ class Pass(Module):
         if not ctx.ex.which("pass"):
             pkg.install(ctx, "pass")
         if ensure_agent_conf(self._conf(), agent_settings(ctx.os)):
-            ctx.ex.run(["gpgconf", "--reload", "gpg-agent"])
+            res = ctx.ex.run(["gpgconf", "--reload", "gpg-agent"])
+            if not res.ok:  # the new TTLs apply once gpg-agent restarts anyway
+                log.warn(f"pass: `gpgconf --reload gpg-agent` failed (exit {res.code}) — the "
+                         "passphrase cache settings apply after the next login")
 
 
 @register

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.core.settings import settings
@@ -159,3 +160,34 @@ def test_herdr_plugins_orders_after_pass_store() -> None:
     from devboost.modules.pass_store import PassStore
 
     assert HerdrPlugins.after == (PassStore,)
+
+
+def test_herdr_plugins_pass_absent_is_a_skip_not_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    warned: list[str] = []
+    skipped: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    monkeypatch.setattr(log, "skip", skipped.append)
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_TOKEN", "E-TOKEN")
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_CHAT_ID", "E-CHAT")
+    ctx = _ctx(scripts={"herdr": Result(0, stdout=str(tmp_path / "cfg"))})  # no pass
+    HerdrPlugins()._configure_notify(ctx)
+    assert any("pass not installed" in m for m in skipped)
+    assert not any("pass" in m for m in warned)
+
+
+def test_herdr_plugins_mixes_pass_and_env_per_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pass entry holds only the token: chat_id falls back to the env, field by field."""
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_TOKEN", "E-TOKEN")
+    monkeypatch.setenv("DEVBOOST_HERDR_TELEGRAM_CHAT_ID", "E-CHAT")
+    cfg_dir = tmp_path / "cfg"
+    ctx = _ctx(present={"pass"}, scripts={
+        "herdr": Result(0, stdout=str(cfg_dir)),
+        "pass": Result(0, stdout="telegram\ntoken: P-TOKEN\n"),
+    })
+    HerdrPlugins()._configure_notify(ctx)
+    text = (cfg_dir / ".env").read_text(encoding="utf-8")
+    assert "TELEGRAM_BOT_TOKEN=P-TOKEN" in text and "TELEGRAM_CHAT_ID=E-CHAT" in text

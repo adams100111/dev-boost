@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import NeedsUser
 from devboost.core.graph import toposort
 from devboost.core.osinfo import OsInfo
@@ -77,6 +78,17 @@ def test_pass_sets_agent_cache_ttls_and_reloads(tmp_path: Path) -> None:
     again = RuleExecutor(present={"pass"})
     Pass().install(Ctx(os=FEDORA, ex=again))
     assert again.calls == []  # unchanged conf → no reload
+
+
+def test_pass_warns_when_the_agent_reload_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    ex = RuleExecutor(present={"pass"}, rules=[(("gpgconf",), Result(2))])
+    Pass().install(Ctx(os=FEDORA, ex=ex))
+    assert ["gpgconf", "--reload", "gpg-agent"] in ex.calls
+    assert len(warned) == 1 and "gpgconf --reload" in warned[0]
 
 
 def test_pass_installs_package_via_apt_on_ubuntu() -> None:
