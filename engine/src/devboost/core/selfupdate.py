@@ -166,7 +166,13 @@ def update_frozen(
     as the frozen binary: from source, ``sys.executable`` is the Python interpreter, which
     this would otherwise overwrite with a devboost binary. ``OSError`` (e.g. an install
     directory the user cannot write) and ``UnicodeDecodeError`` (a garbled checksums.txt)
-    can also escape; the old binary is left in place in every case.
+    can also escape.
+
+    Every download is verified before anything on disk is replaced, and each replacement is
+    an atomic ``os.replace``, so any failure up to and including the binary's own
+    replacement leaves the old binary in place. On Linux the Ventoy archive is replaced
+    *after* the binary: if that second replacement raises ``OSError``, the new binary is
+    already installed and the old archive stays beside it.
     """
     if not is_frozen():
         raise RuntimeError(

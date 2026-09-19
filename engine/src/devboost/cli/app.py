@@ -553,7 +553,9 @@ def self_update(
         try:
             old, new = selfupdate.update_frozen()
         # OSError: e.g. a root-owned install dir or a full disk; UnicodeDecodeError: a
-        # garbled checksums.txt. Either way the old binary is untouched — no traceback.
+        # garbled checksums.txt. Reported without a traceback. The old binary survives any
+        # failure up to its own (atomic) replacement; on Linux a failure replacing the Ventoy
+        # archive afterwards leaves the new binary beside the old archive (see update_frozen).
         except (RuntimeError, OSError, UnicodeDecodeError) as exc:
             typer.echo(f"self-update failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
