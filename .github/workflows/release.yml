@@ -33,7 +33,8 @@ jobs:
   # The Linux legs build inside an ubuntu:22.04 container on current runners (ruling
   # C-M6-R1): the ubuntu-22.04 runner image is deprecated, but its glibc (2.35) is the floor
   # the published Linux binaries promise — a 24.04-native build would need glibc 2.39 and
-  # drop Ubuntu 22.04 and Debian 12. check-glibc-floor.sh fails the leg if it ever slips.
+  # drop Ubuntu 22.04 and Debian 12. check-glibc-floor.sh fails the leg if it ever slips:
+  # it checks libpython and every bundled extension module, not just the bootloader stub.
   binary:
     needs: [checks]
     strategy:

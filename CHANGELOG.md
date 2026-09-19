@@ -53,7 +53,8 @@ git history and the GitHub release notes.
   checking every asset against the per-arch checksums its build runner wrote. The
   deprecated `ubuntu-22.04` runner is gone: the Linux binaries build on `ubuntu-24.04` inside
   an `ubuntu:22.04` container, keeping the **glibc 2.35 floor**, which a new
-  `scripts/check-glibc-floor.sh` step enforces.
+  `scripts/check-glibc-floor.sh` step enforces over libpython and every extension module
+  inside the onefile (not just its bootloader stub).
   `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway tart VM
   (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished build),
   running `smoke-assert.sh` in a fresh `zsh -lc` login shell after the install;

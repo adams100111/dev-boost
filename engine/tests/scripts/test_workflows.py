@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import re
 import shutil
+import struct
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -157,9 +159,25 @@ def test_build_artifacts_fail_when_a_file_is_missing() -> None:
 
 
 # --- scripts/check-glibc-floor.sh -------------------------------------------------------
+#
+# The bundles are tiny PyInstaller onefiles whose archives PyInstaller's own CArchiveWriter
+# wrote (fixtures/make_pyi_bundles.py): a fake bootloader stub marked GLIBC_2.14, then a
+# compressed archive holding libpython (GLIBC_2.34), two extension modules (GLIBC_2.28 and
+# either 2.35 or 2.39) and one non-ELF data file. The fake objdump reports the marker in
+# the first 64 bytes of whichever file it is given, so each ELF reports its own version.
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+_BUNDLE_OK = _FIXTURES / "pyi-onefile-ok.bin"
+_BUNDLE_239 = _FIXTURES / "pyi-onefile-glibc239.bin"
+_PER_FILE_OBJDUMP = (
+    "head -c 64 \"$2\" | tr -c 'A-Za-z0-9_.' '\\n' | grep '^GLIBC_' | while read -r v; do\n"
+    '  echo "0000000000000000      DF *UND*  0000000000000000 ($v) fn_$v"\n'
+    "done"
+)
 
 
 def _objdump(stub_path: StubPath, *versions: str) -> None:
+    """An objdump that reports the same *versions* for every file it is given."""
     lines = "".join(
         f"0000000000000000      DF *UND*  0000000000000000 (GLIBC_{v}) sym_{v.replace('.', '_')}\\n"
         for v in versions
@@ -167,43 +185,102 @@ def _objdump(stub_path: StubPath, *versions: str) -> None:
     stub_path.add("objdump", f"printf '{lines}'")
 
 
-def _glibc(stub_path: StubPath, tmp_path: Path, *args: str) -> tuple[int, str, str]:
-    binary = tmp_path / "devboost-x86_64"
-    binary.write_bytes(b"\x7fELF")
-    res = run_bash(_GLIBC_CHECK, str(binary), *args, env=stub_path.env())
+def _glibc(
+    stub_path: StubPath, bundle: Path, *args: str, **env: str
+) -> tuple[int, str, str]:
+    res = run_bash(
+        _GLIBC_CHECK,
+        str(bundle),
+        *args,
+        env=stub_path.env(GLIBC_FLOOR_PYTHON=sys.executable, **env),
+    )
     return res.returncode, res.stdout, res.stderr
 
 
-def test_glibc_floor_passes_at_2_35(stub_path: StubPath, tmp_path: Path) -> None:
+def test_glibc_floor_passes_at_2_35(stub_path: StubPath) -> None:
     _objdump(stub_path, "2.2.5", "2.34", "2.35", "2.4")
-    rc, out, err = _glibc(stub_path, tmp_path, "2.35")
+    rc, out, err = _glibc(stub_path, _BUNDLE_OK, "2.35")
     assert rc == 0, err
-    assert "highest GLIBC_2.35 <= 2.35 — ok" in out
+    assert "highest GLIBC_2.35 <= 2.35" in out
 
 
-def test_glibc_floor_fails_above_and_names_the_symbol(
-    stub_path: StubPath, tmp_path: Path
-) -> None:
+def test_glibc_floor_fails_above_and_names_the_symbol(stub_path: StubPath) -> None:
     _objdump(stub_path, "2.2.5", "2.35", "2.38", "2.39")
-    rc, _out, err = _glibc(stub_path, tmp_path)  # default floor 2.35
+    rc, _out, err = _glibc(stub_path, _BUNDLE_OK)  # default floor 2.35
     assert rc == 1
     assert "needs GLIBC_2.39, above the 2.35 floor" in err
     assert "sym_2_38" in err and "sym_2_39" in err
     assert "sym_2_35" not in err
 
 
-def test_glibc_floor_orders_versions_numerically(stub_path: StubPath, tmp_path: Path) -> None:
+def test_glibc_floor_orders_versions_numerically(stub_path: StubPath) -> None:
     """2.4 < 2.35 (version order, not string order)."""
     _objdump(stub_path, "2.4", "2.17")
-    rc, out, err = _glibc(stub_path, tmp_path, "2.35")
+    rc, out, err = _glibc(stub_path, _BUNDLE_OK, "2.35")
     assert rc == 0, err
     assert "highest GLIBC_2.17" in out
 
 
-def test_glibc_floor_without_objdump_is_an_error(stub_path: StubPath, tmp_path: Path) -> None:
+def test_glibc_floor_checks_every_bundled_elf(stub_path: StubPath) -> None:
+    """The stub plus the three bundled ELF objects; the data file is not one of them."""
+    stub_path.add("objdump", _PER_FILE_OBJDUMP)
+    rc, out, err = _glibc(stub_path, _BUNDLE_OK)
+    assert rc == 0, err
+    assert "highest GLIBC_2.35 <= 2.35 across 4 ELF objects (bootloader + 3 bundled)" in out
+
+
+def test_glibc_floor_fails_on_a_bundled_extension_above_the_floor(
+    stub_path: StubPath,
+) -> None:
+    """The regression N1 names: the bootloader stub needs only GLIBC_2.14, so a check of
+    the stub alone passes; an extension module inside the archive needs 2.39 and must fail."""
+    stub_path.add("objdump", _PER_FILE_OBJDUMP)
+    stub_only = subprocess.run(
+        ["objdump", "-T", str(_BUNDLE_239)],
+        env=stub_path.env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "GLIBC_2.14" in stub_only and "GLIBC_2.39" not in stub_only
+
+    rc, _out, err = _glibc(stub_path, _BUNDLE_239)
+    assert rc == 1
+    assert "needs GLIBC_2.39, above the 2.35 floor (checked 4 ELF objects)" in err
+    assert "lib-dynload/_ssl.cpython-312-x86_64-linux-gnu.so:" in err
+    assert "libpython" not in err
+
+
+def test_glibc_floor_refuses_a_file_that_is_not_a_bundle(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    stub_path.add("objdump", _PER_FILE_OBJDUMP)
+    plain = tmp_path / "devboost-x86_64"
+    plain.write_bytes(b"\x7fELF GLIBC_2.14 " + b"\0" * 64)
+    rc, _out, err = _glibc(stub_path, plain)
+    assert rc == 2
+    assert "no PyInstaller archive cookie" in err
+
+
+def test_glibc_floor_refuses_a_bundle_without_an_elf_libpython(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """An empty archive (or one the reader mis-parses) must error, never pass on the stub."""
+    stub_path.add("objdump", _PER_FILE_OBJDUMP)
+    cookie = struct.pack(
+        "!8sIIII64s", b"MEI\014\013\012\013\016", 88, 0, 0, 312, b"libpython3.12.so.1.0"
+    )
+    empty = tmp_path / "devboost-x86_64"
+    empty.write_bytes(b"\x7fELF GLIBC_2.14 " + b"\0" * 64 + cookie)
+    rc, _out, err = _glibc(stub_path, empty)
+    assert rc == 2
+    assert "has no ELF 'libpython3.12.so.1.0'" in err
+
+
+def test_glibc_floor_without_objdump_is_an_error(stub_path: StubPath) -> None:
     if shutil.which("objdump", path="/usr/bin:/bin"):
         pytest.skip("a system objdump is on the fallback PATH")
-    rc, _out, err = _glibc(stub_path, tmp_path)
+    rc, _out, err = _glibc(stub_path, _BUNDLE_OK)
     assert rc == 2
     assert "objdump not found — install binutils" in err
 

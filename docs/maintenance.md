@@ -67,8 +67,13 @@ Publish either way:
      three binaries on their native runners (`ubuntu-24.04`, `ubuntu-24.04-arm`,
      `macos-15`). The two Linux legs build inside an `ubuntu:22.04` container, which keeps
      the published binaries' **glibc 2.35 floor** (Ubuntu 22.04+, Debian 12, Fedora 36+)
-     now that the `ubuntu-22.04` runner image is deprecated; `scripts/check-glibc-floor.sh`
-     fails the leg if a binary ever needs a newer `GLIBC_` symbol.
+     now that the `ubuntu-22.04` runner image is deprecated. `scripts/check-glibc-floor.sh`
+     fails the leg if any ELF object that ships needs a `GLIBC_` symbol newer than 2.35: it
+     runs `objdump -T` over the bootloader stub **and** over every ELF inside the onefile's
+     embedded archive — libpython and every extension module / shared library PyInstaller
+     collected — which `scripts/pyi_bundle_elfs.py` extracts. (The stub alone can never
+     fail: PyInstaller's prebuilt bootloader needs only about `GLIBC_2.14`.) An archive it
+     cannot read, or one with no ELF libpython, errors instead of passing.
   3. `binary-compat` — re-runs the **macos-15-built** `devboost-darwin-arm64` unmodified on
      `macos-26` (blocking) and the `xcode-27` preview image (non-blocking): `--version`,
      `list macos`, `codesign --verify --strict` again — proving the oldest-supported-macOS
