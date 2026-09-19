@@ -51,3 +51,31 @@ def test_confirmed_grant_passes() -> None:
 
 def test_tcc_ignored_off_macos() -> None:
     assert _status(FEDORA) == ("skip", "already-installed")
+
+
+class _AfterA11y(Module):
+    """Depends on a TCC-gated module; its install must not wait for the user's grant."""
+
+    name: ClassVar[str] = "after-a11y"
+    requires = (_NeedsA11y,)
+    installed: ClassVar[bool] = False
+
+    def verify(self, ctx: Ctx) -> bool:
+        return type(self).installed
+
+    def install(self, ctx: Ctx) -> None:
+        type(self).installed = True
+
+
+def test_tcc_pending_does_not_block_dependents(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_AfterA11y, "installed", False)
+    mods: dict[str, type[Module]] = {"needs-a11y": _NeedsA11y, "after-a11y": _AfterA11y}
+    res = run_plan(
+        [PlannedModule("needs-a11y"), PlannedModule("after-a11y")], mods,
+        Ctx(os=MAC, ex=FakeExecutor()),
+    )
+    out = {r.name: (r.status, r.detail) for r in res}
+    # The gated module itself still reports blocked (the user owes it a grant) …
+    assert out["needs-a11y"][0] == "blocked"
+    # … but installing is done, so its dependent runs instead of `required-failed`.
+    assert out["after-a11y"] == ("ok", "")

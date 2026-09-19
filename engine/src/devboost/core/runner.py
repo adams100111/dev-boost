@@ -20,6 +20,9 @@ class RunResult:
     name: str
     status: Status
     detail: str = ""
+    #: Whether a fail/blocked result stops the modules that require this one. False for
+    #: a TCC-pending result: the install itself succeeded, only the user's grant is owed.
+    blocks_dependents: bool = True
 
 
 def run_plan(
@@ -32,7 +35,7 @@ def run_plan(
     results: list[RunResult] = []
     for pm in plan:
         result = _run_one(pm, modules[pm.name](), ctx, failed_or_blocked)
-        if result.status in ("fail", "blocked"):
+        if result.status in ("fail", "blocked") and result.blocks_dependents:
             failed_or_blocked.add(pm.name)
         results.append(result)
     return results
@@ -50,7 +53,9 @@ def _tcc_gate(pm: PlannedModule, mod: Module, ctx: Ctx, ok: RunResult) -> RunRes
         f"{pm.name}: needs permissions — {hint}; "
         f"then `devboost permissions --confirm {pm.name}`"
     )
-    return RunResult(pm.name, "blocked", f"needs-user: grant permissions → {hint}")
+    return RunResult(
+        pm.name, "blocked", f"needs-user: grant permissions → {hint}", blocks_dependents=False
+    )
 
 
 def _run_one(pm: PlannedModule, mod: Module, ctx: Ctx, failed: set[str]) -> RunResult:
