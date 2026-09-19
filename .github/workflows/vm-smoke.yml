@@ -94,12 +94,14 @@ jobs:
           else
             bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv run devboost install cli ghostty"
           fi
+      # Under `uv run` so the source-installed `devboost` (engine/.venv/bin) is on PATH, in
+      # a fresh login shell so herdr/glow resolve through the PATH the install wired up.
       - name: smoke-assert.sh cli ghostty
         run: |
           if [ -n "${RUN_USER}" ]; then
-            sudo -u "${RUN_USER}" --preserve-env=PATH -H bash -lc "cd '${GITHUB_WORKSPACE}' && sh scripts/smoke-assert.sh cli ghostty"
+            sudo -u "${RUN_USER}" --preserve-env=PATH -H bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv run sh ../scripts/smoke-assert.sh cli ghostty"
           else
-            bash -lc "cd '${GITHUB_WORKSPACE}' && sh scripts/smoke-assert.sh cli ghostty"
+            bash -lc "cd '${GITHUB_WORKSPACE}/engine' && uv run sh ../scripts/smoke-assert.sh cli ghostty"
           fi
       - name: Fedora — Ghostty came from the scottames/ghostty COPR
         if: matrix.name == 'fedora'
