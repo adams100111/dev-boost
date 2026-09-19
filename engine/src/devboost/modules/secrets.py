@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from devboost.core import log
-from devboost.core.errors import InstallError, SecretsError
+from devboost.core.errors import InstallError, NeedsUser, SecretsError
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg
 from devboost.model import Ctx, Module
@@ -168,7 +168,12 @@ class Secrets(Module):
             log.ok(f"secrets: using the authenticated GitHub CLI ({from_gh['GIT_USER']})")
             return from_gh, "gh"
 
-        raise SecretsError(creds_src.no_credentials_help(gh_problem))
+        # Nobody can have credentials on a brand-new machine: that is a step for the user,
+        # reported as blocked with the exact fix, not a failure of the run.
+        raise NeedsUser(
+            f"no secrets bundle, and {gh_problem}",
+            creds_src.no_credentials_help(gh_problem),
+        )
 
     def install(self, ctx: Ctx) -> None:
         data, source = self._resolve(ctx)

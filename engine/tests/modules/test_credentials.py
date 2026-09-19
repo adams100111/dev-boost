@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import SecretsError
+from devboost.core.errors import NeedsUser, SecretsError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
@@ -48,7 +48,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_non_interactive_raises_instead_of_prompting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A firstboot service / curl|bash run has nobody at the keyboard: fail, don't hang."""
+    """A firstboot service / curl|bash run has nobody at the keyboard: block, don't hang."""
     monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
 
     def _explode() -> None:
@@ -57,7 +57,7 @@ def test_non_interactive_raises_instead_of_prompting(
     monkeypatch.setattr(
         creds_src, "resolve_interactively", lambda ctx, existing=None: _explode()
     )
-    with pytest.raises(SecretsError) as exc:
+    with pytest.raises(NeedsUser) as exc:
         Secrets().install(Ctx(os=OMARCHY, ex=FakeExecutor(present={"git"})))
     # The error has to be actionable, not just "file not found".
     assert "gh auth login" in str(exc.value)
@@ -114,7 +114,7 @@ def test_choosing_skip_is_respected_even_when_gh_is_signed_in(
     """"Skip" must not be quietly overridden by the gh session we just offered."""
     monkeypatch.setattr(creds_src, "is_interactive", lambda: True)
     monkeypatch.setattr(creds_src, "resolve_interactively", lambda ctx, existing=None: None)
-    with pytest.raises(SecretsError):
+    with pytest.raises(NeedsUser):  # skipped: blocked for the user, not a failed run
         Secrets().install(Ctx(os=OMARCHY, ex=_gh_ready()))
 
 
@@ -311,7 +311,7 @@ def test_unattended_error_names_the_missing_piece_when_gh_is_signed_in(
         "gh auth token": Result(1, stderr="no oauth token"),
         "gh auth status": Result(0),
     })
-    with pytest.raises(SecretsError) as exc:
+    with pytest.raises(NeedsUser) as exc:
         Secrets().install(Ctx(os=OMARCHY, ex=ex))
     msg = str(exc.value)
     assert "signed in as octocat" in msg and "gh auth token" in msg
