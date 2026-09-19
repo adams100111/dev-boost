@@ -16,6 +16,7 @@ from devboost.exec.executor import Result
 from devboost.model import Ctx, Module
 from devboost.modules._pass import pass_fields, pass_line, pass_show
 from devboost.modules.pass_store import Pass, PassStore
+from devboost.passstore import paths, sync
 from devboost.passstore.layout import DeviceRecord, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
@@ -197,19 +198,30 @@ def test_pass_line_is_the_first_line_or_none() -> None:
 
 
 def _wired(tmp_path: Path) -> Store:
-    """A clone whose hook and timer are in place, so verify reaches the device lookup."""
+    """A clone whose hook, scheduler and device enrollment are wired for real (via the
+    same `sync.install_hook` / `sync.install_scheduler` the real install path uses, plus
+    an enrolled device record), so `verify()` would pass if not for whatever fault the
+    test injects on top."""
     store = _seed(tmp_path)
-    (store.root / ".git" / "hooks" / "post-commit").write_text(
-        "#!/bin/sh\n# managed by devboost (pass-store)\n", encoding="utf-8")
-    units = tmp_path / "home" / ".config" / "systemd" / "user"
-    units.mkdir(parents=True)
-    (units / "devboost-pass-sync.timer").write_text("x", encoding="utf-8")
+    ctx = Ctx(os=FEDORA, ex=RuleExecutor())  # is-enabled / is-active succeed by default
+    bin_ = paths.devboost_bin()
+    sync.install_hook(ctx, store, bin_)
+    sync.install_scheduler(ctx, bin_)
+    store.write_record("devices", DeviceRecord(name="desk", fingerprint=FP_ME, os="fedora"), "K")
     return store
 
 
 def _bad_toml(tmp_path: Path) -> None:
     (tmp_path / "cfg" / "devboost" / "config.toml").write_text("device_name = [\n",
                                                                 encoding="utf-8")
+
+
+def test_wired_alone_passes_verify(tmp_path: Path) -> None:
+    """Positive control for `_wired()`: absent any injected fault, verify() is True — so
+    the two tests below fail for their named reason, not because the scheduler/hook are
+    unwired."""
+    _wired(tmp_path)
+    assert PassStore().verify(Ctx(os=FEDORA, ex=_ex())) is True
 
 
 def test_verify_is_false_not_raising_on_invalid_config(tmp_path: Path) -> None:
