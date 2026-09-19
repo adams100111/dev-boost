@@ -1,4 +1,4 @@
-"""shell profile — starship, ghostty, nerd-fonts, dotfiles, bash-config."""
+"""shell profile — starship, ghostty (default), wezterm (opt-in), fonts, dotfiles, bash/zsh."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from devboost.core.registry import register
 from devboost.core.settings import settings
 from devboost.exec.primitives import copr, flatpak, pkg
 from devboost.model import Ctx, Module
-from devboost.modules._brew import BrewFormula
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
 
@@ -68,18 +68,28 @@ _WEZTERM_APPIMAGE = (
 class Wezterm(Module):
     name = "wezterm"
     category = "shell"
-    description = "GPU-accelerated terminal + multiplexer (nightly); default terminal."
+    description = (
+        "GPU terminal + multiplexer (nightly) — opt-in, deprecated: Ghostty is the default "
+        "and herdr the multiplexer."
+    )
     gui = True
-    profiles = ("shell",)
+    profiles = ("optional-terminals",)
     # Omarchy ships foot as the default terminal, themed by `omarchy theme set` and
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: the nightly cask (the last stable release is Feb 2024).
+    per_os = OsMap(macos=BrewCask("wezterm@nightly"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("wezterm")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Nightly AppImage extracted into ~/.local (no FUSE, no sudo). The COPR
         # lacks builds for newer Fedora releases, so the AppImage is the reliable
         # path on both Fedora and Ubuntu. Symlinked onto PATH + a desktop entry.
@@ -122,11 +132,19 @@ DESKTOP
 class Ghostty(Module):
     name = "ghostty"
     category = "shell"
-    description = "GPU-accelerated terminal (optional; WezTerm is the default)."
+    description = "GPU-accelerated terminal — the default on every OS (Omarchy keeps foot)."
     gui = True
-    profiles = ()  # optional — install on demand; WezTerm is the default terminal
+    profiles = ("shell",)
+    # Omarchy ships foot as the default terminal, themed by `omarchy theme set` and
+    # routed through xdg-terminal-exec. Installing a second "default terminal" fights
+    # the platform's theming and its terminal-launch chain.
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: the cask is the app bundle (no CLI on PATH), so verify asks brew.
+    per_os = OsMap(macos=BrewCask("ghostty"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         if ctx.os.family == "debian":
             return "com.mitchellh.ghostty" in ctx.ex.run(
                 ["flatpak", "list", "--app", "--columns=application"]
@@ -134,6 +152,9 @@ class Ghostty(Module):
         return ctx.ex.which("ghostty")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             flatpak.install(ctx, "com.mitchellh.ghostty")
         else:
@@ -152,11 +173,18 @@ class NerdFonts(Module):
     # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
     # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
     profiles = ("shell",)
+    # macOS: the Homebrew font cask (tracks the latest Nerd Fonts; Linux pins v3.2.1).
+    per_os = OsMap(macos=BrewCask("font-jetbrains-mono-nerd-font"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return "JetBrainsMono Nerd Font" in ctx.ex.run(["fc-list"]).stdout
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         font_dir = _home() / ".local" / "share" / "fonts" / "JetBrainsMono"
         font_dir.mkdir(parents=True, exist_ok=True)
         zip_path = Path(tempfile.gettempdir()) / "devboost-jetbrainsmono.zip"

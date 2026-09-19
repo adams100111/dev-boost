@@ -211,7 +211,7 @@ def test_omarchy_profile_resolves_and_plans_cleanly(
     # And what the platform owns is reported rather than reinstalled.
     reasons = {p.name: p.skip_reason for p in plan}
     assert reasons.get("herdr") == "provided-by-omarchy"
-    assert reasons.get("wezterm") == "provided-by-omarchy"
+    assert reasons.get("ghostty") == "provided-by-omarchy"
 
 
 # ---------------------------------------------------------------------------

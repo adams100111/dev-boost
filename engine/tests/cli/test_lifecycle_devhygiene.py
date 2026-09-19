@@ -35,6 +35,7 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         'system = ["gpu-detect"]\n'
         'hardware-nvidia = ["nvidia-akmod"]\n'
         'optional-editors = ["neovim"]\n'
+        'optional-terminals = ["wezterm"]\n'
         'security-cli = ["pass"]\n'
         'optional-agents = ["herdr"]\n'
         'server = ["zram"]\n'

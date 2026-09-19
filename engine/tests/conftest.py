@@ -108,6 +108,7 @@ def profiles_file(tmp_path: Path) -> Path:
         'system = ["gpu-detect"]\n'
         'hardware-nvidia = ["nvidia-akmod"]\n'
         'optional-editors = ["neovim"]\n'
+        'optional-terminals = ["wezterm"]\n'
         'security-cli = ["pass"]\n'
         'optional-agents = ["herdr"]\n'
         'laravel = ["ddev"]\n'

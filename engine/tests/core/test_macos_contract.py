@@ -52,7 +52,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "fresh-lsp",
     "fwupd",
     "gearlever",
-    "ghostty",
     "gpu-detect",
     "herdr",
     "herdr-plugins",
@@ -61,7 +60,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "localsend",
     "mosh",
     "neovim",
-    "nerd-fonts",
     "obsidian",
     "obsidian-sync",
     "pass",
@@ -82,7 +80,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "vscode",
     "web-lsp",
     "web-runtimes",
-    "wezterm",
     "zram",
 })
 
