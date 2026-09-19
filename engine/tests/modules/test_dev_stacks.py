@@ -66,7 +66,8 @@ def test_aspire_verify_checks_the_tools_path_not_which(tmp_path, monkeypatch) ->
     assert Aspire().verify(ctx) is True             # present on disk, even if not on PATH
 
 
-def test_dotnet_lsp_installs_csharp_tools() -> None:
+def test_dotnet_lsp_installs_csharp_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     ctx = _ctx()
     DotnetLsp().install(ctx)
     assert ["dotnet", "tool", "install", "-g", "csharp-ls"] in ctx.ex.calls  # type: ignore[attr-defined]

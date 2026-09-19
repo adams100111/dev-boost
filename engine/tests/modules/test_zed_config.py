@@ -11,6 +11,7 @@ from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
 from devboost.modules import _zed
 from devboost.modules._lsp import ServerPin, all_pins, read_pins, read_servers
+from devboost.modules.dev_stacks import DotnetLsp, PythonLsp
 
 CTX = Ctx(os=OsInfo("fedora", "fedora", "x86_64"), ex=FakeExecutor())
 
@@ -154,3 +155,30 @@ def test_refresh_after_lsp_downgrades_needs_user_to_warning(home: Path) -> None:
     p.write_text("{broken", encoding="utf-8")
     _zed.refresh_after_lsp(CTX, all_pins())  # must not raise
     assert p.read_text(encoding="utf-8") == "{broken"
+
+
+def test_python_lsp_install_wires_zed_when_settings_exist(home: Path) -> None:
+    _zed.seed_files()
+    # FakeExecutor doesn't run `mise use`; the shim appearing is what a real install does.
+    _shim(home, "basedpyright-langserver")
+    _shim(home, "ruff")
+    PythonLsp().install(CTX)
+    data = json.loads(_zed.settings_path().read_text(encoding="utf-8"))
+    assert data["lsp"]["basedpyright"]["binary"]["arguments"] == ["--stdio"]
+    assert data["lsp"]["ruff"]["binary"]["arguments"] == ["server"]
+
+
+def test_dotnet_lsp_install_wires_csharp_ls(home: Path) -> None:
+    _zed.seed_files()
+    tools = home / ".dotnet" / "tools"
+    tools.mkdir(parents=True)
+    (tools / "csharp-ls").write_text("", encoding="utf-8")
+    DotnetLsp().install(CTX)
+    data = json.loads(_zed.settings_path().read_text(encoding="utf-8"))
+    assert data["lsp"]["csharp-ls"]["binary"]["path"] == str(tools / "csharp-ls")
+
+
+def test_lsp_install_does_not_create_zed_settings(home: Path) -> None:
+    _shim(home, "ruff")
+    PythonLsp().install(CTX)
+    assert not _zed.settings_path().exists()

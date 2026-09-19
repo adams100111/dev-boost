@@ -185,7 +185,10 @@ def test_aspire_installs_via_dotnet_tool_on_ubuntu() -> None:
     assert not any("apt-get" in " ".join(c) for c in calls)
 
 
-def test_dotnet_lsp_installs_csharp_tools_on_ubuntu() -> None:
+def test_dotnet_lsp_installs_csharp_tools_on_ubuntu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     ctx = _ctx()
     DotnetLsp().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]

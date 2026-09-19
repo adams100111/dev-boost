@@ -11,6 +11,7 @@ from typing import ClassVar
 from devboost.exec.primitives import mise
 from devboost.exec.resources import resource_path, tsv_rows
 from devboost.model import Ctx, Module
+from devboost.modules import _zed
 
 
 @dataclass(frozen=True)
@@ -84,3 +85,6 @@ class LspModule(Module):
         for _, _, spec in servers:
             mise.use_global(ctx, spec)
         merge_lsp(servers)
+        # Point Zed at these pinned servers now — the plan has no order between `zed` and
+        # the *-lsp modules, so waiting for zed's next verify would cost a second run.
+        _zed.refresh_after_lsp(ctx, all_pins())

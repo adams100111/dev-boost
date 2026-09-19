@@ -10,7 +10,8 @@ from devboost.core.registry import register
 from devboost.exec.primitives import mise, pkg
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx, Module
-from devboost.modules._lsp import LspModule
+from devboost.modules import _zed
+from devboost.modules._lsp import LspModule, all_pins
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
@@ -238,6 +239,7 @@ class DotnetLsp(Module):
     def install(self, ctx: Ctx) -> None:
         ctx.ex.run(["dotnet", "tool", "install", "-g", "csharp-ls"])
         ctx.ex.run(["dotnet", "tool", "install", "-g", "csharpier"])
+        _zed.refresh_after_lsp(ctx, all_pins())
 
 
 # --- data --------------------------------------------------------------------------------
