@@ -60,6 +60,16 @@ def test_install_cask_uses_adopt() -> None:
 
 
 def test_install_cask_hand_installed_app_is_present_unmanaged() -> None:
+    # Homebrew 7.0.4 cask/artifact/moved.rb: the --adopt path raises this when the
+    # existing app's bundle version differs from the one being installed.
+    err = "Error: It seems the existing App is different from the one being installed."
+    ex = FakeExecutor(scripts={"brew": Result(1, stderr=err)})
+    with pytest.raises(PresentUnmanaged):
+        pkg.install_cask(Ctx(os=MAC, ex=ex), "visual-studio-code")
+
+
+def test_install_cask_already_an_app_fallback_is_present_unmanaged() -> None:
+    # Wording without --adopt/--force; kept as a fallback in case brew's flow changes.
     err = "Error: It seems there is already an App at '/Applications/Visual Studio Code.app'."
     ex = FakeExecutor(scripts={"brew": Result(1, stderr=err)})
     with pytest.raises(PresentUnmanaged):

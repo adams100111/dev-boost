@@ -204,9 +204,14 @@ BREW_ENV: dict[str, str] = {
     "NONINTERACTIVE": "1",
 }
 
-# brew's message when a cask's app already exists and --adopt cannot take it over
-# (e.g. a different version was dragged into /Applications by hand).
-_ALREADY_PRESENT = "already an App at"
+# brew's messages when a cask's app already exists and cannot be taken over
+# (Homebrew 7.0.4, cask/artifact/moved.rb). With --adopt, a hand-installed app whose
+# bundle version differs raises the first; the second is the wording without
+# --adopt/--force, kept as a fallback should brew's flow change.
+_ALREADY_PRESENT = (
+    "is different from the one being installed",
+    "already an App at",
+)
 
 
 class Brew:
@@ -232,7 +237,8 @@ class Brew:
         res = self._brew(ctx, "install", "--cask", "-y", "--adopt", *casks)
         if res.ok:
             return
-        if _ALREADY_PRESENT in f"{res.stdout}\n{res.stderr}":
+        output = f"{res.stdout}\n{res.stderr}"
+        if any(marker in output for marker in _ALREADY_PRESENT):
             raise PresentUnmanaged(", ".join(casks))
         raise InstallError("brew", f"brew install --cask -y --adopt {' '.join(casks)}", res.code)
 
