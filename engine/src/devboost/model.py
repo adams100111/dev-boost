@@ -82,6 +82,12 @@ class Module:
     category: ClassVar[str] = ""
     description: ClassVar[str] = ""
     requires: ClassVar[tuple[type[Module], ...]] = ()
+    #: Ordering-only dependencies: when a target is ALSO in the plan, this module runs
+    #: after it. Unlike `requires`, a target is never pulled into the plan, and its
+    #: failure or `blocked` state never blocks this module — use it for soft inputs the
+    #: module degrades without (e.g. secrets read from `pass` while this device awaits
+    #: approval).
+    after: ClassVar[tuple[type[Module], ...]] = ()
     profiles: ClassVar[tuple[str, ...]] = ()
     self_updating: ClassVar[bool] = False
     families: ClassVar[tuple[str, ...]] = ()

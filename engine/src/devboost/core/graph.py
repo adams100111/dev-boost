@@ -10,7 +10,10 @@ from devboost.model import Module
 
 
 def toposort(names: list[str], modules: Mapping[str, type[Module]]) -> list[str]:
-    """Order the requested modules plus the transitive closure of their `requires`."""
+    """Order the requested modules plus the transitive closure of their `requires`.
+
+    `after` targets order the plan only when they are already selected.
+    """
     selected: set[str] = set()
     stack = list(names)
     while stack:
@@ -22,7 +25,8 @@ def toposort(names: list[str], modules: Mapping[str, type[Module]]) -> list[str]
 
     ts: TopologicalSorter[str] = TopologicalSorter()
     for name in selected:
-        ts.add(name, *(d.name for d in modules[name].requires))
+        soft = (d.name for d in modules[name].after if d.name in selected)
+        ts.add(name, *(d.name for d in modules[name].requires), *soft)
     try:
         return list(ts.static_order())
     except CycleError as exc:
