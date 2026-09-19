@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from devboost.core.errors import NeedsUser
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
@@ -37,12 +37,44 @@ def test_ddev_taps_installs_and_trusts_the_ca_when_someone_is_there(
     monkeypatch.setattr("devboost.modules.ddev.is_interactive", lambda: True)
     ex = _no_brew_formulae(tmp_path / "ca")
     Ddev().install(Ctx(os=MAC, ex=ex))
+    assert ["brew", "trust", "--tap", "ddev/ddev"] in ex.calls
     assert ["brew", "tap", "ddev/ddev"] in ex.calls
     assert ["brew", "install", "--formula", "-y", "ddev/ddev/ddev"] in ex.calls
     assert ["brew", "install", "--formula", "-y", "mkcert"] in ex.calls
+    trust_i = ex.calls.index(["brew", "trust", "--tap", "ddev/ddev"])
+    tap_i = ex.calls.index(["brew", "tap", "ddev/ddev"])
+    assert trust_i < tap_i  # C-M4-T1: trust the tap before installing from it
     i = ex.calls.index(["mkcert", "-install"])
     assert ex.interactives[i] is True
     assert not any(c[0] == "sudo" for c in ex.calls)
+
+
+def test_ddev_trust_is_skipped_once_ddev_is_already_present(tmp_path: Path) -> None:
+    # brew list ok → ddev/mkcert already present, so install() never re-taps or re-trusts.
+    ca = tmp_path / "ca"
+    ca.mkdir()
+    (ca / "rootCA.pem").write_text("pem", encoding="utf-8")
+    ex = Scripted(answers={
+        ("brew", "list"): Result(0),
+        ("mkcert", "-CAROOT"): Result(0, stdout=f"{ca}\n"),
+        ("security", "verify-cert"): Result(0),
+    })
+    Ddev().install(Ctx(os=MAC, ex=ex))
+    assert ["brew", "trust", "--tap", "ddev/ddev"] not in ex.calls
+
+
+def test_ddev_trust_failure_raises_before_installing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("devboost.modules.ddev.is_interactive", lambda: True)
+    ex = Scripted(answers={
+        **{k: v for k, v in _no_brew_formulae(tmp_path / "ca").answers.items()},
+        ("brew", "trust"): Result(1, stderr="Error: ddev/ddev is untrusted"),
+    })
+    with pytest.raises(InstallError, match="brew trust --tap ddev/ddev"):
+        Ddev().install(Ctx(os=MAC, ex=ex))
+    assert not any(c[:2] == ["brew", "tap"] for c in ex.calls)
+    assert not any(c[:2] == ["brew", "install"] for c in ex.calls)
 
 
 def test_ddev_unattended_leaves_the_ca_to_the_user(
