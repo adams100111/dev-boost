@@ -112,6 +112,7 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
 
     if ctx.os.family == "macos":
         checks.append(_permissions_check(ctx))
+        checks.append(_rosetta_check(ctx))
     return checks
 
 
@@ -184,6 +185,22 @@ def _permissions_check(ctx: Ctx) -> Check:
     ]
     detail = "; ".join(missing) + " — run `devboost permissions`" if missing else "all granted"
     return Check("permissions", True, detail)
+
+
+def _rosetta_check(ctx: Ctx) -> Check:
+    """Informational: Rosetta state; from macOS 28 the Intel-only apps that stop working."""
+    from devboost.modules import macos
+
+    if macos.rosetta_supported(ctx.os):
+        if macos.rosetta_present(ctx):
+            return Check("rosetta", True, "installed")
+        why = "Intel-only apps, fast amd64 containers"
+        return Check("rosetta", True, f"not installed — `devboost install rosetta` ({why})")
+    apps = macos.intel_only_apps(ctx)
+    found = f"Intel-only apps that will not run: {', '.join(apps)}" if apps else "none found"
+    return Check(
+        "rosetta", True, f"macOS {ctx.os.version_id} limits Rosetta to legacy games; {found}"
+    )
 
 
 def all_ok(checks: list[Check]) -> bool:
