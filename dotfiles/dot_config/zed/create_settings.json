@@ -1,0 +1,139 @@
+{
+  "base_keymap": "VSCode",
+  "theme": {
+    "mode": "system",
+    "dark": "Tokyo Night",
+    "light": "Tokyo Night Light"
+  },
+  "buffer_font_family": "JetBrainsMono Nerd Font",
+  "terminal": {
+    "shell": "system",
+    "font_family": "JetBrainsMono Nerd Font"
+  },
+  "project_panel": {
+    "dock": "left"
+  },
+  "minimap": {
+    "show": "auto"
+  },
+  "toolbar": {
+    "breadcrumbs": true
+  },
+  "autosave": "on_focus_change",
+  "format_on_save": "on",
+  "indent_guides": {
+    "enabled": true
+  },
+  "colorize_brackets": true,
+  "inlay_hints": {
+    "enabled": true
+  },
+  "git": {
+    "inline_blame": {
+      "enabled": true
+    }
+  },
+  "scrollbar": {
+    "diagnostics": "all",
+    "git_diff": true
+  },
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false
+  },
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/node_modules",
+    "**/vendor",
+    "**/bin",
+    "**/obj",
+    "**/.venv",
+    "**/.ddev",
+    "**/.next",
+    "**/dist",
+    "**/.expo",
+    "**/ios/Pods",
+    "**/android/build",
+    "**/public/build",
+    "**/bootstrap/ssr"
+  ],
+  "auto_install_extensions": {
+    "php": true,
+    "blade": true,
+    "csharp": true,
+    "opentofu": true,
+    "dockerfile": true,
+    "docker-compose": true,
+    "toml": true,
+    "sql": true,
+    "env": true,
+    "make": true,
+    "git-firefly": true,
+    "tokyo-night": true
+  },
+  "agent_servers": {
+    "claude-acp": {
+      "type": "registry"
+    },
+    "codex-acp": {
+      "type": "registry"
+    },
+    "pi-acp": {
+      "type": "registry"
+    }
+  },
+  "languages": {
+    "PHP": {
+      "language_servers": ["intelephense", "!phpactor", "!phptools", "!phpantom", "..."]
+    },
+    "Blade": {
+      "language_servers": ["tailwindcss-language-server", "..."]
+    },
+    "CSharp": {
+      "language_servers": ["csharp-ls", "!roslyn", "!omnisharp", "..."]
+    },
+    "Python": {
+      "formatter": {
+        "language_server": {
+          "name": "ruff"
+        }
+      }
+    },
+    "JavaScript": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "TypeScript": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "TSX": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    }
+  },
+  "lsp": {
+    "tailwindcss-language-server": {
+      "settings": {
+        "classFunctions": ["cn", "clsx", "cva", "cx", "tw"],
+        "includeLanguages": {
+          "php": "html",
+          "blade": "html"
+        }
+      }
+    }
+  }
+}
