@@ -182,7 +182,9 @@ class LaravelLsp(LspModule):
 
 # --- dotnet ------------------------------------------------------------------------------
 
-_DOTNET_INSTALL = "https://dot.net/v1/dotnet-install.sh"
+# The final URL: dot.net/v1/dotnet-install.sh 301s here, and run_script's curl does not
+# follow redirects (it would save an empty body and "succeed").
+_DOTNET_INSTALL = "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh"
 _DOTNET_CHANNEL = "10.0"  # .NET 10 LTS, the same pin as the Linux packages
 
 

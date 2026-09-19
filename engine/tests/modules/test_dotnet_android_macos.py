@@ -22,7 +22,7 @@ def test_dotnet_on_macos_runs_the_official_script_into_home(tmp_path: Path) -> N
     ex = Scripted(answers={("mktemp", "-d"): Result(0, stdout="/tmp/dn\n")})
     DotnetSdk().install(Ctx(os=MAC, ex=ex))
     assert ["curl", "-fsSL", "--proto", "=https", "--tlsv1.2", "-o", "/tmp/dn/install.sh",
-            "https://dot.net/v1/dotnet-install.sh"] in ex.calls
+            "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh"] in ex.calls
     assert ["bash", "/tmp/dn/install.sh", "--channel", "10.0",
             "--install-dir", str(tmp_path / ".dotnet")] in ex.calls
     assert not any(c[0] == "sudo" for c in ex.calls)
