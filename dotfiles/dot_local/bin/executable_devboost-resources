@@ -1,0 +1,30 @@
+#!/bin/sh
+# devboost-resources — print "<ram_used%> <disk_used%> <disk_free_GiB>" on one line.
+#
+# The single RAM/disk probe behind every dev-boost gauge: the tmux status line, the
+# starship prompt, WezTerm's status bar and the Claude Code status line.
+#   Linux: /proc/meminfo (MemTotal − MemAvailable) + df on /.
+#   macOS: sysctl hw.memsize − (free + inactive + speculative pages) from vm_stat, + df on
+#          the data volume (/ is the sealed system volume there and reads almost empty).
+# `df -Pk` is POSIX on both, so no GNU-only flags.
+#
+# devboost — managed by chezmoi; edit dotfiles/dot_local/bin/executable_devboost-resources.
+set -eu
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  total=$(sysctl -n hw.memsize)
+  ram=$(vm_stat | awk -v total="$total" '
+    /page size of/        { ps = $8 }
+    /^Pages free:/        { f = $3 + 0 }
+    /^Pages inactive:/    { i = $3 + 0 }
+    /^Pages speculative:/ { s = $3 + 0 }
+    END { printf "%d", (total - (f + i + s) * ps) * 100 / total }')
+  mnt=/System/Volumes/Data
+  [ -d "$mnt" ] || mnt=/
+else
+  ram=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%d", (t - a) * 100 / t }' \
+    "${DEVBOOST_MEMINFO:-/proc/meminfo}")
+  mnt=/
+fi
+
+df -Pk "$mnt" | awk -v ram="$ram" 'NR == 2 { sub("%", "", $5); printf "%s %s %d\n", ram, $5, $4 / 1048576 }'

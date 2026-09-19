@@ -23,7 +23,16 @@ port=${DEVBOOST_PW_MCP_PORT:-8931}
 
 # Reachability probe (no curl dependency): is the MCP port open on the attaching machine?
 # If pw-mcp isn't running there, do nothing — never register a dead endpoint.
-timeout 1 bash -c "exec 3<>/dev/tcp/${host}/${port}" 2>/dev/null || exit 0
+# GNU `timeout` on Linux; macOS has none, but coreutils (brew) installs it as `gtimeout`.
+# With neither, skip rather than risk hanging the tmux hook on an unreachable host.
+if command -v timeout >/dev/null 2>&1; then
+  to=timeout
+elif command -v gtimeout >/dev/null 2>&1; then
+  to=gtimeout
+else
+  exit 0
+fi
+"$to" 1 bash -c "exec 3<>/dev/tcp/${host}/${port}" 2>/dev/null || exit 0
 
 # Remove-then-add so a switch (same name, new address) updates cleanly.
 claude mcp remove --scope user playwright-workstation >/dev/null 2>&1

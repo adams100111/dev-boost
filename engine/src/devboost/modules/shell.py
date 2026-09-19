@@ -417,6 +417,8 @@ class ClaudeStatusline(Module):
     description = "Point Claude Code's statusLine at the managed ~/.claude/statusline.sh."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    # A JSON merge into ~/.claude/settings.json; the script it points at is portable.
+    portable = True
 
     def _settings_path(self) -> Path:
         return _home() / ".claude" / "settings.json"

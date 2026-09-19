@@ -14,7 +14,7 @@ scan_timeout = 30
 command_timeout = 500
 
 # Single-line layout via $fill so the right-hand context renders in plain bash
-# (starship's right_format only works under ble.sh). $fill pushes everything
+# and zsh (starship's right_format only works under ble.sh). $fill pushes everything
 # after it to the right edge of line 1. Language/runtime modules surface only
 # inside relevant projects; the RAM/disk gauges (WezTerm-status equivalent, see
 # the [custom.*] blocks below) are always shown so a headless SSH box still has
@@ -227,21 +227,22 @@ format = "[$symbol$context]($style) "
 only_with_files = true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# System resource gauges — the WezTerm status-bar equivalent for plain bash
+# System resource gauges — the WezTerm status-bar equivalent for a plain shell
 # (headless server / SSH, where WezTerm's status.lua isn't running). Mirrors it:
 #   RAM  󰍛  used%   green <60 · yellow 60–79 · red ≥80   (status.lua ram_color)
-#   DISK 󰋊  free-G  teal, red when / is ≥80% used         (status.lua disk cell)
+#   DISK 󰋊  free-G  teal, red when the disk is ≥80% used  (status.lua disk cell)
 # Threshold coloring is done with mutually-exclusive `when`-gated modules — exactly
-# one RAM tier and one DISK tier renders. Probes are the same as status.lua:52-54
-# (/proc/meminfo + df), Linux-only and cheap; each is well under command_timeout.
+# one RAM tier and one DISK tier renders. Every module reads the shared probe
+# ~/.local/bin/devboost-resources ("<ram%> <disk-used%> <free-G>"; Linux /proc + df,
+# macOS sysctl/vm_stat + df) — the same numbers as tmux, WezTerm and the Claude line.
 
-# Critical-resource badge — WezTerm's left-status alert (status.lua:140-146) for the
-# prompt: a red ⚠ badge naming the cause when RAM >=80% or free disk <10G. A shell
-# can't repaint the terminal bg like WezTerm's gradient, so this red badge at the far
-# left is the prompt-side alert. Only renders when critical (gated); clears on recovery.
+# Critical-resource badge — WezTerm's left-status alert for the prompt: a red ⚠ badge
+# naming the cause when RAM >=80% or free disk <10G. A shell can't repaint the terminal
+# bg like WezTerm's gradient, so this red badge at the far left is the prompt-side alert.
+# Only renders when critical (gated); clears on recovery.
 [custom.res_alert]
-when    = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); f=$(df -P -BG / | awk 'NR==2{sub("G","",$4);print $4}'); test "$r" -ge 80 || test "$f" -lt 10'''
-command = '''r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); f=$(df -P -BG / | awk 'NR==2{sub("G","",$4);print $4}'); m=""; [ "$r" -ge 80 ] && m="RAM ${r}%"; [ "$f" -lt 10 ] && m="${m:+$m · }DISK ${f}G"; printf '%s' "$m"'''
+when    = '''set -- $("$HOME/.local/bin/devboost-resources"); test "$1" -ge 80 || test "$3" -lt 10'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); m=""; [ "$1" -ge 80 ] && m="RAM $1%"; [ "$3" -lt 10 ] && m="${m:+$m · }DISK $3G"; printf '%s' "$m"'''
 # hex, not palette names: starship silently drops a style when a palette name is used
 # as a background (`bg:red`), so the badge would render uncolored. #f38ba8/#1e1e2e are
 # the catppuccin red / base.
@@ -253,39 +254,38 @@ format  = "[ ⚠ $output ]($style) "
 # full-screen app fills the pane). Outside tmux the prompt shows them. No duplication.
 # The res_alert badge above is intentionally NOT gated: a critical alert is worth
 # showing on every surface. (`{ …; }` keeps each gate's internal `;`/`&&` intact.)
-# ram % (used) — Linux /proc/meminfo, integer percent
 [custom.ram_ok]
-when    = '''test -z "$TMUX" && { test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -lt 60; }'''
-command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+when    = '''test -z "$TMUX" && { set -- $("$HOME/.local/bin/devboost-resources"); test "$1" -lt 60; }'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); printf '%s%%' "$1"'''
 symbol  = "󰍛 "
 style   = "bold green"
 format  = "[$symbol$output]($style) "
 
 [custom.ram_warn]
-when    = '''test -z "$TMUX" && { r=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo); test "$r" -ge 60 && test "$r" -lt 80; }'''
-command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+when    = '''test -z "$TMUX" && { set -- $("$HOME/.local/bin/devboost-resources"); test "$1" -ge 60 && test "$1" -lt 80; }'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); printf '%s%%' "$1"'''
 symbol  = "󰍛 "
 style   = "bold yellow"
 format  = "[$symbol$output]($style) "
 
 [custom.ram_crit]
-when    = '''test -z "$TMUX" && { test "$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)" -ge 80; }'''
-command = '''awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d%%",(t-a)/t*100}' /proc/meminfo'''
+when    = '''test -z "$TMUX" && { set -- $("$HOME/.local/bin/devboost-resources"); test "$1" -ge 80; }'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); printf '%s%%' "$1"'''
 symbol  = "󰍛 "
 style   = "bold red"
 format  = "[$symbol$output]($style) "
 
-# disk free GB on / — teal normally, red when / is ≥80% used
+# disk free GB — teal normally, red when the disk is ≥80% used
 [custom.disk_ok]
-when    = '''test -z "$TMUX" && { test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -lt 80; }'''
-command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
+when    = '''test -z "$TMUX" && { set -- $("$HOME/.local/bin/devboost-resources"); test "$2" -lt 80; }'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); printf '%sG' "$3"'''
 symbol  = "󰋊 "
 style   = "bold teal"
 format  = "[$symbol$output]($style)"
 
 [custom.disk_crit]
-when    = '''test -z "$TMUX" && { test "$(df -P / | awk 'NR==2{sub("%","",$5);print $5}')" -ge 80; }'''
-command = '''df -P -BG / | awk 'NR==2{sub("G","",$4);printf "%sG",$4}' '''
+when    = '''test -z "$TMUX" && { set -- $("$HOME/.local/bin/devboost-resources"); test "$2" -ge 80; }'''
+command = '''set -- $("$HOME/.local/bin/devboost-resources"); printf '%sG' "$3"'''
 symbol  = "󰋊 "
 style   = "bold red"
 format  = "[$symbol$output]($style)"

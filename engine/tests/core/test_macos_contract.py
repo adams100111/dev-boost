@@ -27,7 +27,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "claude-notify",
     "claude-plugins",
     "claude-skills",
-    "claude-statusline",
     "code-server",
     "codex-code",
     "codex-config",

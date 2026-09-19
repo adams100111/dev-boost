@@ -78,7 +78,8 @@ Fonts: **JetBrainsMono Nerd Font** (required for the status glyphs).
   disk-free` gauges when `show_resource_gauges` (`config/prefs.lua`) is set — off by
   default, since the starship prompt and Claude status line show them instead. When
   shown, RAM is green `<60` / yellow `60–79` / red `≥80`; disk is teal, red at `≥80%`
-  used. Read from a throttled probe (no per-tick process spawn).
+  used. Read from the shared `~/.local/bin/devboost-resources` probe, throttled (no
+  per-tick process spawn).
 
 ### Resource alert
 

@@ -7,14 +7,15 @@
 # and context % always survive.
 # Context % is color-thresholded: green <50 · yellow 50–79 · red ≥80.
 # RAM/disk gauges mirror the WezTerm status bar / starship prompt, for headless &
-# SSH sessions (and inside Claude) where WezTerm's top bar isn't running.
+# SSH sessions (and inside Claude) where WezTerm's top bar isn't running (all read
+# ~/.local/bin/devboost-resources).
 input=$(cat)
 cols=${COLUMNS:-80}
 dir=$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // ""')
 branch=$(git -C "$dir" branch --show-current 2>/dev/null)
 
 INPUT="$input" COLS="$cols" BRANCH="$branch" python3 - <<'PY'
-import json, os, re, unicodedata, sys
+import json, os, re, subprocess, unicodedata, sys
 
 d = json.loads(os.environ.get("INPUT") or "{}")
 cw_cols = int(os.environ.get("COLS") or 80)
@@ -55,28 +56,17 @@ model_s  = c(TEXT, f"󰚩 {model}")
 ctx_s    = c(cc,   f"󰧑 {ctx}%")
 cost_s   = c(DIM,  f"${cost:.2f}")
 
-# System resources — RAM used% (green<60·yellow60–79·red≥80) and free disk on /
-# (teal, red when / is ≥80% used); same probes/thresholds as status.lua/starship.
-# Linux /proc + statvfs; blanks out on failure or non-Linux so the layout omits them.
-ram = None
+# System resources — RAM used% (green<60·yellow60–79·red≥80) and free disk (teal, red
+# when ≥80% used): the shared devboost-resources probe (Linux /proc + df, macOS
+# sysctl/vm_stat + df) that tmux, starship and WezTerm read too. Blank on failure, so
+# the layout simply omits them.
+ram = dfree = dpct = None
 try:
-    mt = ma = 0
-    with open("/proc/meminfo") as _fh:
-        for _ln in _fh:
-            if _ln.startswith("MemTotal:"):       mt = int(_ln.split()[1])
-            elif _ln.startswith("MemAvailable:"): ma = int(_ln.split()[1])
-    if mt:
-        ram = round((mt - ma) / mt * 100)
-except OSError:
-    pass
-dfree = dpct = None
-try:
-    _st = os.statvfs("/")
-    _used  = _st.f_blocks - _st.f_bfree
-    _denom = _used + _st.f_bavail
-    dpct  = round(_used * 100 / _denom) if _denom else 0
-    dfree = round(_st.f_bavail * _st.f_frsize / (1024 ** 3))
-except OSError:
+    _probe = os.path.expanduser("~/.local/bin/devboost-resources")
+    _vals = subprocess.run([_probe], capture_output=True, text=True, timeout=2).stdout.split()
+    if len(_vals) == 3:
+        ram, dpct, dfree = (int(v) for v in _vals)
+except (OSError, ValueError, subprocess.SubprocessError):
     pass
 ram_s  = c(RED if ram >= 80 else YELLOW if ram >= 60 else GREEN, f"󰍛 {ram}%") if ram is not None else ""
 disk_s = c(RED if (dpct or 0) >= 80 else TEAL, f"󰋊 {dfree}G") if dfree is not None else ""

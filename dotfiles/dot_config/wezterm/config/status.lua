@@ -52,18 +52,16 @@ local function theme_for(window)
   return appearance:find("Light") and THEME.light or THEME.dark
 end
 
--- Probe: prints "<ram_used%> <disk_used%> <disk_free_GB>" for /.
-local PROBE = [[
-ram=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%d",(t-a)/t*100}' /proc/meminfo)
-read used free < <(df -P -BG / | awk 'NR==2{sub("%","",$5);sub("G","",$4);print $5, $4}')
-printf '%s %s %s' "$ram" "$used" "$free"
-]]
+-- Probe: the shared ~/.local/bin/devboost-resources prints "<ram_used%> <disk_used%>
+-- <disk_free_GB>" (Linux /proc + df, macOS sysctl/vm_stat + df on the data volume) —
+-- one implementation for WezTerm, tmux, starship and the Claude status line.
+local PROBE = wezterm.home_dir .. "/.local/bin/devboost-resources"
 
 local cache = { ram = nil, disk_used = nil, disk_free = nil }
 local tick = 0
 
 local function refresh_resources()
-  local ok, stdout = wezterm.run_child_process({ "bash", "-c", PROBE })
+  local ok, stdout = wezterm.run_child_process({ PROBE })
   if not ok then
     return
   end
