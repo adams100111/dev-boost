@@ -10,10 +10,15 @@ profile) then installs the whole catalog, Docker (M4) and the desktop layer (M5)
 
 ## Requirements
 
-- Apple Silicon (Intel is refused). macOS 27 Golden Gate or 26 Tahoe; 15 is best-effort.
+- Apple Silicon (Intel is refused), from a native (arm64) terminal: a Rosetta-translated
+  shell (`sysctl -n sysctl.proc_translated` prints `1`) is refused up front with "open a
+  native (arm64) terminal", because Homebrew's own installer aborts under Rosetta. macOS 27
+  Golden Gate or 26 Tahoe; 15 is best-effort.
 - Via `curl … | bash`: nothing to install first. `get.sh` bootstraps Homebrew itself when
   it's missing — which also installs the Xcode Command Line Tools — after a single
-  `sudo -v` read from the tty (D4); a Homebrew that's already there is left alone.
+  `sudo -v` read from the tty (D4); a Homebrew that's already there is left alone. It does
+  this only **after** the release binary has been downloaded and its checksum verified, so
+  a missing asset or a bad checksum never leaves you with Homebrew and no dev-boost.
 - To run from a clone instead: the Command Line Tools for git (`xcode-select --install`)
   and uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Either way, dev-boost itself
   installs and maintains the CLT, Homebrew (analytics off) and Rosetta 2.
@@ -31,9 +36,13 @@ profile) then installs the whole catalog, Docker (M4) and the desktop layer (M5)
 curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- macos
 ```
 
-Detects Apple Silicon, downloads the matching `devboost-darwin-arm64` binary from the
-latest GitHub Release, verifies it against `checksums-darwin-arm64.txt`, installs it onto
-PATH (`~/.local/bin/devboost`), and runs `devboost install macos`. See
+In order: refuses root, the `usb` profile, Intel, a Rosetta shell and an unsupported
+macOS; downloads the matching `devboost-darwin-arm64` binary from the latest GitHub Release
+and verifies it against the release's `checksums.txt`; only then bootstraps Homebrew + the
+CLT (when missing); installs the binary onto PATH (`~/.local/bin/devboost`); and runs
+`devboost install macos`. If the latest release carries no Mac binary — every release before
+v0.2.0 — it stops with `no devboost-darwin-arm64 in release <tag> yet — macOS support ships
+in v0.2.0` and nothing on the machine has changed. See
 [docs/credentials.md](credentials.md) for how the first run gets a GitHub token, and
 "Self-update" and "Troubleshooting" below.
 
@@ -242,14 +251,16 @@ run carries on. Run `devboost install` again afterwards.
 | want your old shell back | `mv ~/.zshrc.pre-devboost ~/.zshrc`. `devboost verify` then reports `zsh-config` as failed (your `~/.zshrc` is no longer dev-boost's), and `devboost install dotfiles --force` copies it aside again and puts dev-boost's back |
 | csharp-ls / aspire: "You must install .NET" | open a new shell: env.sh exports DOTNET_ROOT=~/.dotnet |
 | herdr --remote from the Mac disconnects right away | herdr < 0.8 on either end — run devboost install on both machines (pin 0.9.1) |
-| Gatekeeper blocks `devboost-darwin-arm64` ("cannot be opened because the developer cannot be verified") | Only a **browser**-downloaded binary is quarantined — `curl \| bash` never sets `com.apple.quarantine`, so `get.sh` and `self-update` are unaffected. Clear it: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`, then `chmod +x` it. The binary carries PyInstaller's **ad-hoc** signature only — there is no Developer ID and no notarization, so a fresh Gatekeeper assessment (quarantined copy, first run) will still warn once even after the xattr is cleared, if you also right-click → Open instead of running it from a terminal. |
+| Gatekeeper blocks `devboost-darwin-arm64` ("cannot be opened because the developer cannot be verified") | Only a **browser**-downloaded binary is quarantined — `curl \| bash` never sets `com.apple.quarantine`, so `get.sh` and `self-update` are unaffected. Clear it: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`, then `chmod +x` it. The binary carries PyInstaller's **ad-hoc** signature only — there is no Developer ID and no notarization — so if Gatekeeper still objects after the xattr is cleared, run it from a terminal, or allow it once under System Settings → Privacy & Security. |
+| `get.sh`: `no devboost-darwin-arm64 in release <tag> yet — macOS support ships in v0.2.0` | The latest release predates macOS support (v0.2.0). Nothing was installed — not even Homebrew; re-run once v0.2.0 is out. |
+| `get.sh`: `this shell runs under Rosetta (x86_64) — open a native (arm64) terminal` | Your terminal app is set to "Open using Rosetta" (Finder → Get Info) or you started an `arch -x86_64` shell. Open a native terminal and re-run; nothing was installed. |
 
 ## Linux gate
 
 The shared shell files (`env.sh`, `aliases.sh`, `shell.bash`, `.chezmoiignore`, the
 tmux/starship scripts) are Linux-facing too, but this doc is written and rehearsed from a
 Mac, which cannot run the Fedora/Ubuntu libvirt VM (`scripts/vm-test.sh`). Two gates cover
-it instead: CI (`ubuntu-22.04`) plus hermetic `chezmoi apply` tests for `("linux",
+it instead: CI (`ubuntu-24.04`) plus hermetic `chezmoi apply` tests for `("linux",
 "fedora")` and `("linux", "ubuntu")`; and `.github/workflows/vm-smoke.yml`'s
 `linux-smoke` job (M6) — Fedora and Arch containers plus the Ubuntu runner host itself,
 each running `devboost install cli ghostty` for real and then `scripts/smoke-assert.sh`

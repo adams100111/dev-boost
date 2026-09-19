@@ -61,22 +61,31 @@ Publish either way:
 
 - **CI (multi-arch, recommended):** `git tag vX.Y.Z && git push origin vX.Y.Z` →
   `.github/workflows/release.yml`:
-  1. `checks` — the full test suite on `ubuntu-22.04` **and** `macos-15`; everything below
+  1. `checks` — the full test suite on `ubuntu-24.04` **and** `macos-15`; everything below
      needs this to pass first.
   2. `binary` — builds (and, on macOS, ad-hoc-signs + `codesign --verify --strict`s) all
-     three binaries on their native runners (`ubuntu-22.04`, `ubuntu-24.04-arm`,
-     `macos-15`).
+     three binaries on their native runners (`ubuntu-24.04`, `ubuntu-24.04-arm`,
+     `macos-15`). The two Linux legs build inside an `ubuntu:22.04` container, which keeps
+     the published binaries' **glibc 2.35 floor** (Ubuntu 22.04+, Debian 12, Fedora 36+)
+     now that the `ubuntu-22.04` runner image is deprecated; `scripts/check-glibc-floor.sh`
+     fails the leg if a binary ever needs a newer `GLIBC_` symbol.
   3. `binary-compat` — re-runs the **macos-15-built** `devboost-darwin-arm64` unmodified on
      `macos-26` (blocking) and the `xcode-27` preview image (non-blocking): `--version`,
      `list macos`, `codesign --verify --strict` again — proving the oldest-supported-macOS
      build stays forward-compatible on the newer OSes it also targets.
   4. `release` — collects all three binaries and both Ventoy archives (`x86_64`/`aarch64`
-     only — Darwin ships none), regenerates the single `checksums.txt`, and publishes all
-     six files to the release.
+     only — Darwin ships none), verifies every one against the per-arch
+     `checksums-<arch>.txt` its build runner wrote (`sha256sum -c`), regenerates the single
+     `checksums.txt`, and publishes all six files to the release.
 - **Local (`scripts/release.sh`):** builds and uploads the **host arch only** (PyInstaller
   can't cross-compile — run it once per arch: an x86_64 box, an aarch64 box, and a Mac, for
-  a full 3-arch release), then regenerates `checksums.txt` from every binary already on the
-  release. `--dry-run` prints the steps without running them.
+  a full 3-arch release). The first run creates the release as a **draft**, which
+  `releases/latest` (and so `get.sh` / `self-update`) never sees. Each run uploads its arch,
+  regenerates `checksums.txt` from every binary on the release, downloads everything back
+  and verifies it, and only then — once all five assets are there — publishes the release
+  and marks it latest; until then it says which assets are still missing. `--publish` ships
+  a deliberately partial release; `--dry-run` prints the steps without running them. An
+  already-published release is never re-uploaded over.
 
 `get.sh` is anonymous `curl … | bash`, so its `releases/latest` only resolves when the **repo is public**.
 

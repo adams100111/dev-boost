@@ -126,9 +126,11 @@ scripts/vm-test-macos.sh run --os 27                     # boot, curl|bash the r
 scripts/vm-test-macos.sh destroy --os 27                 # stop + tart delete
 ```
 `run` boots the VM headless (`tart run --no-graphics`), waits on `tart ip --wait 120`, then
-runs the public one-liner (`curl … get.sh | bash -s -- macos`) followed by
-`scripts/smoke-assert.sh macos` inside the guest via `tart exec -i`, exiting with the guest
-command's exit code.
+runs the public one-liner (`curl … get.sh | bash -s -- macos`) inside the guest via
+`tart exec -i`. Only when that succeeds does it run `scripts/smoke-assert.sh macos` in a
+**second** `tart exec`: a fresh `zsh -lc` login shell (the user's real macOS shell), so the
+smoke sees the PATH the install wired up (`~/.local/bin`, Homebrew, mise) rather than the
+PATH of the shell that ran `get.sh`. It exits with the first failing command's exit code.
 
 **`--local DIR` — rehearse an unpublished build before tagging (D9):**
 ```sh
@@ -137,9 +139,12 @@ scripts/vm-test-macos.sh run --local dist --os 27
 ```
 Stages `get.sh`, `smoke-assert.sh` and `dist/`'s release files into a fresh `mktemp -d`
 (never `dist/` itself), shares it into the guest at `/Volumes/My Shared Files/dist`
-(`tart run --dir=dist:<path>`), and points the guest's `get.sh` at it with
-`DEVBOOST_RELEASE_BASE=file:///Volumes/My\ Shared\ Files/dist` — no network needed inside
-the guest. A raw `dist/` only carries `checksums-darwin-arm64.txt`; the staged copy is
+(`tart run --dir=dist:<path>`), and runs the staged file as
+`DEVBOOST_RELEASE_BASE=file:///Volumes/My%20Shared%20Files/dist bash "/Volumes/My Shared
+Files/dist/get.sh" macos` — the URL percent-encoded (curl rejects raw spaces), and the
+profiles passed straight to the script file (`-s --` is only for `curl | bash`). No network
+is needed inside the guest. `--local` refuses a directory without
+`devboost-darwin-arm64`; `--dry-run` stages nothing. A raw `dist/` only carries `checksums-darwin-arm64.txt`; the staged copy is
 renamed to `checksums.txt`, the name `get.sh` / `self-update` verify against.
 
 **Credentials:** every tart macOS image logs in as **admin/admin** — `shell`'s hint
@@ -165,8 +170,8 @@ reaching for VNC.
 `.github/workflows/vm-smoke.yml`'s `linux-smoke` job (M6, D6) is the CI-native alternative
 to this doc's Fedora VM path, for a change that only needs to prove the shared shell files
 plus a couple of Linux-only install sources — not a full `devboost install full`. It runs
-`devboost install cli ghostty` then `scripts/smoke-assert.sh cli ghostty` as an
-unprivileged user on three legs — Fedora and Arch containers on the `ubuntu-24.04` runner
+`devboost install cli ghostty` then `scripts/smoke-assert.sh cli ghostty` (under `uv run`,
+so the source-installed `devboost` is on PATH) as an unprivileged user on three legs — Fedora and Arch containers on the `ubuntu-24.04` runner
 (there is no Fedora/Arch tart image, V9), plus the `ubuntu-24.04` runner host itself (real
 systemd + snapd, which a container can't provide) — then confirms Ghostty came from its
 real per-distro source: the `scottames/ghostty` COPR (Fedora), the snap (Ubuntu), pacman

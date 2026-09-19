@@ -27,8 +27,12 @@ git history and the GitHub release notes.
 - **macOS delivery (M6)** — `curl … | bash` now works on a fresh Mac: `scripts/get.sh`
   gained a Darwin path (Homebrew + CLT bootstrap, macOS-version gate, root refusal, HTTPS-
   only fetch) that installs the frozen `devboost-darwin-arm64` binary — no clone, no
-  Ventoy archive. It refuses an Intel Mac (a Rosetta-translated arm64 shell still counts as
-  Apple Silicon) and refuses root, both before any network call; refuses the `usb` profile
+  Ventoy archive. It downloads and **verifies the binary before installing Homebrew or the
+  CLT**, so a missing asset or a checksum failure leaves the Mac untouched; a release with no
+  Mac binary is reported as `no devboost-darwin-arm64 in release <tag> yet — macOS support
+  ships in v0.2.0`. It refuses an Intel Mac, a Rosetta-translated shell ("open a native
+  (arm64) terminal" — Homebrew's installer aborts under Rosetta) and root, all before any
+  network call; refuses the `usb` profile
   on macOS before any network call or filesystem change (it's Linux-only); fails **closed**
   — refuses, rather than continuing — when the macOS version can't be read at all; warns
   loudly, naming the host, whenever `DEVBOOST_RELEASE_BASE` overrides the official release
@@ -37,13 +41,22 @@ git history and the GitHub release notes.
   '=https'` so a redirect can never downgrade to plaintext; and cleans up its temp
   download dir on every exit path — a normal return, a `set -e` abort, and `INT`/`HUP`/
   `TERM`. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it (ad-hoc
-  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`). `devboost
-  self-update` resolves its release asset by `(os, arch)` and now **refuses to downgrade**
-  the running binary. CI gained a `macos-15` / `xcode-27` (preview, non-blocking) matrix
+  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`); `release.sh` now
+  publishes through a **draft**, verifying every asset against `checksums.txt` before it
+  marks the release latest. `devboost self-update` resolves its release asset by
+  `(os, arch)`, **refuses to downgrade** the running binary, refuses to run outside the
+  frozen binary (it would otherwise overwrite the Python interpreter), and reports an
+  unwritable install dir or a garbled `checksums.txt` as `self-update failed: …` instead of
+  a traceback. CI gained a `macos-15` / `xcode-27` (preview, non-blocking) matrix
   and a `binary-compat` job proving the macos-15-built binary also runs on macos-26; the
-  release workflow publishes all three binaries plus one shared `checksums.txt`.
+  release workflow publishes all three binaries plus one shared `checksums.txt`, after
+  checking every asset against the per-arch checksums its build runner wrote. The
+  deprecated `ubuntu-22.04` runner is gone: the Linux binaries build on `ubuntu-24.04` inside
+  an `ubuntu:22.04` container, keeping the **glibc 2.35 floor**, which a new
+  `scripts/check-glibc-floor.sh` step enforces.
   `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway tart VM
-  (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished build);
+  (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished build),
+  running `smoke-assert.sh` in a fresh `zsh -lc` login shell after the install;
   `.github/workflows/vm-smoke.yml` gained an advisory `linux-smoke` job (Fedora/Arch
   containers + the Ubuntu host) alongside the existing Kickstart smoke. Root-owned files a
   root-run profile leaves behind under the demoting executor are now reclaimed: after a
@@ -52,8 +65,10 @@ git history and the GitHub release notes.
   mid-pass) hands every root-owned path under the managed user's HOME back to them; a HOME
   that is itself a symlink is refused outright (nothing under it is touched), and because
   `chown` follows a hardlink to its inode, a multiply-linked regular file is only reclaimed
-  when `fs.protected_hardlinks` is on (the default on every distro dev-boost targets) —
-  otherwise it's left root-owned and the skip is logged. `bash-config` is no longer
+  when `fs.protected_hardlinks` is on (the default on every distro dev-boost targets). With
+  it off, each candidate is opened `O_NOFOLLOW|O_NONBLOCK`, re-checked on the fd and
+  `fchown`-ed through that same fd, so a hardlink planted mid-pass is caught; multiply-linked
+  files (and symlinks) are then left root-owned and the skip is logged. `bash-config` is no longer
   silently skipped on an unrecognized Linux distro (only macOS drops it now,
   `provided-by-macos`), and — because it now runs there instead of being dropped from the
   plan — its `verify` fails loudly on an unrecognised distro whose own packaging already
