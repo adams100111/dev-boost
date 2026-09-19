@@ -13,9 +13,16 @@ git history and the GitHub release notes.
   private GitHub `pass` store, scoped enrollment for servers, revoke + a rotation checklist
   `devboost doctor` tracks until it's clear, a post-commit push hook plus a 15-min systemd
   user timer that also pushes a store whose first push never landed. New `devboost pass`
-  CLI (`status`/`devices`/`enroll`/`approve`/`revoke`/`sync`) — **Linux-only until P2**; on
-  macOS it exits `` `devboost pass` is Linux-only ``. `pass` / `pass-store` move to `base`
-  (the `security-cli` profile is now an alias for both). See [docs/pass.md](docs/pass.md).
+  CLI (`status`/`devices`/`enroll`/`approve`/`revoke`/`sync`). `pass` / `pass-store` move
+  to `base` (the `security-cli` profile is now an alias for both). See
+  [docs/pass.md](docs/pass.md).
+- **`pass` multi-device on macOS (P2)** — pinentry-mac + the same gpg-agent cache TTLs as
+  Linux, a launchd sync agent (`dev.devboost.pass-sync`, every 15 min), Notification
+  Center notices (`osascript`), `devboost pass` now works on macOS too, and `pass` /
+  `pass-store` join the `macos` profile. **Recipient audit** — `devboost pass audit`,
+  `devboost doctor`'s `pass-recipients` check, and a sync notice flag any entry not
+  encrypted to exactly its `.gpg-id` keys (reads packets only, never decrypts). See
+  [docs/pass.md](docs/pass.md).
 - **macOS engine core (M1)** — macOS family + arm64 normalization, Homebrew manager
   (formulae/casks/taps), launchd primitive, NeedsUser/PresentUnmanaged, macOS
   privacy-permission tracking (`devboost permissions`), macOS invocation rules (no root,
@@ -34,6 +41,15 @@ git history and the GitHub release notes.
   ("genesis": generate the key, `pass init <fp>`, register, push) instead of a hand-made
   GPG id.
 
+### Fixed
+- systemd user units are daemon-reloaded after any rewrite (every devboost timer, not
+  just `pass`'s), so a changed schedule takes effect without a re-login.
+- `pass-store`'s verify now checks that the sync scheduler is actually loaded/enabled
+  (systemd timer active, launchd agent loaded), not just that its unit/plist file exists.
+- Unattended `pass` reads (`--pinentry-mode error`) never open a pinentry dialog nobody
+  can answer; without a cached passphrase the secret is skipped, with a hint to run
+  `pass show <entry> >/dev/null` once in a terminal to warm the cache.
+
 ### Docs
 - Added [docs/pass.md](docs/pass.md) (the multi-device model, enroll/approve/sync, revoke
   + rotation, servers, disaster recovery); updated
@@ -41,6 +57,8 @@ git history and the GitHub release notes.
   [docs/AGENTS.md](docs/AGENTS.md), [docs/architecture.md](docs/architecture.md) and
   [docs/adding-a-module.md](docs/adding-a-module.md) for the pass multi-device model and the
   `Module.after` ordering-only dependency.
+- [docs/pass.md](docs/pass.md): macOS specifics (pinentry-mac, launchd sync agent,
+  Notification Center), the recipient audit, and unattended-run behavior.
 
 ## [0.1.80] — 2026-09-09
 

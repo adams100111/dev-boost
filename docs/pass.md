@@ -5,9 +5,10 @@ repo — `adams100111/password-store` by default — is shared by all devices. E
 **its own GPG key**, credentials added anywhere reach every other device automatically, and
 adding or removing a device is one explicit command.
 
-`devboost pass` itself is **Linux-only until P2**: run it on macOS and it exits
-`` `devboost pass` is Linux-only ``. macOS workstations get their own key and clone via P2's
-launchd scheduling; until then modules that read secrets from `pass` just warn and skip there.
+The store works on **Linux and macOS**. On a Mac, `devboost install` (its `macos` profile
+installs `pass` + `pass-store`, like `base` does on Linux) enrolls this device the same
+way; only the passphrase prompt (pinentry-mac) and the sync scheduler (launchd, not
+systemd) differ per OS — see [Model](#model) and [Sync](#sync) below.
 
 ## Model
 
@@ -19,7 +20,12 @@ launchd scheduling; until then modules that read secrets from `pass` just warn a
 - **`.devboost/`** in the store holds only public keys and metadata:
   `devices/`, `pending/`, `revoked/` (`<name>.json` + `<name>.asc`) and `rotation.json`.
 - **Passphrase:** asked by pinentry, then cached by gpg-agent for 8 h idle / 24 h max
-  (`~/.gnupg/gpg-agent.conf`, set by the `pass` module).
+  (`~/.gnupg/gpg-agent.conf`, set by the `pass` module on every OS). On macOS, the `pass`
+  module also installs Homebrew `pass`, `gnupg` and `pinentry-mac`, and sets
+  `pinentry-program /opt/homebrew/bin/pinentry-mac` in `gpg-agent.conf` (`/usr/local` on
+  Intel). pinentry-mac's dialog offers **Save in Keychain**, which keeps the passphrase in
+  your login keychain across reboots. `pinentry-program` is a managed setting: a value set
+  by hand is replaced back to pinentry-mac on the next `devboost install`.
 
 Choose the repo in `~/.config/devboost/config.toml` (`DEVBOOST_PASS_REPO` overrides):
 
@@ -58,19 +64,75 @@ An empty store is initialised by its first device.
   in the background. All of this store's own git operations (the hook, `pass init`, sync)
   run non-interactively — no credential prompts, no commit signing — so nothing blocks on
   a hidden pinentry or GPG signature.
-- `devboost-pass-sync.timer` (systemd user timer) pulls with `--rebase --autostash`
-  every 15 minutes, pushes anything unpushed (including a store whose very first push
-  never landed), imports newly enrolled device keys (never a revoked one), deletes the
-  public keys of revoked devices from this keyring, and notifies once per pending
-  request. It also notifies once for every device key it finds listed that this device
-  never saw before and did not approve itself (the tripwire — see
-  [Trust root](#trust-root-what-revoke-guarantees)). State lives in
+- On **Linux**, `devboost-pass-sync.timer` (systemd user timer) does the pulling; on
+  **macOS**, the launchd agent `dev.devboost.pass-sync`
+  (`~/Library/LaunchAgents/dev.devboost.pass-sync.plist`) does, on the same 900-second
+  (15-minute) interval. It has no `RunAtLoad`: it can be loaded mid-`devboost install`,
+  and firing immediately would race the installer's own git calls; launchd still runs a
+  missed interval once on wake.
+- Either way it pulls with `--rebase --autostash`, pushes anything unpushed (including a
+  store whose very first push never landed), imports newly enrolled device keys (never a
+  revoked one), deletes the public keys of revoked devices from this keyring, and
+  notifies once per pending request. It also notifies once for every device key it finds
+  listed that this device never saw before and did not approve itself (the tripwire —
+  see [Trust root](#trust-root-what-revoke-guarantees)). State lives in
   `$XDG_STATE_HOME/devboost/pass-sync.json` (`notified`: already-announced requests;
   `known_devices`: device keys already seen — learnt silently on the first sync).
+- `pass-store` counts the scheduler installed only once it is actually live: the systemd
+  timer enabled *and* active on Linux, the launchd agent loaded on macOS — not just that
+  its unit/plist file is on disk and matches the current `devboost` binary path.
+  Rewriting a systemd unit (any devboost timer, not just this one) runs
+  `systemctl --user daemon-reload`, so the new schedule takes effect without a re-login.
+- Notifications (pending requests, conflicts, the tripwire, the recipient audit) use
+  `notify-send` on Linux and `osascript` (Notification Center) on macOS.
 - Failures are logged to `~/.local/state/devboost/pass-sync.log` and notified; they never
   block anything else. A conflict in `.gpg-id` aborts the rebase — run
   `devboost pass sync --resolve` for the exact recovery steps. `--resolve` only **prints**
   guidance; it never touches the store itself.
+
+## Unattended runs
+
+Outside a terminal — the sync agent/timer, a module reading a secret during
+`devboost install`, … — any read from `pass` adds `--pinentry-mode error` to gpg's
+options. A cached passphrase (see [Model](#model)) still works; with none cached, gpg
+fails immediately instead of opening a pinentry dialog nobody is there to answer. The
+secret is then skipped (never a hard failure), with a hint to run
+`pass show <entry> >/dev/null` once in a terminal — that warms the gpg-agent cache
+without printing the secret.
+
+## Recipient audit
+
+An entry can end up encrypted to the wrong keys without ever failing to decrypt: it was
+inserted offline after a revoke, before that device pulled the new `.gpg-id`, or before
+an approval had reached every workstation. The audit catches both — every entry not
+encrypted to exactly the keys its governing `.gpg-id` names.
+
+It reads only each entry's recipient packets (`gpg --list-only --list-packets`) — it
+never decrypts and never opens pinentry. It's surfaced in four places: `devboost pass
+audit` (prints every mismatch), `devboost doctor`'s `pass-recipients` check, `devboost
+pass status` (a mismatch count), and a sync notification the first time a new entry is
+flagged.
+
+`devboost pass audit` prints, per mismatched entry, the recipients it has that its
+`.gpg-id` doesn't (`extra`) and the `.gpg-id` keys it isn't encrypted to (`missing`),
+plus a fix line: `pass init [-p <folder>] <the .gpg-id keys>` (the folder and the entry
+name are shell-quoted; `pass init` re-encrypts only the entries that differ). If any
+current recipient is a **revoked** device's key — decided by key id and fingerprint,
+never by its label, so a pushed store file can't relabel a revoked recipient back into
+an ordinary one — the fix line also says `, then change the secret: pass edit <entry>`,
+because that device could already read the old ciphertext. A key id two different
+primary keys claim is shown as a bare key id rather than a name; revoked keys are
+resolved first, so this can never hide that an id was revoked.
+
+A folder whose `.gpg-id` names a key by email, or that can't be read or decoded, is
+reported as **not checked** rather than flagged — the audit only trusts fingerprints.
+
+`devboost doctor`'s `pass-recipients` check fails on any mismatch. If the audit itself
+errors (a malformed store, a failing `gpg`), only `pass-recipients` fails — `pass` and
+`pass-rotation` are unaffected. The sync only re-runs the audit when `HEAD` moved since
+the last one, and only notifies when the flagged set gains entries — it never raises,
+so a broken audit can never break sync. Entry names are sanitised (control and bidi
+characters stripped) everywhere they're shown: the log, the terminal and notifications.
 
 ## Revoke a device + rotate
 
@@ -137,6 +199,7 @@ invalid scope (absolute, `..`, or a reserved folder like `.devboost`) is refused
 | `devboost pass approve [NAME] [--scope F]…` | approve pending requests (typed `y`) |
 | `devboost pass revoke NAME` | revoke a device and print the rotation checklist |
 | `devboost pass sync [--resolve]` | sync now / print conflict-recovery guidance |
+| `devboost pass audit` | print entries not encrypted to exactly their `.gpg-id` keys |
 
 ## If every device is lost
 
