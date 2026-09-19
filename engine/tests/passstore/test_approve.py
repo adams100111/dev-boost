@@ -8,7 +8,7 @@ from devboost.core.errors import ConfigError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
-from devboost.passstore import approve
+from devboost.passstore import approve, sync
 from devboost.passstore.layout import DeviceRecord, Kind, RotationEntry, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
@@ -17,6 +17,11 @@ FP_ME = "A" * 40
 FP_NEW = "B" * 40
 FP_SRV = "C" * 40
 ARMOR = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n"
+
+
+@pytest.fixture(autouse=True)
+def _state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
 
 def _store(tmp_path: Path, root_ids: list[str]) -> Store:
@@ -363,3 +368,13 @@ def test_approve_refuses_a_revoked_key_under_any_name(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="revoked"):
         approve.approve(_ctx(ex), s, "desk", "fresh", lambda r: True)
     assert _no_pass_init(ex) and s.record("devices", "fresh") is None
+
+
+def test_approve_marks_the_device_as_seen_for_the_tripwire(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")  # seeds the known set
+    _pending(s)
+    approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    state = (tmp_path / "state" / "devboost" / "pass-sync.json").read_text(encoding="utf-8")
+    assert FP_NEW in state

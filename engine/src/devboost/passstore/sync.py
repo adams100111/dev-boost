@@ -9,7 +9,7 @@ from __future__ import annotations
 import fcntl
 import os
 import shlex
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +22,8 @@ from devboost.core.errors import DevbootError, UnsupportedOS
 from devboost.exec.primitives import systemd
 from devboost.model import Ctx
 from devboost.passstore import enroll, git, gpg, notify
-from devboost.passstore.layout import Store, now_iso
+from devboost.passstore.gpg import KeyInfo
+from devboost.passstore.layout import DeviceRecord, Store, now_iso
 from devboost.passstore.paths import state_dir
 
 SERVICE = "devboost-pass-sync.service"
@@ -46,6 +47,9 @@ class _State(BaseModel):
     conflict_head: str | None = None
     pull_failing: bool = False
     last_sync: str = ""
+    # Fingerprints of device keys this device has seen listed (tripwire, I2); None = not
+    # seeded yet — the first sync learns the current set silently.
+    known_devices: list[str] | None = None
 
 
 # --- hook + scheduler -----------------------------------------------------------------
@@ -167,27 +171,69 @@ def last_sync() -> str:
     return _load().last_sync
 
 
+def remember_devices(fingerprints: Iterable[str]) -> None:
+    """Record keys this device approved itself, so the tripwire does not announce them."""
+    state = _load()
+    if state.known_devices is None:
+        return  # not seeded yet: the first sync takes in everything listed then anyway
+    state.known_devices = sorted({*state.known_devices, *(f.upper() for f in fingerprints)})
+    _save(state)
+
+
 # --- the sync itself ------------------------------------------------------------------
 
 
-def _notify_pending(ctx: Ctx, store: Store, device: str, state: _State) -> None:
+def _access(ctx: Ctx, store: Store, device: str) -> enroll.Access | None:
+    try:
+        return enroll.local_access(ctx, store, device)
+    except DevbootError as exc:
+        _log(f"reading this device's access failed: {exc}")
+        return None
+
+
+def _notify_pending(ctx: Ctx, store: Store, acc: enroll.Access | None, state: _State) -> None:
     pending = {f"{r.name}:{r.fingerprint}": r for r in store.records("pending")}
     # Forget requests that were approved or withdrawn, so a re-request is announced again.
     state.notified = [k for k in state.notified if k in pending]
-    try:
-        acc = enroll.local_access(ctx, store, device)
-    except DevbootError as exc:
-        _log(f"reading this device's access failed: {exc}")
-        return
-    if not enroll.is_workstation(acc):
+    if acc is None or not enroll.is_workstation(acc):
         return  # only workstations can approve, so only they are asked
     for key, rec in pending.items():
         if key in state.notified:
             continue
-        notify.native(ctx, f"pass: {rec.name} wants access",
-                      f"{rec.name} ({rec.os}) requested access. Approve with: "
-                      f"devboost pass approve {rec.name}")
+        name = notify.clean(rec.name)
+        notify.native(ctx, f"pass: {name} wants access",
+                      f"{name} ({notify.clean(rec.os)}) requested access. Approve with: "
+                      f"devboost pass approve {name}")
         state.notified.append(key)
+
+
+def _listed_devices(store: Store) -> dict[str, DeviceRecord]:
+    """Registered devices whose key a `.gpg-id` really lists — the ones that can read."""
+    return {r.fingerprint.upper(): r for r in store.records("devices")
+            if enroll.has_access(store, KeyInfo(r.fingerprint, ()), r.scope)}
+
+
+def _tripwire(ctx: Ctx, store: Store, acc: enroll.Access | None, state: _State) -> None:
+    """I2: whoever can push to the store can add a device. Announce, once, every listed
+    device key this device never saw — not its own, not one it approved itself."""
+    listed = _listed_devices(store)
+    if state.known_devices is None:
+        state.known_devices = sorted(listed)
+        return
+    known = set(state.known_devices)
+    own = acc.key.fingerprint.upper() if acc is not None and acc.key is not None else None
+    for fp, rec in sorted(listed.items()):
+        if fp in known:
+            continue
+        known.add(fp)
+        if fp == own:
+            continue
+        name = notify.clean(rec.name)
+        _log(f"new device key {fp} ({name}) is listed in the store")
+        notify.native(ctx, "pass: a new device can read your store",
+                      f"{name} ({notify.clean(rec.os)}), key {fp}, was added. If you did not "
+                      f"approve it: devboost pass revoke {name}, and cut its GitHub access.")
+    state.known_devices = sorted(known)
 
 
 def _forget_revoked(ctx: Ctx, store: Store) -> None:
@@ -223,7 +269,8 @@ def _pull(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
         _log(f"conflict in {', '.join(files)} at {head} — rebase aborted")
         if state.conflict_head != head:
             notify.native(ctx, "pass sync: conflict",
-                          f"Conflict in {', '.join(files)}. Run: devboost pass sync --resolve")
+                          f"Conflict in {notify.clean(', '.join(files), 200)}. Run: "
+                          "devboost pass sync --resolve")
             state.conflict_head = head
         return SyncResult("conflict", ", ".join(files))
     _log(f"pull failed (exit {res.code})")
@@ -268,7 +315,9 @@ def _sync(ctx: Ctx, store: Store, device: str, state: _State, push_only: bool) -
         except DevbootError as exc:
             _log(f"importing device keys failed: {exc}")
         _forget_revoked(ctx, store)
-        _notify_pending(ctx, store, device, state)
+        acc = _access(ctx, store, device)
+        _notify_pending(ctx, store, acc, state)
+        _tripwire(ctx, store, acc, state)
     state.last_sync = now_iso()
     return SyncResult("ok")
 

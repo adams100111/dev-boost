@@ -60,10 +60,13 @@ An empty store is initialised by its first device.
   a hidden pinentry or GPG signature.
 - `devboost-pass-sync.timer` (systemd user timer) pulls with `--rebase --autostash`
   every 15 minutes, pushes anything unpushed (including a store whose very first push
-  never landed), imports newly enrolled device keys, and notifies once per pending
-  request. Notification de-dup state lives in
-  `$XDG_STATE_HOME/devboost/pass-sync.json` (a `notified` list of already-announced
-  requests).
+  never landed), imports newly enrolled device keys (never a revoked one), deletes the
+  public keys of revoked devices from this keyring, and notifies once per pending
+  request. It also notifies once for every device key it finds listed that this device
+  never saw before and did not approve itself (the tripwire — see
+  [Trust root](#trust-root-what-revoke-guarantees)). State lives in
+  `$XDG_STATE_HOME/devboost/pass-sync.json` (`notified`: already-announced requests;
+  `known_devices`: device keys already seen — learnt silently on the first sync).
 - Failures are logged to `~/.local/state/devboost/pass-sync.log` and notified; they never
   block anything else. A conflict in `.gpg-id` aborts the rebase — run
   `devboost pass sync --resolve` for the exact recovery steps. `--resolve` only **prints**
@@ -82,6 +85,38 @@ Revoke refuses to run while any `.gpg-id` in the store still names a key by emai
 of fingerprint — such a token could still resolve to the revoked key and survive
 re-encryption. Replace it with the key's fingerprint (`pass init [-p <folder>] <fpr>…`)
 and retry.
+
+A revoked key never comes back: approve refuses a request carrying a revoked
+fingerprint under any name, enrolling refuses it too (enroll under a new name to get a
+fresh key), and no device imports it again.
+
+## Trust root: what revoke guarantees
+
+**Write access to the store repo is the trust root.** `.gpg-id` and `.devboost/devices/`
+are plain files in git: anyone who can push to the repo can list a key of their own, and
+every device will then import it on sync and encrypt new entries to it. Approval with a
+typed `y` protects the normal path; it cannot stop someone who pushes directly.
+
+What `devboost pass revoke` **guarantees**:
+
+- the key is removed from every `.gpg-id` and the store is re-encrypted without it, so
+  entries written from now on are unreadable to it;
+- it can never be re-enrolled or re-imported (under any name), and every device deletes
+  its public key on the next sync;
+- `devboost doctor` tracks every entry it could ever read until each is rotated.
+
+What it does **not** guarantee:
+
+- anything a device read before — git history keeps old ciphertexts its key can
+  decrypt, so rotate every listed entry at its source;
+- anything against a device (or person) that can still push to the repo — it could add a
+  new key of its own. **Cut its GitHub access first** (revoke its token / rotate the PAT,
+  remove its SSH key), then revoke.
+
+The **tripwire** narrows the gap: every sync notifies (once) when a device key this
+device never saw appears in the store, so an unexpected addition is noticed. The planned
+hardening is a **signed `.gpg-id`** (`PASSWORD_STORE_SIGNING_KEY`), so that a pushed
+`.gpg-id` not signed by an enrolled device is rejected.
 
 ## Servers (scoped access)
 

@@ -129,3 +129,11 @@ def test_native_linux_uses_notify_send_when_present() -> None:
 
 def test_native_macos_is_a_p2_seam() -> None:
     assert notify._native_argv(MAC, "t", "b") is None
+
+
+def test_clean_strips_control_chars_and_leading_dashes_and_caps() -> None:
+    """Minor (c): record names/os come from the remote — never let them steer notify-send."""
+    assert notify.clean("--urgency=critical") == "urgency=critical"
+    assert notify.clean(" -lap\x1b[31m\nx\u202e ") == "lap[31mx"
+    assert notify.clean("a" * 500) == "a" * 64
+    assert notify.clean("b" * 500, limit=10) == "b" * 10

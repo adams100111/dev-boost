@@ -312,3 +312,62 @@ def test_failed_revoked_key_delete_is_logged_not_raised(tmp_path: Path) -> None:
     assert sync.run(_ctx(ex), s, "desk").status == "ok"
     log = (tmp_path / "state" / "devboost" / "pass-sync.log").read_text(encoding="utf-8")
     assert FP_GONE in log
+
+
+# --- tripwire: a device key this device never saw (I2) ------------------------------------
+
+FP_EVIL = "E" * 40
+
+
+def _list(s: Store, *fps: str) -> None:
+    s.gpg_id_path().write_text("".join(f"{fp}\n" for fp in fps), encoding="utf-8")
+
+
+def _device(s: Store, name: str, fp: str) -> None:
+    s.write_record("devices", DeviceRecord(name=name, fingerprint=fp, os="fedora"), "K")
+
+
+def _tripwires(ex: RuleExecutor) -> list[list[str]]:
+    return [c for c in _notifications(ex) if "new device" in c[-2]]
+
+
+def test_tripwire_seeds_silently_then_notifies_an_unseen_device_once(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    _device(s, "desk", FP_ME)
+    _list(s, FP_ME, FP_NEW)
+    _device(s, "lap", FP_NEW)
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")
+    assert _tripwires(ex) == []  # first run: what is there now is simply known
+    _list(s, FP_ME, FP_NEW, FP_EVIL)
+    _device(s, "evil", FP_EVIL)
+    sync.run(_ctx(ex), s, "desk")
+    sync.run(_ctx(ex), s, "desk")
+    notes = _tripwires(ex)
+    assert len(notes) == 1 and "evil" in notes[0][-1] and FP_EVIL in notes[0][-1]
+    assert "devboost pass revoke evil" in notes[0][-1]
+
+
+def test_tripwire_ignores_unlisted_records_own_key_and_devices_approved_here(
+    tmp_path: Path,
+) -> None:
+    s = _store(tmp_path)
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")  # seeds an empty set
+    _device(s, "stray", FP_EVIL)  # a record whose key no .gpg-id lists grants nothing
+    _device(s, "desk", FP_ME)  # this device's own key, once it is approved
+    sync.remember_devices([FP_NEW])  # what `devboost pass approve` on this device records
+    _list(s, FP_ME, FP_NEW)
+    _device(s, "lap", FP_NEW)
+    sync.run(_ctx(ex), s, "desk")
+    assert _tripwires(ex) == []
+
+
+def test_notifications_sanitize_remote_names(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    s.write_record("pending", DeviceRecord(name="-x\x1b[2Jy", fingerprint=FP_NEW,
+                                           os="\nos"), "K")
+    ex = _ex()
+    sync.run(_ctx(ex), s, "desk")
+    body = _notifications(ex)[0][-1]
+    assert body.startswith("x[2Jy (os)") and "\x1b" not in body

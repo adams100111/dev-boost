@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 from devboost.core import log
 from devboost.core.errors import ConfigError, InstallError
 from devboost.model import Ctx
-from devboost.passstore import enroll, git, gpg
+from devboost.passstore import enroll, git, gpg, sync
 from devboost.passstore.gpg import KeyInfo
 from devboost.passstore.layout import DeviceRecord, Kind, RotationEntry, Store, now_iso
 
@@ -169,6 +169,7 @@ def approve(
         armored = store.key_path("pending", rec.name).read_text(encoding="utf-8")
         store.move("pending", "devices", rec.name)
         store.write_record("devices", rec.model_copy(update={"enrolled_at": now_iso()}), armored)
+        sync.remember_devices([rec.fingerprint])  # approved here: no tripwire notice
         enroll.publish(ctx, store, f"devboost: enroll {rec.name}")
         done.append(Approved(rec.name, scope))
     return done

@@ -137,3 +137,17 @@ bootstrap), `docs/recovery-runbook.md` ("lost a laptop" → revoke + rotate), RE
 |---|---|---|
 | P1 | Linux: profile move, default repo config, adopt + enroll + approve + revoke, sync timer + hook, `devboost pass` CLI, docs | lands independently — plan: [2026-09-19-pass-p1-linux](../plans/2026-09-19-pass-p1-linux.md) |
 | P2 | macOS: pinentry-mac, launchd sync agent, native notifications | after macOS M1 |
+
+### P1 notes
+
+- **Trust root.** Write access to the store repo is the trust root: whoever can push can
+  list a key in `.gpg-id` + `.devboost/devices/`, and devices import it on sync. Revoke
+  guarantees the key is dropped from every `.gpg-id` with re-encryption, is refused on
+  any future request / import (under any name), and is deleted from every keyring on its
+  next sync, and that `doctor` tracks the entries to rotate. It does **not** protect
+  entries read before (git history), nor stop a device that can still push — cut its
+  GitHub access first (runbook step 1). A sync tripwire notifies once per device key a
+  device never saw and did not approve itself. Planned hardening: a signed `.gpg-id`
+  (`PASSWORD_STORE_SIGNING_KEY`).
+- **Carried to P2:** a recipient audit of entries inserted offline after a revoke
+  (`gpg --list-packets`), so an entry still encrypted to a revoked key is reported.
