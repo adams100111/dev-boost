@@ -10,7 +10,7 @@ import pytest
 from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
-from devboost.exec.primitives import default_apps
+from devboost.exec.primitives import default_apps, launchd
 from devboost.model import Ctx
 
 _REAL_DETECT = osinfo.detect
@@ -29,6 +29,11 @@ def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEVBOOST_DOCKER_RUNTIME", raising=False)
     monkeypatch.delenv("GNUPGHOME", raising=False)
     monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+    # No test writes (or reads) the host's real /Library/LaunchDaemons — a test that runs
+    # a root LaunchDaemon strategy (docker's Colima socket daemon, `system_daemon`,
+    # `remove_daemon`) without its own redirect would otherwise depend on what this Mac
+    # has installed there (M4-D handoff).
+    monkeypatch.setattr(launchd, "DAEMONS_DIR", tmp_path / "LaunchDaemons")
 
 
 #: Every ``/Applications/*.app`` bundle a module probes for, as (module, attribute).
