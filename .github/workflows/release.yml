@@ -81,6 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: devboost-${{ matrix.arch }}
+          if-no-files-found: error
           path: |
             dist/devboost-${{ matrix.arch }}*
             dist/checksums-${{ matrix.arch }}.txt
@@ -105,6 +106,8 @@ jobs:
           path: dist
       - name: Verify the macos-15-built binary runs here
         run: |
+          # The bytes that arrived are the bytes build-bundle hashed on the build runner.
+          ( cd dist && shasum -a 256 -c checksums-darwin-arm64.txt )
           chmod +x dist/devboost-darwin-arm64
           ./dist/devboost-darwin-arm64 --version
           ./dist/devboost-darwin-arm64 list macos
@@ -127,7 +130,18 @@ jobs:
           cp artifacts/devboost-x86_64/devboost-x86_64.tar.gz out/     # Ventoy injection (x86_64)
           cp artifacts/devboost-aarch64/devboost-aarch64.tar.gz out/   # Ventoy injection (aarch64)
           # Gate on the build-time hashes: every asset about to be published must match the
-          # per-arch checksums its own build runner wrote, so an arms.txt )
+          # per-arch checksums its own build runner wrote, so an artifact truncated or
+          # altered between the build and here fails the release instead of being re-hashed.
+          cat artifacts/devboost-x86_64/checksums-x86_64.txt \
+              artifacts/devboost-aarch64/checksums-aarch64.txt \
+              artifacts/devboost-darwin-arm64/checksums-darwin-arm64.txt > per-arch-checksums.txt
+          ( cd out && sha256sum -c ../per-arch-checksums.txt )
+          for f in out/*; do
+            awk -v f="${f##*/}" '$2 == f { found = 1 } END { exit !found }' per-arch-checksums.txt \
+              || { echo "::error::${f##*/} has no build-time checksum"; exit 1; }
+          done
+          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-darwin-arm64 \
+              devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

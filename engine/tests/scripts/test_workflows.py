@@ -134,6 +134,28 @@ def test_linux_builds_check_the_glibc_floor(text: str, job: str, key: str) -> No
     assert body.index("build-bundle.sh") < body.index(check)
 
 
+def test_release_gates_on_the_per_arch_checksums() -> None:
+    """B-I5: the build-time per-arch hashes are verified against the downloaded assets
+    before the combined checksums.txt is generated — and every asset must be covered."""
+    release_job = _job_body(_RELEASE, "release")
+    for arch in ("x86_64", "aarch64", "darwin-arm64"):
+        assert f"checksums-{arch}.txt" in release_job
+    verify = release_job.index("sha256sum -c ../per-arch-checksums.txt")
+    combine = release_job.index("> checksums.txt")
+    assert verify < combine
+    assert "has no build-time checksum" in release_job
+    assert release_job.index("has no build-time checksum") < combine
+
+
+def test_binary_compat_verifies_the_darwin_checksum_first() -> None:
+    body = _job_body(_RELEASE, "binary-compat")
+    assert body.index("shasum -a 256 -c checksums-darwin-arm64.txt") < body.index("chmod +x")
+
+
+def test_build_artifacts_fail_when_a_file_is_missing() -> None:
+    assert "if-no-files-found: error" in _job_body(_RELEASE, "binary")
+
+
 # --- scripts/check-glibc-floor.sh -------------------------------------------------------
 
 
