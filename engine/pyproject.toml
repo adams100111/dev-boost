@@ -29,6 +29,8 @@ dev = [
     # never imports it, and it is not in the frozen binary. Without it, a kickstart syntax
     # error is only discoverable on real hardware, after the disk has been wiped.
     "pykickstart>=3.60",
+    "pytest-timeout>=2.3",
+    "pytest-xdist>=3.6",
 ]
 
 [build-system]
@@ -63,8 +65,9 @@ ignore = ["UP046", "UP047"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-q"
+addopts = ""
 markers = [
     "unit: hermetic, no real system access (default)",
     "integration: touches a real system / VM",
+    "slow: real subprocess: chezmoi/gpg",
 ]

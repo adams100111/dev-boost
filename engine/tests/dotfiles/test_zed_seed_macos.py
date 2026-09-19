@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import Apply
+
+# Real chezmoi subprocess against the source tree: excluded from the fast lane
+# (`pytest -m "not slow"`).
+pytestmark = pytest.mark.slow
 
 
 def test_chezmoi_seeds_zed_on_macos(chezmoi_apply: Apply) -> None:

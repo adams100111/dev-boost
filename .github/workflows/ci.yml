@@ -42,7 +42,7 @@ jobs:
       - name: mypy --strict
         run: uv run mypy
       - name: pytest
-        run: uv run pytest
+        run: uv run pytest -q
 
   frozen-smoke:
     runs-on: ubuntu-22.04
