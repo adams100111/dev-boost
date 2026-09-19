@@ -143,7 +143,10 @@ class Secrets(Module):
             return data, "bundle"
 
         # No bundle. See whether an already-authenticated gh can supply them.
-        from_gh = creds_src.from_gh(ctx) if creds_src.gh_is_authenticated(ctx) else None
+        from_gh: dict[str, str] | None = None
+        gh_problem = creds_src.NO_GH
+        if creds_src.gh_is_authenticated(ctx):
+            from_gh, gh_problem = creds_src.from_gh_or_reason(ctx)
 
         if creds_src.is_interactive():
             # Offer it — including the account name — rather than adopting an identity the
@@ -165,7 +168,7 @@ class Secrets(Module):
             log.ok(f"secrets: using the authenticated GitHub CLI ({from_gh['GIT_USER']})")
             return from_gh, "gh"
 
-        raise SecretsError(creds_src.NO_CREDENTIALS_HELP)
+        raise SecretsError(creds_src.no_credentials_help(gh_problem))
 
     def install(self, ctx: Ctx) -> None:
         data, source = self._resolve(ctx)

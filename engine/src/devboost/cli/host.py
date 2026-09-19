@@ -48,11 +48,14 @@ class SudoKeepalive:
         self._interval = interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        #: Whether ``sudo -v`` succeeded, i.e. this session holds a sudo timestamp.
+        self.granted = False
 
     def __enter__(self) -> SudoKeepalive:
         if self._run(["sudo", "-v"]) != 0:
-            log.warn("sudo not granted — steps that need it will ask again or fail")
+            log.warn("sudo not granted — steps that need it are skipped as blocked")
             return self
+        self.granted = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         return self
@@ -82,18 +85,21 @@ def keep_awake(popen: Callable[[list[str]], object] = subprocess.Popen) -> objec
 
 
 @contextmanager
-def mac_session(os_info: OsInfo, *, dry_run: bool, sudo: bool = True) -> Iterator[None]:
+def mac_session(os_info: OsInfo, *, dry_run: bool, sudo: bool = True) -> Iterator[bool]:
     """Keep-awake for a real install run on macOS, plus one sudo prompt when ``sudo``.
 
     The caller passes ``sudo=False`` when no pending step needs root, so a re-run on a
     set-up Mac never asks for a password. A no-op off macOS and in a dry run.
+
+    Yields whether the session holds sudo: False on macOS when it was not asked for or
+    not granted (an unattended run has no tty to type the password on), True otherwise.
     """
     if os_info.family != "macos" or dry_run:
-        yield
+        yield True
         return
     keep_awake()
     if not sudo:
-        yield
+        yield False
         return
-    with SudoKeepalive():
-        yield
+    with SudoKeepalive() as keepalive:
+        yield keepalive.granted
