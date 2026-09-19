@@ -163,3 +163,24 @@ def test_doctor_pass_check_reports_invalid_config(tmp_path: Path) -> None:
     cfg.write_text("device_name = [\n", encoding="utf-8")
     out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
     assert out["pass"][0] is False and "invalid TOML" in out["pass"][1]
+
+
+def test_doctor_flags_entries_with_wrong_recipients(tmp_path: Path) -> None:
+    _pass_store(tmp_path)
+    packets = Result(0, ":pubkey enc packet: version 3, algo 18, keyid 0123456789ABCDEF\n")
+    ex = FakeExecutor(present={"curl", "age"}, scripts={"gpg": packets})
+    out = _checks(tmp_path, ex)
+    assert out["pass-recipients"][0] is False
+    assert "web/github" in out["pass-recipients"][1]
+    assert "pass init" in out["pass-recipients"][1]
+
+
+def test_doctor_recipients_ok_when_entries_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from devboost.passstore import audit
+
+    _pass_store(tmp_path)
+    monkeypatch.setattr(audit, "audit", lambda ctx, store: audit.Report([], []))
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass-recipients"][0] is True

@@ -16,6 +16,7 @@ from devboost.exec.primitives import age
 from devboost.model import Ctx
 from devboost.modules.secrets import age_key, bundle_path
 from devboost.passstore import approve as pass_approve
+from devboost.passstore import audit as pass_audit
 from devboost.passstore import enroll as pass_enroll
 from devboost.passstore import paths as pass_paths
 from devboost.passstore.layout import Store
@@ -145,7 +146,18 @@ def _pass_state(ctx: Ctx) -> list[Check]:
            f"{len(todo)} entries are still readable by a revoked device's key (git history) "
            "— rotate each with `pass edit <entry>`: "
            + ", ".join(f"{u.entry} ({u.device})" for u in todo))
-    return [Check("pass", True, state), Check("pass-rotation", not todo, rot)]
+    report = pass_audit.audit(ctx, store)
+    if report.mismatches:
+        rec = (f"{len(report.mismatches)} entries are not encrypted to exactly their .gpg-id "
+               "keys — " + "; ".join(f"{m.entry}: {pass_audit.fix_hint(store, m)}"
+                                     for m in report.mismatches))
+    else:
+        rec = "every entry is encrypted to exactly its .gpg-id keys"
+    if report.unauditable:
+        rec += (f" (not checked — .gpg-id names keys by email: "
+                f"{', '.join(report.unauditable)})")
+    return [Check("pass", True, state), Check("pass-rotation", not todo, rot),
+            Check("pass-recipients", not report.mismatches, rec)]
 
 
 def _permissions_check(ctx: Ctx) -> Check:

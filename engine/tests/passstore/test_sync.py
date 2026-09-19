@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
-from devboost.passstore import sync
+from devboost.passstore import audit, sync
 from devboost.passstore.layout import DeviceRecord, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
@@ -419,3 +420,57 @@ def test_forget_revoked_skips_this_devices_own_key(tmp_path: Path) -> None:
     ex = _ex((("--list-keys",), Result(0, colons("pub", FP_ME))))
     sync.run(_ctx(ex), s, "desk")
     assert not any("--delete-keys" in c for c in ex.calls)
+
+
+# --- recipient audit (R10) --------------------------------------------------------------
+
+
+def _audited(monkeypatch: pytest.MonkeyPatch, *reports: audit.Report) -> list[int]:
+    calls: list[int] = []
+    it = iter(reports)
+
+    def fake(ctx: Ctx, store: Store) -> audit.Report:
+        calls.append(1)
+        return next(it)
+
+    monkeypatch.setattr(audit, "audit", fake)
+    return calls
+
+
+def test_sync_audits_when_head_moves_and_notifies_new_mismatches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _store(tmp_path)
+    bad = audit.Report([audit.Mismatch("web/x", ("bravo (revoked)",), ())], [])
+    calls = _audited(monkeypatch, bad, bad)
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    notes = [c for c in _notifications(ex) if "recipients" in c[2]]
+    assert len(notes) == 1 and "web/x" in notes[0][3]
+    assert "devboost pass audit" in notes[0][3]
+    sync.run(_ctx(ex), s, "desk")  # same HEAD → no second audit
+    assert len(calls) == 1
+    ex2 = _ex((("rev-parse", "HEAD"), Result(0, "h2\n")))
+    sync.run(_ctx(ex2), s, "desk")  # HEAD moved, same findings → audited, not re-announced
+    assert len(calls) == 2
+    assert not [c for c in _notifications(ex2) if "recipients" in c[2]]
+
+
+def test_sync_audit_failure_is_logged_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _store(tmp_path)
+
+    def boom(ctx: Ctx, store: Store) -> audit.Report:
+        raise InstallError("pass-store", "gpg --list-keys", 2)
+
+    monkeypatch.setattr(audit, "audit", boom)
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+
+
+def test_push_only_sync_never_audits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    s = _store(tmp_path)
+    calls = _audited(monkeypatch)
+    sync.run(_ctx(_ex((("rev-parse", "HEAD"), Result(0, "h1\n")))), s, "desk", push_only=True)
+    assert calls == []

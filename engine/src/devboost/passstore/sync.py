@@ -21,7 +21,7 @@ from devboost.core import log
 from devboost.core.errors import DevbootError
 from devboost.exec.primitives import launchd, systemd
 from devboost.model import Ctx
-from devboost.passstore import enroll, git, gpg, notify
+from devboost.passstore import audit, enroll, git, gpg, notify
 from devboost.passstore.gpg import KeyInfo
 from devboost.passstore.layout import DeviceRecord, Store, now_iso
 from devboost.passstore.paths import state_dir
@@ -53,6 +53,9 @@ class _State(BaseModel):
     # Fingerprints of device keys this device has seen listed (tripwire, I2); None = not
     # seeded yet — the first sync learns the current set silently.
     known_devices: list[str] | None = None
+    # Recipient audit (R10): HEAD last audited, and entries already announced.
+    audited_head: str | None = None
+    audit_flagged: list[str] = []
 
 
 # --- hook + scheduler -----------------------------------------------------------------
@@ -274,6 +277,30 @@ def _forget_revoked(ctx: Ctx, store: Store) -> None:
             _log(f"deleting revoked key {fp} failed (exit {res.code})")
 
 
+def _audit(ctx: Ctx, store: Store, state: _State) -> None:
+    """R10: after a pull that moved HEAD, check entries against their .gpg-id; announce only
+    entries not flagged before. Never raises (a sync problem must not block anything)."""
+    head = git.head(ctx, store.root)
+    if not head or head == state.audited_head:
+        return
+    try:
+        report = audit.audit(ctx, store)
+    except DevbootError as exc:
+        _log(f"recipient audit failed: {exc}")
+        return
+    state.audited_head = head
+    flagged = sorted(m.entry for m in report.mismatches)
+    new = [e for e in flagged if e not in state.audit_flagged]
+    state.audit_flagged = flagged
+    if not new:
+        return
+    _log(f"recipient audit: {len(flagged)} entries differ from their .gpg-id: "
+         f"{', '.join(flagged)}")
+    notify.native(ctx, "pass: entries with the wrong recipients",
+                  f"{notify.clean(', '.join(new), 200)} — encrypted to other keys than their "
+                  ".gpg-id. Run: devboost pass audit")
+
+
 def _pull(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
     """Pull with rebase; a failure result, or None when the pull succeeded."""
     res = git.pull(ctx, store.root)
@@ -337,6 +364,7 @@ def _sync(ctx: Ctx, store: Store, device: str, state: _State, push_only: bool) -
         acc = _access(ctx, store, device)
         _notify_pending(ctx, store, acc, state)
         _tripwire(ctx, store, acc, state)
+        _audit(ctx, store, state)
     state.last_sync = now_iso()
     return SyncResult("ok")
 

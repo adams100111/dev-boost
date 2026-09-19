@@ -14,6 +14,7 @@ from devboost.exec.executor import RealExecutor
 from devboost.model import Ctx
 from devboost.modules import _credentials as creds_src
 from devboost.passstore import approve as approve_flow
+from devboost.passstore import audit as audit_flow
 from devboost.passstore import enroll as enroll_flow
 from devboost.passstore import paths
 from devboost.passstore import sync as sync_flow
@@ -75,6 +76,7 @@ def status() -> None:
         repo = paths.pass_repo()
         acc = enroll_flow.local_access(ctx, store, device)
         todo = approve_flow.unrotated(ctx, store)
+        report = audit_flow.audit(ctx, store)
     except DevbootError as exc:
         _fail(exc)
     name = acc.record.name if acc.record else device
@@ -84,6 +86,7 @@ def status() -> None:
     typer.echo(f"key:       {acc.key.fingerprint if acc.key else '-'}")
     typer.echo(f"pending:   {len(store.records('pending'))}")
     typer.echo(f"rotation:  {len(todo)} entries to rotate")
+    typer.echo(f"recipients: {len(report.mismatches)} entries differ from their .gpg-id")
     typer.echo(f"last sync: {sync_flow.last_sync() or 'never'}")
 
 
@@ -185,3 +188,24 @@ def enroll_cmd(
     except DevbootError as exc:
         _fail(exc)
     typer.echo(f"this device is enrolled as {acc.record.name if acc.record else device}")
+
+
+@app.command(name="audit")
+def audit_cmd() -> None:
+    """Entries not encrypted to exactly their .gpg-id keys (read from packets; no decrypt)."""
+    ctx, store = _ctx(), _store()
+    _need_store(store)
+    try:
+        report = audit_flow.audit(ctx, store)
+    except DevbootError as exc:
+        _fail(exc)
+    for folder in report.unauditable:
+        typer.echo(f"not checked: {folder}/.gpg-id names keys by email")
+    if not report.mismatches:
+        typer.echo("every entry matches its .gpg-id")
+        return
+    for m in report.mismatches:
+        typer.echo(f"{m.entry}\n  extra:   {', '.join(m.extra) or '-'}\n"
+                   f"  missing: {', '.join(m.missing) or '-'}\n"
+                   f"  fix:     {audit_flow.fix_hint(store, m)}")
+    raise typer.Exit(1)
