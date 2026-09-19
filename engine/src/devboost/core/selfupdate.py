@@ -162,8 +162,17 @@ def update_frozen(
     """Download, verify checksums, and atomically install the latest release.
 
     Returns ``(old_version, new_version)``.
-    Raises ``RuntimeError`` on download failure or checksum mismatch.
+    Raises ``RuntimeError`` on download failure or checksum mismatch, and when not running
+    as the frozen binary: from source, ``sys.executable`` is the Python interpreter, which
+    this would otherwise overwrite with a devboost binary. ``OSError`` (e.g. an install
+    directory the user cannot write) and ``UnicodeDecodeError`` (a garbled checksums.txt)
+    can also escape; the old binary is left in place in every case.
     """
+    if not is_frozen():
+        raise RuntimeError(
+            "self-update only applies to the frozen devboost binary "
+            "(from a source checkout, use `git pull`)"
+        )
     _fetch_url = fetch_url if fetch_url is not None else _default_fetch_url
     _fetch_file = fetch_file if fetch_file is not None else _default_fetch_file
 
