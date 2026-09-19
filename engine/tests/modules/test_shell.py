@@ -249,6 +249,19 @@ def test_bash_config_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert BashConfig().verify(ctx) is True
 
 
+def test_bash_config_verify_tolerates_a_non_utf8_bashrc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another tool may have appended latin-1 bytes (e.g. an accented comment) to ~/.bashrc;
+    a non-UTF-8 byte must not crash verify — decode with errors="replace" like zsh-config."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _ctx()
+    (tmp_path / ".bashrc").write_bytes(
+        "eval \"$(starship init bash)\"  # café devboost\n".encode("latin-1")
+    )
+    assert BashConfig().verify(ctx) is True
+
+
 def _dotfiles_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "dotfiles"
 

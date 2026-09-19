@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
@@ -38,6 +39,10 @@ _MANAGED_MARKER = "devboost — managed by chezmoi"
 #: unless it is exactly what dev-boost wrote.
 _TAKEN_OVER = {".zshrc": "dot_zshrc", ".zprofile": "dot_zprofile",
                ".bash_profile": "dot_bash_profile"}
+#: Linux rc file dev-boost's dotfiles take over wholesale (spec §3) — every family except
+#: Omarchy, which owns ~/.bashrc itself (`.chezmoiignore`) and gets a sourced line instead
+#: (bash-config). `Dotfiles.install` picks this mapping on non-macOS, non-Omarchy hosts.
+_TAKEN_OVER_LINUX = {".bashrc": "dot_bashrc"}
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -68,15 +73,17 @@ def _read_rc_digests() -> dict[str, str]:
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
 
 
-def record_rc_digests(home: Path) -> None:
+def record_rc_digests(home: Path, taken_over: Mapping[str, str] = _TAKEN_OVER) -> None:
     """Record the sha256 of each managed rc file as the apply just wrote it (M-R26).
 
     A later run then tells "untouched since dev-boost wrote it, but from an older release"
     (no backup needed) apart from "someone appended to it" (keep a copy). Atomic write;
     the state dir is created 0700.
+
+    *taken_over* defaults to the macOS set; pass ``_TAKEN_OVER_LINUX`` for ~/.bashrc.
     """
     digests: dict[str, str] = {}
-    for name in _TAKEN_OVER:
+    for name in taken_over:
         path = home / name
         if path.is_symlink() or not path.is_file():
             continue
@@ -96,7 +103,9 @@ def record_rc_digests(home: Path) -> None:
         raise
 
 
-def back_up_rc_files(home: Path, source: Path) -> list[Path]:
+def back_up_rc_files(
+    home: Path, source: Path, taken_over: Mapping[str, str] = _TAKEN_OVER
+) -> list[Path]:
     """Copy each rc file ``apply --force`` would lose to ``<name>.pre-devboost``.
 
     A file is kept when it is foreign (no dev-boost marker) or when it is dev-boost's
@@ -114,10 +123,12 @@ def back_up_rc_files(home: Path, source: Path) -> list[Path]:
     ``.2``, … No new copy is made when the newest backup already holds the same file
     (a retried run, M-R21). Content is not merged — the managed files source
     ``~/<name>.local`` for machine-specific lines.
+
+    *taken_over* defaults to the macOS set; pass ``_TAKEN_OVER_LINUX`` for ~/.bashrc.
     """
     kept: list[Path] = []
     recorded = _read_rc_digests()
-    for name, src in _TAKEN_OVER.items():
+    for name, src in taken_over.items():
         path = home / name
         if not (path.is_file() or path.is_symlink()):
             continue
@@ -356,13 +367,27 @@ class Dotfiles(Module):
             and stamp.read_text(encoding="utf-8").strip() == self._source_digest(src)
         )
 
+    @staticmethod
+    def _taken_over_for(ctx: Ctx) -> Mapping[str, str] | None:
+        """Which rc files dev-boost's dotfiles take over wholesale on *ctx*'s OS, or None
+        where the dotfiles module leaves rc files alone: every non-macOS family gets only
+        ~/.bashrc (dot_bashrc) — and Omarchy owns even that (`.chezmoiignore` skips it,
+        bash-config sources a fragment from it instead).
+        """
+        if ctx.os.family == "macos":
+            return _TAKEN_OVER
+        if ctx.os.distro != "omarchy":
+            return _TAKEN_OVER_LINUX
+        return None
+
     def install(self, ctx: Ctx) -> None:
         src = settings.root / "dotfiles"
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
-        if ctx.os.family == "macos":
-            for backup in back_up_rc_files(_home(), src):
+        taken_over = self._taken_over_for(ctx)
+        if taken_over is not None:
+            for backup in back_up_rc_files(_home(), src, taken_over):
                 name = backup.name.split(".pre-devboost")[0]
                 log.ok(
                     f"dotfiles: kept your previous ~/{name} as ~/{backup.name} —"
@@ -379,8 +404,14 @@ class Dotfiles(Module):
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)
-        if ctx.os.family == "macos":
-            record_rc_digests(_home())
+        if taken_over is not None:
+            # Bookkeeping only (M-R26): a PermissionError on the state dir (mkdir/mkstemp)
+            # or any other OSError reading the rc files back must never fail an otherwise
+            # successful apply — worst case, the next run's drift backup is a bit stricter.
+            try:
+                record_rc_digests(_home(), taken_over)
+            except OSError as exc:
+                log.warn(f"dotfiles: could not record rc digests ({exc}) — best-effort only")
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
@@ -429,7 +460,7 @@ class BashConfig(Module):
         bashrc = _home() / ".bashrc"
         if not bashrc.exists():
             return False
-        text = bashrc.read_text(encoding="utf-8")
+        text = bashrc.read_text(encoding="utf-8", errors="replace")
         if not self._owns_bashrc(ctx):
             # Satisfied once the fragment exists AND the distro's bashrc sources it.
             return (_home() / _SHELL_FRAGMENT).is_file() and _SOURCE_MARKER in text
