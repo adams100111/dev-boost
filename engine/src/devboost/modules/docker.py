@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
+from devboost.core.errors import PresentUnmanaged
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, pkg, systemd
@@ -91,7 +92,12 @@ class _MacDocker:
         note = license_note(rt.name)
         if note:
             log.warn(f"docker: {rt.name} — {note}")
-        rt.install(ctx)
+        try:
+            rt.install(ctx)
+        except PresentUnmanaged as exc:
+            # Installed by hand (the vendor's download): present is all the bring-up needs,
+            # as in `docker use` (final review I1). Configure, start and point the CLI.
+            log.skip(f"docker: {exc.item} already installed outside dev-boost — left untouched")
         rt.configure(ctx)
         rt.start(ctx)
         _point_cli_at(ctx, rt)

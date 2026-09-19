@@ -20,6 +20,9 @@ from devboost.modules._docker_runtime import (
 )
 
 CASK = "orbstack"
+#: The bundle the vendor's DMG installs (and the cask too). A hand-installed OrbStack is as
+#: usable as a brewed one, so ``installed`` counts it (final review I1).
+APP = Path("/Applications/OrbStack.app")
 
 
 def _first_launch() -> NeedsUser:
@@ -38,7 +41,8 @@ class OrbStack:
         return Path(os.environ["HOME"]) / ".orbstack" / "config" / "docker.json"
 
     def installed(self, ctx: Ctx) -> bool:
-        return pkg.cask_installed(ctx, CASK)
+        """The cask is installed, or the app was installed by hand (the vendor's DMG)."""
+        return pkg.cask_installed(ctx, CASK) or APP.is_dir()
 
     def install(self, ctx: Ctx) -> None:
         pkg.install_cask(ctx, CASK)

@@ -41,6 +41,8 @@ def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 HOST_APP_PATHS: tuple[tuple[str, str], ...] = (
     ("devboost.modules.server", "_TS_APP"),
     ("devboost.modules.editors", "_ZED_APP"),
+    ("devboost.modules._docker_orbstack", "APP"),
+    ("devboost.modules._docker_desktop", "APP"),
 )
 
 

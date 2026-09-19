@@ -23,6 +23,9 @@ from devboost.modules._docker_runtime import (
 )
 
 CASK = "docker-desktop"
+#: The bundle the vendor's DMG installs (and the cask too). A hand-installed Docker Desktop
+#: is as usable as a brewed one, so ``installed`` counts it (final review I1).
+APP = Path("/Applications/Docker.app")
 
 
 def settings_path() -> Path:
@@ -86,7 +89,8 @@ class DockerDesktop:
         return Path(os.environ["HOME"]) / ".docker" / "daemon.json"
 
     def installed(self, ctx: Ctx) -> bool:
-        return pkg.cask_installed(ctx, CASK)
+        """The cask is installed, or the app was installed by hand (the vendor's DMG)."""
+        return pkg.cask_installed(ctx, CASK) or APP.is_dir()
 
     def install(self, ctx: Ctx) -> None:
         if pkg.installed(ctx, "docker"):
