@@ -101,6 +101,27 @@ def test_installed_and_cask_installed_query_brew_list() -> None:
     assert pkg.installed(missing, "git") is False
 
 
+def test_presence_checks_use_the_bare_token_of_a_tap_qualified_name() -> None:
+    """C2: Homebrew 7.0.4 `brew list --cask --versions <tap>/<token>` always exits 1
+    (cmd/list.rb keeps a named cask only if Caskroom/<name> exists, and the Caskroom dir
+    is the bare token); a formula's rack is Cellar/<token> too. So `list` gets the token,
+    while install/upgrade/info keep the qualified name (it selects the tap)."""
+    ex = FakeExecutor()
+    ctx = Ctx(os=MAC, ex=ex)
+    assert pkg.installed(ctx, "ddev/ddev/ddev") is True
+    assert pkg.cask_installed(ctx, "nikitabobko/tap/aerospace") is True
+    pkg.upgrade_cask(ctx, "nikitabobko/tap/aerospace")
+    pkg.upgrade(ctx, "ddev/ddev/ddev")
+    assert pkg.cask_auto_updates(ctx, "nikitabobko/tap/aerospace") is False
+    assert ex.calls == [
+        ["brew", "list", "--formula", "--versions", "ddev"],
+        ["brew", "list", "--cask", "--versions", "aerospace"],
+        ["brew", "upgrade", "--cask", "nikitabobko/tap/aerospace"],
+        ["brew", "upgrade", "--formula", "ddev/ddev/ddev"],
+        ["brew", "info", "--json=v2", "--cask", "nikitabobko/tap/aerospace"],
+    ]
+
+
 def test_upgrade_formula() -> None:
     ex = FakeExecutor()
     pkg.upgrade(Ctx(os=MAC, ex=ex), "git")

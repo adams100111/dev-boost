@@ -114,6 +114,8 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
     if ctx.os.family == "macos":
         checks.append(_permissions_check(ctx))
         checks.append(_rosetta_check(ctx))
+        from devboost.cli import doctor_desktop  # local: it imports Check from here
+        checks += doctor_desktop.checks(ctx)
         checks.append(_docker_runtime_check(ctx))
     return checks
 

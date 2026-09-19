@@ -81,7 +81,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
-| `base` | `xcode-clt`, `homebrew`, `rosetta`, `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc`, `pass`, `pass-store` |
+| `base` | `xcode-clt`, `homebrew`, `rosetta`, `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc`, `pass`, `pass-store`, `voxtype` |
 | `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server`, `browser-view` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
 | `claude` | `claude-code`, `claude-plugins`, `claude-skills`, `claude-mcp` |
@@ -98,8 +98,11 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-aesthetics` | `gnome-aesthetics-bundle` |
 | `gnome-theme` | `gnome-theme-bundle` |
 | `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
+| `ios` | `xcode`, `ios-tooling` |
 | `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
-| `macos` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `dev-hygiene`, `remote`, `claude`, `codex`, `pi` |
+| `macos` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `dev-hygiene`, `remote`, `claude`, `codex`, `pi`, `macos-desktop` |
+| `macos-desktop` | `macos-defaults`, `macos-limits`, `macos-firewall`, `timemachine-exclusions`, `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`, `monitorcontrol`, `keka`, `quicklook` |
+| `macos-extras` | `maccy`, `ollama-app`, `lm-studio`, `pearcleaner`, `keycastr`, `linearmouse`, `android-studio`, `expo-orbit`, `herd`, `wezterm` |
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
 | `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
@@ -121,8 +124,12 @@ enrollment on NVIDIA when Secure Boot is on.
 
 | Module | Category | Description |
 |---|---|---|
+| `aerospace` | macos-desktop | AeroSpace — i3-like tiling window manager (MIT); config via dotfiles. |
 | `agent-sudo` | server | Passwordless sudo for your user — so agents/automation never hang on a prompt. |
+| `alt-tab` | macos-desktop | AltTab — Windows-style window switcher with previews (GPL-3.0). |
+| `android-emulator` | react-native | Android emulator + a Pixel AVD (API 35; arm64-v8a on Apple Silicon). |
 | `android-sdk` | react-native | Android SDK (cmdline-tools + platform/build-tools) + JDK via mise. |
+| `android-studio` | macos-extras | Android Studio (Apache-2.0 + Google SDK terms). |
 | `aspire` | dotnet | Aspire CLI (dotnet global tool). |
 | `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd timer / launchd agent). |
 | `atuin` | cli |  |
@@ -176,6 +183,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `dust` | cli |  |
 | `earlyoom` | system | Userspace OOM killer (dev-protecting). |
 | `expo` | react-native | React Native / Expo project template (npx-only; no global expo-cli). |
+| `expo-orbit` | macos-extras | Expo Orbit — launch builds on simulators/emulators from the menu bar (MIT). |
 | `eza` | cli |  |
 | `fastfetch` | cli |  |
 | `fd` | base |  |
@@ -200,18 +208,29 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-theme-bundle` | gnome | Opt-in reproducible GTK theme + icons (adw-gtk3 + papirus). |
 | `gpu-detect` | system | Auto-detect the GPU vendor and record it for driver selection. |
 | `grub-btrfs` | system | Boot into BTRFS snapshots from GRUB. |
+| `herd` | macos-extras | Laravel Herd — native PHP/Laravel environment (free tier; Pro optional). |
 | `herdr` | cli | herdr — agent-aware terminal multiplexer (pinned binary). |
 | `herdr-plugins` | optional-agents | Curated, pinned herdr plugin set. |
 | `homebrew` | base | Homebrew — the macOS package manager (analytics off). |
 | `htop` | base |  |
+| `ios-tooling` | ios | CocoaPods, watchman and the pinned iOS simulator runtime. |
 | `jetbrains-toolbox` | optional-editors | JetBrains Toolbox app. |
 | `jq` | base |  |
+| `keka` | macos-desktop | Keka — archiver (7z, zip, rar, ...); free from keka.io. |
+| `keycastr` | macos-extras | KeyCastr — show keystrokes on screen for demos (BSD-3-Clause). |
 | `laravel-lsp` | editors | intelephense for Laravel/PHP (fresh). |
 | `lazydocker` | cli |  |
 | `lazygit` | cli |  |
 | `libva-nvidia-driver` | hardware-nvidia | VA-API bridge for NVIDIA (Fedora-only via RPM Fusion). |
+| `linearmouse` | macos-extras | LinearMouse — per-device mouse/trackpad tuning (MIT). |
+| `lm-studio` | macos-extras | LM Studio — local LLM app (free for work use since 2025-07). |
 | `localsend` | apps | LocalSend file sharing. |
+| `maccy` | macos-extras | Maccy — clipboard history (MIT). |
+| `macos-defaults` | macos-desktop | macOS developer defaults (Finder, Dock, keyboard, screenshots); revertible. |
+| `macos-firewall` | macos-desktop | Turn on the macOS application firewall. |
+| `macos-limits` | macos-desktop | Open-files limit 524288 (LaunchDaemon: sysctl + launchctl limit). |
 | `mise` | base | Install mise runtime version manager; migrate nvm/sdkman init blocks. |
+| `monitorcontrol` | macos-desktop | MonitorControl — external-display brightness/volume over DDC (MIT). |
 | `mosh` | remote | Mosh — roaming-resilient terminal transport (client + mosh-server). |
 | `neovim` | optional-editors | Neovim editor. |
 | `nerd-fonts` | shell | JetBrainsMono Nerd Font. |
@@ -221,16 +240,20 @@ enrollment on NVIDIA when Secure Boot is on.
 | `nvidia-resign-service` | hardware-nvidia | Re-sign NVIDIA modules after a kernel/akmod rebuild (Fedora-only). |
 | `obsidian` | apps | Obsidian notes. |
 | `obsidian-sync` | apps | Provision the Obsidian vault: deploy key, clone, daily push backstop. |
+| `ollama-app` | macos-extras | Ollama — run local LLMs (MIT). |
 | `omarchy-update-hook` | omarchy | Refresh dev-boost's tooling as part of `omarchy update` (post-update hook). |
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `orca-ide` | orca | Orca — multi-agent development environment (stablyai/orca). |
 | `orca-serve` | orca | Run Orca headless (orca-ide serve) as a systemd --user service. |
 | `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max; pinentry-mac on macOS). |
 | `pass-store` | base | Shared pass store: clone, enroll/adopt this device's GPG key, push-on-commit + 15-min sync (devboost pass …). |
+| `pearcleaner` | macos-extras | Pearcleaner — app uninstaller (Apache-2.0 + Commons Clause). |
 | `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
 | `power-profiles-daemon` | system | Power profile switching (D-Bus). |
 | `python-lsp` | editors | basedpyright + ruff for Python (fresh). |
+| `quicklook` | macos-desktop | Quick Look previews for Markdown and source code (GPL-3.0). |
+| `raycast` | macos-desktop | Raycast — launcher and clipboard/window tools (free plan; OK for work). |
 | `restic-b2` | server | Offsite encrypted backups — restic → Backblaze B2, nightly (systemd timer / launchd agent). |
 | `restic-backup` | system | Restic backup user service + timer. |
 | `ripgrep` | cli | Fast recursive search (rg). |
@@ -245,10 +268,13 @@ enrollment on NVIDIA when Secure Boot is on.
 | `snapper-dnf-hook` | system | dnf plugin: snapshot before/after transactions. |
 | `ssh-setup` | base | Generate ed25519 key and register it with GitHub (non-blocking). |
 | `starship` | shell | Cross-shell prompt. |
+| `stats` | macos-desktop | Stats — menu-bar CPU/RAM/disk/network monitor (MIT). |
 | `swapfile` | system | Disk swapfile sized to RAM for OOM headroom (page-out overflow above zram). |
 | `tailscale` | server | Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key). |
 | `tealdeer` | cli |  |
+| `thaw` | macos-desktop | Thaw — menu-bar item manager (GPL-3.0; macOS 26+). |
 | `thermald` | system | Thermal management. |
+| `timemachine-exclusions` | macos-desktop | Keep caches, VM disks, node_modules and vendor out of Time Machine. |
 | `tmux` | base |  |
 | `tmux-persist` | cli | tmux-resurrect + tmux-continuum — restore tmux sessions across a reboot. |
 | `tpm` | cli | tmux plugin manager. |
@@ -257,13 +283,17 @@ enrollment on NVIDIA when Secure Boot is on.
 | `uv` | python | uv — fast Python package/project manager. |
 | `va-hwaccel` | multimedia | GPU-aware VA-API hardware acceleration (Intel/AMD/NVIDIA); cross-distro. |
 | `vlc` | apps | VLC media player. |
+| `voxtype` | base | Voxtype — local push-to-talk dictation (Whisper small.en; MIT). |
+| `voxtype-arabic` | base | Arabic dictation: Whisper large-v3-turbo (1.6 GB), loaded only on demand. |
 | `vscode` | optional-editors | Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor. |
 | `web-lsp` | editors | ts/eslint/tailwind/prettier servers (fresh). |
 | `web-runtimes` | web | node/pnpm/bun via mise. |
 | `wezterm` | shell | GPU terminal + multiplexer (nightly) — opt-in, deprecated: Ghostty is the default and herdr the multiplexer. |
 | `wget` | base |  |
 | `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste). |
+| `xcode` | ios | Xcode (pinned in catalog.toml) via xcodes; license accepted, first launch run. |
 | `xcode-clt` | base | Xcode Command Line Tools (clang, make, git) — installed without a dialog. |
+| `xcodes` | ios | xcodes — install and switch Xcode versions (MIT). |
 | `yq` | cli |  |
 | `zed` | editors | Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs. |
 | `zoxide` | cli |  |
@@ -400,7 +430,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 
 ## Docs
 
-[architecture](docs/architecture.md) · [macos](docs/macos.md) · [recovery-runbook](docs/recovery-runbook.md) ·
+[architecture](docs/architecture.md) · [macos](docs/macos.md) · [macos-primer](docs/macos-primer.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
 [remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [zed](docs/zed.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)

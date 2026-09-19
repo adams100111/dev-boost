@@ -26,7 +26,7 @@ engine branching.
 | Shell | zsh on macOS, bash on Linux; shared POSIX core; zsh-autosuggestions + zsh-syntax-highlighting |
 | Terminal | **Ghostty default on every OS** (cross-OS change); foot stays on Omarchy (`provided_by`); WezTerm opt-in + deprecated |
 | Docker | Colima (default) / OrbStack / Docker Desktop, switchable with full reconfigure |
-| Desktop | `macos-defaults` (+ revert), maxfiles limit, firewall, Raycast, AeroSpace + AltTab, Thaw, MonitorControl + BetterDisplay, Keka, Stats, Quick Look plugins, `utiluti` |
+| Desktop | `macos-defaults` (+ revert), maxfiles limit, firewall, Raycast, AeroSpace + AltTab, Thaw, MonitorControl (BetterDisplay dropped: paid for business use), Keka, Stats, Quick Look plugins, `utiluti` |
 | iOS | Opt-in `ios` profile (xcodes + simulator runtime + CocoaPods/watchman) |
 | Secrets | gh + keychain for GitHub; age bundle optional (key in keychain); `pass` default (companion spec) |
 | Editor | Zed default on every OS (companion spec); VS Code opt-in |
@@ -49,6 +49,12 @@ commercial use:
 - **Shottr** — paid for commercial use. → not included (⌘⇧5 built-in).
 - **Raycast Free** — explicitly allowed for commercial use. → included.
 - **tart** (VM testing) — royalty-free on personal workstations. → used for rehearsal.
+- **BetterDisplay** — its terms require business users to buy a licence, even for the
+  free-tier features (github.com/waydabber/BetterDisplay/discussions/739). → dropped
+  (M5 D3); MonitorControl (MIT) covers DDC brightness/volume instead.
+- **Keka** — free from keka.io and Homebrew; its terms (keka.io/termsofuse) are a warranty
+  disclaimer only, with no use restriction and no paid business tier (the App Store
+  listing is an optional tip, not a licence). → kept (M5 D4).
 
 ## 0. Supported macOS versions
 
@@ -76,7 +82,8 @@ Version-dependent behavior is data, keyed on `OsInfo.version_id` (major):
   was in preview builds (minor menu-bar edge cases); if the stable cask misbehaves, the
   module is gated off on 27 with a doctor note rather than shipping a preview build.
   AeroSpace, AltTab, Colima and the other casks: no 27-specific issue found; confirmed or
-  gated during M5.
+  gated during M5. The stable `thaw` cask reached 2.0.1 before M5, declaring macOS ≥ 26;
+  checked on 27 at M5 (see plan D2).
 
 ## 1. Engine core
 
@@ -173,7 +180,7 @@ plugins at pinned git refs (D13)), **utiluti**, **xcodes**
 | ghostty (default) / wezterm (opt-in) | `ghostty` / `wezterm@nightly` |
 | nerd-fonts | `font-jetbrains-mono-nerd-font` (Linux pin v3.2.1; cask tracks latest — accepted) |
 | tailscale | `tailscale-app` |
-| stats, raycast, alt-tab, thaw, monitorcontrol, betterdisplay, keka | same names |
+| stats, raycast, alt-tab, thaw, monitorcontrol, keka | same names |
 | aerospace | `nikitabobko/tap/aerospace` (BrewTap) |
 | qlmarkdown, syntax-highlight | Quick Look extensions |
 | opt-in: maccy, ollama-app, lm-studio, pearcleaner, keycastr, linearmouse, android-studio, expo-orbit, herd | same names |
@@ -219,32 +226,47 @@ crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 | `homebrew` (requires xcode-clt) | official installer, `NONINTERACTIVE=1`; `brew analytics off` | brew exists and analytics off |
 | `rosetta` | `softwareupdate --install-rosetta --agree-to-license` | `pgrep oahd` / `arch -x86_64 true` |
 | `macos-defaults` | table below; snapshot prior values first; restart Dock/Finder/SystemUIServer only on change | all keys read back equal |
-| `macos-limits` | LaunchDaemon `launchctl limit maxfiles 524288 524288`; `ulimit -n` in `shell.zsh` | `launchctl limit maxfiles` |
+| `macos-limits` | root LaunchDaemon: `sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288`, plus a best-effort `launchctl limit maxfiles 524288 524288` (`\|\| true`, D11); `ulimit -n` in `shell.zsh` | `sysctl -n kern.maxfiles kern.maxfilesperproc` + daemon loaded |
 | `macos-firewall` | `socketfilterfw --setglobalstate on` (sudo) | `--getglobalstate` enabled |
-| `timemachine-exclusions` | `tmutil addexclusion` for `~/Library/Caches`, `~/.colima`, `~/.gradle`, `~/.npm`, `~/.cache`, `~/.nuget/packages`, `~/Library/Developer/Xcode/DerivedData`; `node_modules`/`vendor` via sticky exclusions from a login agent sweep of `~/repos` | `tmutil isexcluded` |
-| `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`, `monitorcontrol`, `betterdisplay`, `keka` | casks | cask installed |
+| `timemachine-exclusions` | sweep LaunchAgent, every 6 h + at login: sticky `tmutil addexclusion` for `~/Library/Caches`, `~/.colima`, `~/.config/colima`, `~/.orbstack`, `~/Library/Containers/com.docker.docker`, `~/.gradle`, `~/.npm`, `~/.cache`, `~/.nuget/packages`, `~/Library/Developer/Xcode/DerivedData` (+ `$COLIMA_HOME` when set); `node_modules`/`vendor` via sticky exclusions from the same sweep of `~/repos` | `tmutil isexcluded` + agent loaded |
+| `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`, `monitorcontrol`, `keka` | casks | cask installed |
 | `quicklook` | `qlmarkdown`, `syntax-highlight` | casks installed |
-| `default-apps` | utiluti table (`data/macos/default-apps.tsv`, shared with the Zed module) … macOS 26.4+ confirms each change: applied only when interactive, once per UTI, recorded in `~/.local/state/devboost/default-apps.json` | `utiluti type <uti> --bundle-id` |
+| `zed`'s default-apps step (not a separate module — M5-D2) | utiluti table (`data/macos/default-apps.tsv`, `exec/primitives/default_apps.py`) … macOS 26.4+ confirms each change: applied only when interactive, once per UTI, recorded in `~/.local/state/devboost/default-apps.json` | `utiluti type <uti> --bundle-id` |
 | `aerospace-config`, `ghostty` keybinds | via dotfiles (§3) | — |
 | `xcode` (opt-in `ios`) | `xcodes install <pin> --select --experimental-unxip --empty-trash`; `sudo xcodebuild -license accept`; `-runFirstLaunch` | `xcodes installed <pin>` + selected |
 | `ios-tooling` (opt-in `ios`) | brew `cocoapods`, `watchman`; `xcodes runtimes install "iOS <pin>"` | `pod`, `watchman`, `xcrun simctl list runtimes` |
 | `zsh-config` | marker check (dotfiles own `~/.zshrc`) | marker + sources `shell.zsh` |
 
 **Cross-OS module `voxtype`** (local push-to-talk dictation, MIT — the same tool Omarchy
-ships): macOS cask `peteonrails/voxtype/voxtype` (BrewTap) + a `launchd.user_agent` for
-the daemon (the cask adds no login item); Fedora/Ubuntu per upstream `docs/INSTALL.md`;
-`provided_by=("omarchy",)`, `gui = True` (skipped on headless hosts). Config `~/.config/voxtype/config.toml` is shared through
-chezmoi (one file for every OS), hotkey taken from the author's Omarchy config, push-to-talk.
-- **Default (English):** one small resident English model — Parakeet v3 on macOS (Neural
-  Engine via ONNX) if the secondary-model mechanism below works with it, otherwise Whisper
-  `small.en` (466 MB); `language = "en"`.
+ships): macOS cask `peteonrails/voxtype/voxtype` (BrewTap). The tap lagged at 0.7.5 (a
+different config/model path than upstream's current release) at M5 implementation time;
+that pin is tracked and corrected against upstream's `catalog.toml`-pinned digests as a
+follow-up fix, not a behaviour change here. The daemon runs through upstream's own
+**`voxtype setup app-bundle`**, which wraps it in `/Applications/Voxtype.app` with a Login
+Item — **not** a `launchd.user_agent`: upstream's own docs say a plain launchd service
+never receives Microphone access (D14). Fedora/Ubuntu install the pinned,
+SHA-256-verified RPM/DEB (aarch64: the pinned raw binary); Arch uses the AUR
+`voxtype-bin` (x86_64) or the same raw binary (aarch64); `provided_by=("omarchy",)`,
+`gui = True` (skipped on headless hosts). Config `~/.config/voxtype/config.toml` is shared
+through chezmoi (one file for every OS, `engine = "whisper"`), hotkey taken from a marked
+`PLACEHOLDER` block (defaults: `RIGHTALT` on macOS, `SCROLLLOCK` on Linux), push-to-talk.
+- **Default (English):** Whisper `small.en` (466 MB), `language = "en"`. Parakeet is not
+  used: upstream's `secondary_model` mechanism exists only under `[whisper]`, and the
+  daemon ignores model overrides under `engine = "parakeet"` — it cannot pair with the
+  Arabic secondary model below (D15).
 - **Opt-in Arabic** (`voxtype-arabic` module, in no default profile): downloads Whisper
   `large-v3-turbo` (1.6 GB), sets it as `secondary_model` with `language = ["en","ar"]`
-  and `on_demand_loading` for it, so it costs **no idle RAM** — loaded only while
-  dictating Arabic (hold `model_modifier` + hotkey). Verify at implementation: Voxtype
-  documents `model_modifier` for its Linux evdev hotkey path; on macOS the fallback is a
-  second binding to `voxtype record start --model large-v3-turbo`.
-- Permissions (macOS): Input Monitoring + Microphone → see *Privacy permissions* below.
+  and `cold_model_timeout_secs = 60`, **with `on_demand_loading` left `false`** (it is a
+  global flag that would also unload the *primary* model after every dictation) — a
+  non-primary model already loads only on request and is evicted after the timeout, which
+  gives **no idle RAM** for Arabic. Trigger: Voxtype's `model_modifier` (held with the
+  hotkey) is the Linux evdev path (`LEFTSHIFT`); **macOS ignores `model_modifier`**, so
+  the fallback there is a dedicated AeroSpace binding, **Ctrl+Alt+D**, running
+  `voxtype record toggle --model large-v3-turbo` (a toggle, since AeroSpace only sees
+  key-down).
+- Permissions (macOS): Microphone + Input Monitoring + **Accessibility** (upstream's
+  `MACOS_ARCHITECTURE.md`: typing uses CGEvent, which needs Accessibility too) → see
+  *Privacy permissions* below.
 
 **Opt-in cross-OS module:** `android-emulator` — emulator + system image (`arm64-v8a` on
 aarch64, `x86_64` on x86_64) + one Pixel AVD.
@@ -269,6 +291,7 @@ session; else `NeedsUser`.
 | `com.apple.dock autohide` / `tilesize` / `show-recents` | `true` / `48` / `false` |
 | `com.apple.screencapture target` / `type` | `clipboard` / `png` — screenshots land on the clipboard, ready for `herdr --remote` Ctrl+V image paste; ⌘⇧5 “Save to” for files |
 | `com.apple.AppleMultitouchTrackpad Clicking` | `true` |
+| `com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking` | `true` — tap-to-click on a Magic Trackpad over Bluetooth (D8) |
 
 Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (or
 "absent") are saved to `~/.local/state/devboost/macos-defaults.prev.json`;
@@ -285,7 +308,9 @@ Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (o
 - New `ios` = `xcode`, `ios-tooling`.
 - New `macos-desktop` = `macos-defaults`, `macos-limits`, `macos-firewall`,
   `timemachine-exclusions`, `stats`, `raycast`, `aerospace`, `alt-tab`, `thaw`,
-  `monitorcontrol`, `betterdisplay`, `keka`, `quicklook`, `default-apps`.
+  `monitorcontrol`, `keka`, `quicklook` (no `default-apps` module: code files open in Zed
+  through `default_apps.apply` + `utiluti`, wired from the Zed module itself, not a
+  separate profile member — M5 lane ruling M5-D2).
 - `base` += `voxtype` (every OS; provided on Omarchy). Opt-in `voxtype-arabic`.
 - New `macos-extras` (opt-in) = `maccy`, `ollama-app`, `lm-studio`, `pearcleaner`,
   `keycastr`, `linearmouse`, `android-studio`, `expo-orbit`, `herd`, `wezterm`.
@@ -302,10 +327,12 @@ macOS does not let scripts grant privacy permissions. Modules that need them dec
 Accessibility / Input Monitoring / Microphone / Screen Recording). After install, a
 missing grant → `NeedsUser` with a one-click fix: `open
 "x-apple.systempreferences:com.apple.preference.security?Privacy_<Service>"`.
-`doctor` lists every outstanding grant. Known needs: AeroSpace, AltTab, Raycast, Maccy
-(Accessibility); Voxtype (Input Monitoring, Microphone); Thaw (Accessibility, Screen
-Recording). Verification reads grant state where the OS exposes it and otherwise asks
-once and records the confirmation in `~/.local/state/devboost/tcc.json`.
+`doctor` lists every outstanding grant. Known needs: AeroSpace, Raycast, MonitorControl,
+LinearMouse, Maccy (Accessibility); AltTab, Thaw (Accessibility, Screen Recording);
+KeyCastr (Input Monitoring, Accessibility); Voxtype (Microphone, Input Monitoring,
+**Accessibility** — upstream's typing path uses CGEvent, which needs it too).
+Verification reads grant state where the OS exposes it and otherwise asks once and
+records the confirmation in `~/.local/state/devboost/tcc.json`.
 
 ## 3. Shell, terminal & dotfiles
 

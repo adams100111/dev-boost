@@ -13,9 +13,16 @@
       update and shows as permanent drift afterwards. So on Omarchy dev-boost is a tenant
       in ~/.config, not the landlord: it skips the paths the platform owns and delivers its
       own shell config as ~/.config/devboost/shell.bash, which the bash-config module
-      sources from Omarchy's own ~/.bashrc. Everything with no Omarchy counterpart
+      sources from Omarchy's own ~/.bashrc. Voxtype likewise: `omarchy-voxtype-install`
+      writes its own ~/.config/voxtype/config.toml (compositor-bound hotkey, its own model),
+      and dev-boost's shared one would break that working dictation. Everything with no Omarchy counterpart
       (atuin, ripgrep, bat, fresh, caddy, fleet, systemd units, ~/.claude, ~/.local/bin)
       still applies normally.
+
+   3. AeroSpace reads ~/.aerospace.toml OR ~/.config/aerospace/aerospace.toml and reports
+      an ambiguity when both exist (AeroSpace docs/guide.adoc, "Custom config location"),
+      so a user who keeps ~/.aerospace.toml gets no dev-boost XDG copy (`stat` is falsy
+      for a missing path); the dotfiles module warns with both paths.
 
    `.chezmoi.osRelease` exists only on Linux and a missing key is a template error, so the
    Omarchy test is guarded by the OS test (`and` stops at the first false argument).
@@ -25,6 +32,9 @@
 .bash-preexec.sh
 .config/systemd
 .config/caddy
+{{   if stat (joinPath .chezmoi.homeDir ".aerospace.toml") -}}
+.config/aerospace
+{{   end -}}
 {{ else -}}
 .zshrc
 .zprofile
@@ -41,4 +51,5 @@
 .config/git/config
 .config/ghostty
 .config/wezterm
+.config/voxtype
 {{ end -}}

@@ -41,6 +41,7 @@ def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 HOST_APP_PATHS: tuple[tuple[str, str], ...] = (
     ("devboost.modules.server", "_TS_APP"),
     ("devboost.modules.editors", "_ZED_APP"),
+    ("devboost.modules.voxtype", "APP_BUNDLE"),
     ("devboost.modules._docker_orbstack", "APP"),
     ("devboost.modules._docker_desktop", "APP"),
 )
@@ -162,7 +163,10 @@ def profiles_file(tmp_path: Path) -> Path:
         'omarchy = ["omarchy-update-hook"]\n'
         'orca = ["orca-ide"]\n'
         'orca-box = ["orca-ide","orca-serve"]\n'
-        'macos = ["ripgrep"]\n',
+        'macos = ["ripgrep"]\n'
+        'macos-desktop = ["macos-defaults"]\n'
+        'ios = ["xcode"]\n'
+        'macos-extras = ["maccy"]\n',
         encoding="utf-8",
     )
     return p

@@ -72,6 +72,7 @@ def test_later_milestone_gaps_are_the_pending_modules() -> None:
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAC = OsInfo("macos", "macos", "aarch64", headless=False)
+MAC27 = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 FEDORA = OsInfo("fedora", "fedora", "x86_64", headless=False)
 
 
@@ -119,6 +120,21 @@ def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> N
     assert not {n: r for n, r in reasons.items() if r is not None}
     assert "bash-config" in reasons and "ghostty" in reasons
     assert not {"zsh-config", "zsh-plugins", "bash"} & set(reasons)
+
+
+#: Spec §9: the sets whose every module must resolve on a Mac.
+MAC_SETS = ["macos", "macos-extras", "ios", "optional-terminals", "voxtype-arabic",
+            "android-emulator"]
+
+
+def test_mac_sets_plan_without_unsupported_modules(tmp_path: Path) -> None:
+    modules = load()
+    order = toposort(expand(MAC_SETS, load_profiles(REPO_ROOT / "profiles.toml"), modules),
+                      modules)
+    plan = build_plan(order, modules, MAC27, gpu_marker=tmp_path / "none")
+    unsupported = {p.name for p in plan if p.skip_reason == "unsupported-os"}
+    # M5-D10: KNOWN_GAPS is a dict; `<=`/`-` against it raises TypeError, so compare sets.
+    assert unsupported <= set(KNOWN_GAPS), sorted(unsupported - set(KNOWN_GAPS))
 
 
 # --- hermeticity: no test reads the host's /Applications ------------------------------

@@ -6,6 +6,8 @@ each milestone. **Status: M4 — Docker runtimes and scheduled jobs.** `devboost
 (the `macos` profile) installs the whole catalog, Docker included; the desktop layer
 arrives in M5, `curl … | bash` in M6.
 
+- Desktop layer, iOS and extras (M5): see [macos-primer.md](macos-primer.md).
+
 ## Requirements
 
 - Apple Silicon (Intel is refused). macOS 27 Golden Gate or 26 Tahoe; 15 is best-effort.
@@ -51,7 +53,8 @@ would otherwise look installed.
 
 More precisely: `--update` on macOS runs `brew upgrade` / `brew upgrade --cask` for every
 module whose whole macOS install is exactly one Homebrew formula or cask — Zed included,
-since its macOS install is the `zed` cask. A cask that updates itself (brew's
+since its macOS install is the `zed` cask, and so is every single-cask desktop app
+(AeroSpace, Raycast, Stats, …). An app it already installed is never re-opened. A cask that updates itself (brew's
 `auto_updates`: Zed, Ghostty, Obsidian, VS Code, Tailscale, …) is skipped by that upgrade
 step, but the rest of the module's own logic still runs on an `--update` pass: for Zed, the
 config merge always runs, and the default-apps step can still report `blocked` if the run
@@ -97,6 +100,12 @@ overwrites an earlier backup; a later one becomes `.pre-devboost.1`, and so on, 
 re-run makes no second copy of an identical file. Move the lines you still need into the
 matching `.local` file — `~/.zshrc.local`, `~/.zprofile.local` or `~/.bash_profile.local` —
 which dev-boost never touches.
+
+The Voxtype config (`~/.config/voxtype/config.toml`) and the AeroSpace config
+(`~/.config/aerospace/aerospace.toml`) get the same one-time `.pre-devboost` copy. If you
+keep your AeroSpace config at `~/.aerospace.toml` instead, dev-boost writes no
+`~/.config/aerospace/aerospace.toml` at all (AeroSpace refuses to load when both exist)
+and warns with both paths: merge its Ctrl+Alt bindings into your file yourself.
 
 The same protection applies when `chezmoi-repo` points at your own external dotfiles repo
 (`DEVBOOST_DOTFILES_REPO`, or `DOTFILES_REPO` in the secrets bundle): its `chezmoi init

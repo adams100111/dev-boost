@@ -27,12 +27,25 @@ orca-box = ["orca-ide","orca-serve"]
 # (Colima by default; `devboost docker use` switches it), ddev, Aspire, data-services and
 # the launchd timers install like everything else as of M4; M5 appends "macos-desktop".
 macos = ["base","cli","shell","editors","python","web","laravel","dotnet","data",
-         "devops","react-native","apps","dev-hygiene","remote","claude","codex","pi"]
+         "devops","react-native","apps","dev-hygiene","remote","claude","codex","pi",
+         "macos-desktop"]
+# macOS desktop layer (M5, spec §2/§9): snapshot-and-revert defaults, the open-files
+# limit + firewall + Time Machine sweep, launcher/menu-bar/window apps, and Quick Look.
+# `default-apps` (duti) was dropped — code files open in Zed via `Utiluti` (M5-D2).
+macos-desktop = ["macos-defaults","macos-limits","macos-firewall","timemachine-exclusions",
+                 "stats","raycast","aerospace","alt-tab","thaw","monitorcontrol","keka",
+                 "quicklook"]
+# ios — opt-in Xcode + iOS simulator runtime (M5, spec §2). Kept out of `macos`/`full`:
+# the Xcode download is 10 GB+ and needs an interactive Apple ID sign-in (D19).
+ios = ["xcode","ios-tooling"]
+# macos-extras — opt-in Mac apps (all free for work use; licences in docs/macos-primer.md).
+macos-extras = ["maccy","ollama-app","lm-studio","pearcleaner","keycastr","linearmouse",
+                "android-studio","expo-orbit","herd","wezterm"]
 base = ["xcode-clt","homebrew","rosetta",
         "secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker","docker-build-gc",
-        "pass","pass-store"]
+        "pass","pass-store","voxtype"]
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
         "fastfetch","claude-code","herdr-plugins","glow"]

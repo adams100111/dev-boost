@@ -24,6 +24,13 @@ git history and the GitHub release notes.
   bind `0.0.0.0` when there is no tailnet IP and accepts its MagicDNS name as a host.
 
 ### Added
+- **macOS desktop (M5)** — `macos-defaults` with snapshot + `devboost revert
+  macos-defaults [key…]`, open-files limit, firewall, Time Machine exclusions,
+  Raycast/AeroSpace (+config)/AltTab/Thaw/MonitorControl/Keka/Stats/Quick Look, code files
+  open in Zed, Voxtype dictation on every OS (+ opt-in `voxtype-arabic`), opt-in `ios`
+  (Xcode 27), `macos-extras` and `android-emulator`, desktop checks in `doctor`.
+  BetterDisplay is not shipped (paid for business use). See
+  [docs/macos-primer.md](docs/macos-primer.md).
 - **Docker runtimes on macOS (M4)** — Colima (default), OrbStack and Docker Desktop behind
   a common `DockerRuntime` protocol, plus `devboost docker use <runtime>` to switch between
   them (snapshots ddev first, stops the others, re-verifies what depends on Docker). ddev,

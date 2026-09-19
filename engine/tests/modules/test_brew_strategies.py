@@ -40,7 +40,10 @@ class _Listed(FakeExecutor):
             timeout=timeout,
         )
         if list(argv[:2]) == ["brew", "list"]:
-            return Result(0) if argv[-1] in self.installed else Result(1)
+            # Like brew 7.0.4: `list` finds Caskroom/<token> or Cellar/<token> only, so a
+            # tap-qualified name is never listed.
+            name = argv[-1]
+            return Result(0) if "/" not in name and name in self.installed else Result(1)
         return Result(0)
 
 
@@ -55,6 +58,18 @@ def test_formula_installs_every_formula_in_one_call() -> None:
 def test_formula_verify_needs_every_formula() -> None:
     assert BrewFormula("a", "b").verify(Ctx(os=MAC, ex=_Listed({"a", "b"}))) is True
     assert BrewFormula("a", "b").verify(Ctx(os=MAC, ex=_Listed({"a"}))) is False
+
+
+def test_tap_qualified_formula_and_cask_verify_by_token() -> None:
+    """C2: presence of `user/tap/token` is probed as `token`."""
+    ex = _Listed({"ddev", "aerospace"})
+    assert BrewFormula("ddev/ddev/ddev").verify(Ctx(os=MAC, ex=ex)) is True
+    assert BrewCask("nikitabobko/tap/aerospace").verify(Ctx(os=MAC, ex=ex)) is True
+    assert ["brew", "list", "--formula", "--versions", "ddev"] in ex.calls
+    assert ["brew", "list", "--cask", "--versions", "aerospace"] in ex.calls
+    ex = _Listed({"ddev"})
+    BrewFormula("ddev/ddev/ddev").install(Ctx(os=MAC, ex=ex, force=True))
+    assert ex.calls[-1] == ["brew", "upgrade", "--formula", "ddev/ddev/ddev"]
 
 
 def test_formula_update_upgrades_present_and_installs_missing() -> None:

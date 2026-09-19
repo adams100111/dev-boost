@@ -114,11 +114,14 @@ def _provided_by_os(cls: type[Module], os_info: OsInfo) -> bool:
 def _supported(cls: type[Module], os_info: OsInfo) -> bool:
     """Is there an install path for this OS?
 
-    A uniform module (no per_os) runs everywhere. Otherwise the per_os entry for this OS
+    Unsupported when the module declines this OS version (``supported_on``, M5). Otherwise
+    a uniform module (no per_os) runs everywhere. Otherwise the per_os entry for this OS
     decides; when there is none, a module that implements install() AND verify() itself
     falls back to them (e.g. ``per_os = OsMap(macos=...)`` on a module whose own
     install/verify are the Linux path). With only one overridden, the other would raise.
     """
+    if not cls.supported_on(os_info):
+        return False
     p = cls.per_os
     if not (p.fedora or p.debian or p.arch or p.macos or p.default):
         return True

@@ -18,6 +18,7 @@ from devboost.cli import docker_cmd as _docker_cmd
 from devboost.cli import host as plat
 from devboost.cli import lifecycle as lc
 from devboost.cli import pass_cmd as _pass
+from devboost.cli import revert as _revert
 from devboost.cli import secrets_cmd as _secrets_cmd
 from devboost.cli.doctor import all_ok, run_checks
 from devboost.cli.installer import installer as _installer
@@ -124,9 +125,12 @@ def _brew_managed_on_macos(cls: type[Module]) -> bool:
     """True when a module's whole macOS install is one Homebrew formula or cask.
 
     `brew upgrade` is safe for all of these; custom macOS strategies (the Android SDK,
-    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux.
+    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux. A
+    `CaskApp` (`CaskInstall`) is one cask too: it wraps `BrewCask`, so a cask that updates
+    itself is skipped, and a forced re-run never re-opens the app (M5-D6).
     """
     from devboost.modules._brew import BrewCask, BrewFormula
+    from devboost.modules._cask import CaskInstall
     from devboost.modules._pkgmodule import PackageModule
     from devboost.modules.apps import FlatpakApp
 
@@ -134,7 +138,7 @@ def _brew_managed_on_macos(cls: type[Module]) -> bool:
         return cls.cask is not None
     if issubclass(cls, PackageModule):
         return True
-    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask))
+    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask, CaskInstall))
 
 
 def _apply_update_filter(
@@ -578,6 +582,7 @@ app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
 app.add_typer(_pass.app, name="pass")
 app.add_typer(_secrets_cmd.app, name="secrets")
+app.add_typer(_revert.app, name="revert")
 app.add_typer(_docker_cmd.app, name="docker")
 
 

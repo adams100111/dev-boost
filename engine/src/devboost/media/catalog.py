@@ -26,7 +26,7 @@ from devboost.core.settings import settings
 from devboost.media.config import IsoSpec
 
 # Keys in catalog.toml that are not OS entries and must be stripped before OS validation.
-_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy", "herdr"})
+_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy", "herdr", "xcode", "voxtype"})
 
 
 @dataclass(frozen=True)
@@ -112,6 +112,57 @@ class _HerdrRow(BaseModel):
         return v
 
 
+@dataclass(frozen=True)
+class XcodeSpec:
+    """Pinned Xcode + iOS simulator runtime (the ``[xcode]`` block)."""
+
+    version: str
+    ios_runtime: str
+    min_macos: tuple[int, int]
+
+
+@dataclass(frozen=True)
+class ReleaseAsset:
+    url: str
+    sha256: str
+
+
+@dataclass(frozen=True)
+class VoxtypeSpec:
+    """Pinned Voxtype release for Linux and macOS (the ``[voxtype]`` block)."""
+
+    version: str
+    assets: dict[str, ReleaseAsset]  # one per VOXTYPE_ASSETS key
+
+
+_VERSION = r"^\d+\.\d+(\.\d+)?$"
+
+
+class _XcodeRow(BaseModel):
+    version: str = Field(pattern=_VERSION)
+    ios_runtime: str = Field(pattern=_VERSION)
+    min_macos: str = Field(pattern=r"^\d+\.\d+$")
+
+
+#: Every asset the voxtype module installs from; a pin missing one fails at load.
+VOXTYPE_ASSETS: frozenset[str] = frozenset(
+    {"rpm-x86_64", "deb-x86_64", "bin-aarch64", "bin-macos-universal"}
+)
+
+
+class _VoxtypeRow(BaseModel):
+    version: str = Field(pattern=_VERSION)
+    assets: dict[str, _HerdrAssetRow] = Field(min_length=1)  # url + 64-hex sha256
+
+    @field_validator("assets")
+    @classmethod
+    def _all_assets(cls, v: dict[str, _HerdrAssetRow]) -> dict[str, _HerdrAssetRow]:
+        missing = sorted(VOXTYPE_ASSETS - set(v))
+        if missing:
+            raise ValueError(f"missing voxtype assets: {', '.join(missing)}")
+        return v
+
+
 _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
 
 
@@ -181,6 +232,40 @@ def herdr_pin() -> HerdrSpec:
     return HerdrSpec(
         version=row.version,
         assets={a: HerdrAsset(url=r.url, sha256=r.sha256) for a, r in row.assets.items()},
+    )
+
+
+def _section(name: str) -> object:
+    path = settings.catalog_path
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))[name]
+    except (OSError, KeyError, ValueError) as exc:
+        raise MediaError(f"[{name}] pin missing or invalid in {path}: {exc}") from exc
+
+
+@cache
+def xcode_pin() -> XcodeSpec:
+    """The pinned Xcode (cached). Read from the ``[xcode]`` block in catalog.toml."""
+    try:
+        row = _XcodeRow.model_validate(_section("xcode"))
+    except ValueError as exc:
+        raise MediaError(f"[xcode] pin invalid: {exc}") from exc
+    major, minor = (int(p) for p in row.min_macos.split("."))
+    return XcodeSpec(
+        version=row.version, ios_runtime=row.ios_runtime, min_macos=(major, minor)
+    )
+
+
+@cache
+def voxtype_pin() -> VoxtypeSpec:
+    """The pinned Voxtype release for Linux and macOS (cached), from ``[voxtype]``."""
+    try:
+        row = _VoxtypeRow.model_validate(_section("voxtype"))
+    except ValueError as exc:
+        raise MediaError(f"[voxtype] pin invalid: {exc}") from exc
+    return VoxtypeSpec(
+        version=row.version,
+        assets={k: ReleaseAsset(url=a.url, sha256=a.sha256) for k, a in row.assets.items()},
     )
 
 
