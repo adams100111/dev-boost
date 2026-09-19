@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
-import uuid
 from pathlib import Path
 
 from devboost.core.errors import InstallError, UnsupportedOS
@@ -100,16 +98,21 @@ class Zed(Module):
         _zed.ensure_config(ctx, all_pins())
 
     def _run_installer(self, ctx: Ctx) -> None:
-        # A fresh, unpredictable name that is NOT created here: curl creates it as whoever
-        # runs it (the target user under a demoting executor), so it can write it.
-        script = Path(tempfile.gettempdir()) / f"devboost-zed-install-{uuid.uuid4().hex}.sh"
+        # A private (0700) dir made through the executor, so under a demoting executor it is
+        # owned by the target user; nothing is ever written to a guessable path in the shared
+        # /tmp (curl's -o follows symlinks).
+        mktemp = ["mktemp", "-d"]
+        res = ctx.ex.run(mktemp)
+        tmp = res.stdout.strip()
+        if not res.ok or not tmp or not Path(tmp).is_absolute():
+            raise InstallError(self.name, " ".join(mktemp), res.code or 1)
         try:
-            for argv in zed_install_steps(ctx.os, script):
+            for argv in zed_install_steps(ctx.os, Path(tmp) / "install.sh"):
                 res = ctx.ex.run(argv)
                 if not res.ok:
                     raise InstallError(self.name, " ".join(argv), res.code)
         finally:
-            script.unlink(missing_ok=True)
+            ctx.ex.run(["rm", "-rf", tmp])
 
 
 @register

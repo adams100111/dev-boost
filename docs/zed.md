@@ -2,10 +2,11 @@
 
 `devboost install editors` (part of `full` and `omarchy`) installs [Zed](https://zed.dev) on
 Fedora, Ubuntu and Arch/Omarchy with the official user-local installer
-(`~/.local/zed.app`, `~/.local/bin/zed`; no sudo). The script is downloaded to a temp file
-first (`curl -fsSL --proto =https --tlsv1.2`), then run with `sh`, then deleted, so a failed
-download fails the install instead of silently running nothing. Zed updates itself. GUI only — skipped on
-headless servers. VS Code is opt-in: `devboost install optional-editors`.
+(`~/.local/zed.app`, `~/.local/bin/zed`; no sudo). The script is downloaded with
+`curl -fsSL --proto =https --tlsv1.2` into a private temp directory (`mktemp -d`, mode 0700),
+run with `sh`, and the directory is then deleted, so a failed download fails the install
+instead of silently running nothing. Zed updates itself. GUI only — skipped on headless
+servers. VS Code is opt-in: `devboost install optional-editors`.
 
 ## Seeded vs guaranteed
 
