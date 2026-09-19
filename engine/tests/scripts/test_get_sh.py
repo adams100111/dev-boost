@@ -1,0 +1,432 @@
+"""Hermetic tests for ``scripts/get.sh`` — the public ``curl … | bash`` bootstrap.
+
+Every external command the script reaches (``uname``, ``sw_vers``, ``sysctl``, ``id``,
+``curl``, ``sudo``) is a stub on a PATH that shadows the real tools, ``HOME`` is a tmp dir,
+``GS_BREW_PREFIX`` and ``GS_TTY`` point into tmp, and the "binary" the script installs is a
+shell script that logs how it was invoked. No test touches the network, the real Homebrew,
+the real ``sudo`` or the real home.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+from tests.scripts.conftest import StubPath
+
+GET_SH = Path(__file__).resolve().parents[3] / "scripts" / "get.sh"
+
+#: Asset keys that ``checksums.txt`` covers in the canned release.
+ASSETS = ("devboost-x86_64", "devboost-aarch64", "devboost-darwin-arm64")
+
+DEFAULT_BASE = "https://github.com/adams100111/dev-boost/releases/latest/download"
+BREW_INSTALLER = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+
+
+@dataclass(frozen=True)
+class Harness:
+    """A fully stubbed world for one ``get.sh`` run."""
+
+    env: dict[str, str]
+    home: Path
+    canned: Path
+    curl_log: Path
+    exec_log: Path
+    order_log: Path
+    brew_prefix: Path
+    tty: Path
+
+    def urls(self) -> list[str]:
+        if not self.curl_log.exists():
+            return []
+        return self.curl_log.read_text(encoding="utf-8").split()
+
+    def order(self) -> list[str]:
+        if not self.order_log.exists():
+            return []
+        return self.order_log.read_text(encoding="utf-8").splitlines()
+
+    def exec_lines(self) -> list[str]:
+        if not self.exec_log.exists():
+            return []
+        return self.exec_log.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def installed(self) -> Path:
+        return self.home / ".local" / "share" / "devboost" / "bin" / "devboost"
+
+    @property
+    def link(self) -> Path:
+        return self.home / ".local" / "bin" / "devboost"
+
+
+def _canned_binary(exec_log: Path) -> str:
+    """The stand-in for the released ``devboost`` binary: it records its argv, whether its
+    stdin is a tty, and (on request) what it read from stdin."""
+    return (
+        "#!/bin/sh\n"
+        "{\n"
+        '  echo "args=$*"\n'
+        '  if [ -t 0 ]; then echo "tty=yes"; else echo "tty=no"; fi\n'
+        '  if [ "${GS_TEST_READ_STDIN:-0}" = 1 ]; then echo "stdin=$(cat)"; fi\n'
+        f'}} >> "{exec_log}"\n'
+    )
+
+
+def _brew_stub(brew_prefix: Path) -> str:
+    return (
+        "#!/bin/sh\n"
+        'if [ "$1" = shellenv ]; then\n'
+        f"  echo 'export HOMEBREW_PREFIX=\"{brew_prefix}\"'\n"
+        "fi\n"
+        "exit 0\n"
+    )
+
+
+def _make_harness(
+    stub: StubPath,
+    tmp_path: Path,
+    *,
+    system: str = "Darwin",
+    machine: str = "arm64",
+    arm64: str = "1",
+    mac_version: str = "27.0",
+    uid: str = "1000",
+    brew: bool = True,
+    corrupt: str | None = None,
+    **extra_env: str,
+) -> Harness:
+    canned = tmp_path / "canned"
+    canned.mkdir()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    curl_log = logs / "curl.log"
+    exec_log = logs / "exec.log"
+    order_log = logs / "order.log"
+    brew_prefix = tmp_path / "brewprefix"
+    tty = tmp_path / "tty-file"
+    tty.write_text("", encoding="utf-8")
+
+    for asset in ASSETS:
+        (canned / asset).write_text(_canned_binary(exec_log), encoding="utf-8")
+    for asset in ("devboost-x86_64", "devboost-aarch64"):
+        (canned / f"{asset}.tar.gz").write_bytes(b"ventoy-archive-" + asset.encode())
+
+    lines = [
+        f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}"
+        for p in sorted(canned.iterdir())
+    ]
+    (canned / "checksums.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if corrupt is not None:
+        (canned / corrupt).write_text("tampered\n", encoding="utf-8")
+
+    # Not part of the release: the brew the Homebrew installer "installs", and the canned
+    # Homebrew installer itself.
+    (canned / "brew-stub").write_text(_brew_stub(brew_prefix), encoding="utf-8")
+    (canned / "install.sh").write_text(
+        f'printf "brew-installer NONINTERACTIVE=%s\\n" "${{NONINTERACTIVE-unset}}" '
+        f'>> "{order_log}"\n'
+        f'mkdir -p "{brew_prefix}/bin"\n'
+        f'cp "{canned}/brew-stub" "{brew_prefix}/bin/brew"\n'
+        f'chmod 0755 "{brew_prefix}/bin/brew"\n',
+        encoding="utf-8",
+    )
+
+    if brew:
+        (brew_prefix / "bin").mkdir(parents=True)
+        brew_bin = brew_prefix / "bin" / "brew"
+        brew_bin.write_text(_brew_stub(brew_prefix), encoding="utf-8")
+        brew_bin.chmod(0o755)
+
+    stub.add(
+        "uname",
+        f'case "${{1:-}}" in\n  -m) echo "{machine}" ;;\n  *) echo "{system}" ;;\nesac',
+    )
+    stub.add("sw_vers", f'echo "{mac_version}"')
+    stub.add("sysctl", f'echo "{arm64}"')
+    stub.add("id", f'echo "{uid}"')
+    stub.add("sudo", f'printf "sudo %s\\n" "$*" >> "{order_log}"\nexit 0')
+    stub.add(
+        "curl",
+        "url=\"\"\nout=\"\"\n"
+        'while [ $# -gt 0 ]; do\n'
+        '  case "$1" in\n'
+        '    -o) out="$2"; shift 2 ;;\n'
+        '    -*) shift ;;\n'
+        '    *) url="$1"; shift ;;\n'
+        "  esac\n"
+        "done\n"
+        f'printf "%s\\n" "$url" >> "{curl_log}"\n'
+        f'src="{canned}/${{url##*/}}"\n'
+        '[ -f "$src" ] || exit 22\n'
+        'if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi\n',
+    )
+
+    env = stub.env(GS_BREW_PREFIX=str(brew_prefix), GS_TTY=str(tty), **extra_env)
+    return Harness(
+        env=env,
+        home=tmp_path / "home",
+        canned=canned,
+        curl_log=curl_log,
+        exec_log=exec_log,
+        order_log=order_log,
+        brew_prefix=brew_prefix,
+        tty=tty,
+    )
+
+
+def _run_get_sh(
+    harness: Harness, *args: str, stdin: bytes = b""
+) -> subprocess.CompletedProcess[bytes]:
+    """Run ``get.sh`` itself (its shebang resolves bash off the stubbed PATH) with an
+    explicit stdin, so ``[ -t 0 ]`` inside the script is deterministic."""
+    return subprocess.run(
+        [str(GET_SH), *args],
+        env=harness.env,
+        input=stdin,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _stderr(proc: subprocess.CompletedProcess[bytes]) -> str:
+    return proc.stderr.decode("utf-8", "replace")
+
+
+# --------------------------------------------------------------------------- Linux
+
+
+def test_linux_x86_64_flow_unchanged(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, system="Linux", machine="x86_64")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.urls() == [
+        f"{DEFAULT_BASE}/checksums.txt",
+        f"{DEFAULT_BASE}/devboost-x86_64",
+        f"{DEFAULT_BASE}/devboost-x86_64.tar.gz",
+    ]
+    assert h.exec_lines()[0] == "args=install terminal"
+    assert h.installed.is_file()
+    assert (h.installed.parent / "devboost-x86_64.tar.gz").is_file()
+    assert h.link.is_symlink()
+
+
+def test_linux_never_reads_tty_or_bootstraps_brew(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, system="Linux", machine="aarch64", brew=False)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert BREW_INSTALLER not in h.urls()
+    assert not (h.brew_prefix / "bin" / "brew").exists()
+    assert "tty=no" in h.exec_lines()
+
+
+# --------------------------------------------------------------------------- Darwin happy path
+
+
+def test_darwin_arm64_fetches_binary_only(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.urls() == [
+        f"{DEFAULT_BASE}/checksums.txt",
+        f"{DEFAULT_BASE}/devboost-darwin-arm64",
+    ]
+    assert not any(u.endswith(".tar.gz") for u in h.urls())
+    assert h.installed.is_file()
+    assert h.link.is_symlink()
+    assert list(h.installed.parent.iterdir()) == [h.installed]
+    assert h.exec_lines()[0] == "args=install terminal"
+
+
+def test_darwin_rosetta_shell_counts_as_arm64(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, machine="x86_64", arm64="1")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert f"{DEFAULT_BASE}/devboost-darwin-arm64" in h.urls()
+
+
+def test_darwin_intel_refused(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, machine="x86_64", arm64="0")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: Intel Macs are not supported — dev-boost needs Apple Silicon (arm64)"
+        in _stderr(proc)
+    )
+    assert h.urls() == []
+
+
+def test_darwin_never_sudo_links_into_usr_local(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.order() == []
+
+
+# --------------------------------------------------------------------------- version gate
+
+
+def test_darwin_macos_14_refused(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, mac_version="14.7")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: macOS 14.7 is not supported — dev-boost needs macOS 15 or newer "
+        "(27 recommended)" in _stderr(proc)
+    )
+    assert h.urls() == []
+
+
+def test_darwin_macos_15_warns(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, mac_version="15.6")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert (
+        "get.sh: macOS 15 is best-effort (untested); 27 and 26 are supported" in _stderr(proc)
+    )
+    assert h.installed.is_file()
+
+
+@pytest.mark.parametrize("version", ["26.3", "27.0"])
+def test_darwin_macos_26_and_27_quiet(
+    stub_path: StubPath, tmp_path: Path, version: str
+) -> None:
+    h = _make_harness(stub_path, tmp_path, mac_version=version)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    err = _stderr(proc)
+    assert "best-effort" not in err
+    assert "newer than tested" not in err
+    assert "is not supported" not in err
+
+
+def test_darwin_macos_28_warns_newer(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, mac_version="28.0")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert "get.sh: macOS 28.0 is newer than tested (27) — continuing" in _stderr(proc)
+    assert h.installed.is_file()
+
+
+# --------------------------------------------------------------------------- root
+
+
+def test_darwin_root_refused(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, uid="0")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert (
+        "get.sh: don't run this as root on macOS — Homebrew refuses root. "
+        "Run it as your user." in _stderr(proc)
+    )
+    assert h.urls() == []
+
+
+# --------------------------------------------------------------------------- Homebrew
+
+
+def test_darwin_bootstraps_homebrew_when_missing(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, brew=False)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert BREW_INSTALLER in h.urls()
+    assert h.order() == ["sudo -v", "brew-installer NONINTERACTIVE=1"]
+    assert (h.brew_prefix / "bin" / "brew").is_file()
+    assert h.installed.is_file()
+
+
+def test_darwin_skips_homebrew_when_present(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, brew=True)
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert BREW_INSTALLER not in h.urls()
+    assert h.order() == []
+
+
+# --------------------------------------------------------------------------- tty
+
+
+def test_darwin_exec_reads_tty_under_pipe(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, GS_TEST_READ_STDIN="1")
+    h.tty.write_text("FROM-TTY\n", encoding="utf-8")
+    proc = _run_get_sh(h, stdin=b"FROM-PIPE\n")
+    assert proc.returncode == 0, _stderr(proc)
+    assert "stdin=FROM-TTY" in h.exec_lines()
+    assert "stdin=FROM-PIPE" not in h.exec_lines()
+
+
+# --------------------------------------------------------------------------- profiles
+
+
+def test_darwin_usb_profile_refused(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h, "usb")
+    assert proc.returncode == 1
+    assert "get.sh: the USB builder is Linux-only" in _stderr(proc)
+    assert h.exec_lines() == []
+
+
+def test_darwin_none_installs_only(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    proc = _run_get_sh(h, "none")
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.installed.is_file()
+    assert h.link.is_symlink()
+    assert h.exec_lines() == []
+
+
+# --------------------------------------------------------------------------- base override
+
+
+def test_release_base_override(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, DEVBOOST_RELEASE_BASE="file:///x")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.urls() == ["file:///x/checksums.txt", "file:///x/devboost-darwin-arm64"]
+
+
+def test_release_base_must_not_be_plain_http(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, DEVBOOST_RELEASE_BASE="http://evil.example/dl")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "get.sh: refusing a non-HTTPS release base" in _stderr(proc)
+    assert h.urls() == []
+
+
+# --------------------------------------------------------------------------- integrity
+
+
+def test_checksum_mismatch_darwin(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path, corrupt="devboost-darwin-arm64")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "get.sh: checksum mismatch: devboost-darwin-arm64" in _stderr(proc)
+    assert not h.installed.exists()
+    assert not h.link.exists()
+    assert h.exec_lines() == []
+
+
+def test_missing_release_reports_cleanly(stub_path: StubPath, tmp_path: Path) -> None:
+    h = _make_harness(stub_path, tmp_path)
+    (h.canned / "checksums.txt").unlink()
+    proc = _run_get_sh(h)
+    assert proc.returncode == 1
+    assert "no published release yet" in _stderr(proc)
+    assert not h.installed.exists()
+
+
+# --------------------------------------------------------------------------- lint
+
+
+def test_get_sh_shellcheck_clean() -> None:
+    if shutil.which("shellcheck") is None:
+        pytest.skip("shellcheck is not installed")
+    proc = subprocess.run(
+        ["shellcheck", "-x", str(GET_SH)], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
