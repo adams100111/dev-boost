@@ -1,0 +1,88 @@
+{{- /* devboost — managed by chezmoi. Linux never gets this file (.chezmoiignore). */ -}}
+{{- $arabic := stat (joinPath .chezmoi.homeDir ".config/devboost/voxtype-arabic") -}}
+# devboost — managed by chezmoi (dotfiles/dot_config/aerospace/aerospace.toml.tmpl)
+# AeroSpace tiling window manager — https://nikitabobko.github.io/AeroSpace/guide
+# Every binding is Ctrl+Alt: AeroSpace hotkeys are global, and plain Alt would swallow
+# readline/fzf Alt bindings in the terminal. Nothing here binds Ctrl+V (herdr owns paste).
+# Validate after editing: aerospace reload-config --dry-run --no-gui
+
+# Version 2 is upstream's recommended level (lower versions warn on reload). It stops
+# inferring persistent workspaces from the bindings, so the bound ones are listed here.
+config-version = 2
+persistent-workspaces = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+start-at-login = true
+after-startup-command = []
+enable-normalization-flatten-containers = true
+enable-normalization-opposite-orientation-for-nested-containers = true
+accordion-padding = 30
+default-root-container-layout = 'tiles'
+default-root-container-orientation = 'auto'
+on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+automatically-unhide-macos-hidden-apps = false
+key-mapping.preset = 'qwerty'
+
+gaps.inner.horizontal = 8
+gaps.inner.vertical = 8
+gaps.outer.left = 8
+gaps.outer.bottom = 8
+gaps.outer.top = 8
+gaps.outer.right = 8
+
+[mode.main.binding]
+ctrl-alt-slash = 'layout tiles horizontal vertical'
+ctrl-alt-comma = 'layout accordion horizontal vertical'
+ctrl-alt-f = 'fullscreen'
+
+ctrl-alt-h = 'focus left'
+ctrl-alt-j = 'focus down'
+ctrl-alt-k = 'focus up'
+ctrl-alt-l = 'focus right'
+
+ctrl-alt-shift-h = 'move left'
+ctrl-alt-shift-j = 'move down'
+ctrl-alt-shift-k = 'move up'
+ctrl-alt-shift-l = 'move right'
+
+ctrl-alt-minus = 'resize smart -50'
+ctrl-alt-equal = 'resize smart +50'
+
+ctrl-alt-1 = 'workspace 1'
+ctrl-alt-2 = 'workspace 2'
+ctrl-alt-3 = 'workspace 3'
+ctrl-alt-4 = 'workspace 4'
+ctrl-alt-5 = 'workspace 5'
+ctrl-alt-6 = 'workspace 6'
+ctrl-alt-7 = 'workspace 7'
+ctrl-alt-8 = 'workspace 8'
+ctrl-alt-9 = 'workspace 9'
+
+ctrl-alt-shift-1 = 'move-node-to-workspace 1'
+ctrl-alt-shift-2 = 'move-node-to-workspace 2'
+ctrl-alt-shift-3 = 'move-node-to-workspace 3'
+ctrl-alt-shift-4 = 'move-node-to-workspace 4'
+ctrl-alt-shift-5 = 'move-node-to-workspace 5'
+ctrl-alt-shift-6 = 'move-node-to-workspace 6'
+ctrl-alt-shift-7 = 'move-node-to-workspace 7'
+ctrl-alt-shift-8 = 'move-node-to-workspace 8'
+ctrl-alt-shift-9 = 'move-node-to-workspace 9'
+
+ctrl-alt-tab = 'workspace-back-and-forth'
+ctrl-alt-shift-tab = 'move-workspace-to-monitor --wrap-around next'
+ctrl-alt-shift-semicolon = 'mode service'
+{{- if $arabic }}
+
+# Arabic dictation (devboost voxtype-arabic): press to start, press again to stop.
+# macOS Voxtype ignores `model_modifier`, so the secondary model gets its own key.
+ctrl-alt-d = 'exec-and-forget /opt/homebrew/bin/voxtype record toggle --model large-v3-turbo'
+{{- end }}
+
+[mode.service.binding]
+esc = ['reload-config', 'mode main']
+r = ['flatten-workspace-tree', 'mode main']
+f = ['layout floating tiling', 'mode main']
+backspace = ['close-all-windows-but-current', 'mode main']
+ctrl-alt-shift-h = ['join-with left', 'mode main']
+ctrl-alt-shift-j = ['join-with down', 'mode main']
+ctrl-alt-shift-k = ['join-with up', 'mode main']
+ctrl-alt-shift-l = ['join-with right', 'mode main']
