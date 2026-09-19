@@ -781,7 +781,7 @@ def test_bootstrap_user_floors_since_to_the_second(
     seen: list[float] = []
     monkeypatch.setattr(bootstrap, "_run_profiles", lambda c, tokens, root: None)
     monkeypatch.setattr(os, "geteuid", lambda: 0)
-    monkeypatch.setattr(bootstrap.time, "time", lambda: 1_700_000_123.9)
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_123.9)  # bootstrap's `time`
 
     def reclaim(h: Path, *, uid: int, gid: int, since: float) -> list[Path]:
         seen.append(since)
