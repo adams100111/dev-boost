@@ -154,7 +154,10 @@ def profiles_file(tmp_path: Path) -> Path:
         'omarchy = ["omarchy-update-hook"]\n'
         'orca = ["orca-ide"]\n'
         'orca-box = ["orca-ide","orca-serve"]\n'
-        'macos = ["ripgrep"]\n',
+        'macos = ["ripgrep"]\n'
+        'macos-desktop = []\n'
+        'ios = []\n'
+        'macos-extras = []\n',
         encoding="utf-8",
     )
     return p

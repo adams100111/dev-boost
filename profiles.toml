@@ -27,6 +27,11 @@ orca-box = ["orca-ide","orca-serve"]
 # appends "macos-desktop"; the Docker runtime and launchd timers report blocked until M4.
 macos = ["base","cli","shell","editors","python","web","laravel","dotnet","data",
          "devops","react-native","apps","dev-hygiene","remote","claude","codex","pi"]
+# M5 macOS desktop keys — seeded empty so M5 modules can declare them; the M5
+# integration lane fills the members. `ios` and `macos-extras` are opt-in.
+macos-desktop = []
+ios = []
+macos-extras = []
 base = ["xcode-clt","homebrew","rosetta",
         "secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
