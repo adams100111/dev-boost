@@ -9,11 +9,13 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import GithubError, UnsupportedOS
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, github, pkg, systemd
 from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
 from devboost.modules._brew import BrewCask
+from devboost.modules._pending import MacosPending
 from devboost.modules.base import Flatpak
 from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import Secrets
@@ -149,11 +151,19 @@ class ObsidianSync(Module):
     description = "Provision the Obsidian vault: deploy key, clone, daily push backstop."
     requires = (Obsidian, Secrets, SshSetup)
     profiles = ("apps",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "clone the vault by hand (`git clone <repo> ~/Vault`); daily sync lands in M4"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return (_vault_dir() / ".git").is_dir()
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         repo = os.environ.get("DEVBOOST_VAULT_REPO")
         if not repo:
             log.warn("obsidian-sync: DEVBOOST_VAULT_REPO not set — skipping (non-blocking)")

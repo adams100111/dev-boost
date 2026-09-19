@@ -14,9 +14,11 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
+from devboost.modules._pending import MacosPending
 from devboost.modules.secrets import bundle_path, key_path
 
 
@@ -181,17 +183,25 @@ class ResticB2(Module):
     category = "server"
     description = "Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer."
     profiles = ("server",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "run the restic → B2 backup by hand; the nightly launchd timer lands in M4"
+    ))
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         d = systemd._user_unit_dir()
         if not ((d / "restic-b2.service").exists() and (d / "restic-b2.timer").exists()):
             return False
         return systemd.is_enabled(ctx, "restic-b2.timer", user=True)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if not ctx.ex.which("restic"):
             pkg.install(ctx, "restic")
         # Destination + credentials come from the age bundle. Without them we can't run an

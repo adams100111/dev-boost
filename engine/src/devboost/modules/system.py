@@ -8,9 +8,11 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
+from devboost.modules._pending import MacosPending
 
 
 def _snapper_config_value(get_config_stdout: str, key: str) -> str | None:
@@ -394,14 +396,22 @@ class ResticBackup(Module):
     category = "system"
     description = "Restic backup user service + timer."
     profiles = ("system",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "run `restic backup --files-from ~/.config/devboost/restic-include` by hand"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         d = systemd._user_unit_dir()
         if not ((d / "restic-backup.service").exists() and (d / "restic-backup.timer").exists()):
             return False
         return systemd.is_enabled(ctx, "restic-backup.timer", user=True)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if not ctx.ex.which("restic"):
             pkg.install(ctx, "restic")
         service = (
