@@ -32,8 +32,8 @@ base = ["secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatp
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
         "fastfetch","claude-code"]
-shell = ["starship","bash-config","ghostty","nerd-fonts","dotfiles","claude-statusline",
-         "claude-notify","wl-clipboard"]
+shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
+         "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
 remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
@@ -71,8 +71,8 @@ term = ["terminal"]
 terminal = ["coreutils","git","curl","wget","unzip","jq","mise","chezmoi",
             "ripgrep","fd","fzf","bat","eza","btop","zoxide","atuin","direnv",
             "delta","lazygit","dust","duf","sd","yq","gh","tealdeer","fastfetch",
-            "tmux","fresh","starship","bash-config","dotfiles","ghostty","nerd-fonts",
-            "claude-statusline"]
+            "tmux","fresh","starship","bash-config","zsh-config","bash","dotfiles",
+            "ghostty","nerd-fonts","claude-statusline"]
 devtools = ["web-runtimes","uv","python-lsp","web-lsp","dotnet-sdk","aspire",
             "dotnet-lsp","ddev","playwright"]
 # server — headless-VPS hardening + ops (Ubuntu/Debian). Separate entry point, like

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import ClassVar
@@ -28,6 +29,45 @@ _NF_URL = (
 
 def _home() -> Path:
     return Path(os.environ["HOME"])
+
+
+#: Every dev-boost managed dotfile carries this marker (dot_zshrc, dot_bashrc, …).
+_MANAGED_MARKER = "devboost — managed by chezmoi"
+#: macOS login/rc files the dotfiles take over (spec §3). A pre-existing one that is not
+#: dev-boost's is kept aside before `chezmoi apply --force` overwrites it.
+_TAKEN_OVER = (".zshrc", ".zprofile", ".bash_profile")
+
+
+def keep_foreign_rc_files(home: Path) -> list[Path]:
+    """Copy each foreign rc file to ``<name>.pre-devboost`` and return the backups.
+
+    A copy, not a move: the original stays in place until ``chezmoi apply --force``
+    replaces it, so a failed apply never leaves the Mac without its ``~/.zprofile``
+    (brew's PATH). A symlink is copied as the link itself, never followed.
+
+    An earlier backup is never replaced: a later foreign file becomes
+    ``<name>.pre-devboost.1``, ``.2``, … Content is not merged — the managed files source
+    ``~/.zshrc.local`` / ``~/.zprofile.local`` for machine-specific lines.
+    """
+    kept: list[Path] = []
+    for name in _TAKEN_OVER:
+        path = home / name
+        if not (path.is_file() or path.is_symlink()):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""  # a dangling symlink: nothing of ours, keep it too
+        if _MANAGED_MARKER in text:
+            continue
+        backup = home / f"{name}.pre-devboost"
+        n = 0
+        while backup.exists() or backup.is_symlink():
+            n += 1
+            backup = home / f"{name}.pre-devboost.{n}"
+        shutil.copy2(path, backup, follow_symlinks=False)
+        kept.append(backup)
+    return kept
 
 
 @register
@@ -200,6 +240,9 @@ class Dotfiles(Module):
     description = "Apply the in-repo chezmoi dotfiles source."
     requires = (Chezmoi, Starship, Atuin, Zoxide, Direnv)
     profiles = ("shell",)
+    # Runs unchanged on macOS: chezmoi comes from brew, and the source picks each OS's
+    # files itself (.chezmoiignore). install() also keeps foreign zsh/bash rc files.
+    portable = True
 
     def _stamp(self) -> Path:
         return _home() / ".config" / "devboost" / "dotfiles.sha256"
@@ -236,6 +279,13 @@ class Dotfiles(Module):
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
+        if ctx.os.family == "macos":
+            for backup in keep_foreign_rc_files(_home()):
+                log.ok(
+                    f"dotfiles: kept your previous ~/{backup.name.split('.pre-devboost')[0]}"
+                    f" as ~/{backup.name} — machine-specific lines belong in"
+                    " ~/.zshrc.local or ~/.zprofile.local"
+                )
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
         # overwritten silently. Without it, chezmoi tries to prompt on /dev/tty for any
@@ -279,6 +329,8 @@ class BashConfig(Module):
     description = "Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it)."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    # bash is the interactive shell on Linux only; macOS runs zsh (zsh-config).
+    families: ClassVar[tuple[str, ...]] = ("fedora", "debian", "arch")
 
     def _owns_bashrc(self, ctx: Ctx) -> bool:
         """True when dev-boost's own dotfiles supply ~/.bashrc wholesale.
@@ -313,6 +365,49 @@ class BashConfig(Module):
         with bashrc.open("a", encoding="utf-8") as fh:
             fh.write(_SOURCE_BLOCK)
         log.ok("bash-config: sourced dev-boost's shell fragment from ~/.bashrc")
+
+
+@register
+class ZshPlugins(Module):
+    name = "zsh-plugins"
+    category = "shell"
+    description = "zsh-autosuggestions + zsh-syntax-highlighting (sourced by shell.zsh)."
+    profiles = ("shell",)
+    # zsh is the interactive shell only on macOS (bash on Linux) — spec §2.
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    self_updating = True  # `devboost install --update` → brew upgrade
+    per_os = OsMap(macos=BrewFormula("zsh-autosuggestions", "zsh-syntax-highlighting"))
+
+
+#: The line dot_zshrc uses to load dev-boost's zsh config (checked by zsh-config).
+_ZSH_SOURCE_LINE = (
+    '[[ -r "${HOME}/.config/devboost/shell.zsh" ]] && source "${HOME}/.config/devboost/shell.zsh"'
+)
+
+
+@register
+class ZshConfig(Module):
+    name = "zsh-config"
+    category = "shell"
+    description = "Check dev-boost's zsh config is live (~/.zshrc → shell.zsh) — macOS."
+    requires = (Dotfiles, ZshPlugins)
+    profiles = ("shell",)
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    # Written for macOS: it only reads the files the dotfiles module applied.
+    portable = True
+
+    def verify(self, ctx: Ctx) -> bool:
+        zshrc = _home() / ".zshrc"
+        if not zshrc.is_file() or not (_home() / ".config/devboost/shell.zsh").is_file():
+            return False
+        text = zshrc.read_text(encoding="utf-8")
+        return _MANAGED_MARKER in text and _ZSH_SOURCE_LINE in text
+
+    def install(self, ctx: Ctx) -> None:
+        # ~/.zshrc is written by the dotfiles module (a marker check, like bash-config).
+        log.warn(
+            "zsh-config: ~/.zshrc is not dev-boost's — run `devboost install dotfiles --force`"
+        )
 
 
 @register
