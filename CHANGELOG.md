@@ -8,6 +8,14 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Security
+- **browser-mcp is opt-in everywhere** — port 8931 runs code as you for any tailnet peer
+  that can reach it (`browser_run_code_unsafe`, no auth), so no profile installs it any more,
+  not even `remote`. Turn it on with `devboost install browser-mcp`, and restrict tcp:8931
+  with a Tailscale ACL (docs/remote-dev.md). On Linux the dotfiles still ship the systemd
+  `--user` unit but no longer enable it (the `default.target.wants/` link is gone); only the
+  `browser-mcp` module enables it. Machines set up earlier keep their old link until you run
+  `systemctl --user disable --now browser-mcp.service`. `devboost install browser-mcp`
+  prints the ACL requirement.
 - **browser-mcp security** — the Playwright MCP server is pinned to `@playwright/mcp@0.0.82`
   everywhere (the `browser-mcp` launcher, the macOS LaunchAgent, `pw-mcp`, and the Claude
   Code wiring in the `playwright` module); nothing starts `@latest`. The server's
@@ -20,8 +28,8 @@ git history and the GitHub release notes.
   a common `DockerRuntime` protocol, plus `devboost docker use <runtime>` to switch between
   them (snapshots ddev first, stops the others, re-verifies what depends on Docker). ddev,
   Aspire and data-services now install on the Mac too. `aspire-gc`, `restic-backup`,
-  `restic-b2`, `obsidian-sync` and `browser-mcp` (new — a Playwright MCP server for remote
-  Claude Code sessions, `remote` profile) run as launchd agents, the macOS twin of the
+  `restic-b2`, `obsidian-sync` and `browser-mcp` (new on macOS — a Playwright MCP server for
+  remote Claude Code sessions, opt-in) run as launchd agents, the macOS twin of the
   Linux systemd `--user` timers. `devboost doctor` reports the selected Docker runtime's
   health, with Apple M4/M5 and Rosetta-specific hints. `KNOWN_GAPS` is empty — M4 closes
   the macOS catalog. See [docs/docker-runtimes.md](docs/docker-runtimes.md).

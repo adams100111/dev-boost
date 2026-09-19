@@ -118,3 +118,32 @@ def test_pw_mcp_never_binds_every_interface() -> None:
     text = ALIASES.read_text(encoding="utf-8")
     assert "bind=0.0.0.0" not in text
     assert "refusing to bind 0.0.0.0" in text
+
+
+# --- log growth (final review M7): launchd has no rotation, so the launcher caps its log ----
+
+
+def _run_with_log(tmp_path: Path, log: Path) -> None:
+    bash = shutil.which("bash")
+    assert bash is not None
+    bin_ = _fake_bin(tmp_path)
+    wc = shutil.which("wc")
+    assert wc is not None
+    (bin_ / "wc").symlink_to(wc)
+    env = {"HOME": str(tmp_path), "PATH": str(bin_), "CHROME_APP": str(tmp_path / "absent.app"),
+           "BROWSER_MCP_LOG": str(log)}
+    subprocess.run([bash, str(LAUNCHER)], env=env, capture_output=True, text=True, check=True)
+
+
+def test_an_oversized_log_is_truncated_at_start(tmp_path: Path) -> None:
+    log = tmp_path / "browser-mcp.log"
+    log.write_bytes(b"x" * (10 * 1024 * 1024 + 1))
+    _run_with_log(tmp_path, log)
+    assert log.stat().st_size < 1024
+
+
+def test_a_small_log_is_kept(tmp_path: Path) -> None:
+    log = tmp_path / "browser-mcp.log"
+    log.write_text("earlier run\n", encoding="utf-8")
+    _run_with_log(tmp_path, log)
+    assert log.read_text(encoding="utf-8").startswith("earlier run\n")

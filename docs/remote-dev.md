@@ -203,9 +203,12 @@ browser's worth of RAM stays local — trivial next to the LSP/builds you offloa
 
 ### Security: port 8931 runs code on your machine
 
-The same MCP server also runs always-on as the `browser-mcp` service (a systemd `--user` unit
-on Linux, the `dev.devboost.browser-mcp` LaunchAgent on macOS, `remote` profile), bound to the
-machine's Tailscale IP on port **8931**. Treat that port as a remote shell:
+The same MCP server can also run always-on as the `browser-mcp` service (a systemd `--user`
+unit on Linux, the `dev.devboost.browser-mcp` LaunchAgent on macOS), bound to the machine's
+Tailscale IP on port **8931**. It is **opt-in**: no profile installs it, not even `remote`.
+Turn it on with `devboost install browser-mcp`, and restrict tcp:8931 with a Tailscale ACL
+(below) first. On Linux the dotfiles ship the unit but no longer enable it; only
+`devboost install browser-mcp` does. Treat that port as a remote shell:
 
 - **It can run code on the machine.** Playwright MCP includes `browser_run_code_unsafe`.
   Its own description says it "executes arbitrary JavaScript in the Playwright server

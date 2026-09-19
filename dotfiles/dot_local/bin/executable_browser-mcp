@@ -25,6 +25,16 @@ export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
 PORT="${PORT:-8931}"
 
+# launchd never rotates a job's StandardOutPath, and a restart loop (tailnet down) appends
+# to it every minute. The macOS LaunchAgent names its log in BROWSER_MCP_LOG; start it
+# afresh once it passes 10 MiB (launchd appends, so writes carry on at the new end).
+if [ -n "${BROWSER_MCP_LOG:-}" ] && [ -f "${BROWSER_MCP_LOG}" ]; then
+  log_bytes="$(wc -c < "${BROWSER_MCP_LOG}" 2>/dev/null || echo 0)"
+  if [ "${log_bytes// /}" -gt $((10 * 1024 * 1024)) ] 2>/dev/null; then
+    : > "${BROWSER_MCP_LOG}"
+  fi
+fi
+
 # SECURITY: this server exposes `browser_run_code_unsafe` (arbitrary JavaScript in the
 # server process, "RCE-equivalent" per its own tool description) and `browser_evaluate`.
 # Both sit in the always-on `core` capability: in @playwright/mcp 0.0.82 there is NO flag

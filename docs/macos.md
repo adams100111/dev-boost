@@ -38,7 +38,7 @@ installed.
 | Homebrew formulae | the terminal set (M2), plus glow, mosh, neovim (opt-in), uv, cmake (`build-tools`), smartmontools, ffmpeg (`multimedia`), utiluti, mkcert, ddev (`ddev/ddev` tap), colima, docker, docker-compose, docker-buildx |
 | Homebrew casks | ghostty, nerd-fonts, zed, obsidian, bruno, bitwarden, localsend, vlc, tailscale-app, android-commandlinetools; opt-in: visual-studio-code, jetbrains-toolbox, wezterm@nightly, orbstack, docker-desktop |
 | Own installers | .NET 10 SDK in `~/.dotnet` (`dotnet-install.sh`), herdr 0.9.1 (pinned, SHA-256-checked), Claude Code, Codex, the Pi harness |
-| Scheduled jobs (M4) | `aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync` as launchd agents (systemd `--user` timers on Linux); `browser-mcp` — an engine module on macOS (a systemd unit installed via dotfiles on Linux) |
+| Scheduled jobs (M4) | `aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync` as launchd agents (systemd `--user` timers on Linux); `browser-mcp` — opt-in (`devboost install browser-mcp`): a LaunchAgent on macOS, the dotfiles' systemd unit on Linux, enabled only by the module |
 | Same as Linux | mise runtimes (node/pnpm/bun, java, devops tools), LSP servers, Playwright, Aspire, csharp-ls, the Claude/Codex plugins, skills and MCP servers |
 | Provided by macOS (skipped) | curl, unzip, wl-clipboard, flameshot (⌘⇧5), fwupd, thermald, power-profiles-daemon, va-hwaccel |
 | Linux-only (not planned) | bash-config, gearlever, earlyoom, gpu-detect, zram, the brain-host services, the Fedora system layer |
@@ -147,14 +147,16 @@ later without losing anything.
 compose template. The postgres, valkey and dbgate images it references are multi-arch.
 
 The timers (`aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync`) are LaunchAgents
-labelled `dev.devboost.<name>`; `browser-mcp` is an always-on agent in the `remote`
-profile. See [docker-runtimes.md](docker-runtimes.md#scheduled-jobs-launchd) for the
-schedule and log locations.
+labelled `dev.devboost.<name>`. See
+[docker-runtimes.md](docker-runtimes.md#scheduled-jobs-launchd) for the schedule and log
+locations.
 
-`browser-mcp` runs `@playwright/mcp@0.0.82`, pinned and never `@latest`, on the Mac's
-Tailscale IP at port 8931. That server has `browser_run_code_unsafe`, which is
-RCE-equivalent, and no option turns it off. Any tailnet peer that can reach tcp/8931 can run
-code as you. Restrict the port with a Tailscale ACL. See
+`browser-mcp` is **opt-in**: no profile installs it, not even `remote`. Turn it on with
+`devboost install browser-mcp`, which loads an always-on agent. It runs
+`@playwright/mcp@0.0.82`, pinned and never `@latest`, on the Mac's Tailscale IP at port 8931.
+That server has `browser_run_code_unsafe`, which is RCE-equivalent, and no option turns it
+off. Any tailnet peer that can reach tcp:8931 can run code as you, so restrict tcp:8931 with
+a Tailscale ACL before you turn it on. See
 [remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the policy.
 
 ## One-time manual steps

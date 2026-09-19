@@ -80,7 +80,7 @@ The Linux systemd `--user` timers run on macOS as LaunchAgents in `~/Library/Lau
 | `restic-backup` | daily, 00:00 | `restic backup --files-from ~/.config/devboost/restic-include` |
 | `restic-b2` | daily, 00:00 | `restic init` (once), `backup`, then `forget --prune` (7 daily / 4 weekly / 6 monthly) |
 | `obsidian-sync` | daily, 00:00 | commit, pull `--rebase`, push the vault |
-| `browser-mcp` | always on (restarts on failure, at most once a minute) | `~/.local/bin/browser-mcp` |
+| `browser-mcp` (opt-in) | always on (restarts on failure, at most once a minute) | `~/.local/bin/browser-mcp` |
 
 A job whose time passed while the Mac was **asleep** runs once on wake, like systemd's `Persistent=true`. A run missed while the Mac was **off** is skipped — the one difference from the systemd `--user` timers.
 
@@ -94,7 +94,9 @@ tail -f ~/Library/Logs/devboost/restic-b2.log
 
 ### browser-mcp
 
-`browser-mcp` (profile `remote`) is the macOS twin of the Linux `browser-mcp.service` systemd unit (see `dotfiles/dot_config/systemd/user/README.md`): an always-on Playwright MCP server bound to the Tailscale interface, so a remote Claude Code session gets its own visible browser on this Mac. It is unauthenticated by design (reachable from the tailnet, not the open internet), so restrict it further with a **Tailscale ACL** scoped to `tcp:8931` on this device rather than relying on the tailnet's default allow — see the [Tailscale ACL docs](https://tailscale.com/kb/1018/acls). Never `tailscale funnel` it. The server includes `browser_run_code_unsafe`, which is RCE-equivalent, and in the pinned `@playwright/mcp@0.0.82` no flag turns it off. See [remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the exposure and an example ACL.
+`browser-mcp` is **opt-in**: no profile installs it. `devboost install browser-mcp` turns it on; restrict tcp:8931 with a Tailscale ACL first. It is the macOS twin of the Linux `browser-mcp.service` systemd unit (see `dotfiles/dot_config/systemd/user/README.md`): an always-on Playwright MCP server bound to the Tailscale interface, so a remote Claude Code session gets its own visible browser on this Mac. It is unauthenticated by design (reachable from the tailnet, not the open internet), so restrict it further with a **Tailscale ACL** scoped to `tcp:8931` on this device rather than relying on the tailnet's default allow — see the [Tailscale ACL docs](https://tailscale.com/kb/1018/acls). Never `tailscale funnel` it. The server includes `browser_run_code_unsafe`, which is RCE-equivalent, and in the pinned `@playwright/mcp@0.0.82` no flag turns it off. See [remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the exposure and an example ACL.
+
+Its log, `~/Library/Logs/devboost/browser-mcp.log`, is never rotated by launchd. The launcher starts it afresh once it passes 10 MiB (the agent passes the path as `BROWSER_MCP_LOG`), so a restart loop while the tailnet is down cannot fill the disk.
 
 ## Troubleshooting
 

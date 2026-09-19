@@ -37,10 +37,10 @@ def test_the_m4_modules_plan_on_macos(tmp_path: Path) -> None:
     assert set(M4) <= {p.name for p in plan}
 
 
-def test_linux_keeps_its_timers_and_drops_browser_mcp(tmp_path: Path) -> None:
+def test_linux_keeps_its_timers_and_browser_mcp(tmp_path: Path) -> None:
+    """C-M4-SEC2: browser-mcp now plans on Linux too — the module enables the systemd unit."""
     modules = load()
-    linux = [n for n in M4 if n != "browser-mcp"]
-    plan = build_plan(toposort(linux, modules), modules, FEDORA, gpu_marker=tmp_path / "x")
+    plan = build_plan(toposort(list(M4), modules), modules, FEDORA, gpu_marker=tmp_path / "x")
     names = {p.name for p in plan if p.skip_reason is None}
-    assert set(linux) <= names
-    assert "homebrew" not in names and "browser-mcp" not in names
+    assert set(M4) <= names
+    assert "homebrew" not in names

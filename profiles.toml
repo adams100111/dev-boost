@@ -38,7 +38,9 @@ cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydock
         "fastfetch","claude-code","herdr-plugins","glow"]
 shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
          "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
-remote = ["tailscale","mosh","browser-mcp"]
+# browser-mcp is NOT here: it puts an unauthenticated code-execution port (tcp:8931) on the
+# tailnet, so it is opt-in by name only — `devboost install browser-mcp` (C-M4-SEC2).
+remote = ["tailscale","mosh"]
 # claude — reusable Claude Code config bundle: base CLI + plugins + skills + MCP servers.
 claude = ["claude-code","claude-plugins","claude-skills","claude-mcp"]
 # codex — reusable OpenAI Codex CLI config bundle: base CLI + config + plugins + MCP servers + skills.

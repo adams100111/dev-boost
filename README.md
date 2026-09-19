@@ -110,7 +110,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `pi` | `pi-harness` |
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
-| `remote` | `tailscale`, `mosh`, `browser-mcp` |
+| `remote` | `tailscale`, `mosh` |
 | `security-cli` | `pass`, `pass-store` |
 | `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `zsh-config`, `zsh-plugins`, `bash`, `ghostty`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
@@ -130,7 +130,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `bash-config` | shell | Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
-| `browser-mcp` | remote | Playwright MCP on the tailnet for remote Claude Code sessions (launchd agent). |
+| `browser-mcp` | remote | Opt-in: Playwright MCP on the tailnet for remote Claude Code sessions (systemd unit / launchd agent). |
 | `browser-view` | brain-host | Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device. |
 | `bruno` | apps | Bruno API client. |
 | `btop` | cli |  |

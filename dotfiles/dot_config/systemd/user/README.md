@@ -10,7 +10,10 @@ screen, as if Claude were local. One server multiplexes N sessions (Playwright
 MCP gives each connection its own browser context; `--isolated` keeps them from
 sharing a profile). Launcher: [`~/.local/bin/browser-mcp`](../../../dot_local/bin/executable_browser-mcp).
 
-**macOS:** there is no systemd; `devboost install browser-mcp` (profile `remote`) runs the
+**Opt-in:** no profile installs it. `devboost install browser-mcp` turns it on, on both
+OSes; restrict tcp:8931 with a Tailscale ACL first (below).
+
+**macOS:** there is no systemd; `devboost install browser-mcp` runs the
 same launcher as the LaunchAgent `dev.devboost.browser-mcp`. The launcher finds Chrome at
 `/Applications/Google Chrome.app` (override with `CHROME_APP`).
 
@@ -20,11 +23,14 @@ which defaults to 0.0.82 and is never `@latest`. That server includes
 that can reach tcp/8931 can run code as you, so restrict the port with a Tailscale ACL. See
 [docs/remote-dev.md](../../../../docs/remote-dev.md#security-port-8931-runs-code-on-your-machine).
 
-### On a dev-boost machine this is automatic
+### Turning it on
 
-The `dotfiles` module applies this tree via chezmoi, which drops the unit **and**
-the `default.target.wants/` symlink — so the service is enabled and starts on your
-next graphical login. Two one-time prerequisites the dotfiles can't do for you:
+The `dotfiles` module applies this tree via chezmoi, which drops the unit only. It stays
+**disabled** until you run `devboost install browser-mcp`, which enables and starts it
+(`systemctl --user enable --now browser-mcp.service`). Machines set up before this change
+still carry the old `default.target.wants/` link; turn it off there with
+`systemctl --user disable --now browser-mcp.service` unless you want it. Two one-time
+prerequisites the dotfiles can't do for you:
 
 ```sh
 # 1. A browser. The launcher prefers your installed Google Chrome (channel
@@ -37,11 +43,10 @@ next graphical login. Two one-time prerequisites the dotfiles can't do for you:
 loginctl enable-linger "$USER"
 ```
 
-Start it now without waiting for a re-login:
+Start it:
 
 ```sh
-systemctl --user daemon-reload
-systemctl --user enable --now browser-mcp.service   # --now also starts it
+devboost install browser-mcp   # daemon-reload + enable --now browser-mcp.service
 ```
 
 Watch it: `systemctl --user status browser-mcp.service` · `journalctl --user -u browser-mcp -f`
