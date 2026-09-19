@@ -110,3 +110,44 @@ def test_gpg_list_failure_raises_instead_of_looking_empty(tmp_path: Path, flag: 
             gpg.public_fingerprints(_ctx(ex))
         else:
             gpg.show_key_file(_ctx(ex), tmp_path / "k.asc")
+
+
+LIST = (
+    "pub:u:255:22:9CF30C2EF3DCADF8:1:::u:::scESC:::::ed25519:::0:\n"
+    "fpr:::::::::7BC3DEDB389ABAEF6DA28D8D9CF30C2EF3DCADF8:\n"
+    "uid:u::::1::H::A (devboost:a) <a@x>::::::::::0:\n"
+    "sub:u:255:18:EB0162C1D881CB89:1::::::e:::::cv25519::\n"
+    "fpr:::::::::5B11BEBBCA4F4F82E4BA376BEB0162C1D881CB89:\n"
+)
+PACKETS = (
+    "# off=0 ctb=84 tag=1 hlen=2 plen=94\n"
+    ":pubkey enc packet: version 3, algo 18, keyid EB0162C1D881CB89\n"
+    "\tdata: [263 bits]\n"
+    ":pubkey enc packet: version 3, algo 18, keyid 00112233aabbccdd\n"
+    ":aead encrypted packet: cipher=9 aead=2 cb=16\n"
+)
+
+
+def test_parse_key_ids_maps_primary_and_subkeys_to_the_primary_fpr() -> None:
+    fp = "7BC3DEDB389ABAEF6DA28D8D9CF30C2EF3DCADF8"
+    assert gpg.parse_key_ids(LIST) == {"9CF30C2EF3DCADF8": fp, "EB0162C1D881CB89": fp}
+
+
+def test_recipients_reads_packets_without_decrypting(tmp_path: Path) -> None:
+    ex = RuleExecutor(rules=[(("--list-packets",), Result(0, PACKETS))])
+    got = gpg.recipients(Ctx(os=FEDORA, ex=ex), tmp_path / "e.gpg")
+    assert got == {"EB0162C1D881CB89", "00112233AABBCCDD"}
+    assert ex.calls == [["gpg", "--batch", "--pinentry-mode", "error", "--list-only",
+                         "--list-packets", str(tmp_path / "e.gpg")]]
+    assert not any("--decrypt" in c or "-d" in c for c in ex.calls)
+
+
+def test_recipients_failure_raises(tmp_path: Path) -> None:
+    ex = RuleExecutor(rules=[(("--list-packets",), Result(2))])
+    with pytest.raises(InstallError):
+        gpg.recipients(Ctx(os=FEDORA, ex=ex), tmp_path / "e.gpg")
+
+
+def test_is_key_token() -> None:
+    assert gpg.is_key_token("0x" + "a" * 16) and gpg.is_key_token("B" * 40)
+    assert not gpg.is_key_token("me@example.com") and not gpg.is_key_token("ABC")

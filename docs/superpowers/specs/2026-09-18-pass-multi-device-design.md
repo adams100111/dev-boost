@@ -136,7 +136,7 @@ bootstrap), `docs/recovery-runbook.md` ("lost a laptop" → revoke + rotate), RE
 | # | PR | Notes |
 |---|---|---|
 | P1 | Linux: profile move, default repo config, adopt + enroll + approve + revoke, sync timer + hook, `devboost pass` CLI, docs | lands independently — plan: [2026-09-19-pass-p1-linux](../plans/2026-09-19-pass-p1-linux.md) |
-| P2 | macOS: pinentry-mac, launchd sync agent, native notifications | after macOS M1 |
+| P2 | macOS: pinentry-mac, launchd sync agent, native notifications | after macOS M1 — plan: [2026-09-19-pass-p2-macos](../plans/2026-09-19-pass-p2-macos.md) |
 
 ### P1 notes
 
@@ -150,4 +150,5 @@ bootstrap), `docs/recovery-runbook.md` ("lost a laptop" → revoke + rotate), RE
   device never saw and did not approve itself. Planned hardening: a signed `.gpg-id`
   (`PASSWORD_STORE_SIGNING_KEY`).
 - **Carried to P2:** a recipient audit of entries inserted offline after a revoke
-  (`gpg --list-packets`), so an entry still encrypted to a revoked key is reported.
+  (`gpg --list-packets`), so an entry still encrypted to a revoked key is reported
+  (done in P2: `devboost pass audit`).

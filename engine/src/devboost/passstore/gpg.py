@@ -81,6 +81,55 @@ def show_key_file(ctx: Ctx, path: Path) -> list[KeyInfo]:
     return parse_colons(res.stdout, "pub")
 
 
+_RECIPIENT = re.compile(r"^:pubkey enc packet:.*\bkeyid ([0-9A-Fa-f]{16})\b", re.MULTILINE)
+
+
+def parse_key_ids(out: str) -> dict[str, str]:
+    """Long key id of every primary key AND subkey → its primary fingerprint (`--with-colons`).
+
+    Entries are encrypted to a subkey, so the audit needs subkey ids, not just primaries."""
+    ids: dict[str, str] = {}
+    primary: str | None = None
+    first: str | None = None  # the primary's key id, until its fpr line names the primary
+    for line in out.splitlines():
+        f = line.split(":")
+        if f[0] in ("pub", "sec") and len(f) > 4:
+            primary, first = None, f[4].upper()
+        elif f[0] == "fpr" and primary is None and first is not None and len(f) > 9:
+            primary = f[9].upper()
+            ids[first] = primary
+            first = None
+        elif f[0] in ("sub", "ssb") and primary is not None and len(f) > 4:
+            ids[f[4].upper()] = primary
+    return ids
+
+
+def key_ids(ctx: Ctx) -> dict[str, str]:
+    res = _must(_gpg(ctx, "--with-colons", "--list-keys"), "gpg --list-keys")
+    return parse_key_ids(res.stdout)
+
+
+def key_ids_in_file(ctx: Ctx, path: Path) -> dict[str, str]:
+    res = _must(_gpg(ctx, "--with-colons", "--show-keys", str(path)),
+                f"gpg --show-keys {path}")
+    return parse_key_ids(res.stdout)
+
+
+def recipients(ctx: Ctx, path: Path) -> set[str]:
+    """Long key ids an entry is encrypted to, read from its packets: `--list-only` skips the
+    decryption, so this never needs a secret key or a passphrase (no pinentry). `--pinentry-mode
+    error` is belt-and-braces: it makes it impossible for gpg-agent to ever open a pinentry
+    here, even if some future gpg build's `--list-only` were to need one."""
+    res = _must(_gpg(ctx, "--pinentry-mode", "error", "--list-only", "--list-packets", str(path)),
+                f"gpg --list-packets {path}")
+    return {m.upper() for m in _RECIPIENT.findall(res.stdout)}
+
+
+def is_key_token(token: str) -> bool:
+    """A `.gpg-id` token naming a key by fingerprint / long key id (never an email)."""
+    return bool(_HEX.match(token.strip().upper().removeprefix("0X")))
+
+
 def device_uid(real_name: str, email: str, device: str) -> str:
     return f"{real_name} (devboost:{device}) <{email}>"
 

@@ -127,8 +127,24 @@ def test_native_linux_uses_notify_send_when_present() -> None:
     assert notify.native(_ctx(RuleExecutor()), "t", "b") is False  # not installed
 
 
-def test_native_macos_is_a_p2_seam() -> None:
-    assert notify._native_argv(MAC, "t", "b") is None
+def test_native_macos_uses_osascript_with_argv_not_script_text() -> None:
+    title, body = 'pass: "x" wants access', 'a" & do shell script "rm -rf ~'
+    argv = notify._native_argv(MAC, title, body)
+    assert argv == [
+        "osascript",
+        "-e", "on run argv",
+        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+        "-e", "end run",
+        title, body,
+    ]
+    ex = RuleExecutor(present={"osascript"})
+    assert notify.native(Ctx(os=MAC, ex=ex), title, body) is True
+    assert ex.calls == [argv]
+
+
+def test_notify_send_body_is_markup_escaped_title_is_not() -> None:
+    argv = notify._native_argv(FEDORA, "a<b", "<b>x&y</b>")
+    assert argv == ["notify-send", "--app-name=devboost", "a<b", "&lt;b&gt;x&amp;y&lt;/b&gt;"]
 
 
 def test_clean_strips_control_chars_and_leading_dashes_and_caps() -> None:
@@ -139,7 +155,19 @@ def test_clean_strips_control_chars_and_leading_dashes_and_caps() -> None:
     assert notify.clean("b" * 500, limit=10) == "b" * 10
 
 
-def test_clean_escapes_markup_and_strips_zero_width_and_bidi() -> None:
-    assert notify.clean("<b>a&b</b>") == "&lt;b&gt;a&amp;b&lt;/b&gt;"
+def test_clean_strips_zero_width_and_bidi_but_no_longer_escapes() -> None:
+    assert notify.clean("<b>a&b</b>") == "<b>a&b</b>"
     hidden = "d\u200be\u200fs\u061ck\ufeff\u202a\u2066"
     assert notify.clean(hidden) == "desk"
+
+
+def test_printable_strips_unsafe_chars_without_trimming_or_truncating() -> None:
+    """`printable` is the display-sanitiser used for log lines and CLI/doctor output: no
+    truncation, no dash-stripping \u2014 those are `clean`'s (notification-specific) business."""
+    assert notify.printable(" -lap\x1b[31m\nx\u202e ") == " -lap[31mx "
+    assert notify.printable("a" * 500) == "a" * 500
+    assert notify.printable("<b>a&b</b>") == "<b>a&b</b>"
+
+
+def test_clean_is_printable_then_trimmed_and_capped() -> None:
+    assert notify.clean("x") == notify.printable("x").strip().lstrip("-").strip()[:64]

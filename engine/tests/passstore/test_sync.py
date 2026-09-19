@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import fcntl
+import os
+import plistlib
 from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import UnsupportedOS
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
-from devboost.passstore import sync
+from devboost.passstore import audit, sync
 from devboost.passstore.layout import DeviceRecord, Store
 from tests.passstore.fakes import RuleExecutor, colons
 
@@ -92,18 +94,43 @@ def test_units_content() -> None:
     assert "OnCalendar=*:0/15" in t and "Persistent=true" in t and "WantedBy=timers.target" in t
 
 
-def test_install_scheduler_linux_enables_timer(tmp_path: Path) -> None:
+def test_install_scheduler_linux_enables_timer_and_checks_state(tmp_path: Path) -> None:
     ex = _ex()
     sync.install_scheduler(_ctx(ex), "/bin/devboost")
     units = tmp_path / "home" / ".config" / "systemd" / "user"
     assert (units / sync.SERVICE).exists() and (units / sync.TIMER).exists()
+    assert ["systemctl", "--user", "daemon-reload"] in ex.calls
     assert ["systemctl", "--user", "enable", "--now", sync.TIMER] in ex.calls
-    assert sync.scheduler_installed(_ctx(ex))
+    assert sync.scheduler_installed(_ctx(ex), "/bin/devboost")
+    assert not sync.scheduler_installed(_ctx(ex), "/other/devboost")  # stale ExecStart
+    disabled = _ex((("is-enabled",), Result(1)))
+    assert not sync.scheduler_installed(_ctx(disabled), "/bin/devboost")
+    stopped = _ex((("is-active",), Result(3)))
+    assert not sync.scheduler_installed(_ctx(stopped), "/bin/devboost")
 
 
-def test_install_scheduler_macos_is_p2(tmp_path: Path) -> None:
-    with pytest.raises(UnsupportedOS, match="P2"):
-        sync.install_scheduler(_ctx(_ex(), MAC), "/bin/devboost")
+def test_install_scheduler_linux_rewrite_is_idempotent(tmp_path: Path) -> None:
+    sync.install_scheduler(_ctx(_ex()), "/bin/devboost")
+    again = _ex()
+    sync.install_scheduler(_ctx(again), "/bin/devboost")
+    assert ["systemctl", "--user", "daemon-reload"] not in again.calls
+
+
+def test_install_scheduler_macos_is_a_launchd_agent(tmp_path: Path) -> None:
+    ex = _ex()
+    sync.install_scheduler(_ctx(ex, MAC), "/bin/devboost")
+    plist = tmp_path / "home" / "Library" / "LaunchAgents" / "dev.devboost.pass-sync.plist"
+    assert plistlib.loads(plist.read_bytes()) == {
+        "Label": "dev.devboost.pass-sync",
+        "ProgramArguments": ["/bin/devboost", "pass", "sync", "--quiet"],
+        "StartInterval": 900,
+    }
+    assert ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist)] in ex.calls
+    assert not any(c[0] == "systemctl" for c in ex.calls)
+    assert sync.scheduler_installed(_ctx(ex, MAC), "/bin/devboost")
+    assert not sync.scheduler_installed(_ctx(ex, MAC), "/other/devboost")
+    unloaded = _ex((("launchctl", "print"), Result(113)))
+    assert not sync.scheduler_installed(_ctx(unloaded, MAC), "/bin/devboost")
 
 
 def test_hook_env_short_circuits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,3 +420,69 @@ def test_forget_revoked_skips_this_devices_own_key(tmp_path: Path) -> None:
     ex = _ex((("--list-keys",), Result(0, colons("pub", FP_ME))))
     sync.run(_ctx(ex), s, "desk")
     assert not any("--delete-keys" in c for c in ex.calls)
+
+
+# --- recipient audit (R10) --------------------------------------------------------------
+
+
+def _audited(monkeypatch: pytest.MonkeyPatch, *reports: audit.Report) -> list[int]:
+    calls: list[int] = []
+    it = iter(reports)
+
+    def fake(ctx: Ctx, store: Store) -> audit.Report:
+        calls.append(1)
+        return next(it)
+
+    monkeypatch.setattr(audit, "audit", fake)
+    return calls
+
+
+def test_sync_audits_when_head_moves_and_notifies_new_mismatches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _store(tmp_path)
+    bad = audit.Report([audit.Mismatch("web/x", ("bravo (revoked)",), ())], [])
+    calls = _audited(monkeypatch, bad, bad)
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    notes = [c for c in _notifications(ex) if "recipients" in c[2]]
+    assert len(notes) == 1 and "web/x" in notes[0][3]
+    assert "devboost pass audit" in notes[0][3]
+    sync.run(_ctx(ex), s, "desk")  # same HEAD → no second audit
+    assert len(calls) == 1
+    ex2 = _ex((("rev-parse", "HEAD"), Result(0, "h2\n")))
+    sync.run(_ctx(ex2), s, "desk")  # HEAD moved, same findings → audited, not re-announced
+    assert len(calls) == 2
+    assert not [c for c in _notifications(ex2) if "recipients" in c[2]]
+
+
+def test_sync_audit_failure_is_logged_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _store(tmp_path)
+
+    def boom(ctx: Ctx, store: Store) -> audit.Report:
+        raise InstallError("pass-store", "gpg --list-keys", 2)
+
+    monkeypatch.setattr(audit, "audit", boom)
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+
+
+def test_push_only_sync_never_audits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    s = _store(tmp_path)
+    calls = _audited(monkeypatch)
+    sync.run(_ctx(_ex((("rev-parse", "HEAD"), Result(0, "h1\n")))), s, "desk", push_only=True)
+    assert calls == []
+
+
+def test_sync_survives_a_malformed_gpg_id_during_audit(tmp_path: Path) -> None:
+    """A pushed non-UTF-8 `web/.gpg-id` must not crash the (real, unmocked) audit call, or
+    the sync would exit without saving state — the background agent would crash every run."""
+    s = _store(tmp_path)
+    (s.root / "web").mkdir()
+    (s.root / "web" / "x.gpg").write_bytes(b"x")
+    (s.root / "web" / ".gpg-id").write_bytes(b"\xff\xfe not utf-8")
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    assert '"audited_head": "h1"' in _state(tmp_path)

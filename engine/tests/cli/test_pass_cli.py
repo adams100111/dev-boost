@@ -51,7 +51,7 @@ def _use(monkeypatch: pytest.MonkeyPatch, *extra: tuple[tuple[str, ...], Result]
 
 def test_pass_subapp_is_registered() -> None:
     out = runner.invoke(app, ["pass", "--help"]).output
-    for verb in ("status", "devices", "approve", "revoke", "sync", "enroll"):
+    for verb in ("status", "devices", "approve", "revoke", "sync", "enroll", "audit"):
         assert verb in out
 
 
@@ -157,3 +157,36 @@ def test_revoke_malformed_rotation_exits_cleanly(
     res = runner.invoke(app, ["pass", "revoke", "lap"], input="y\n")
     assert res.exit_code == 1 and "rotation.json" in res.output
     assert not any(c[:2] == ["pass", "init"] for c in ex.calls)
+
+
+def test_audit_lists_mismatches_and_exits_1(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from devboost.passstore import audit
+
+    _use(monkeypatch)
+    m = audit.Mismatch("web/x", ("bravo (revoked)",), (), True)
+    monkeypatch.setattr(audit, "audit", lambda ctx, s: audit.Report([m], ["legacy"]))
+    res = runner.invoke(app, ["pass", "audit"])
+    assert res.exit_code == 1
+    assert "web/x" in res.output and "bravo (revoked)" in res.output
+    assert "pass edit web/x" in res.output and "legacy" in res.output
+
+
+def test_audit_clean_exits_0(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
+    from devboost.passstore import audit
+
+    _use(monkeypatch)
+    monkeypatch.setattr(audit, "audit", lambda ctx, s: audit.Report([], []))
+    res = runner.invoke(app, ["pass", "audit"])
+    assert res.exit_code == 0 and "every entry matches" in res.output
+
+
+def test_status_shows_recipient_count(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
+    from devboost.passstore import audit
+
+    _use(monkeypatch)
+    m = audit.Mismatch("web/x", ("Z" * 16,), ())
+    monkeypatch.setattr(audit, "audit", lambda ctx, s: audit.Report([m], []))
+    res = runner.invoke(app, ["pass", "status"])
+    assert "recipients: 1 entries differ from their .gpg-id" in res.output

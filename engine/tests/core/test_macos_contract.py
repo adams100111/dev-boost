@@ -66,7 +66,6 @@ KNOWN_GAPS: frozenset[str] = frozenset({
     "neovim",
     "obsidian",
     "obsidian-sync",
-    "pass",
     "pi-harness",
     "playwright",
     "power-profiles-daemon",

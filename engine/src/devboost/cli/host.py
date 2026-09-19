@@ -15,7 +15,7 @@ from types import TracebackType
 from devboost.core import log
 from devboost.core.osinfo import OsInfo
 
-LINUX_ONLY: frozenset[str] = frozenset({"installer", "accounts", "brain", "pass"})
+LINUX_ONLY: frozenset[str] = frozenset({"installer", "accounts", "brain"})
 
 
 def invocation_error(os_info: OsInfo, subcommand: str | None, euid: int) -> str | None:
