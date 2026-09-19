@@ -140,4 +140,12 @@ def test_omarchy_plugins_use_omarchys_own_herdr() -> None:
 
 @pytest.mark.parametrize("os_info", [FEDORA, UBUNTU, ARCH, MAC], ids=lambda o: o.distro)
 def test_plugins_and_their_herdr_are_planned_everywhere_else(os_info: OsInfo) -> None:
-    assert _cli_plan(os_info) == {"herdr": None, "herdr-plugins": None}
+    plan = _cli_plan(os_info)
+    assert plan["herdr"] is None
+    assert plan["herdr-plugins"] is None
+    if os_info.family == "macos":
+        # herdr-plugins requires xcode-clt (I1): `herdr plugin install` runs `git`
+        # internally, which would otherwise hit the CLT stub dialog on a fresh Mac.
+        assert plan["xcode-clt"] is None
+    else:
+        assert set(plan) == {"herdr", "herdr-plugins"}  # xcode-clt is macOS-only
