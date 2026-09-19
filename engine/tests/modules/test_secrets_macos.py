@@ -233,7 +233,8 @@ def test_github_credentials_falls_back_to_git_credential_fill(home: Path) -> Non
     }
     i = ex.calls.index(list(fill))
     assert ex.stdins[i] == "protocol=https\nhost=github.com\n\n"
-    assert ex.envs[i] == {"GIT_TERMINAL_PROMPT": "0"}
+    # No terminal prompt and no GUI askpass pop-up in an unattended run.
+    assert ex.envs[i] == {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""}
 
 
 def test_git_credential_fill_without_password_is_none(home: Path) -> None:
@@ -252,10 +253,11 @@ def test_github_credentials_skips_incomplete_bundle(home: Path) -> None:
         ("gh", "api", "user"): Result(0, stdout=_GH_USER),
         ("gh", "auth", "token"): Result(0, stdout="gho_tok\n"),
     })
-    ex.present = {"gh"}
+    ex.present = {"gh", "age"}
     assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == {
         "GIT_USER": "alice", "GIT_EMAIL": "a@x", "GITHUB_PAT": "gho_tok",
     }
+    assert ["age", "-d"] in [c[:2] for c in ex.calls]  # the bundle was really tried
 
 
 def test_github_credentials_reads_bundle_with_keychain_key(home: Path) -> None:
@@ -287,6 +289,7 @@ def test_github_credentials_reads_bundle_with_keychain_key(home: Path) -> None:
         ("security",): Result(0, stdout="AGE-SECRET-KEY-1KC\n"),
         ("age",): Result(0, stdout=_JSON),
     })
+    ex.present = {"age"}
     assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == json.loads(_JSON)
     assert seen["key"] == "AGE-SECRET-KEY-1KC"
     assert seen["path"] != str(boot / "age-key.txt")
@@ -312,3 +315,66 @@ def test_ssh_setup_without_credentials_is_non_blocking(
     ctx = Ctx(os=MAC, ex=FakeExecutor(scripts={"security": Result(44)}))
     SshSetup().install(ctx)  # no bundle, no gh, no key: warns, does not raise
     assert SshSetup().verify(ctx) is False
+
+
+def test_macos_bundle_source_approve_failure_raises_without_token(home: Path) -> None:
+    from devboost.core.errors import InstallError
+
+    boot = home / "boot"
+    boot.mkdir()
+    (boot / "secrets.age").write_text("cipher", encoding="utf-8")
+    (boot / "age-key.txt").write_text("AGE-SECRET-KEY-1X", encoding="utf-8")
+    ex = _StdinEx({
+        ("age",): Result(0, stdout=_JSON),
+        ("git", "credential", "approve"): Result(1, stderr="keychain locked"),
+    })
+    ex.present = {"age"}
+    with pytest.raises(InstallError) as exc:
+        Secrets().install(Ctx(os=MAC, ex=ex))
+    assert "ghp_x" not in str(exc.value)
+    assert "git credential approve" in str(exc.value)
+
+
+def test_macos_verify_true_when_keychain_yields_token(home: Path) -> None:
+    ex = _StdinEx({
+        ("git", "credential", "fill"): Result(
+            0, stdout="protocol=https\nhost=github.com\nusername=carol\npassword=ghp_kc\n"
+        ),
+    })
+    assert Secrets().verify(Ctx(os=MAC, ex=ex)) is True
+
+
+def test_macos_verify_false_when_helper_set_but_no_token(home: Path) -> None:
+    # credential.helper=osxkeychain alone proves nothing: the keychain may be empty.
+    ex = _StdinEx({
+        ("git", "config", "--global", "credential.helper"): Result(0, stdout="osxkeychain\n"),
+        ("git", "credential", "fill"): Result(128, stderr="terminal prompts disabled"),
+    })
+    assert Secrets().verify(Ctx(os=MAC, ex=ex)) is False
+
+
+def test_git_credentials_line_is_url_decoded(home: Path) -> None:
+    # git's store helper percent-encodes; an email-style username arrives as %40.
+    (home / ".git-credentials").write_text(
+        "https://bob%40corp.com:ghp%2Fb@github.com\n", encoding="utf-8"
+    )
+    assert creds.github_credentials(Ctx(os=FEDORA, ex=FakeExecutor())) == {
+        "GIT_USER": "bob@corp.com", "GIT_EMAIL": "", "GITHUB_PAT": "ghp/b",
+    }
+
+
+def test_github_credentials_skips_bundle_when_age_missing(home: Path) -> None:
+    # A lookup is read-only: no `age` on PATH means skip the bundle, never install age.
+    boot = home / "boot"
+    boot.mkdir()
+    (boot / "secrets.age").write_text("cipher", encoding="utf-8")
+    (boot / "age-key.txt").write_text("AGE-SECRET-KEY-1X", encoding="utf-8")
+    ex = _StdinEx({
+        ("gh", "api", "user"): Result(0, stdout=_GH_USER),
+        ("gh", "auth", "token"): Result(0, stdout="gho_tok\n"),
+    })
+    ex.present = {"gh"}
+    assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == {
+        "GIT_USER": "alice", "GIT_EMAIL": "a@x", "GITHUB_PAT": "gho_tok",
+    }
+    assert not any(c[0] in ("age", "brew", "dnf", "pacman", "sudo") for c in ex.calls)

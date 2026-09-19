@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from devboost.core import log
-from devboost.core.errors import SecretsError
+from devboost.core.errors import InstallError, SecretsError
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg
 from devboost.model import Ctx, Module
@@ -98,6 +98,9 @@ class Secrets(Module):
     category = "base"
     description = "Configure git identity + GitHub access (age bundle, gh, or prompt)."
     profiles = ("base",)
+    # macOS: pkg.install dispatches to brew for `age`, the age key may come from the
+    # keychain, and the token goes to osxkeychain / gh — never ~/.git-credentials.
+    portable = True
 
     def verify(self, ctx: Ctx) -> bool:
         if not ctx.ex.run(["git", "config", "--global", "user.email"]).ok:
@@ -112,11 +115,10 @@ class Secrets(Module):
         if creds_src.gh_is_authenticated(ctx):
             return True
         # macOS never writes ~/.git-credentials: a bundle/manual token lives in the login
-        # keychain behind git's osxkeychain helper instead.
+        # keychain behind git's osxkeychain helper instead. The helper being configured
+        # proves nothing (the keychain entry may be missing) — ask it for the token.
         if ctx.os.family == "macos":
-            helper = ctx.ex.run(["git", "config", "--global", "credential.helper"])
-            if helper.ok and helper.stdout.strip() == "osxkeychain":
-                return True
+            return creds_src._from_git_credential_fill(ctx) is not None
         return False
 
     def _resolve(self, ctx: Ctx) -> tuple[dict[str, str], str]:
@@ -196,11 +198,14 @@ class Secrets(Module):
             ctx.ex.run(["gh", "auth", "setup-git"])
             return
         ctx.ex.run(["git", "config", "--global", "credential.helper", "osxkeychain"])
-        # The token goes to the helper on stdin — never argv, never a file.
-        ctx.ex.run(
+        # The token goes to the helper on stdin — never argv, never a file — so the
+        # error below (argv only) cannot leak it.
+        res = ctx.ex.run(
             ["git", "credential", "approve"],
             stdin=(
                 "protocol=https\nhost=github.com\n"
                 f"username={data['GIT_USER']}\npassword={data['GITHUB_PAT']}\n\n"
             ),
         )
+        if not res.ok:
+            raise InstallError(self.name, "git credential approve", res.code)

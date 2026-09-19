@@ -159,7 +159,8 @@ class ObsidianSync(Module):
         creds = creds_src.github_credentials(ctx)
         if creds is None:
             log.warn(
-                "obsidian-sync: no GitHub credentials (bundle or gh) — skipping (non-blocking)"
+                "obsidian-sync: no GitHub credentials found (bundle, gh, git credentials) "
+                "— skipping (non-blocking)"
             )
             return
         owner, pat = creds["GIT_USER"], creds["GITHUB_PAT"]

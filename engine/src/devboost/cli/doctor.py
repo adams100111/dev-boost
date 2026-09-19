@@ -20,8 +20,9 @@ from devboost.modules.secrets import age_key, bundle_path
 # android tools, claude-code bootstrap all fetch over HTTPS).
 _REQUIRED_DEPS = ("curl", "age")
 
-# macOS never uses age at the command level (secrets.age_key decrypts via the Python age
-# lib / keychain), and ships brew + Xcode CLT instead of the Linux package manager.
+# macOS ships brew + Xcode CLT instead of the Linux package manager. `age` is only needed
+# when there is a bundle to decrypt (age.decrypt shells out to the `age` CLI; the key may
+# come from the keychain), so it is checked on macOS only when bundle_path() exists.
 _REQUIRED_DEPS_MACOS = ("curl", "brew", "xcode-select")
 
 # Minimum free disk space required (in bytes).  A full workstation install uses ~5 GB.
@@ -44,7 +45,9 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
         Check("os", ctx.os.distro != "unknown", f"{ctx.os.distro}/{ctx.os.family} {ctx.os.arch}"),
         Check("profiles", (root / "profiles.toml").exists(), str(root / "profiles.toml")),
     ]
-    deps = _REQUIRED_DEPS_MACOS if ctx.os.family == "macos" else _REQUIRED_DEPS
+    deps: tuple[str, ...] = _REQUIRED_DEPS
+    if ctx.os.family == "macos":
+        deps = _REQUIRED_DEPS_MACOS + (("age",) if bundle_path().exists() else ())
     for dep in deps:
         checks.append(Check(f"dep:{dep}", ctx.ex.which(dep)))
 

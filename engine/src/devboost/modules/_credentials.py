@@ -33,6 +33,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from devboost.core import log
 from devboost.model import Ctx
@@ -117,20 +118,22 @@ def _from_git_credentials() -> Credentials | None:
         if line.endswith("@github.com") and line.startswith("https://") and ":" in line[8:]:
             user, _, rest = line[len("https://"):].partition(":")
             token = rest.rsplit("@", 1)[0]
-            return {"GIT_USER": user, "GIT_EMAIL": "", "GITHUB_PAT": token}
+            # git's store helper percent-encodes both (an email login is stored as %40).
+            return {"GIT_USER": unquote(user), "GIT_EMAIL": "", "GITHUB_PAT": unquote(token)}
     return None
 
 
 def _from_git_credential_fill(ctx: Ctx) -> Credentials | None:
     """Ask git's configured helper (e.g. the macOS keychain) for a github.com login.
 
-    `GIT_TERMINAL_PROMPT=0` makes git fail instead of prompting when no helper has one.
+    `GIT_TERMINAL_PROMPT=0` makes git fail instead of prompting when no helper has one;
+    the empty askpass vars stop it popping a GUI password dialog in an unattended run.
     The output carries the token, so it is parsed here and never logged.
     """
     res = ctx.ex.run(
         ["git", "credential", "fill"],
         stdin="protocol=https\nhost=github.com\n\n",
-        env={"GIT_TERMINAL_PROMPT": "0"},
+        env={"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""},
     )
     if not res.ok:
         return None
@@ -161,7 +164,10 @@ def github_credentials(ctx: Ctx) -> Credentials | None:
     from devboost.exec.primitives import age
     from devboost.modules.secrets import age_key, bundle_path
 
-    if bundle_path().exists():
+    if bundle_path().exists() and not ctx.ex.which("age"):
+        # A lookup never installs anything (Secrets._resolve does); skip the bundle.
+        log.warn("secrets bundle present but `age` is not installed; trying gh")
+    elif bundle_path().exists():
         with age_key(ctx) as key:
             if key is not None:
                 try:

@@ -72,7 +72,7 @@ def test_obsidian_sync_provisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(github, "add_deploy_key", lambda *a, **k: True)
 
     payload = json.dumps({"GIT_USER": "alice", "GIT_EMAIL": "a@x", "GITHUB_PAT": "p"})
-    ctx = _ctx(scripts={"age": Result(0, stdout=payload)})
+    ctx = _ctx(scripts={"age": Result(0, stdout=payload)}, present={"age"})
     ObsidianSync().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert any(c[:2] == ["git", "clone"] for c in calls)

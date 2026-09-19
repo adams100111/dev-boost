@@ -41,3 +41,14 @@ def test_linux_keeps_fedora_probe_and_age_dep(tmp_path: Path) -> None:
     assert "dep:age" in names and "permissions" not in names
     probe = [c for c in ex.calls if c[0] == "curl"][0]
     assert probe[-1] == "https://fedoraproject.org/"
+
+
+def test_macos_checks_age_only_when_a_bundle_exists(tmp_path: Path) -> None:
+    # age.decrypt shells out to the `age` CLI, so a bundle makes it a real dependency.
+    boot = tmp_path / "boot"
+    boot.mkdir()
+    (boot / "secrets.age").write_text("cipher", encoding="utf-8")
+    ex = FakeExecutor(present={"curl", "brew", "xcode-select"},
+                      scripts={"security": Result(44)})
+    names = _names(Ctx(os=MAC, ex=ex), tmp_path)
+    assert names["dep:age"] is False
