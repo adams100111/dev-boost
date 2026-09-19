@@ -2,7 +2,9 @@
 
 `devboost install editors` (part of `full` and `omarchy`) installs [Zed](https://zed.dev) on
 Fedora, Ubuntu and Arch/Omarchy with the official user-local installer
-(`~/.local/zed.app`, `~/.local/bin/zed`; no sudo). Zed updates itself. GUI only — skipped on
+(`~/.local/zed.app`, `~/.local/bin/zed`; no sudo). The script is downloaded to a temp file
+first (`curl -fsSL --proto =https --tlsv1.2`), then run with `sh`, then deleted, so a failed
+download fails the install instead of silently running nothing. Zed updates itself. GUI only — skipped on
 headless servers. VS Code is opt-in: `devboost install optional-editors`.
 
 ## Seeded vs guaranteed
@@ -17,11 +19,27 @@ are never removed. If nothing needs changing the file is not touched — the byt
 identical (comments survive). If something does need changing, the original is backed up to
 `settings.json.devboost-bak` — but only when no backup exists yet, or the file had comments or
 trailing commas (so a later plain-JSON write never clobbers an earlier backup of your real,
-commented file) — and the file is rewritten as plain JSON; comments are lost only when they
-were present, and a warning names the backup. If the file doesn't parse, dev-boost changes
-nothing and reports `blocked` with the exact keys to add. Setting a guaranteed extension to
-`false` does not stick — remove the extension from Zed instead of fighting the merge, or drop
-the `editors` profile.
+commented file) — and the file is rewritten as plain JSON (non-ASCII kept as-is, file mode
+kept; a symlinked `settings.json` is written through to its target, so the link survives);
+comments are lost only when they were present, and a warning names the backup.
+
+**Backup limit:** once a backup exists and your file is plain JSON (no comments or trailing
+commas), a later rewrite does **not** refresh the backup — the backup keeps the older version.
+That is safe because a rewrite only ever changes guaranteed keys: everything else in the
+current file is carried over as-is, so the only thing not recoverable from the backup is the
+previous value of a guaranteed key.
+
+If the file doesn't parse (or isn't UTF-8), dev-boost changes nothing and reports `blocked`
+with the exact keys to add.
+
+**When the merge runs:** the `zed` module merges on every `devboost install` that includes it.
+The LSP modules (`fresh-lsp`, the per-stack `*-lsp` modules, `dotnet-lsp`) also merge the
+guaranteed keys right after installing their servers, whenever `~/.config/zed/settings.json`
+exists on a supported Linux family — even if the run doesn't include the `editors` profile.
+Dropping the `editors` profile therefore does **not** stop the merge. It never runs on macOS
+(until Z2), never creates the file, and a failure there is only a warning. Setting a
+guaranteed extension to `false` does not stick — remove the extension from Zed instead of
+fighting the merge.
 
 ## What the seed configures
 
@@ -52,7 +70,8 @@ the `editors` profile.
 ## Pinned language servers
 
 Zed runs dev-boost's pinned servers — the same ones fresh uses — via their mise shims
-(`~/.local/share/mise/shims/<cmd>`), and `csharp-ls` from `~/.dotnet/tools`. The map is
+(`$MISE_DATA_DIR/shims/<cmd>`, else `$XDG_DATA_HOME/mise/shims/<cmd>`, else
+`~/.local/share/mise/shims/<cmd>`), and `csharp-ls` from `~/.dotnet/tools`. The map is
 `data/zed/lsp-binaries.tsv`; the **versions** live only in `data/fresh/*.tsv`. To bump one, edit
 its row there and re-run `devboost install <stack>` — the shim path doesn't change, so Zed
 picks the new version up after a restart. Servers not in `data/zed/lsp-binaries.tsv` (vtsls,
@@ -72,9 +91,12 @@ and only when `zed` is installed — set in `~/.config/devboost/env.sh`. git has
 
 ## macOS (planned — milestone Z2)
 
-This module is Linux-only today: `Zed.families = ("fedora", "debian", "arch")`, and
-`zed_install_argv()` raises `UnsupportedOS` on macOS. `_zed.py` itself has no OS branches — it
-is written to be reused unchanged. Z2 adds macOS support on top of it: add `"macos"` to
-`families` and `per_os = OsMap(macos=BrewCask("zed"))` (the Homebrew-cask install, M2), then
-call the same `ensure_config()` already used on Linux. `zed_install_argv` stays Linux-only —
-macOS installs through the cask, not the curl installer script.
+This module is Linux-only today: `_zed.SUPPORTED_FAMILIES = ("fedora", "debian", "arch")` is
+both `Zed.families` and the guard on every path that writes Zed config for another module (the
+LSP hook), and `zed_install_steps()` raises `UnsupportedOS` on macOS. `_zed.py` has no other
+OS branches — it is written to be reused unchanged. Adding `"macos"` to `SUPPORTED_FAMILIES`
+is **not** enough for Z2: `Zed.install` always calls `zed_install_steps` today, so Z2 must
+also route the install through `pkg` with `per_os = OsMap(macos=BrewCask("zed"))` (the
+Homebrew-cask install, M2), then call the same `ensure_config()` used on Linux.
+`zed_install_steps` stays Linux-only — macOS installs through the cask, not the installer
+script.
