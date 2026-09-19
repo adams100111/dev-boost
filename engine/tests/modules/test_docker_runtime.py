@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -130,13 +131,28 @@ def test_docker_config_path_honours_docker_config(
     assert rt.docker_config_path() == tmp_path / "dc" / "config.json"
 
 
-def test_read_json_and_json_has(tmp_path: Path) -> None:
+def test_read_json_missing_file_is_empty(tmp_path: Path) -> None:
     p = tmp_path / "d.json"
     assert rt.read_json(p) == {}
-    p.write_text("[1]", encoding="utf-8")
-    assert rt.read_json(p) == {}
-    p.write_text("{nope", encoding="utf-8")
-    assert rt.read_json(p) == {}
+
+
+def test_read_json_existing_but_unparsable_raises_instead_of_losing_data(
+    tmp_path: Path,
+) -> None:
+    """A file that exists but can't be read as a JSON object must never be treated as
+    empty: a caller merging a patch into "current or {}" would otherwise silently
+    overwrite it, discarding everything already there."""
+    p = tmp_path / "d.json"
+    p.write_text("[1]", encoding="utf-8")  # valid JSON, but not an object
+    with pytest.raises(InstallError, match=re.escape(str(p))):
+        rt.read_json(p)
+    p.write_text("{nope", encoding="utf-8")  # not even valid JSON
+    with pytest.raises(InstallError, match=re.escape(str(p))):
+        rt.read_json(p)
+
+
+def test_json_has(tmp_path: Path) -> None:
+    p = tmp_path / "d.json"
     p.write_text(json.dumps({"builder": {"gc": {"enabled": True}}, "x": 1}), encoding="utf-8")
     assert rt.json_has(p, {"builder": {"gc": {"enabled": True}}}) is True
     assert rt.json_has(p, {"x": 2}) is False

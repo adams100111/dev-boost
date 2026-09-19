@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -32,11 +34,39 @@ def settings_path() -> Path:
     )
 
 
+def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
+    """Durably replace *path* with *data* as JSON: a sibling temp file (``mkstemp``,
+    same directory — same filesystem, so the swap is atomic), fsynced before the swap,
+    then ``os.replace`` into place. Docker Desktop's own restart (``configure``) reads this
+    file back right after devboost writes it, which is exactly the moment a plain
+    truncate-then-write is riskiest: a crash or a lock held mid-write would otherwise leave
+    a truncated/malformed ``settings-store.json`` and silently drop every setting the app
+    or the user ever put there. The original file's permission bits are kept, and the temp
+    file never survives a failed write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            tmp.chmod(mode)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def update_settings(path: Path, values: Mapping[str, object]) -> bool:
     """Set settings keys, keeping the spelling the file already uses (plan D14).
 
     Docker does not document these keys (docker/docs#23706), so an existing key is matched
-    case-insensitively and the given name is used only when the file has none.
+    case-insensitively and the given name is used only when the file has none. A file that
+    exists but is unreadable (corrupt JSON, not an object) is never overwritten:
+    ``read_json`` raises ``InstallError`` before any write is attempted.
     """
     data = read_json(path)
     changed = False
@@ -46,7 +76,7 @@ def update_settings(path: Path, values: Mapping[str, object]) -> bool:
             data[key] = value
             changed = True
     if changed:
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        _atomic_write_json(path, data)
     return changed
 
 

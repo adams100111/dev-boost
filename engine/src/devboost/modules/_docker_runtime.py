@@ -137,14 +137,26 @@ def docker_config_path() -> Path:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    """A JSON object from ``path``; ``{}`` when it is missing, invalid or not an object."""
+    """A JSON object from ``path``; ``{}`` only when the file is missing.
+
+    A file that *exists* but cannot be read as a JSON object — corrupt JSON, undecodable
+    bytes, or valid JSON that isn't an object — raises ``InstallError`` naming the file,
+    instead of silently answering ``{}``. A caller that merges a patch into "the current
+    contents, or {}" (``json_has``, ``_docker_desktop.update_settings``,
+    ``_docker_colima._cli_plugins``) would otherwise treat an unreadable settings file as
+    empty and overwrite it with only the few keys it's trying to set — discarding every
+    other setting the user or the app itself put there. Let it fail loudly instead: the
+    file needs a human to fix or delete it.
+    """
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise InstallError("docker", f"parse JSON at {path}", 1) from exc
+    if not isinstance(data, dict):
+        raise InstallError("docker", f"parse JSON at {path}", 1)
+    return data
 
 
 def json_has(path: Path, patch: Mapping[str, Any]) -> bool:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import NeedsUser
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
@@ -107,6 +109,32 @@ def test_update_settings_keeps_the_files_own_key_spelling(tmp_path: Path) -> Non
         "cpus": 5, "AutoStart": True, "Other": 1, "MemoryMiB": 6144,
     }
     assert update_settings(p, {"Cpus": 5}) is False
+
+
+def test_update_settings_corrupt_file_is_never_overwritten(tmp_path: Path) -> None:
+    p = tmp_path / "s.json"
+    p.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InstallError, match=re.escape(str(p))):
+        update_settings(p, {"AutoStart": True})
+    assert p.read_text(encoding="utf-8") == "{not json"
+    assert list(tmp_path.glob(".s.json.*.tmp")) == []
+
+
+def test_update_settings_write_failure_leaves_the_original_intact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p = tmp_path / "s.json"
+    original = json.dumps({"AutoStart": False})
+    p.write_text(original, encoding="utf-8")
+
+    def _boom(*_a: object, **_k: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        update_settings(p, {"AutoStart": True})
+    assert p.read_text(encoding="utf-8") == original
+    assert list(tmp_path.glob(".s.json.*.tmp")) == []
 
 
 def test_desktop_install_frees_the_docker_names_first() -> None:
