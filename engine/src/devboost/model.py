@@ -21,6 +21,10 @@ class Ctx:
     ex: Executor
     force: bool = False
     dry_run: bool = False
+    #: True on a macOS run whose session holds no sudo timestamp (the password was not
+    #: asked for, or was not given). A ``needs_sudo_on_macos`` module whose sudo step is
+    #: still pending is then reported ``blocked`` and never attempted (runner._run_one).
+    no_sudo: bool = False
 
 
 @runtime_checkable

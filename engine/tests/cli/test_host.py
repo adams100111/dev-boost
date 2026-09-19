@@ -60,3 +60,10 @@ def test_mac_session_is_noop_off_macos_and_in_dry_run() -> None:
 
 def test_default_profile_on_macos() -> None:
     assert default_profile(MAC) == "macos"
+
+
+def test_sudo_keepalive_reports_whether_sudo_was_granted() -> None:
+    with plat.SudoKeepalive(run=lambda argv: 1, interval=10) as denied:
+        assert denied.granted is False
+    with plat.SudoKeepalive(run=lambda argv: 0, interval=10) as ok:
+        assert ok.granted is True

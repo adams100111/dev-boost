@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import InstallError, PresentUnmanaged, UnsupportedOS
+from devboost.core.errors import InstallError, NeedsUser, PresentUnmanaged, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import pkg
 from devboost.model import BrewTap, Ctx, DnfRepo
+from tests.scripted import Scripted
 
 MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -140,3 +142,85 @@ def test_refresh_index_runs_brew_update_once_on_macos() -> None:
 
 def test_refresh_index_failure_is_not_raised_on_macos() -> None:
     pkg.refresh_index(Ctx(os=MAC, ex=FakeExecutor(scripts={"brew": Result(1)})))
+
+
+# --- M3 AF2: adopting a hand-installed app needs sudo -----------------------------------
+
+_SUDO_ERR = (
+    "sudo: a terminal is required to read the password; either use the -S option to read"
+    " from standard input or configure an askpass helper\nsudo: a password is required\n"
+    "Error: Failure while executing; `/usr/bin/sudo -E -- /bin/chmod -R a+rX,go-w "
+    "/Applications/Obsidian.app` exited with 1."
+)
+_ADOPT = ["brew", "install", "--cask", "-y", "--adopt", "obsidian"]
+
+
+def _cask_info(app: Path) -> Result:
+    art = [{"app": ["Obsidian.app"], "target": str(app)}, {"zap": [{"trash": ["~/x"]}]}]
+    return Result(0, stdout=json.dumps({"casks": [{"token": "obsidian", "artifacts": art}]}))
+
+
+def _brew_ex(app: Path, *, listed: bool = False, install: Result | None = None) -> Scripted:
+    return Scripted(
+        answers={
+            ("brew", "list", "--cask", "--versions", "obsidian"): Result(0 if listed else 1),
+            ("brew", "info", "--json=v2", "--cask", "obsidian"): _cask_info(app),
+            tuple(_ADOPT): install or Result(0),
+        }
+    )
+
+
+def test_no_sudo_hand_installed_app_is_left_untouched_before_brew_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    app = tmp_path / "Applications" / "Obsidian.app"
+    app.mkdir(parents=True)
+    ex = _brew_ex(app)
+    with pytest.raises(PresentUnmanaged, match="obsidian"):
+        pkg.install_cask(Ctx(os=MAC, ex=ex, no_sudo=True), "obsidian")
+    assert _ADOPT not in ex.calls  # never attempted
+
+
+def test_no_sudo_missing_app_is_installed_normally(tmp_path: Path) -> None:
+    ex = _brew_ex(tmp_path / "Applications" / "Obsidian.app")
+    pkg.install_cask(Ctx(os=MAC, ex=ex, no_sudo=True), "obsidian")
+    assert _ADOPT in ex.calls
+
+
+def test_with_sudo_the_hand_installed_app_is_adopted(tmp_path: Path) -> None:
+    app = tmp_path / "Applications" / "Obsidian.app"
+    app.mkdir(parents=True)
+    ex = _brew_ex(app)
+    pkg.install_cask(Ctx(os=MAC, ex=ex, no_sudo=False), "obsidian")
+    assert _ADOPT in ex.calls
+
+
+def test_adopt_refused_by_sudo_with_the_bundle_present_is_present_unmanaged(
+    tmp_path: Path,
+) -> None:
+    # Fallback (a): the pre-check did not catch it (e.g. brew info unavailable, or sudo was
+    # granted but expired), brew's own sudo step failed on the existing bundle.
+    app = tmp_path / "Applications" / "Obsidian.app"
+    app.mkdir(parents=True)
+    ex = _brew_ex(app, install=Result(1, stdout="==> Adopting existing App", stderr=_SUDO_ERR))
+    with pytest.raises(PresentUnmanaged):
+        pkg.install_cask(Ctx(os=MAC, ex=ex), "obsidian")
+
+
+def test_sudo_refused_without_a_bundle_needs_the_user(tmp_path: Path) -> None:
+    ex = _brew_ex(tmp_path / "missing.app", install=Result(1, stderr=_SUDO_ERR))
+    with pytest.raises(NeedsUser, match="needs your password"):
+        pkg.install_cask(Ctx(os=MAC, ex=ex), "obsidian")
+
+
+def test_cask_app_paths_reads_targets_and_bare_app_names() -> None:
+    arts = [{"app": ["Foo.app"]}, {"app": ["X.app"], "target": "/Applications/Y.app"}, "junk"]
+    info = Result(0, stdout=json.dumps({"casks": [{"artifacts": arts}]}))
+    ex = Scripted(answers={("brew", "info"): info})
+    assert pkg.Brew().cask_app_paths(Ctx(os=MAC, ex=ex), "foo") == [
+        Path("/Applications/Foo.app"),
+        Path("/Applications/Y.app"),
+    ]
+    bad = Scripted(answers={("brew", "info"): Result(0, stdout="not json")})
+    assert pkg.Brew().cask_app_paths(Ctx(os=MAC, ex=bad), "foo") == []

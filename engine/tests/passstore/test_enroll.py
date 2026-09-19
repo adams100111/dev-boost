@@ -172,8 +172,9 @@ def test_ensure_clone_refuses_non_git_dir(tmp_path: Path) -> None:
     root = tmp_path / "store"
     root.mkdir()
     (root / "x.gpg").write_text("x", encoding="utf-8")
-    with pytest.raises(ConfigError, match="not a git clone"):
+    with pytest.raises(NeedsUser, match="not a git clone") as err:
         enroll.ensure_clone(_ctx(RuleExecutor()), Store(root), "me/store")
+    assert err.value.how_to_fix == "move it aside and re-run"
 
 
 def test_import_device_keys_only_verified_and_listed(tmp_path: Path) -> None:
@@ -257,7 +258,7 @@ def test_taken_name_refused_before_generating_a_key(tmp_path: Path) -> None:
 def test_ensure_clone_refuses_a_file_path(tmp_path: Path) -> None:
     root = tmp_path / "store"
     root.write_text("x", encoding="utf-8")
-    with pytest.raises(ConfigError, match="not a git clone"):
+    with pytest.raises(NeedsUser, match="not a git clone"):
         enroll.ensure_clone(_ctx(RuleExecutor()), Store(root), "me/store")
 
 

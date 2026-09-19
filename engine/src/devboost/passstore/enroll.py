@@ -94,8 +94,9 @@ def ensure_clone(ctx: Ctx, store: Store, repo: str) -> None:
     if store.is_clone():
         return
     if store.root.exists() and (not store.root.is_dir() or any(store.root.iterdir())):
-        raise ConfigError(f"pass-store: {store.root} exists but is not a git clone — move it "
-                          "aside and re-run")
+        # A real, non-empty directory already sits there — likely the user's actual data.
+        # Never move/delete it ourselves: this is a human decision, so block, don't fail.
+        raise NeedsUser(f"{store.root} exists but is not a git clone", "move it aside and re-run")
     res = git.clone(ctx, clone_url(repo), store.root)
     if res.ok:
         return
