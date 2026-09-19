@@ -1,0 +1,13 @@
+# Zed language servers dev-boost points at its own pinned binaries (spec: "Language servers").
+# TAB-separated: zed-lsp-id <TAB> command <TAB> resolver
+#   resolver `mise`        → ~/.local/share/mise/shims/<command>; the version + args come from
+#                            the command's row in data/fresh/*.tsv (single source of truth).
+#   resolver `dotnet-tool` → ~/.dotnet/tools/<command> (installed by the dotnet-lsp module).
+# Only servers with a Zed adapter id belong here; everything else stays Zed-managed.
+basedpyright	basedpyright-langserver	mise
+ruff	ruff	mise
+tailwindcss-language-server	tailwindcss-language-server	mise
+intelephense	intelephense	mise
+tofu-ls	tofu-ls	mise
+yaml-language-server	yaml-language-server	mise
+csharp-ls	csharp-ls	dotnet-tool

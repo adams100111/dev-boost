@@ -1,12 +1,16 @@
-"""editors profile — VS Code, the fresh terminal editor, and its base LSP set."""
+"""editors profile — Zed (default), the fresh terminal editor + base LSP set; VS Code (opt-in)."""
 
 from __future__ import annotations
 
-from devboost.core.osinfo import OsMap
+from pathlib import Path
+
+from devboost.core.errors import InstallError, UnsupportedOS
+from devboost.core.osinfo import OsInfo, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, DnfRepo, Module
-from devboost.modules._lsp import LspModule, seed_base_config
+from devboost.modules import _zed
+from devboost.modules._lsp import LspModule, all_pins, seed_base_config
 from devboost.modules.mise import Mise
 
 _MS_KEY = "https://packages.microsoft.com/keys/microsoft.asc"
@@ -27,15 +31,31 @@ _VSCODE_SOURCE: pkg.Source = OsMap(
     ),
 )
 _FRESH_INSTALL = "https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh"
+_ZED_INSTALL = "https://zed.dev/install.sh"
+
+
+def zed_install_steps(os_info: OsInfo, script: Path) -> list[list[str]]:
+    """How Zed is installed on *os_info*: the argvs to run, in order.
+
+    Linux (every family, Arch included): the official user-local script — ~/.local/zed.app
+    plus a ~/.local/bin/zed symlink, no sudo. It is downloaded to *script* first and only
+    then run, so a failed download fails loudly instead of piping nothing into `sh`.
+    Distro packages are avoided on purpose: Arch ships the CLI as `zeditor`, which would
+    break `VISUAL="zed --wait"`. Zed updates itself.
+    """
+    if os_info.family == "macos":
+        raise UnsupportedOS("zed: macOS installs via the Homebrew cask (Zed milestone Z2)")
+    download = ["curl", "-fsSL", "--proto", "=https", "--tlsv1.2", "-o", str(script)]
+    return [[*download, _ZED_INSTALL], ["sh", str(script)]]
 
 
 @register
 class Vscode(Module):
     name = "vscode"
-    category = "editors"
-    description = "Visual Studio Code (Microsoft repo)."
+    category = "optional-editors"
+    description = "Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor."
     gui = True
-    profiles = ("editors",)
+    profiles = ("optional-editors",)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("code")
@@ -51,6 +71,48 @@ class Vscode(Module):
             # Fedora: import the GPG key into the RPM keyring before adding the repo
             ctx.ex.run(["rpm", "--import", _MS_KEY], sudo=True)
         pkg.install(ctx, "code", source=_VSCODE_SOURCE)
+
+
+@register
+class Zed(Module):
+    name = "zed"
+    category = "editors"
+    description = "Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs."
+    gui = True
+    profiles = ("editors",)
+    #: Linux only until Z2: adding "macos" there also needs the BrewCask install via pkg.
+    families = _zed.SUPPORTED_FAMILIES
+
+    @staticmethod
+    def _installed(ctx: Ctx) -> bool:
+        # The script's symlink is checked directly: ~/.local/bin may not be on PATH yet in
+        # the install session (same reason DotnetLsp checks ~/.dotnet/tools).
+        return (_zed.home() / ".local" / "bin" / "zed").exists() or ctx.ex.which("zed")
+
+    def verify(self, ctx: Ctx) -> bool:
+        return self._installed(ctx) and _zed.config_ok(all_pins())
+
+    def install(self, ctx: Ctx) -> None:
+        if not self._installed(ctx):
+            self._run_installer(ctx)
+        _zed.ensure_config(ctx, all_pins())
+
+    def _run_installer(self, ctx: Ctx) -> None:
+        # A private (0700) dir made through the executor, so under a demoting executor it is
+        # owned by the target user; nothing is ever written to a guessable path in the shared
+        # /tmp (curl's -o follows symlinks).
+        mktemp = ["mktemp", "-d"]
+        res = ctx.ex.run(mktemp)
+        tmp = res.stdout.strip()
+        if not res.ok or not tmp or not Path(tmp).is_absolute():
+            raise InstallError(self.name, " ".join(mktemp), res.code or 1)
+        try:
+            for argv in zed_install_steps(ctx.os, Path(tmp) / "install.sh"):
+                res = ctx.ex.run(argv)
+                if not res.ok:
+                    raise InstallError(self.name, " ".join(argv), res.code)
+        finally:
+            ctx.ex.run(["rm", "-rf", tmp])
 
 
 @register

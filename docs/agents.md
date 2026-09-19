@@ -48,6 +48,13 @@ orchestrates Claude/Codex/etc. in parallel git worktrees — bring your own agen
   Orca does not self-update; re-run `devboost install orca-box --force` (then
   `systemctl --user restart orca-serve`) to upgrade.
 
+## Zed (in-editor agents)
+
+The `zed` module (profile `editors`) registers Claude, Codex and Pi as Zed external agents
+(`agent_servers`: `claude-acp`, `codex-acp`, `pi-acp` from the ACP registry). Open the Agent
+Panel and start a thread; each agent uses the login you already did for its CLI (see below) —
+no API keys in Zed's settings. Details: [zed](zed.md).
+
 ## Environment variables
 
 | Variable | Module(s) | Default | Meaning |

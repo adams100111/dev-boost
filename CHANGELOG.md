@@ -21,6 +21,13 @@ git history and the GitHub release notes.
   privacy-permission tracking (`devboost permissions`), macOS invocation rules (no root,
   one sudo prompt, keep-awake), gh-first/keychain credentials (`devboost secrets
   import-key`), macOS doctor, catalog contract test. Constitution v3.1.0.
+- **Zed is the default editor on Linux** — `zed` module (official installer; Fedora, Ubuntu,
+  Arch/Omarchy), seeded VS Code-style settings with Claude/Codex/Pi agents and dev-boost-pinned
+  language servers, `config.jsonc_merge_deep` (comment-tolerant deep merge), and
+  `VISUAL="zed --wait"` in local GUI sessions. See [docs/zed.md](docs/zed.md).
+
+### Changed
+- `vscode` moved from `editors` to the opt-in `optional-editors` profile.
 
 ### Removed
 - `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device

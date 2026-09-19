@@ -15,6 +15,18 @@ _REAL_DETECT = osinfo.detect
 
 
 @pytest.fixture(autouse=True)
+def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the developer's real home: HOME and the XDG base dirs point into
+    ``tmp_path`` (laid out as their defaults under that HOME). A test that sets its own
+    HOME still wins — its monkeypatch runs after this one."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local" / "share"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".local" / "state"))
+    monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _linux_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests are host-independent: an argument-less detect() sees Fedora on any machine.
 

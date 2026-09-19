@@ -19,6 +19,24 @@ def resource_path(*parts: str) -> Path:
     return resource_root().joinpath(*parts)
 
 
+def tsv_rows(*parts: str, min_cols: int = 3) -> list[list[str]]:
+    """Columns of every data row in a bundled TAB-separated file (comments/blanks skipped).
+
+    Shared by every reader of dev-boost's bundled TSVs (``data/fresh/*.tsv``,
+    ``data/zed/*.tsv``, …): blank lines and lines starting with ``#`` are skipped, each
+    remaining line is split on TAB, and rows with fewer than *min_cols* columns are dropped.
+    """
+    text = resource_path(*parts).read_text(encoding="utf-8")
+    rows: list[list[str]] = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        cols = line.split("\t")
+        if len(cols) >= min_cols:
+            rows.append(cols)
+    return rows
+
+
 def injection_archive_path(arch: str) -> Path:
     """Resolve the Ventoy injection tarball (``devboost-<arch>.tar.gz``).
 
