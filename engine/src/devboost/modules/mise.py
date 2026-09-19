@@ -9,9 +9,11 @@ from devboost.core import log
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, mise
+from devboost.exec.primitives.config import _atomic_write
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
 from devboost.modules.macos import Homebrew
+from devboost.modules.shell import back_up_once
 
 _NOTE_NVM = "# devboost: migrated nvm init to mise"
 _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
@@ -108,11 +110,15 @@ class Mise(Module):
         for rc in self._rc_files(ctx):
             if not rc.exists():
                 continue
-            text = rc.read_text(encoding="utf-8")
+            # errors="replace": a non-UTF-8 byte in this user-owned rc file must not
+            # crash the migration (and block everything mise gates) — the file is only
+            # ever read here to find the BEGIN/END markers, never re-encoded verbatim.
+            text = rc.read_text(encoding="utf-8", errors="replace")
             if begin not in text or note in text:
                 if note in text:
                     log.skip(f"mise: {begin} block already migrated in {rc.name}")
                 continue
-            rc.write_text(
-                config.comment_block(text, begin, end) + note + "\n", encoding="utf-8"
-            )
+            # Back up once before the first rewrite — dev-boost never touched this file
+            # before, and a crash mid-write must not be able to truncate the user's own rc.
+            back_up_once(rc)
+            _atomic_write(rc, config.comment_block(text, begin, end) + note + "\n")
