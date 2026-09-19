@@ -57,6 +57,10 @@ git history and the GitHub release notes.
 - Ubuntu/Debian: Ghostty installs as a classic snap (`snap install ghostty --classic`);
   Flathub has no Ghostty. A failed `flatpak install` now fails its module instead of
   passing silently.
+- macOS: a dev-boost `~/.zshrc`/`~/.zprofile`/`~/.bash_profile` that another tool appended
+  to is copied to `*.pre-devboost` before `chezmoi apply --force` (it used to lose those
+  lines silently); a retried run makes no duplicate copy. `zsh-config` verify no longer
+  crashes on a non-UTF-8 `~/.zshrc`.
 
 ### Removed
 - `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device

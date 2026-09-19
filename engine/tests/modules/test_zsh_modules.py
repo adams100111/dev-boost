@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.graph import toposort
 from devboost.core.osinfo import OsInfo
@@ -16,7 +17,7 @@ from devboost.modules.shell import (
     Dotfiles,
     ZshConfig,
     ZshPlugins,
-    keep_foreign_rc_files,
+    back_up_rc_files,
 )
 
 MAC = OsInfo("macos", "macos", "aarch64")
@@ -60,11 +61,30 @@ def test_zsh_config_verify_reads_the_applied_files(home: Path) -> None:
     assert ZshConfig().verify(ctx) is False
 
 
+def test_zsh_config_verify_needs_the_source_line_not_just_the_marker(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    frag = home / ".config" / "devboost" / "shell.zsh"
+    frag.parent.mkdir(parents=True)
+    frag.write_text("# fragment\n", encoding="utf-8")
+    (home / ".zshrc").write_text(f"# {MARKER}\nexport EDITOR=vi\n", encoding="utf-8")
+    assert ZshConfig().verify(ctx) is False
+
+
+def test_zsh_config_verify_tolerates_a_non_utf8_zshrc(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    frag = home / ".config" / "devboost" / "shell.zsh"
+    frag.parent.mkdir(parents=True)
+    frag.write_text("# fragment\n", encoding="utf-8")
+    (home / ".zshrc").write_bytes("# caf\u00e9 \u2014 mine\nalias ll='ls -l'\n".encode("latin-1",
+                                                                              "replace"))
+    assert ZshConfig().verify(ctx) is False
+
+
 def test_foreign_rc_files_are_kept_and_managed_ones_left(home: Path) -> None:
     (home / ".zshrc").write_text("mine\n", encoding="utf-8")
-    (home / ".zprofile").write_text(f"# {MARKER}\n", encoding="utf-8")
+    (home / ".zprofile").write_bytes((DOT / "dot_zprofile").read_bytes())  # managed, as applied
     (home / ".bash_profile").symlink_to(home / "gone")  # a dangling link counts too
-    kept = keep_foreign_rc_files(home)
+    kept = back_up_rc_files(home, DOT)
     assert {p.name for p in kept} == {".zshrc.pre-devboost", ".bash_profile.pre-devboost"}
     assert (home / ".zshrc.pre-devboost").read_text(encoding="utf-8") == "mine\n"
     # A copy, not a move: the original stays until `chezmoi apply --force` replaces it.
@@ -74,16 +94,74 @@ def test_foreign_rc_files_are_kept_and_managed_ones_left(home: Path) -> None:
     assert backup_link.is_symlink()
     assert backup_link.readlink() == home / "gone"
     assert (home / ".bash_profile").is_symlink()
-    assert (home / ".zprofile").read_text(encoding="utf-8") == f"# {MARKER}\n"
+    assert (home / ".zprofile").read_bytes() == (DOT / "dot_zprofile").read_bytes()
     assert not (home / ".zprofile.pre-devboost").exists()
 
 
 def test_an_earlier_backup_is_never_overwritten(home: Path) -> None:
     (home / ".zshrc.pre-devboost").write_text("first\n", encoding="utf-8")
     (home / ".zshrc").write_text("second\n", encoding="utf-8")
-    assert [p.name for p in keep_foreign_rc_files(home)] == [".zshrc.pre-devboost.1"]
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost.1"]
     assert (home / ".zshrc.pre-devboost").read_text(encoding="utf-8") == "first\n"
     assert (home / ".zshrc.pre-devboost.1").read_text(encoding="utf-8") == "second\n"
+
+
+def test_a_managed_rc_file_with_appended_lines_is_backed_up(home: Path) -> None:
+    # Another tool (an installer, `conda init`, …) appended to the managed ~/.zshrc; the
+    # next `chezmoi apply --force` would drop that line, so it is kept first.
+    drifted = (DOT / "dot_zshrc").read_bytes() + b'export PATH="$HOME/.tool/bin:$PATH"\n'
+    (home / ".zshrc").write_bytes(drifted)
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost"]
+    assert (home / ".zshrc.pre-devboost").read_bytes() == drifted
+
+
+def test_an_unchanged_managed_rc_file_gets_no_backup(home: Path) -> None:
+    for name, src in ((".zshrc", "dot_zshrc"), (".zprofile", "dot_zprofile"),
+                      (".bash_profile", "dot_bash_profile")):
+        (home / name).write_bytes((DOT / src).read_bytes())
+    assert back_up_rc_files(home, DOT) == []
+    assert not list(home.glob("*.pre-devboost*"))
+
+
+def test_a_retry_makes_no_identical_backup(home: Path) -> None:
+    (home / ".zshrc").write_text("mine\n", encoding="utf-8")
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost"]
+    assert back_up_rc_files(home, DOT) == []  # e.g. the apply failed and the run is retried
+    assert sorted(p.name for p in home.glob(".zshrc.pre-devboost*")) == [".zshrc.pre-devboost"]
+    (home / ".zshrc").write_text("mine, edited\n", encoding="utf-8")
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost.1"]
+    assert back_up_rc_files(home, DOT) == []  # compared with the NEWEST backup
+
+
+def test_a_retry_with_the_same_symlink_makes_no_new_backup(home: Path) -> None:
+    (home / "dotrepo").mkdir()
+    (home / "dotrepo" / "zshrc").write_text("mine\n", encoding="utf-8")
+    (home / ".zshrc").symlink_to(home / "dotrepo" / "zshrc")
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost"]
+    assert (home / ".zshrc.pre-devboost").readlink() == home / "dotrepo" / "zshrc"
+    assert back_up_rc_files(home, DOT) == []
+    # Same bytes behind a different link target is still a different file to keep.
+    (home / "dotrepo" / "zshrc2").write_text("mine\n", encoding="utf-8")
+    (home / ".zshrc").unlink()
+    (home / ".zshrc").symlink_to(home / "dotrepo" / "zshrc2")
+    assert [p.name for p in back_up_rc_files(home, DOT)] == [".zshrc.pre-devboost.1"]
+
+
+def test_backup_log_names_the_matching_local_file(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(log, "ok", seen.append)
+    for name in (".zshrc", ".zprofile", ".bash_profile"):
+        (home / name).write_text("mine\n", encoding="utf-8")
+    Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor()))
+    by_file = {n: [m for m in seen if f"~/{n} as" in m] for n in (".zshrc", ".zprofile",
+                                                                  ".bash_profile")}
+    for name, msgs in by_file.items():
+        assert len(msgs) == 1, (name, seen)
+        assert f"~/{name}.local" in msgs[0]
+        others = {".zshrc", ".zprofile", ".bash_profile"} - {name}
+        assert not any(f"~/{o}.local" in msgs[0] for o in others), msgs[0]
 
 
 def test_dotfiles_sets_a_foreign_zshrc_aside_on_macos_before_applying(home: Path) -> None:

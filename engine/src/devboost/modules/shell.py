@@ -33,38 +33,64 @@ def _home() -> Path:
 
 #: Every dev-boost managed dotfile carries this marker (dot_zshrc, dot_bashrc, …).
 _MANAGED_MARKER = "devboost — managed by chezmoi"
-#: macOS login/rc files the dotfiles take over (spec §3). A pre-existing one that is not
-#: dev-boost's is kept aside before `chezmoi apply --force` overwrites it.
-_TAKEN_OVER = (".zshrc", ".zprofile", ".bash_profile")
+#: macOS login/rc files the dotfiles take over (spec §3) → their plain (non-template)
+#: source in dotfiles/. Before `chezmoi apply --force` overwrites one, a copy is kept
+#: unless it is exactly what dev-boost wrote.
+_TAKEN_OVER = {".zshrc": "dot_zshrc", ".zprofile": "dot_zprofile",
+               ".bash_profile": "dot_bash_profile"}
 
 
-def keep_foreign_rc_files(home: Path) -> list[Path]:
-    """Copy each foreign rc file to ``<name>.pre-devboost`` and return the backups.
+def _same_file(a: Path, b: Path) -> bool:
+    """True when backup *b* already holds *a*: same link target, or same regular bytes."""
+    if a.is_symlink() or b.is_symlink():
+        return a.is_symlink() and b.is_symlink() and a.readlink() == b.readlink()
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def back_up_rc_files(home: Path, source: Path) -> list[Path]:
+    """Copy each rc file ``apply --force`` would lose to ``<name>.pre-devboost``.
+
+    A file is kept when it is foreign (no dev-boost marker) or when it is dev-boost's
+    but its bytes differ from its *source* in dotfiles/ — another tool appended a line
+    that the next ``apply --force`` would silently drop. A file that is exactly the
+    source needs no copy.
 
     A copy, not a move: the original stays in place until ``chezmoi apply --force``
     replaces it, so a failed apply never leaves the Mac without its ``~/.zprofile``
     (brew's PATH). A symlink is copied as the link itself, never followed.
 
-    An earlier backup is never replaced: a later foreign file becomes
-    ``<name>.pre-devboost.1``, ``.2``, … Content is not merged — the managed files source
-    ``~/.zshrc.local`` / ``~/.zprofile.local`` for machine-specific lines.
+    An earlier backup is never replaced: a later one becomes ``<name>.pre-devboost.1``,
+    ``.2``, … No new copy is made when the newest backup already holds the same file
+    (a retried run, M-R21). Content is not merged — the managed files source
+    ``~/<name>.local`` for machine-specific lines.
     """
     kept: list[Path] = []
-    for name in _TAKEN_OVER:
+    for name, src in _TAKEN_OVER.items():
         path = home / name
         if not (path.is_file() or path.is_symlink()):
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            current = path.read_bytes()
         except OSError:
-            text = ""  # a dangling symlink: nothing of ours, keep it too
-        if _MANAGED_MARKER in text:
+            current = b""  # a dangling symlink: nothing of ours, keep it too
+        managed = _MANAGED_MARKER.encode("utf-8") in current
+        src_path = source / src
+        if managed and not path.is_symlink() and src_path.is_file() and (
+            current == src_path.read_bytes()
+        ):
             continue
+        newest: Path | None = None
         backup = home / f"{name}.pre-devboost"
         n = 0
         while backup.exists() or backup.is_symlink():
+            newest = backup
             n += 1
             backup = home / f"{name}.pre-devboost.{n}"
+        if newest is not None and _same_file(path, newest):
+            continue
         shutil.copy2(path, backup, follow_symlinks=False)
         kept.append(backup)
     return kept
@@ -286,11 +312,11 @@ class Dotfiles(Module):
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
         if ctx.os.family == "macos":
-            for backup in keep_foreign_rc_files(_home()):
+            for backup in back_up_rc_files(_home(), src):
+                name = backup.name.split(".pre-devboost")[0]
                 log.ok(
-                    f"dotfiles: kept your previous ~/{backup.name.split('.pre-devboost')[0]}"
-                    f" as ~/{backup.name} — machine-specific lines belong in"
-                    " ~/.zshrc.local or ~/.zprofile.local"
+                    f"dotfiles: kept your previous ~/{name} as ~/{backup.name} —"
+                    f" machine-specific lines belong in ~/{name}.local"
                 )
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
@@ -406,7 +432,7 @@ class ZshConfig(Module):
         zshrc = _home() / ".zshrc"
         if not zshrc.is_file() or not (_home() / ".config/devboost/shell.zsh").is_file():
             return False
-        text = zshrc.read_text(encoding="utf-8")
+        text = zshrc.read_text(encoding="utf-8", errors="replace")
         return _MANAGED_MARKER in text and _ZSH_SOURCE_LINE in text
 
     def install(self, ctx: Ctx) -> None:
