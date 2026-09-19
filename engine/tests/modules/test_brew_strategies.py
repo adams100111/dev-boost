@@ -6,6 +6,7 @@ from typing import ClassVar
 
 import pytest
 
+from devboost.core.errors import UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx, Installer, Module
@@ -62,6 +63,25 @@ def test_formula_update_upgrades_present_and_installs_missing() -> None:
 def test_formula_needs_a_name() -> None:
     with pytest.raises(ValueError, match="at least one"):
         BrewFormula()
+
+
+def test_formula_is_macos_only() -> None:
+    # Off macOS a formula name would reach dnf/apt/pacman — refuse, like BrewCask does.
+    ex = FakeExecutor()
+    with pytest.raises(UnsupportedOS):
+        BrewFormula("x").install(Ctx(os=FEDORA, ex=ex))
+    with pytest.raises(UnsupportedOS):
+        BrewFormula("x").install(Ctx(os=FEDORA, ex=ex, force=True))
+    assert BrewFormula("x").verify(Ctx(os=FEDORA, ex=ex)) is False
+    assert ex.calls == []
+
+
+def test_cask_is_macos_only() -> None:
+    ex = FakeExecutor()
+    with pytest.raises(UnsupportedOS):
+        BrewCask("x").install(Ctx(os=FEDORA, ex=ex))
+    assert BrewCask("x").verify(Ctx(os=FEDORA, ex=ex)) is False
+    assert ex.calls == []
 
 
 def test_formula_equality_is_by_names() -> None:

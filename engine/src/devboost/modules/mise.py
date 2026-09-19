@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 
 from devboost.core import log
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, mise
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
 
 _NOTE_NVM = "# devboost: migrated nvm init to mise"
 _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
@@ -29,11 +31,19 @@ class Mise(Module):
     category = "base"
     description = "Install mise runtime version manager; migrate nvm/sdkman init blocks."
     profiles = ("base",)
+    # macOS: brew's formula. The nvm/sdkman migrations below edit ~/.bashrc blocks that
+    # a Mac (zsh) does not have, so they are Linux-only.
+    per_os = OsMap(macos=BrewFormula("mise"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("mise")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             self._cleanup_legacy_apt_source(ctx)
         if not ctx.ex.which("mise"):

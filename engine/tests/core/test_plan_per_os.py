@@ -25,6 +25,15 @@ class _OwnInstall(Module):
         return None
 
 
+class _InstallOnly(Module):
+    # Overrides install but not verify: Module.verify has nothing to fall back to.
+    name: ClassVar[str] = "install-only-probe"
+    per_os = OsMap(macos=BrewFormula("probe"))
+
+    def install(self, ctx: Ctx) -> None:
+        return None
+
+
 class _StrategyOnly(Module):
     name: ClassVar[str] = "strategy-only-probe"
     per_os = OsMap(macos=BrewFormula("probe"))
@@ -33,6 +42,7 @@ class _StrategyOnly(Module):
 MODULES: dict[str, type[Module]] = {
     "own-install-probe": _OwnInstall,
     "strategy-only-probe": _StrategyOnly,
+    "install-only-probe": _InstallOnly,
 }
 
 
@@ -41,6 +51,7 @@ def test_own_install_is_the_fallback_off_the_declared_os(tmp_path: Path) -> None
     assert {p.name: p.skip_reason for p in plan} == {
         "own-install-probe": None,
         "strategy-only-probe": "unsupported-os",
+        "install-only-probe": "unsupported-os",
     }
 
 
@@ -49,4 +60,5 @@ def test_declared_os_is_supported_for_both(tmp_path: Path) -> None:
     assert {p.name: p.skip_reason for p in plan} == {
         "own-install-probe": None,
         "strategy-only-probe": None,
+        "install-only-probe": None,
     }

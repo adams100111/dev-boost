@@ -1,4 +1,4 @@
-"""Shared base for trivial package-install modules (verify = which; install = pkg)."""
+"""Shared base for trivial package-install modules (Linux: verify = which; macOS: brew)."""
 
 from __future__ import annotations
 

@@ -11,10 +11,12 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.core.settings import settings
 from devboost.exec.primitives import copr, flatpak, pkg
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
 
@@ -34,11 +36,17 @@ class Starship(Module):
     category = "shell"
     description = "Cross-shell prompt."
     profiles = ("shell",)
+    per_os = OsMap(macos=BrewFormula("starship"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("starship")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Not in Ubuntu apt OR Fedora's default repos — the official installer drops the binary
         # into ~/.local/bin (on PATH), no sudo, on any distro. The installer's -b doesn't create
         # the dir, so ensure it exists (fresh boxes may not have ~/.local/bin yet).

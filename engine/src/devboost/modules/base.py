@@ -8,9 +8,11 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
 _BUILD_PKGS_FEDORA = (
@@ -144,11 +146,19 @@ class Chezmoi(Module):
     category = "base"
     description = "Install the chezmoi dotfiles manager."
     profiles = ("base",)
+    # macOS: the brew formula (kept current by `devboost install --update`); Linux keeps the
+    # upstream installer into ~/.local/bin.
+    per_os = OsMap(macos=BrewFormula("chezmoi"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("chezmoi")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         bindir = Path(os.environ["HOME"]) / ".local" / "bin"
         bindir.mkdir(parents=True, exist_ok=True)
         # Upstream installer is a curl|sh one-liner (escape hatch — no native package).

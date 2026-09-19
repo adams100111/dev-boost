@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from devboost.core.errors import UnsupportedOS
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx
 
@@ -19,6 +20,8 @@ class BrewFormula:
 
     macOS ships its own old git/curl/bash/…, so a PATH lookup would report a tool as
     installed that brew never installed. ``--update`` (``ctx.force``) upgrades in place.
+    macOS only, like ``BrewCask``: off macOS ``verify`` is False and ``install`` raises
+    UnsupportedOS — a formula name must never reach dnf/apt/pacman.
     """
 
     formulae: tuple[str, ...]
@@ -29,9 +32,13 @@ class BrewFormula:
         object.__setattr__(self, "formulae", formulae)
 
     def verify(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "macos":
+            return False
         return all(pkg.installed(ctx, f) for f in self.formulae)
 
     def install(self, ctx: Ctx) -> None:
+        if ctx.os.family != "macos":
+            raise UnsupportedOS(f"Homebrew formulae are macOS-only; detected {ctx.os.distro!r}")
         if not ctx.force:
             # `brew install` of an installed formula is a no-op — no pre-check needed.
             pkg.install(ctx, *self.formulae)
