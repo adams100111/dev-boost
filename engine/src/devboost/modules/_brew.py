@@ -19,7 +19,8 @@ class BrewFormula:
     """One or more Homebrew formulae, verified with ``brew list`` — never ``which``.
 
     macOS ships its own old git/curl/bash/…, so a PATH lookup would report a tool as
-    installed that brew never installed. ``--update`` (``ctx.force``) upgrades in place.
+    installed that brew never installed. ``ctx.force`` upgrades in place (``--update`` only
+    forces modules marked ``self_updating``).
     macOS only, like ``BrewCask``: off macOS ``verify`` is False and ``install`` raises
     UnsupportedOS — a formula name must never reach dnf/apt/pacman.
     """

@@ -146,8 +146,9 @@ class Chezmoi(Module):
     category = "base"
     description = "Install the chezmoi dotfiles manager."
     profiles = ("base",)
-    # macOS: the brew formula (kept current by `devboost install --update`); Linux keeps the
-    # upstream installer into ~/.local/bin.
+    # macOS: the brew formula; Linux keeps the upstream installer into ~/.local/bin. Not
+    # self_updating, so `devboost install --update` does not upgrade it yet (`brew upgrade
+    # chezmoi` does); an OS-aware --update is planned for M3.
     per_os = OsMap(macos=BrewFormula("chezmoi"))
 
     def verify(self, ctx: Ctx) -> bool:
