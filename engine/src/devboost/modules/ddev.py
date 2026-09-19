@@ -6,16 +6,25 @@ architecture-ready seam (not implemented for the Fedora-only delivery).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import ClassVar
+
+from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
-from devboost.model import Ctx, DnfRepo, Module
+from devboost.model import BrewTap, Ctx, DnfRepo, Module
+from devboost.modules._credentials import is_interactive
 from devboost.modules.docker import Docker
+from devboost.modules.macos import Homebrew
 
 # Fedora: ddev's own dnf repo. (Debian uses the canonical apt setup below, not an AptRepo —
 # a hand-rolled apt list conflicted on Signed-By with the ddev.sources ddev's package ships.)
+# macOS: ddev is not in homebrew-core; its own tap is the documented install.
 DDEV_SOURCE: pkg.Source = OsMap(
     fedora=DnfRepo(name="ddev", baseurl="https://pkg.ddev.com/yum/", gpgcheck=False),
+    macos=BrewTap("ddev/ddev"),
 )
 
 # Canonical DDEV apt repo, verbatim from ddev's official install docs (keyring ddev.asc +
@@ -35,18 +44,63 @@ _DDEV_REPO_DEBIAN = (
 )
 
 
+@dataclass(frozen=True)
+class _DdevMac:
+    """macOS (spec §2): ddev from its tap, mkcert from homebrew-core, and mkcert's local CA
+    trusted once. Trusting the CA opens a macOS password dialog, so that step runs only
+    when someone is there; otherwise the module is `blocked` with the one command to run."""
+
+    uses_brew: ClassVar[bool] = True
+
+    @staticmethod
+    def _ca_ready(ctx: Ctx) -> bool:
+        res = ctx.ex.run(["mkcert", "-CAROOT"])
+        root = res.stdout.strip()
+        return res.ok and bool(root) and (Path(root) / "rootCA.pem").is_file()
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (
+            pkg.installed(ctx, "ddev") and pkg.installed(ctx, "mkcert") and self._ca_ready(ctx)
+        )
+
+    def install(self, ctx: Ctx) -> None:
+        present = [f for f in ("ddev", "mkcert") if pkg.installed(ctx, f)]
+        if ctx.force and present:
+            pkg.upgrade(ctx, *present)
+        if "ddev" not in present:
+            pkg.install(ctx, "ddev/ddev/ddev", source=DDEV_SOURCE)
+        if "mkcert" not in present:
+            pkg.install(ctx, "mkcert")
+        if self._ca_ready(ctx):
+            return
+        if not is_interactive():
+            raise NeedsUser(
+                "mkcert's local CA is not trusted yet (HTTPS for ddev sites)",
+                "run `mkcert -install` in a terminal — macOS asks for your password once",
+            )
+        res = ctx.ex.run(["mkcert", "-install"], interactive=True)
+        if not res.ok:
+            raise InstallError("ddev", "mkcert -install", res.code)
+
+
 @register
 class Ddev(Module):
     name = "ddev"
     category = "dev-stacks"
     description = "Container-based Laravel/PHP dev orchestrator (no host php/composer)."
-    requires = (Docker,)
+    requires = (Docker, Homebrew)
     profiles = ("laravel",)
+    per_os = OsMap(macos=_DdevMac())
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("ddev")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "arch":
             # ddev publishes no pacman repo and Arch packages no `ddev`; `ddev-bin` is
             # the maintained AUR build of the upstream release binary.
@@ -68,6 +122,7 @@ class DdevRemote(Module):
     description = "On a server, bind ddev's router to all interfaces (tailnet-reachable projects)."
     requires = (Ddev,)
     profiles = ("laravel",)
+    portable: ClassVar[bool] = True  # a no-op off headless hosts; the ddev CLI is the same
 
     def verify(self, ctx: Ctx) -> bool:
         # Only meaningful on a headless server; on a GUI laptop ddev stays on localhost.

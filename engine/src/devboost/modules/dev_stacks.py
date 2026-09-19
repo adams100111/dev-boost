@@ -106,6 +106,8 @@ class Playwright(Module):
     description = "Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI."
     requires = (WebRuntimes,)
     profiles = ("web",)  # semantic home; installed via the `devtools` aggregate in profiles.toml
+    # npm + Playwright's own browser downloads; macOS needs no system libs.
+    portable: ClassVar[bool] = True
 
     def _marker(self) -> Path:
         return Path(os.environ["HOME"]) / ".cache" / "ms-playwright" / ".devboost"
@@ -126,7 +128,8 @@ class Playwright(Module):
                 sudo=True,
                 env={"NEEDRESTART_MODE": "a"},
             )
-        else:
+        # macOS: Chromium bundles its own frameworks — no system libraries to add.
+        elif ctx.os.family != "macos":
             # Fedora: Playwright's install-deps is apt-only, so install Chromium's system libs
             # via dnf ourselves. Best-effort — a lib renamed on some future Fedora must NOT fail
             # the module (browsers still install; degrade with a warn, never error). dnf5 rejects

@@ -8,17 +8,21 @@ elsewhere rather than silently no-op.
 
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
-from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.errors import NeedsUser, PresentUnmanaged, SecretsError, UnsupportedOS
 from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewCask
 from devboost.modules._pending import MacosPending
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import bundle_path, key_path
 
 
@@ -36,20 +40,98 @@ def _secret(ctx: Ctx, field: str) -> str | None:
     return data.get(field)
 
 
+_TS_APP = Path("/Applications/Tailscale.app")
+_TS_APP_BIN = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+_TS_CASK = BrewCask("tailscale-app")
+#: Tailscale KB 1080: on macOS the CLI is the app binary, called by its real path. A
+#: wrapper keeps that path (a symlink would not) and works in scripts, unlike an alias.
+_TS_WRAPPER = (
+    "#!/bin/sh\n"
+    "# devboost — the Tailscale app's CLI. Managed by dev-boost (tailscale module).\n"
+    f'exec "{_TS_APP_BIN}" "$@"\n'
+)
+
+
+def ts_cli() -> Path:
+    return Path(os.environ["HOME"]) / ".local" / "bin" / "tailscale"
+
+
+def _ts_state(ctx: Ctx) -> str:
+    """BackendState from `tailscale status --json` ("Running", "NeedsLogin", …); "" if none."""
+    res = ctx.ex.run([str(ts_cli()), "status", "--json"])
+    try:
+        data = json.loads(res.stdout) if res.stdout.strip() else None
+    except ValueError:
+        return ""
+    state = data.get("BackendState") if isinstance(data, dict) else None
+    return state if isinstance(state, str) else ""
+
+
+@dataclass(frozen=True)
+class _TailscaleMac:
+    """macOS: the standalone app (cask `tailscale-app`), its CLI on PATH, and the one-time
+    approval only the user can give. The Mac is a fleet client: no Tailscale SSH server.
+
+    A hand-installed Tailscale.app that brew cannot adopt (PresentUnmanaged) is left as it
+    is, but still gets the CLI wrapper and the connection check (ruling R6)."""
+
+    uses_brew: ClassVar[bool] = True
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (
+            (_TS_CASK.verify(ctx) or _TS_APP.is_dir())
+            and ts_cli().is_file()
+            and _ts_state(ctx) == "Running"
+        )
+
+    def install(self, ctx: Ctx) -> None:
+        try:
+            _TS_CASK.install(ctx)
+        except PresentUnmanaged:
+            if not _TS_APP.is_dir():
+                raise
+            log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
+        cli = ts_cli()
+        if not cli.is_file() or cli.read_text(encoding="utf-8") != _TS_WRAPPER:
+            cli.parent.mkdir(parents=True, exist_ok=True)
+            cli.write_text(_TS_WRAPPER, encoding="utf-8")
+            cli.chmod(0o755)
+        state = _ts_state(ctx)
+        if state == "Running":
+            return
+        key = _secret(ctx, "TAILSCALE_AUTHKEY")
+        if key and state == "NeedsLogin" and ctx.ex.run([str(cli), "up", f"--authkey={key}"]).ok:
+            return
+        ctx.ex.run(["open", "-a", "Tailscale"])
+        raise NeedsUser(
+            "Tailscale is installed but not connected",
+            "open Tailscale from the menu bar, allow its VPN configuration when macOS asks "
+            "(System Settings → General → Login Items & Extensions → Network Extensions), "
+            "then sign in — or add TAILSCALE_AUTHKEY to the secrets bundle",
+        )
+
+
 @register
 class Tailscale(Module):
     name = "tailscale"
     category = "server"
     description = "Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key)."
     profiles = ("server", "remote")
+    requires = (Homebrew,)
+    per_os = OsMap(macos=_TailscaleMac())
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("tailscale")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Official cross-distro installer (same curl|sh escape hatch as chezmoi/starship).
         if not ctx.ex.which("tailscale"):
             ctx.ex.run(["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"])
