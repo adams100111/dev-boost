@@ -5,6 +5,7 @@ from __future__ import annotations
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
+from devboost.modules.macos import Homebrew
 
 
 @register
@@ -13,6 +14,9 @@ class Mosh(Module):
     category = "remote"
     description = "Mosh — roaming-resilient terminal transport (client + mosh-server)."
     profiles = ("cli", "remote", "brain-host")
+    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
+    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    requires = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("mosh")

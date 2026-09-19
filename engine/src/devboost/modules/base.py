@@ -128,6 +128,10 @@ class BuildTools(Module):
     category = "base"
     description = "Compiler toolchain + common build dependencies."
     profiles = ("base",)
+    # install()'s fedora/default branch calls pkg.install unconditionally, which is brew
+    # on macOS; not yet macOS-designed (KNOWN_GAPS), but the ordering invariant still
+    # holds if it ever runs.
+    requires = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return all(ctx.ex.which(c) for c in ("gcc", "make", "cmake"))

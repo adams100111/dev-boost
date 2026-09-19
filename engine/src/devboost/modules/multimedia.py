@@ -15,6 +15,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 from devboost.modules.base import Rpmfusion
+from devboost.modules.macos import Homebrew
 
 
 @register
@@ -136,6 +137,9 @@ class VaHwaccel(Module):
     # hardware (`omarchy-hw-*`), so re-deriving the vendor from lspci here would only
     # duplicate that work. Vanilla Arch still gets the branch below.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
+    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["vainfo"]).ok

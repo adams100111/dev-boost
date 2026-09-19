@@ -8,6 +8,7 @@ from pathlib import Path
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
+from devboost.modules.macos import Homebrew
 
 
 @register
@@ -16,6 +17,9 @@ class Neovim(Module):
     category = "optional-editors"
     description = "Neovim editor."
     profiles = ("optional-editors",)
+    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
+    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    requires = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("nvim")

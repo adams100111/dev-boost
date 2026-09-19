@@ -18,6 +18,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg
 from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
+from devboost.modules.macos import Homebrew
 
 
 def home() -> Path:
@@ -101,6 +102,7 @@ class Secrets(Module):
     # macOS: pkg.install dispatches to brew for `age`, the age key may come from the
     # keychain, and the token goes to osxkeychain / gh — never ~/.git-credentials.
     portable = True
+    requires = (Homebrew,)  # macOS installs `age` via brew when the bundle needs it
 
     def verify(self, ctx: Ctx) -> bool:
         if not ctx.ex.run(["git", "config", "--global", "user.email"]).ok:

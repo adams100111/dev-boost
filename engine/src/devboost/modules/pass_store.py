@@ -16,6 +16,7 @@ from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
 from devboost.modules.cli_tools import Git
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import Secrets
 from devboost.passstore import enroll, paths, sync
 from devboost.passstore.layout import Store
@@ -92,6 +93,7 @@ class Pass(Module):
                    "pinentry-mac on macOS).")
     profiles = ("base",)
     portable = True  # install is OS-aware: brew formulae + pinentry-mac on macOS
+    requires = (Homebrew,)  # macOS installs pass/gnupg/pinentry-mac via brew; dropped on Linux
 
     def _conf(self) -> Path:
         return gnupg_home() / "gpg-agent.conf"

@@ -13,6 +13,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
 from devboost.modules._pending import MacosPending
+from devboost.modules.macos import Homebrew
 
 
 def _snapper_config_value(get_config_stdout: str, key: str) -> str | None:
@@ -36,6 +37,9 @@ class SystemService(Module):
     service: ClassVar[str]
     category = "system"
     profiles = ("system",)
+    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
+    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return systemd.is_enabled(ctx, self.service)
@@ -264,6 +268,9 @@ class Earlyoom(Module):
     category = "system"
     description = "Userspace OOM killer (dev-protecting)."
     profiles = ("system",)
+    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
+    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    requires = (Homebrew,)
 
     def _conf(self, ctx: Ctx | None = None) -> str:
         """Return the earlyoom config path.

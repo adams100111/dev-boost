@@ -16,6 +16,7 @@ from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import si
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
 from devboost.modules.editors import Fresh
+from devboost.modules.macos import Homebrew
 from devboost.modules.mise import Mise
 
 _UV_VERSION = "0.11.23"
@@ -174,6 +175,10 @@ class DotnetSdk(Module):
     category = "dotnet"
     description = ".NET 10 LTS SDK."
     profiles = ("dotnet",)
+    # install()'s else branch calls pkg.install unconditionally, which is brew on macOS;
+    # not yet macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it
+    # ever runs.
+    requires = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         out = ctx.ex.run(["dotnet", "--list-sdks"])

@@ -24,7 +24,11 @@ def toposort(names: list[str], modules: Mapping[str, type[Module]]) -> list[str]
         stack.extend(d.name for d in modules[name].requires)
 
     ts: TopologicalSorter[str] = TopologicalSorter()
-    for name in selected:
+    # Sorted, not the raw set: str hashing (and so set iteration) is seeded per-process,
+    # so an unsorted `selected` would make TopologicalSorter's tie-breaking among
+    # unrelated modules vary run to run despite the same input — not actually
+    # deterministic, contrary to this module's docstring.
+    for name in sorted(selected):
         soft = (d.name for d in modules[name].after if d.name in selected)
         ts.add(name, *(d.name for d in modules[name].requires), *soft)
     try:

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devboost.core.graph import toposort
+from devboost.core.plan import build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load, validate_profiles
 from devboost.model import Ctx
@@ -72,12 +73,21 @@ def export_snapshot(ctx: Ctx, base: Path) -> Path:
 
 
 def diff_drift(ctx: Ctx, tokens: list[str], root: Path) -> list[str]:
-    """Return the names of resolved modules whose verify currently fails (drift)."""
+    """Return the names of resolved modules whose verify currently fails (drift).
+
+    Filtered through build_plan, like `verify` — a module dropped/skipped for this OS
+    (e.g. homebrew/xcode-clt on Linux) was never going to be installed, so it is not
+    drift.
+    """
     modules = load()
     profiles = load_profiles(root / "profiles.toml")
     validate_profiles(modules, set(profiles))
     order = toposort(expand(tokens or ["full"], profiles, modules), modules)
-    return [name for name in order if not modules[name]().verify(ctx)]
+    plan = build_plan(order, modules, ctx.os)
+    return [
+        pm.name for pm in plan
+        if pm.skip_reason is None and not modules[pm.name]().verify(ctx)
+    ]
 
 
 def self_update(ctx: Ctx, root: Path) -> bool:
