@@ -54,7 +54,12 @@ def frag_home(tmp_path: Path) -> Path:
 
 
 def _data(os_name: str, distro: str) -> str:
-    return json.dumps({"chezmoi": {"os": os_name, "osRelease": {"id": distro}}})
+    # chezmoi has no `.chezmoi.osRelease` on Darwin; injecting one would hide templates
+    # that read it unguarded (they fail there with `map has no entry for key "id"`).
+    chezmoi: dict[str, object] = {"os": os_name}
+    if os_name != "darwin":
+        chezmoi["osRelease"] = {"id": distro}
+    return json.dumps({"chezmoi": chezmoi})
 
 
 @pytest.fixture

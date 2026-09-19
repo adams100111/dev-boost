@@ -1,18 +1,38 @@
 {{/*
    dev-boost chezmoi ignore list.
 
-   On Omarchy the distro ships its own copies of these files and REPLACES the user's
-   version during `omarchy update`: migrations call `omarchy-refresh-config`, which does
-   `cp -f <default> <user file>` (keeping a .bak). A chezmoi-managed file at one of these
-   paths therefore loses the race on every update and shows as permanent drift afterwards.
+   1. Per-OS files. macOS runs zsh, so bash's rc files and the Linux-only services
+      (systemd user units, caddy) are not applied there; Linux runs bash, so the macOS
+      login files and the AeroSpace config are not applied there. Zed config is
+      Linux-only until Z2 routes macOS through the zed module's ensure_config.
 
-   So on Omarchy dev-boost is a tenant in ~/.config, not the landlord: it skips the paths
-   the platform owns and delivers its own shell config as ~/.config/devboost/shell.bash,
-   which the bash-config module sources from Omarchy's own ~/.bashrc. Everything with no
-   Omarchy counterpart (atuin, ripgrep, bat, fresh, caddy, fleet, systemd units, ~/.claude,
-   ~/.local/bin) still applies normally.
+   2. Omarchy. The distro ships its own copies of the files listed in its block and
+      REPLACES the user's version during `omarchy update`: migrations call
+      `omarchy-refresh-config`, which does `cp -f <default> <user file>` (keeping a .bak).
+      A chezmoi-managed file at one of these paths therefore loses the race on every
+      update and shows as permanent drift afterwards. So on Omarchy dev-boost is a tenant
+      in ~/.config, not the landlord: it skips the paths the platform owns and delivers its
+      own shell config as ~/.config/devboost/shell.bash, which the bash-config module
+      sources from Omarchy's own ~/.bashrc. Everything with no Omarchy counterpart
+      (atuin, ripgrep, bat, fresh, caddy, fleet, systemd units, ~/.claude, ~/.local/bin)
+      still applies normally.
+
+   `.chezmoi.osRelease` exists only on Linux and a missing key is a template error, so the
+   Omarchy test is guarded by the OS test (`and` stops at the first false argument).
 */ -}}
-{{ if eq .chezmoi.osRelease.id "omarchy" -}}
+{{ if eq .chezmoi.os "darwin" -}}
+.bashrc
+.bash-preexec.sh
+.config/systemd
+.config/caddy
+.config/zed
+{{ else -}}
+.zshrc
+.zprofile
+.bash_profile
+.config/aerospace
+{{ end -}}
+{{ if and (eq .chezmoi.os "linux") (eq .chezmoi.osRelease.id "omarchy") -}}
 .bashrc
 .tmux.conf
 .config/starship.toml
