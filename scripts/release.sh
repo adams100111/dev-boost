@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
-# scripts/release.sh — local build + publish of a dev-boost release (beside the CI workflow).
+# scripts/release.sh — EMERGENCY-ONLY local build + publish of a dev-boost release.
+#
+# The canonical release path is .github/workflows/release.yml: `git tag vX.Y.Z && git push
+# origin vX.Y.Z`. This script refuses to run while that workflow exists and is enabled,
+# because the two collide: publishing a draft here creates the v* tag (with the operator's
+# own token), which fires release.yml, which rebuilds every binary (PyInstaller output is
+# not byte-reproducible) and so would upload over the release just published and verified.
+#
+# Emergency override (CI down, a runner image broken, ...): DEVBOOST_RELEASE_EMERGENCY=1.
+# It prints a loud warning, and even then it publishes only when the v* tag ALREADY exists
+# on origin: publishing a draft for an existing tag pushes no tag, so it starts no workflow.
+# For a version whose tag does not exist yet, either disable the workflow first
+# (`gh workflow disable release.yml`, re-enable it afterwards), or push the tag, let
+# release.yml finish or cancel it before its `release` job, then publish here.
 #
 # PyInstaller can't cross-compile, so this builds the HOST arch only. Run it on an x86_64 box,
-# an aarch64 box AND an Apple Silicon Mac to assemble the complete release. Each run:
+# an aarch64 box AND an Apple Silicon Mac, one after another and never at the same time (there
+# is no lock), to assemble the complete release. Each run:
 #
 #   1. (re)builds the host-arch frozen binary;
 #   2. creates the v<version> release as a DRAFT if it does not exist yet (a draft is
@@ -15,18 +29,13 @@
 #      present (or with --publish, for a deliberately partial release). Until then it stays
 #      a draft and the run says which assets are still missing.
 #
-# A release that is already published is never re-uploaded over: replacing an asset there
-# would briefly serve it against a stale checksums.txt.
+# A release that is already published never has an existing asset replaced: that would
+# briefly serve it against a stale checksums.txt.
 #
 # Version comes from engine/pyproject.toml and must equal devboost.__version__ (the same guard
 # CI enforces). Requires an authenticated gh CLI. Flags: --dry-run (-n) prints the
 # build/publish commands without running them; --publish publishes even when some arch is
 # still missing.
-#
-# NOTE: this is the manual path *beside* .github/workflows/release.yml. Creating a NEW v* tag
-# here (first run for a version with no release yet) also fires that workflow, which rebuilds
-# and clobbers. For a CI-free release, disable/guard release.yml, or run this only against a
-# tag/release that already exists (appending an arch never re-triggers CI).
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -102,6 +111,42 @@ tag="v${version}"
 
 arch="$(rl_arch)" || exit 1
 echo "release: ${tag} (host arch: ${arch})"
+
+# --- release.yml is the canonical path: refuse while it is enabled (see the header) ---
+RL_WORKFLOW=.github/workflows/release.yml
+EMERGENCY=0
+if [[ -f "${RL_WORKFLOW}" ]]; then
+  # `gh workflow view` has no --json; `list --all` includes disabled workflows. A state that
+  # cannot be read (workflow not pushed yet, API error) counts as enabled.
+  wf_state="$(gh workflow list --all --json path,state \
+    --jq ".[] | select(.path == \"${RL_WORKFLOW}\") | .state" 2>/dev/null || true)"
+  if [[ "${wf_state}" == disabled_* ]]; then
+    echo "release: ${RL_WORKFLOW} is ${wf_state} — the manual path is allowed"
+  elif [[ "${DEVBOOST_RELEASE_EMERGENCY:-}" == 1 ]]; then
+    EMERGENCY=1
+    {
+      echo "release: ##################################################################"
+      echo "release: WARNING — EMERGENCY OVERRIDE (DEVBOOST_RELEASE_EMERGENCY=1)"
+      echo "release: ${RL_WORKFLOW} is enabled (state: ${wf_state:-unknown}) and is the"
+      echo "release: canonical release path. ANY push of ${tag} starts it, and it rebuilds"
+      echo "release: every binary and uploads over this release. This run publishes only if"
+      echo "release: ${tag} already exists on origin (publishing then pushes no tag);"
+      echo "release: otherwise it stops at a verified draft."
+      echo "release: ##################################################################"
+    } >&2
+  else
+    {
+      echo "release: refusing — ${RL_WORKFLOW} is enabled (state: ${wf_state:-unknown})"
+      echo "release: and is the canonical release path. Publishing a release.sh draft creates"
+      echo "release: the ${tag} tag, which starts that workflow, which rebuilds and uploads"
+      echo "release: over the release this script just published."
+      echo "release: Release with:  git tag ${tag} && git push origin ${tag}"
+      echo "release: Emergency only: gh workflow disable release.yml (re-enable it after), or"
+      echo "release: DEVBOOST_RELEASE_EMERGENCY=1 with ${tag} already on origin."
+    } >&2
+    exit 1
+  fi
+fi
 
 # --- build the host-arch frozen binary (+ injection tarball + per-arch checksums) ---
 run bash scripts/build-bundle.sh
@@ -187,6 +232,14 @@ done
 if [[ ${published} -eq 1 ]]; then
   echo "release: ${tag} published (${arch} appended); checksums.txt regenerated"
 elif [[ ${#missing[@]} -eq 0 || ${FORCE_PUBLISH} -eq 1 ]]; then
+  if [[ ${EMERGENCY} -eq 1 ]] \
+    && ! git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+    echo "release: ${tag} is not on origin — publishing would push it and start" \
+      "${RL_WORKFLOW}, which would upload over this release. Left as a verified DRAFT." >&2
+    echo "release: push ${tag} first (let release.yml finish, or cancel it), or disable" \
+      "the workflow, then re-run." >&2
+    exit 1
+  fi
   gh release edit "${tag}" --draft=false --latest
   echo "release: ${tag} published and marked latest"
 else

@@ -6,6 +6,11 @@ on:
 permissions:
   contents: write
 
+# One release run per tag at a time: a re-run never races the first one's draft.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   # Gate the whole release on the same checks CI runs. ci.yml was red for 20+ runs while
   # releases shipped regardless, because release.yml never ran the tests — it only built the
@@ -115,6 +120,8 @@ jobs:
           codesign --verify --strict dist/devboost-darwin-arm64
 
   # Publishing builds nothing, so it has no glibc floor to keep: a plain current runner.
+  # This workflow is the canonical release path: scripts/release.sh refuses to publish while
+  # it is enabled (publishing a release.sh draft creates the tag, which would start this).
   release:
     needs: [binary, binary-compat]
     runs-on: ubuntu-24.04
@@ -143,13 +150,65 @@ jobs:
           done
           ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-darwin-arm64 \
               devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
-      - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            out/devboost-x86_64
-            out/devboost-aarch64
-            out/devboost-darwin-arm64
-            out/devboost-x86_64.tar.gz
-            out/devboost-aarch64.tar.gz
+      # Draft -> upload -> verify -> publish, with gh (preinstalled on the runner). Nothing is
+      # public until the last step: a draft is invisible to `releases/latest`, so get.sh and
+      # self-update never see a release whose assets are still uploading or unverified. The
+      # GITHUB_TOKEN's own writes (publishing, the tag it points at) trigger no workflow.
+      - name: Create the release as a draft (never over a published one)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            if [ "$(gh release view "${TAG}" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::${TAG} is already published; a release is never re-uploaded over"
+              exit 1
+            fi
+            echo "${TAG}: reusing the existing draft (a re-run); its assets are replaced"
+          else
+            gh release create "${TAG}" --draft --verify-tag \
+              --title "dev-boost ${TAG}" \
+              --notes "Frozen dev-boost binaries for ${TAG}. Install: scripts/get.sh."
+          fi
+      - name: Upload every asset + checksums.txt to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "${TAG}" --clobber \
+            out/devboost-x86_64 \
+            out/devboost-aarch64 \
+            out/devboost-darwin-arm64 \
+            out/devboost-x86_64.tar.gz \
+            out/devboost-aarch64.tar.gz \
             out/checksums.txt
+      - name: Verify the draft's assets against checksums.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p verify
+          gh release download "${TAG}" --dir verify --clobber
+          # Exactly the six files, no strays, every asset listed, every hash matching.
+          expected="checksums.txt devboost-aarch64 devboost-aarch64.tar.gz devboost-darwin-arm64"
+          expected="${expected} devboost-x86_64 devboost-x86_64.tar.gz"
+          got="$(cd verify && printf '%s\n' * | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          if [ "${got}" != "${expected}" ]; then
+            echo "::error::draft ${TAG} has [${got}], want [${expected}]"
+            exit 1
+          fi
+          for f in verify/devboost-*; do
+            awk -v f="${f##*/}" '$2 == f { found = 1 } END { exit !found }' verify/checksums.txt \
+              || { echo "::error::${f##*/} has no entry in checksums.txt"; exit 1; }
+          done
+          ( cd verify && sha256sum -c checksums.txt )
+          cmp verify/checksums.txt out/checksums.txt
+      - name: Publish the release and mark it latest (last step)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "${TAG}" --draft=false --latest

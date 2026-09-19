@@ -41,9 +41,13 @@ git history and the GitHub release notes.
   '=https'` so a redirect can never downgrade to plaintext; and cleans up its temp
   download dir on every exit path — a normal return, a `set -e` abort, and `INT`/`HUP`/
   `TERM`. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it (ad-hoc
-  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`); `release.sh` now
-  publishes through a **draft**, verifying every asset against `checksums.txt` before it
-  marks the release latest. `devboost self-update` resolves its release asset by
+  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`). `release.yml` is
+  the one canonical release path and now publishes through a **draft**: upload every asset
+  and `checksums.txt`, download and verify them, and only then publish and mark latest.
+  `release.sh` does the same, but is emergency-only: it refuses while `release.yml` is
+  enabled (its published draft would create the tag and start the workflow, which would
+  upload over it) unless `DEVBOOST_RELEASE_EMERGENCY=1`, and even then publishes only a tag
+  that is already on origin. `devboost self-update` resolves its release asset by
   `(os, arch)`, **refuses to downgrade** the running binary, refuses to run outside the
   frozen binary (it would otherwise overwrite the Python interpreter), and reports an
   unwritable install dir or a garbled `checksums.txt` as `self-update failed: …` instead of

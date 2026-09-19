@@ -63,10 +63,87 @@ def test_release_checksums_include_darwin() -> None:
     sha_match = re.search(r"sha256sum.*?>\s*checksums\.txt", release_job, re.DOTALL)
     assert sha_match, "no sha256sum ... > checksums.txt combine step"
     assert "devboost-darwin-arm64" in sha_match.group(0)
-    files_re = re.compile(r"files:\s*\|(.*?)(?=^\s{6}\S|\Z)", re.DOTALL | re.MULTILINE)
-    files_match = files_re.search(release_job)
-    assert files_match, "no `files:` block in the release step"
-    assert "devboost-darwin-arm64" in files_match.group(1)
+    upload = _step(release_job, "Upload every asset + checksums.txt to the draft")
+    assert "out/devboost-darwin-arm64" in upload
+
+
+# --- release.yml publishes safely: draft -> upload -> verify -> publish (N2) ----------
+
+_ASSETS = (
+    "devboost-x86_64",
+    "devboost-aarch64",
+    "devboost-darwin-arm64",
+    "devboost-x86_64.tar.gz",
+    "devboost-aarch64.tar.gz",
+    "checksums.txt",
+)
+
+
+def _step(job: str, name: str) -> str:
+    """The body of the step called *name* in *job*, up to the next step."""
+    match = re.search(
+        rf"^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)", job, re.DOTALL | re.MULTILINE
+    )
+    assert match, f"no step named {name!r}"
+    return match.group(1)
+
+
+def test_release_job_no_longer_publishes_with_softprops() -> None:
+    """softprops/action-gh-release creates the release published, so it was `latest`
+    before its uploads finished (and it re-uploads over an existing release)."""
+    assert "softprops/action-gh-release" not in _RELEASE
+
+
+def test_release_job_creates_a_draft_and_refuses_a_published_release() -> None:
+    body = _step(
+        _job_body(_RELEASE, "release"), "Create the release as a draft (never over a published one)"
+    )
+    assert 'gh release create "${TAG}" --draft --verify-tag' in body
+    assert "--latest" not in body
+    assert "--json isDraft --jq .isDraft" in body
+    assert "is already published; a release is never re-uploaded over" in body
+
+
+def test_release_job_uploads_every_asset_plus_checksums() -> None:
+    body = _step(_job_body(_RELEASE, "release"), "Upload every asset + checksums.txt to the draft")
+    assert "gh release upload" in body
+    for name in _ASSETS:
+        assert f"out/{name}" in body, name
+
+
+def test_release_job_verifies_the_downloaded_draft() -> None:
+    body = _step(_job_body(_RELEASE, "release"), "Verify the draft's assets against checksums.txt")
+    assert "gh release download" in body
+    assert "sha256sum -c checksums.txt" in body
+    assert "has no entry in checksums.txt" in body
+    for name in _ASSETS:
+        assert name in body, name
+
+
+def test_release_job_publishes_and_marks_latest_as_the_last_step() -> None:
+    job = _job_body(_RELEASE, "release")
+    steps = re.findall(r"^      - (?:name: (.*)|uses: .*)$", job, re.MULTILINE)
+    assert steps[-1] == "Publish the release and mark it latest (last step)"
+    order = [
+        job.index("gh release create"),
+        job.index("gh release upload"),
+        job.index("gh release download"),
+        job.index("gh release edit"),
+    ]
+    assert order == sorted(order)
+    last = _step(job, "Publish the release and mark it latest (last step)")
+    assert 'gh release edit "${TAG}" --draft=false --latest' in last
+    assert job.count("--latest") == 1
+
+
+def test_release_job_gh_steps_have_a_token_and_repo() -> None:
+    """The release job has no checkout, so gh needs GH_REPO as well as GH_TOKEN."""
+    job = _job_body(_RELEASE, "release")
+    gh_steps = [s for s in re.split(r"^      - ", job, flags=re.MULTILINE) if "gh release" in s]
+    assert len(gh_steps) == 4
+    for step in gh_steps:
+        assert "GH_TOKEN: ${{ github.token }}" in step
+        assert "GH_REPO: ${{ github.repository }}" in step
 
 
 def test_release_linux_assets_unchanged() -> None:

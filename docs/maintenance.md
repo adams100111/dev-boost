@@ -57,9 +57,10 @@ unpublished build, so a broken install is caught before it ships, not after —
 [docs/vm-testing.md](vm-testing.md), "macOS (tart)", D9). This needs a Mac; if you're
 releasing from Linux, CI's `binary-compat` job below is the equivalent check.
 
-Publish either way:
+Publish through CI. `release.yml` is the **one canonical release path**; `scripts/release.sh`
+is an emergency fallback that refuses to run while the workflow is enabled (below).
 
-- **CI (multi-arch, recommended):** `git tag vX.Y.Z && git push origin vX.Y.Z` →
+- **CI (multi-arch, canonical):** `git tag vX.Y.Z && git push origin vX.Y.Z` →
   `.github/workflows/release.yml`:
   1. `checks` — the full test suite on `ubuntu-24.04` **and** `macos-15`; everything below
      needs this to pass first.
@@ -80,17 +81,31 @@ Publish either way:
      build stays forward-compatible on the newer OSes it also targets.
   4. `release` — collects all three binaries and both Ventoy archives (`x86_64`/`aarch64`
      only — Darwin ships none), verifies every one against the per-arch
-     `checksums-<arch>.txt` its build runner wrote (`sha256sum -c`), regenerates the single
-     `checksums.txt`, and publishes all six files to the release.
-- **Local (`scripts/release.sh`):** builds and uploads the **host arch only** (PyInstaller
-  can't cross-compile — run it once per arch: an x86_64 box, an aarch64 box, and a Mac, for
-  a full 3-arch release). The first run creates the release as a **draft**, which
+     `checksums-<arch>.txt` its build runner wrote (`sha256sum -c`) and regenerates the
+     single `checksums.txt`. It then creates the release as a **draft** (refusing if the
+     tag's release is already published — a re-run reuses its own draft), uploads all six
+     files, downloads them back and checks there are exactly those six, that every asset has
+     a `checksums.txt` entry and that every hash matches, and only as its **last step**
+     publishes the release and marks it latest. Until then `releases/latest` (and so
+     `get.sh` / `self-update`) still serves the previous release.
+- **Emergency only — local (`scripts/release.sh`):** it **refuses** while
+  `.github/workflows/release.yml` exists and is enabled (or its state can't be read), because
+  the paths collide: publishing a `release.sh` draft creates the `v*` tag with your own token,
+  which starts `release.yml`, which rebuilds every binary (not byte-reproducible) and uploads
+  it over the release you just verified. To use it anyway, either disable the workflow
+  (`gh workflow disable release.yml`, and re-enable it afterwards), or set
+  `DEVBOOST_RELEASE_EMERGENCY=1`: that prints a loud warning and publishes **only if the tag
+  already exists on origin** (publishing then pushes no tag, so starts no workflow); for a
+  tag not yet pushed it stops at a verified draft. It builds and uploads the **host arch
+  only** (PyInstaller can't cross-compile — run it once per arch, one host after another,
+  never at the same time: an x86_64 box, an aarch64 box, and a Mac, for a full 3-arch
+  release). The first run creates the release as a **draft**, which
   `releases/latest` (and so `get.sh` / `self-update`) never sees. Each run uploads its arch,
   regenerates `checksums.txt` from every binary on the release, downloads everything back
   and verifies it, and only then — once all five assets are there — publishes the release
   and marks it latest; until then it says which assets are still missing. `--publish` ships
   a deliberately partial release; `--dry-run` prints the steps without running them. An
-  already-published release is never re-uploaded over.
+  already-published release never has an existing asset replaced.
 
 `get.sh` is anonymous `curl … | bash`, so its `releases/latest` only resolves when the **repo is public**.
 

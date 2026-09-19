@@ -44,10 +44,16 @@ def _uname(system: str, machine: str) -> str:
     )
 
 
-def _fixture_repo(tmp_path: Path, pyproject_version: str, init_version: str) -> Path:
-    """A minimal repo tree holding a copy of release.sh and the two version files."""
+def _fixture_repo(
+    tmp_path: Path, pyproject_version: str, init_version: str, *, workflow: bool = False
+) -> Path:
+    """A minimal repo tree holding a copy of release.sh and the two version files (and,
+    with *workflow*, a .github/workflows/release.yml beside them)."""
     root = tmp_path / "repo"
     (root / "scripts").mkdir(parents=True)
+    if workflow:
+        (root / ".github" / "workflows").mkdir(parents=True)
+        (root / ".github" / "workflows" / "release.yml").write_text("name: release\n")
     pkg = root / "engine" / "src" / "devboost"
     pkg.mkdir(parents=True)
     (root / "engine" / "pyproject.toml").write_text(
@@ -175,6 +181,10 @@ def test_release_is_shellcheck_clean() -> None:
 GH_STORE_STUB = r"""
 printf '%s\n' "$*" >> "$GH_LOG"
 [ "$1" = auth ] && exit 0
+if [ "$1" = workflow ]; then
+  [ -n "${GH_WF_STATE:-}" ] && echo "$GH_WF_STATE"
+  exit 0
+fi
 [ "$1" = release ] || exit 0
 sub="$2"; tag="$3"; shift 3
 rel="$GH_STORE/$tag"
@@ -229,6 +239,14 @@ case "$(uname -s)" in
 esac
 """
 
+#: `git ls-remote --exit-code` succeeds only when GIT_TAG_ON_ORIGIN is set.
+GIT_STUB = """
+case "$1" in
+  ls-remote) [ -n "${GIT_TAG_ON_ORIGIN:-}" ] && exit 0; exit 2 ;;
+  *) echo abc1234 ;;
+esac
+"""
+
 LINUX_AND_ARM = {
     "devboost-x86_64": "x86-bin",
     "devboost-x86_64.tar.gz": "x86-tar",
@@ -265,15 +283,16 @@ def _real_run(
     *args: str,
     system: str = "Darwin",
     machine: str = "arm64",
+    workflow: bool = False,
     **env: str,
 ) -> subprocess.CompletedProcess[str]:
     stub_path.add("uname", _uname(system, machine))
     stub_path.add("gh", GH_STORE_STUB)
-    stub_path.add("git", "echo abc1234")
+    stub_path.add("git", GIT_STUB)
     mk = tmp_path / "mk"
     mk.mkdir(exist_ok=True)
     stub_path.add("mktemp", f'/usr/bin/mktemp -d "{mk}/r.XXXXXX"')
-    script = _fixture_repo(tmp_path, "1.2.3", "1.2.3")
+    script = _fixture_repo(tmp_path, "1.2.3", "1.2.3", workflow=workflow)
     build = script.parent / "build-bundle.sh"
     build.write_text(FAKE_BUILD, encoding="utf-8")
     build.chmod(0o755)
@@ -381,3 +400,109 @@ def test_linux_host_uploads_binary_and_archive(
         "devboost-x86_64.tar.gz",
     ]
     assert store.draft("v1.2.3")
+
+
+# ------------------------------------------- N2: release.yml is the canonical release path
+
+
+def _nothing_happened(store: _Store) -> None:
+    calls = store.calls()
+    assert not [c for c in calls if c.startswith(("release create", "release upload"))]
+    assert not [c for c in calls if c.startswith("release edit")]
+    assert list(store.root.iterdir()) == []
+
+
+@pytest.mark.parametrize("state", ["active", ""], ids=["active", "state-unreadable"])
+def test_refuses_while_release_yml_is_enabled(
+    stub_path: StubPath, tmp_path: Path, store: _Store, state: str
+) -> None:
+    """Publishing a release.sh draft creates the tag, which starts release.yml, which
+    rebuilds and uploads over the published release: so no manual run at all."""
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    before = sorted(p.name for p in (store.root / "v1.2.3").iterdir())
+    res = _real_run(stub_path, tmp_path, store, workflow=True, GH_WF_STATE=state)
+    assert res.returncode == 1
+    assert "refusing — .github/workflows/release.yml is enabled" in res.stderr
+    assert "git tag v1.2.3 && git push origin v1.2.3" in res.stderr
+    assert not (tmp_path / "repo" / "dist").exists(), "built before refusing"
+    assert not [c for c in store.calls() if c.startswith(("release upload", "release edit"))]
+    assert sorted(p.name for p in (store.root / "v1.2.3").iterdir()) == before
+    assert store.draft("v1.2.3")
+
+
+def test_refuses_on_a_fresh_version_too(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    res = _real_run(stub_path, tmp_path, store, workflow=True, GH_WF_STATE="active")
+    assert res.returncode == 1
+    _nothing_happened(store)
+
+
+def test_runs_when_release_yml_is_disabled(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    res = _real_run(
+        stub_path, tmp_path, store, workflow=True, GH_WF_STATE="disabled_manually"
+    )
+    assert res.returncode == 0, res.stderr
+    assert "is disabled_manually — the manual path is allowed" in res.stdout
+    assert "WARNING" not in res.stderr
+    assert not store.draft("v1.2.3")
+
+
+def test_emergency_override_warns_and_keeps_a_draft_when_the_tag_is_not_pushed(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    """Publishing would create the tag and start release.yml: stop at a verified draft."""
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    res = _real_run(
+        stub_path,
+        tmp_path,
+        store,
+        workflow=True,
+        GH_WF_STATE="active",
+        DEVBOOST_RELEASE_EMERGENCY="1",
+    )
+    assert res.returncode == 1
+    assert "WARNING — EMERGENCY OVERRIDE (DEVBOOST_RELEASE_EMERGENCY=1)" in res.stderr
+    assert "v1.2.3 is not on origin — publishing would push it" in res.stderr
+    assert "verified 5 asset(s) against checksums.txt" in res.stdout
+    assert store.draft("v1.2.3")
+    assert not [c for c in store.calls() if c.startswith("release edit")]
+
+
+def test_emergency_override_publishes_when_the_tag_is_already_on_origin(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    """Publishing a draft for a tag that already exists pushes no tag: no workflow run."""
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    res = _real_run(
+        stub_path,
+        tmp_path,
+        store,
+        workflow=True,
+        GH_WF_STATE="active",
+        DEVBOOST_RELEASE_EMERGENCY="1",
+        GIT_TAG_ON_ORIGIN="1",
+    )
+    assert res.returncode == 0, res.stderr
+    assert "WARNING — EMERGENCY OVERRIDE" in res.stderr
+    assert not store.draft("v1.2.3")
+    assert store.calls()[-2] == "release edit v1.2.3 --draft=false --latest"
+
+
+def test_the_override_needs_exactly_1(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    res = _real_run(
+        stub_path,
+        tmp_path,
+        store,
+        workflow=True,
+        GH_WF_STATE="active",
+        DEVBOOST_RELEASE_EMERGENCY="yes",
+    )
+    assert res.returncode == 1
+    assert "refusing" in res.stderr
+    _nothing_happened(store)
