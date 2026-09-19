@@ -248,3 +248,49 @@ def test_only_limits_and_firewall_need_sudo_on_macos() -> None:
     assert ms.MacosLimits.needs_sudo_on_macos is True
     assert ms.MacosFirewall.needs_sudo_on_macos is True
     assert ms.TimemachineExclusions.needs_sudo_on_macos is False
+
+
+DOCKER = "Library/Containers/com.docker.docker"
+
+
+def test_tm_sweep_keeps_going_when_one_addexclusion_is_refused(tmp_path: Path) -> None:
+    """Minor 4: macOS app-data protection may refuse `tmutil addexclusion` on Docker
+    Desktop's container. `ex` returns non-zero for that path only; the loop goes on and
+    the script still exits 0, so the install itself never fails over it."""
+    home = tmp_path
+    (home / DOCKER).mkdir(parents=True)
+    (home / ".npm").mkdir()
+    bindir, log = _fake_tmutil(tmp_path)
+    fake = bindir / "tmutil"
+    fake.write_text(
+        fake.read_text(encoding="utf-8")
+        + 'case "$2" in *com.docker.docker) [ "$1" = addexclusion ] && exit 1;; esac\n',
+        encoding="utf-8",
+    )
+    env = {**os.environ, "HOME": str(home), "PATH": f"{bindir}:/usr/bin:/bin"}
+    res = subprocess.run(["/bin/sh", "-c", ms.tm_sweep_script()], env=env, check=False)
+    assert res.returncode == 0
+    assert str(home / ".npm") in _added(log)  # swept after the refused path
+
+
+def test_tm_verify_tolerates_the_docker_container_it_cannot_exclude(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """…and verify only warns about it, so a refused Docker path is not permanent drift
+    (`verify-failed-after-install` on every run). Any other path still counts."""
+    warns: list[str] = []
+    monkeypatch.setattr(ms.log, "warn", warns.append)
+    (tmp_path / DOCKER).mkdir(parents=True)
+    (tmp_path / ".npm").mkdir()
+    ms.TimemachineExclusions().install(_ctx(RuleExecutor()))
+    ex = RuleExecutor(rules=[
+        (("tmutil", "isexcluded", str(tmp_path / DOCKER)), Result(0, "[Included]  x\n")),
+        (("tmutil", "isexcluded"), Result(0, "[Excluded]  x\n")),
+    ])
+    assert ms.TimemachineExclusions().verify(_ctx(ex)) is True
+    assert any(DOCKER in w for w in warns), warns
+    npm_in = RuleExecutor(rules=[
+        (("tmutil", "isexcluded", str(tmp_path / ".npm")), Result(0, "[Included]  x\n")),
+        (("tmutil", "isexcluded"), Result(0, "[Excluded]  x\n")),
+    ])
+    assert ms.TimemachineExclusions().verify(_ctx(npm_in)) is False

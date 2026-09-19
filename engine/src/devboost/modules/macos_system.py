@@ -134,6 +134,11 @@ TM_PATHS: tuple[str, ...] = (
     ".nuget/packages",
     "Library/Developer/Xcode/DerivedData",
 )
+#: Paths macOS may refuse to exclude: another app's sandbox container is covered by app-data
+#: protection (macOS 14+), so `tmutil addexclusion` can raise "would like to access data
+#: from other apps" or, under launchd, be denied silently. The sweep carries on either way
+#: (its `ex` just returns non-zero); verify warns about these instead of failing forever.
+TM_BEST_EFFORT: tuple[str, ...] = ("Library/Containers/com.docker.docker",)
 _TM_LABEL = launchd.label("tm-exclusions")
 _TM_INTERVAL = 6 * 60 * 60
 
@@ -191,8 +196,18 @@ class TimemachineExclusions(Module):
     portable: ClassVar[bool] = True
 
     def verify(self, ctx: Ctx) -> bool:
-        present = [p for p in tm_candidates() if p.exists()]
-        return all(_excluded(ctx, p) for p in present) and launchd.agent_current(
+        best_effort = {_home() / rel for rel in TM_BEST_EFFORT}
+        ok = True
+        for p in (p for p in tm_candidates() if p.exists()):
+            if _excluded(ctx, p):
+                continue
+            if p in best_effort:
+                log.warn(f"timemachine-exclusions: macOS did not let dev-boost exclude {p} "
+                         "(app-data protection); add it by hand in System Settings → "
+                         "General → Time Machine → Options")
+                continue
+            ok = False
+        return ok and launchd.agent_current(
             ctx, _TM_LABEL, _sweep_argv(), start_interval=_TM_INTERVAL, run_at_load=True
         )
 
