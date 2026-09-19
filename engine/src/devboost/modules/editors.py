@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.core.registry import register
@@ -33,10 +30,6 @@ _VSCODE_SOURCE: pkg.Source = OsMap(
 )
 _FRESH_INSTALL = "https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh"
 _ZED_INSTALL = "https://zed.dev/install.sh"
-
-
-def _home() -> Path:
-    return Path(os.environ["HOME"])
 
 
 def zed_install_argv(os_info: OsInfo) -> list[str]:
@@ -89,7 +82,7 @@ class Zed(Module):
     def _installed(ctx: Ctx) -> bool:
         # The script's symlink is checked directly: ~/.local/bin may not be on PATH yet in
         # the install session (same reason DotnetLsp checks ~/.dotnet/tools).
-        return (_home() / ".local" / "bin" / "zed").exists() or ctx.ex.which("zed")
+        return (_zed.home() / ".local" / "bin" / "zed").exists() or ctx.ex.which("zed")
 
     def verify(self, ctx: Ctx) -> bool:
         return self._installed(ctx) and _zed.config_ok(all_pins())
