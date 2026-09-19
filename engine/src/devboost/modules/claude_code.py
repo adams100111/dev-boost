@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from devboost.core.registry import register
 from devboost.exec.primitives import mise
 from devboost.model import Ctx, Module
@@ -15,6 +17,7 @@ class ClaudeCode(Module):
     description = "Claude Code CLI (npm; node via mise)."
     requires = (Mise,)
     profiles = ("cli",)
+    portable: ClassVar[bool] = True  # npm under mise's node — same on macOS
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("claude")

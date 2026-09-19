@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
-from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.errors import NeedsUser, UnsupportedOS
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, config, flatpak, pkg
@@ -183,6 +183,7 @@ class ChezmoiRepo(Module):
     description = "Clone + apply the managed dotfiles repo via the credential store."
     requires = (Chezmoi, Secrets)
     profiles = ("base",)
+    portable: ClassVar[bool] = True  # `chezmoi init` — same on every OS
 
     def verify(self, ctx: Ctx) -> bool:
         return (Path(os.environ["HOME"]) / ".local" / "share" / "chezmoi").is_dir()
@@ -197,9 +198,12 @@ class ChezmoiRepo(Module):
             except Exception:
                 pass
         if not repo:
-            raise SecretsError(
-                "chezmoi-repo: dotfiles repo URL not found — set DEVBOOST_DOTFILES_REPO "
-                "or add a DOTFILES_REPO key to the secrets bundle"
+            raise NeedsUser(
+                "chezmoi-repo: no dotfiles repo configured",
+                "set DEVBOOST_DOTFILES_REPO=<git url> (or add DOTFILES_REPO to the secrets "
+                "bundle) and re-run",
             )
-        if not ctx.ex.run(["chezmoi", "init", "--apply", repo]).ok:
+        # --force: never stop at chezmoi's "overwrite?" prompt — under devboost's captured
+        # stdio nobody sees it and the run hangs (same reason as the dotfiles module).
+        if not ctx.ex.run(["chezmoi", "init", "--apply", "--force", repo]).ok:
             log.warn("chezmoi-repo: init/clone failed — dotfiles not synced (non-blocking)")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -28,6 +29,7 @@ class CodexPlugins(Module):
     description = "Register Codex marketplaces + install enabled plugins."
     requires = (CodexCode, Secrets)  # Secrets → git creds for the private clickup-flow marketplace
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # only drives the codex CLI
 
     def _codex_json(self, ctx: Ctx, *args: str) -> object:
         res = ctx.ex.run(["codex", *args])

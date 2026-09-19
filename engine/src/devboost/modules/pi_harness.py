@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import ConfigError
@@ -28,6 +29,7 @@ class PiHarness(Module):
     requires = (Mise, Secrets)
     after = (PassStore,)
     profiles = ("pi",)
+    portable: ClassVar[bool] = True  # git clone (gh helper on macOS) + harness CLI
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("harness")
@@ -48,10 +50,11 @@ class PiHarness(Module):
         if not ctx.ex.which("node"):
             mise.use_global(ctx, "node@lts")
 
-        # Bootstrap (HARD). Auth = the PAT the `secrets` module wrote into ~/.git-credentials
-        # (credential.helper store), so the private clone inside install.sh authenticates with no
-        # token juggling. Shallow-clone the default branch just to obtain install.sh; it then does
-        # the HARNESS_REF-pinned clone itself (so SHA/tag/branch all work).
+        # Bootstrap (HARD). Auth = whatever git already uses for GitHub, set up by the
+        # `secrets` module: gh's credential helper (`gh auth setup-git`; macOS, gh users) or
+        # the bundle token in ~/.git-credentials (Linux). One source:
+        # _credentials.github_credentials. Shallow-clone the default branch just to obtain
+        # install.sh; it then does the HARNESS_REF-pinned clone itself.
         repo, ref = self._repo(), self._ref()
         url = f"https://github.com/{repo}"
         # install.sh re-clones $HARNESS_REPO@$HARNESS_REF into ~/.local/share/harness itself
@@ -66,8 +69,8 @@ class PiHarness(Module):
         if not res.ok:
             raise ConfigError(
                 f"pi-harness: bootstrapping agent-harness ({repo}@{ref}) failed "
-                f"(exit {res.code}) — check the GitHub PAT from the secrets bundle has "
-                "read scope on the private repo"
+                f"(exit {res.code}) — check that git can read the private repo: "
+                f"`gh auth status` (or the secrets-bundle token) needs access to {repo}"
             )
 
         # Provision secrets from pass (SOFT) — only when a pass store is present.

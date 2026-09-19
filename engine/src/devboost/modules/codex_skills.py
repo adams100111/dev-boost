@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -24,6 +25,7 @@ class CodexSkills(Module):
     description = "Ensure ~/.agents/skills (Codex USER skills, shared with ~/.claude) is populated."
     requires = (CodexCode, Dotfiles)
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # `npx skills add`
 
     def _present(self, name: str) -> bool:
         # Codex reads USER skills from ~/.agents/skills (auto-discovered) — the same real-content

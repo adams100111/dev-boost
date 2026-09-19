@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -44,6 +45,7 @@ class ClaudeSkills(Module):
     description = "Reproduce lockfile-tracked skills via `npx skills add`."
     requires = (ClaudeCode, Dotfiles)
     profiles = ("claude",)
+    portable: ClassVar[bool] = True  # `npx skills add`
 
     def _present(self, name: str) -> bool:
         p = _home() / ".claude" / "skills" / name

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from devboost.core.registry import register
 from devboost.exec.primitives import mise
 from devboost.model import Ctx, Module
@@ -15,6 +17,7 @@ class CodexCode(Module):
     description = "OpenAI Codex CLI (standalone binary; self-updating via `codex update`)."
     requires = (Mise,)  # node for `npx skills`
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # its install.sh handles darwin/aarch64
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("codex")

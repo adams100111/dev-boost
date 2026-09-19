@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from devboost.core import log
 from devboost.core.registry import register
 from devboost.exec.executor import Result
@@ -32,6 +34,7 @@ class ClaudeMcp(Module):
     description = "Register user-global MCP servers (google-docs, fathom)."
     requires = (ClaudeCode, Dotfiles)
     profiles = ("claude",)
+    portable: ClassVar[bool] = True  # only drives the claude CLI
 
     def _installed(self, ctx: Ctx) -> str:
         if not ctx.ex.which("claude"):

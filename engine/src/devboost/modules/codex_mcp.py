@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -28,6 +29,7 @@ class CodexMcp(Module):
     description = "Register Codex MCP servers (google-docs)."
     requires = (CodexCode,)
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # only drives the codex CLI
 
     def _installed(self, ctx: Ctx) -> set[str]:
         if not ctx.ex.which("codex"):

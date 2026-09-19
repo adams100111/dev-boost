@@ -22,37 +22,12 @@ from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
 
 KNOWN_GAPS: dict[str, str] = {
-    "aspire": "M3",
     "aspire-gc": "M4",
-    "chezmoi-repo": "M3",
-    "claude-code": "M3",
-    "claude-mcp": "M3",
-    "claude-notify": "M3",
-    "claude-plugins": "M3",
-    "claude-skills": "M3",
-    "codex-code": "M3",
-    "codex-config": "M3",
-    "codex-mcp": "M3",
-    "codex-plugins": "M3",
-    "codex-skills": "M3",
-    "data-services": "M3",
-    "devops-lsp": "M3",
-    "devops-tools": "M3",
     "docker": "M4",
     "docker-build-gc": "M4",
-    "dotnet-lsp": "M3",
-    "expo": "M3",
-    "fresh-lsp": "M3",
-    "laravel-lsp": "M3",
     "obsidian-sync": "M4",
-    "pi-harness": "M3",
-    "python-lsp": "M3",
     "restic-b2": "M4",
     "restic-backup": "M4",
-    "tmux-persist": "M3",
-    "tpm": "M3",
-    "web-lsp": "M3",
-    "web-runtimes": "M3",
 }
 
 

@@ -73,6 +73,8 @@ class LspModule(Module):
 
     servers_file: ClassVar[str]
     category = "editors"
+    #: mise-pinned servers (aqua / npm / pipx backends all have darwin-arm64 builds).
+    portable: ClassVar[bool] = True
 
     def verify(self, ctx: Ctx) -> bool:
         return fresh_config().exists() and all(

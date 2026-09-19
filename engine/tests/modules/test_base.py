@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import SecretsError
+from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import load, validate_profiles
 from devboost.exec.executor import FakeExecutor, Result
@@ -96,11 +96,11 @@ def test_chezmoi_repo_raises_when_no_repo_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("DEVBOOST_DOTFILES_REPO", raising=False)
-    # No secrets bundle — age decrypt will fail / bundle absent → SecretsError raised
+    # No secrets bundle — age decrypt will fail / bundle absent → repo stays unresolved
     monkeypatch.setenv("DEVBOOST_BOOTSTRAP_DIR", str(tmp_path))
-    # tmp_path has no secrets.age → age.decrypt raises SecretsError
+    # tmp_path has no secrets.age → age.decrypt raises, caught, and repo is still None
     ctx = _ctx()
-    with pytest.raises(SecretsError, match="DEVBOOST_DOTFILES_REPO"):
+    with pytest.raises(NeedsUser, match="DEVBOOST_DOTFILES_REPO"):
         ChezmoiRepo().install(ctx)
 
 
@@ -111,7 +111,7 @@ def test_chezmoi_repo_reads_url_from_env(
     ctx = _ctx()
     ChezmoiRepo().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["chezmoi", "init", "--apply", "https://github.com/user/dotfiles"] in calls
+    assert ["chezmoi", "init", "--apply", "--force", "https://github.com/user/dotfiles"] in calls
 
 
 def test_chezmoi_repo_reads_url_from_secrets_bundle(
@@ -129,7 +129,7 @@ def test_chezmoi_repo_reads_url_from_secrets_bundle(
     ctx = _ctx(scripts={"age": Result(0, stdout=secrets_json)})
     ChezmoiRepo().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["chezmoi", "init", "--apply", "https://github.com/user/dotfiles"] in calls
+    assert ["chezmoi", "init", "--apply", "--force", "https://github.com/user/dotfiles"] in calls
 
 
 def test_registry_loads_base_and_cli_and_profiles_validate() -> None:

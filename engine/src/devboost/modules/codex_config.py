@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import tomli_w
 
@@ -46,6 +46,7 @@ class CodexConfig(Module):
     requires = (CodexCode, Dotfiles)
     after = (PassStore,)
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # edits ~/.codex/config.toml
 
     def _config_path(self) -> Path:
         return _home() / ".codex" / "config.toml"

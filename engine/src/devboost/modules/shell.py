@@ -585,9 +585,10 @@ class ClaudeStatusline(Module):
 class ClaudeNotify(Module):
     name = "claude-notify"
     category = "shell"
-    description = "Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks."
+    description = "Notify on Claude task-done / needs-input: macOS notification + ntfy (phone)."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    portable: ClassVar[bool] = True  # settings.json; the hook handles Darwin
 
     def _settings_path(self) -> Path:
         return _home() / ".claude" / "settings.json"

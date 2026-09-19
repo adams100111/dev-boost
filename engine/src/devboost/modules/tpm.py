@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core.registry import register
 from devboost.model import Ctx, Module
@@ -19,6 +20,7 @@ class Tpm(Module):
     category = "cli"
     description = "tmux plugin manager."
     profiles = ("cli",)
+    portable: ClassVar[bool] = True  # a git clone
 
     def verify(self, ctx: Ctx) -> bool:
         return _tpm_dir().is_dir()
@@ -47,6 +49,7 @@ class TmuxPersist(Module):
     category = "cli"
     description = "tmux-resurrect + tmux-continuum — restore tmux sessions across a reboot."
     profiles = ("cli",)
+    portable: ClassVar[bool] = True  # git clones
 
     def verify(self, ctx: Ctx) -> bool:
         return all(_plugin_dir(n).is_dir() for n in _PERSIST_PLUGINS)

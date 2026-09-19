@@ -81,6 +81,7 @@ class WebRuntimes(Module):
     description = "node/pnpm/bun via mise."
     requires = (Mise,)
     profiles = ("web",)
+    portable: ClassVar[bool] = True  # mise; node/pnpm/bun ship darwin-arm64
     _SPECS = ("node@22", "pnpm@11.8.0", "bun@1.3.14")
 
     def verify(self, ctx: Ctx) -> bool:
@@ -270,6 +271,7 @@ class Aspire(Module):
     description = "Aspire CLI (dotnet global tool)."
     requires = (DotnetSdk,)
     profiles = ("dotnet",)
+    portable: ClassVar[bool] = True  # `dotnet tool install` (~/.dotnet on PATH)
 
     def verify(self, ctx: Ctx) -> bool:
         # `dotnet tool install -g` lands in ~/.dotnet/tools, which is NOT on PATH in the
@@ -289,6 +291,7 @@ class DotnetLsp(Module):
     description = "csharp-ls + csharpier (dotnet global tools)."
     requires = (Fresh, DotnetSdk)
     profiles = ("dotnet",)
+    portable: ClassVar[bool] = True  # `dotnet tool install` (~/.dotnet on PATH)
 
     def verify(self, ctx: Ctx) -> bool:
         return (_home() / ".dotnet" / "tools" / "csharp-ls").exists()
@@ -309,6 +312,7 @@ class DataServices(Module):
     description = "Containerized data services (postgres/valkey/dbgate) compose template."
     requires = (Docker,)
     profiles = ("data",)
+    portable: ClassVar[bool] = True  # a bundled compose template only
 
     def _compose(self) -> Path:
         return resource_path("templates", "data", "compose.yaml")
@@ -335,6 +339,7 @@ class DevopsTools(Module):
     description = "OpenTofu/kubectl/helm/k9s via mise."
     requires = (Mise,)
     profiles = ("devops",)
+    portable: ClassVar[bool] = True  # mise + aqua (darwin-arm64 builds)
     _SPECS = (
         "aqua:opentofu/opentofu@1.11.6",
         "aqua:kubernetes/kubectl@1.35.2",
@@ -453,6 +458,7 @@ class Expo(Module):
     description = "React Native / Expo project template (npx-only; no global expo-cli)."
     requires = (WebRuntimes,)
     profiles = ("react-native",)
+    portable: ClassVar[bool] = True  # a bundled template only
 
     def verify(self, ctx: Ctx) -> bool:
         return resource_path("templates", "react-native", "README.md").exists()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -57,11 +58,14 @@ class ClaudePlugins(Module):
     name = "claude-plugins"
     category = "cli"
     description = "Register Claude marketplaces + install enabled plugins; resolve CLICKUP token."
-    # Secrets → ~/.git-credentials (private clickup-flow marketplace clone auth).
+    # Secrets → git can authenticate to GitHub for the private clickup-flow marketplace
+    # clone (gh's credential helper, or the bundle token in ~/.git-credentials on Linux —
+    # one source: _credentials.github_credentials).
     # PassStore is soft (after): the CLICKUP token is skipped until this device is approved.
     requires = (ClaudeCode, Dotfiles, Secrets)
     after = (PassStore,)
     profiles = ("claude",)
+    portable: ClassVar[bool] = True  # ~/.claude/settings.json + the claude CLI
 
     def _settings_path(self) -> Path:
         return _home() / ".claude" / "settings.json"
