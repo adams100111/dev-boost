@@ -6,7 +6,7 @@ runtime on the target.
 
 ## Layout (`engine/src/devboost/`)
 
-- **`cli/`** — the Typer app: `install/verify/list/doctor/add/export/diff/update/self-update/term/devtools/dev/accounts/pass`.
+- **`cli/`** — the Typer app: `install/verify/list/doctor/add/export/diff/update/self-update/term/devtools/dev/accounts/pass/docker`.
   `accounts` is a **standalone sub-app** (never registered as a `Module`; not part of the install plan)
   for creating and managing self-contained, resource-capped Linux sandbox users via `/etc/devboost/users.toml`.
 - **`model.py`** — the stable contract: `Ctx`, the `Installer` Protocol, the `Module` base, and the
@@ -19,6 +19,9 @@ runtime on the target.
   `dconf`, `age`, `github`, `systemd`, `gpu`, `fs`, `shell`, `launchd` (LaunchAgents/Daemons), `tcc`
   (macOS privacy grants), `usermgmt`).
 - **`modules/`** — ~100 typed module classes, one declaration each; `requires` are class references.
+  `_docker_runtime.py` + `_docker_{colima,orbstack,desktop}.py` — the macOS `DockerRuntime`
+  protocol and its three implementations; `_launchd_jobs.py` — `LaunchdTimer`, the macOS twin
+  of the systemd `--user` timers.
 - **`passstore/`** — the pass multi-device domain (paths, gpg, store layout, git, notify,
   enroll/approve/revoke, sync). Library code only; the `pass`/`pass-store` modules and
   `cli/pass_cmd.py` (`devboost pass`) call into it.

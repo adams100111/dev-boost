@@ -10,6 +10,10 @@ screen, as if Claude were local. One server multiplexes N sessions (Playwright
 MCP gives each connection its own browser context; `--isolated` keeps them from
 sharing a profile). Launcher: [`~/.local/bin/browser-mcp`](../../../dot_local/bin/executable_browser-mcp).
 
+**macOS:** there is no systemd; `devboost install browser-mcp` (profile `remote`) runs the
+same launcher as the LaunchAgent `dev.devboost.browser-mcp`. The launcher finds Chrome at
+`/Applications/Google Chrome.app` (override with `CHROME_APP`).
+
 ### On a dev-boost machine this is automatic
 
 The `dotfiles` module applies this tree via chezmoi, which drops the unit **and**
@@ -49,7 +53,11 @@ claude mcp add --scope user --transport http \
 Notes:
 - The launcher binds only to the Tailscale IP and pins `--allowed-hosts` to that
   exact `ip:port` — reachable from your tailnet, not from untrusted wifi. Never
-  `tailscale funnel` it; the MCP server is unauthenticated.
+  `tailscale funnel` it; the MCP server is unauthenticated. Since anyone on the
+  tailnet can otherwise reach it, restrict it further with a **Tailscale ACL**
+  scoped to `tcp:8931` on this device (a tag + a grant in the tailnet's ACL
+  policy — see the [Tailscale ACL docs](https://tailscale.com/kb/1018/acls))
+  rather than relying on the tailnet's default allow-all.
 - `--isolated` browsers are **ephemeral** (no saved logins between runs) — that's
   what gives clean per-session isolation. For a session that must persist a login,
   give that one its own `--user-data-dir` instead.

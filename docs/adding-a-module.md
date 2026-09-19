@@ -86,15 +86,19 @@ truly diverge. The OS-agnostic majority is untouched.
   `provided_by = ("macos",)` if macOS already covers it, or `portable = True` once you have
   verified it runs unchanged.
 - Background jobs: use `launchd.user_agent(...)` (label `launchd.label("<name>")`).
+- Scheduled job? Declare `per_os = OsMap(macos=LaunchdTimer(name, script, "hourly"|"daily",
+  formulae=(…)))` next to the systemd units, and hand off with `os_strategy` (see
+  `modules/dev_hygiene.py`).
 - Privacy permissions: `tcc = (TccGrant("Accessibility", "AppName"),)`.
 - `tests/core/test_macos_contract.py` fails if you add a module with no macOS answer.
 - A module whose macOS install uses Homebrew **requires `Homebrew`** (`modules/macos.py`).
   `PackageModule` and `FlatpakApp` already do; a custom strategy that calls brew sets
   `uses_brew: ClassVar[bool] = True` and its module lists `Homebrew` in `requires`
   (`tests/core/test_homebrew_edges.py` enforces it). Linux plans drop Homebrew.
-- A macOS path that a later milestone owns: `per_os = OsMap(macos=MacosPending("M4",
+- A macOS path that a later milestone owns: `per_os = OsMap(macos=MacosPending("M6",
   "<manual workaround>"))` (`modules/_pending.py`). The module reports `blocked` on a Mac
-  and stays in `KNOWN_GAPS` (module → milestone) until the real strategy lands.
+  and stays in `KNOWN_GAPS` (module → milestone) until the real strategy lands. `KNOWN_GAPS`
+  is empty as of M4 — the next module that needs this adds the first new entry.
 - A pinned binary is keyed by OS **and** arch: `media.catalog.asset_key(ctx.os)` →
   `linux-x86_64`, `linux-aarch64`, `macos-aarch64`. Never key by arch alone.
 - An installer script: `remote_script.run_script(ctx, name, url, "bash", *args)` —

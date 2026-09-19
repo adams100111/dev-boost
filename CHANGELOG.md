@@ -8,6 +8,15 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **Docker runtimes on macOS (M4)** — Colima (default), OrbStack and Docker Desktop behind
+  a common `DockerRuntime` protocol, plus `devboost docker use <runtime>` to switch between
+  them (snapshots ddev first, stops the others, re-verifies what depends on Docker). ddev,
+  Aspire and data-services now install on the Mac too. `aspire-gc`, `restic-backup`,
+  `restic-b2`, `obsidian-sync` and `browser-mcp` (new — a Playwright MCP server for remote
+  Claude Code sessions, `remote` profile) run as launchd agents, the macOS twin of the
+  Linux systemd `--user` timers. `devboost doctor` reports the selected Docker runtime's
+  health, with Apple M4/M5 and Rosetta-specific hints. `KNOWN_GAPS` is empty — M4 closes
+  the macOS catalog. See [docs/docker-runtimes.md](docs/docker-runtimes.md).
 - **macOS catalog (M3)** — `devboost install` on a Mac installs the workstation:
   `xcode-clt`, `homebrew`, `rosetta` modules; casks for the GUI apps; .NET 10 in `~/.dotnet`;
   Android SDK via the cmdline-tools cask; ddev (tap) + mkcert; the Tailscale app as a
@@ -49,6 +58,7 @@ git history and the GitHub release notes.
   `VISUAL="zed --wait"` in local GUI sessions. See [docs/zed.md](docs/zed.md).
 
 ### Changed
+- PyYAML is a new runtime dependency (Colima's `colima.yaml`).
 - herdr 0.7.5 → 0.9.1 on every OS; catalog pins are keyed `<os>-<arch>`.
 - `devboost install --update` on macOS upgrades Homebrew casks too, except apps that
   update themselves.
