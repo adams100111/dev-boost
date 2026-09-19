@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import fcntl
+import os
+import plistlib
 from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import UnsupportedOS
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.model import Ctx
@@ -92,18 +93,43 @@ def test_units_content() -> None:
     assert "OnCalendar=*:0/15" in t and "Persistent=true" in t and "WantedBy=timers.target" in t
 
 
-def test_install_scheduler_linux_enables_timer(tmp_path: Path) -> None:
+def test_install_scheduler_linux_enables_timer_and_checks_state(tmp_path: Path) -> None:
     ex = _ex()
     sync.install_scheduler(_ctx(ex), "/bin/devboost")
     units = tmp_path / "home" / ".config" / "systemd" / "user"
     assert (units / sync.SERVICE).exists() and (units / sync.TIMER).exists()
+    assert ["systemctl", "--user", "daemon-reload"] in ex.calls
     assert ["systemctl", "--user", "enable", "--now", sync.TIMER] in ex.calls
-    assert sync.scheduler_installed(_ctx(ex))
+    assert sync.scheduler_installed(_ctx(ex), "/bin/devboost")
+    assert not sync.scheduler_installed(_ctx(ex), "/other/devboost")  # stale ExecStart
+    disabled = _ex((("is-enabled",), Result(1)))
+    assert not sync.scheduler_installed(_ctx(disabled), "/bin/devboost")
+    stopped = _ex((("is-active",), Result(3)))
+    assert not sync.scheduler_installed(_ctx(stopped), "/bin/devboost")
 
 
-def test_install_scheduler_macos_is_p2(tmp_path: Path) -> None:
-    with pytest.raises(UnsupportedOS, match="P2"):
-        sync.install_scheduler(_ctx(_ex(), MAC), "/bin/devboost")
+def test_install_scheduler_linux_rewrite_is_idempotent(tmp_path: Path) -> None:
+    sync.install_scheduler(_ctx(_ex()), "/bin/devboost")
+    again = _ex()
+    sync.install_scheduler(_ctx(again), "/bin/devboost")
+    assert ["systemctl", "--user", "daemon-reload"] not in again.calls
+
+
+def test_install_scheduler_macos_is_a_launchd_agent(tmp_path: Path) -> None:
+    ex = _ex()
+    sync.install_scheduler(_ctx(ex, MAC), "/bin/devboost")
+    plist = tmp_path / "home" / "Library" / "LaunchAgents" / "dev.devboost.pass-sync.plist"
+    assert plistlib.loads(plist.read_bytes()) == {
+        "Label": "dev.devboost.pass-sync",
+        "ProgramArguments": ["/bin/devboost", "pass", "sync", "--quiet"],
+        "StartInterval": 900,
+    }
+    assert ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist)] in ex.calls
+    assert not any(c[0] == "systemctl" for c in ex.calls)
+    assert sync.scheduler_installed(_ctx(ex, MAC), "/bin/devboost")
+    assert not sync.scheduler_installed(_ctx(ex, MAC), "/other/devboost")
+    unloaded = _ex((("launchctl", "print"), Result(113)))
+    assert not sync.scheduler_installed(_ctx(unloaded, MAC), "/bin/devboost")
 
 
 def test_hook_env_short_circuits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

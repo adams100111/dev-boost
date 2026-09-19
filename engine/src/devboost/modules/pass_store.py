@@ -113,7 +113,8 @@ class PassStore(Module):
         store = self._store()
         if not store.is_clone():
             return False
-        if not (sync.hook_installed(store) and sync.scheduler_installed(ctx)):
+        if not (sync.hook_installed(store)
+                and sync.scheduler_installed(ctx, paths.devboost_bin())):
             return False
         try:
             acc = enroll.local_access(ctx, store, paths.device_name())

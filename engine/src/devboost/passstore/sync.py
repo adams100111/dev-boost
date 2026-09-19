@@ -18,8 +18,8 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from devboost.core import log
-from devboost.core.errors import DevbootError, UnsupportedOS
-from devboost.exec.primitives import systemd
+from devboost.core.errors import DevbootError
+from devboost.exec.primitives import launchd, systemd
 from devboost.model import Ctx
 from devboost.passstore import enroll, git, gpg, notify
 from devboost.passstore.gpg import KeyInfo
@@ -29,6 +29,9 @@ from devboost.passstore.paths import state_dir
 SERVICE = "devboost-pass-sync.service"
 TIMER = "devboost-pass-sync.timer"
 HOOK_MARK = "# managed by devboost (pass-store)"
+
+AGENT = launchd.label("pass-sync")
+INTERVAL = 900  # seconds — the same 15 minutes as the systemd timer
 
 SyncStatus = Literal["ok", "skipped", "busy", "no-store", "conflict", "pull-failed",
                      "push-failed"]
@@ -107,19 +110,33 @@ def timer_unit() -> str:
             "OnCalendar=*:0/15\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n")
 
 
+def agent_args(bin_: str) -> list[str]:
+    return [bin_, "pass", "sync", "--quiet"]
+
+
 def install_scheduler(ctx: Ctx, bin_: str) -> None:
-    """The only OS seam in sync: systemd user timer on Linux, launchd agent in P2."""
+    """The OS seam in sync: a systemd user timer on Linux, a launchd agent on macOS.
+
+    macOS: no RunAtLoad (R2): the agent is loaded mid-install, and an immediate sync would
+    race the installer's own git calls. launchd runs a missed interval once on wake.
+    """
     if ctx.os.family == "macos":
-        # P2: launchd.user_agent(ctx, launchd.label("pass-sync"), [bin_, "pass", "sync",
-        #     "--quiet"], start_interval=900)
-        raise UnsupportedOS("pass sync scheduling on macOS arrives in P2 (launchd agent)")
+        launchd.user_agent(ctx, AGENT, agent_args(bin_), start_interval=INTERVAL)
+        return
     systemd.write_user_unit(ctx, SERVICE, service_unit(bin_))
     systemd.write_user_unit(ctx, TIMER, timer_unit())
     systemd.enable_user_unit(ctx, TIMER, now=True)
 
 
-def scheduler_installed(ctx: Ctx) -> bool:
-    return (systemd._user_unit_dir() / TIMER).exists()
+def scheduler_installed(ctx: Ctx, bin_: str) -> bool:
+    """Installed = what is on disk is exactly what `install_scheduler(bin_)` writes AND the
+    scheduler has it live (R3) — a stale path or an unloaded agent means reinstall."""
+    if ctx.os.family == "macos":
+        return launchd.agent_current(ctx, AGENT, agent_args(bin_), start_interval=INTERVAL)
+    return (systemd.unit_current(SERVICE, service_unit(bin_))
+            and systemd.unit_current(TIMER, timer_unit())
+            and systemd.is_enabled(ctx, TIMER, user=True)
+            and systemd.is_active(ctx, TIMER, user=True))
 
 
 # --- state, log, lock -----------------------------------------------------------------
