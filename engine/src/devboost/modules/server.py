@@ -21,6 +21,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask
+from devboost.modules._credentials import is_interactive
 from devboost.modules._pending import MacosPending
 from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import bundle_path, key_path
@@ -67,6 +68,19 @@ def _ts_state(ctx: Ctx) -> str:
     return state if isinstance(state, str) else ""
 
 
+def _ensure_wrapper(cli: Path) -> None:
+    """Write the CLI wrapper when the path is free or already ours; never touch anything
+    else there (a symlink to the app binary, the user's own script) — that is the user's."""
+    want = _TS_WRAPPER.encode("utf-8")
+    if cli.is_symlink() or (cli.exists() and (not cli.is_file() or cli.read_bytes() != want)):
+        log.skip(f"tailscale: {cli} is not dev-boost's wrapper — left as it is")
+        return
+    if not cli.exists():
+        cli.parent.mkdir(parents=True, exist_ok=True)
+        cli.write_bytes(want)
+    cli.chmod(0o755)  # also repairs a managed wrapper that lost its exec bit
+
+
 @dataclass(frozen=True)
 class _TailscaleMac:
     """macOS: the standalone app (cask `tailscale-app`), its CLI on PATH, and the one-time
@@ -97,22 +111,35 @@ class _TailscaleMac:
                     raise
                 log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
         cli = ts_cli()
-        if not cli.is_file() or cli.read_text(encoding="utf-8") != _TS_WRAPPER:
-            cli.parent.mkdir(parents=True, exist_ok=True)
-            cli.write_text(_TS_WRAPPER, encoding="utf-8")
-            cli.chmod(0o755)
+        _ensure_wrapper(cli)
         state = _ts_state(ctx)
         if state == "Running":
             return
         key = _secret(ctx, "TAILSCALE_AUTHKEY")
-        if key and state == "NeedsLogin" and ctx.ex.run([str(cli), "up", f"--authkey={key}"]).ok:
-            return
+        if key and state == "NeedsLogin":
+            if ctx.ex.run([str(cli), "up", f"--authkey={key}"]).ok:
+                return
+            raise NeedsUser(
+                "the TAILSCALE_AUTHKEY in the secrets bundle was rejected (expired or revoked)",
+                "create a new auth key in the Tailscale admin console and update the secrets "
+                "bundle, or sign in from the Tailscale menu bar app",
+            )
+        approve = (
+            "allow its VPN configuration when macOS asks (System Settings → General → "
+            "Login Items & Extensions → Network Extensions), then sign in — or add "
+            "TAILSCALE_AUTHKEY to the secrets bundle"
+        )
+        if not is_interactive():
+            # Launching the app pops macOS's VPN / extension prompt: never on an unwatched
+            # desktop (global constraint), so the user opens it themselves.
+            raise NeedsUser(
+                "Tailscale is installed but not connected — open Tailscale and approve it",
+                f"open Tailscale from Applications, {approve}",
+            )
         ctx.ex.run(["open", "-a", "Tailscale"])
         raise NeedsUser(
             "Tailscale is installed but not connected",
-            "open Tailscale from the menu bar, allow its VPN configuration when macOS asks "
-            "(System Settings → General → Login Items & Extensions → Network Extensions), "
-            "then sign in — or add TAILSCALE_AUTHKEY to the secrets bundle",
+            f"open Tailscale from the menu bar, {approve}",
         )
 
 

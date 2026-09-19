@@ -47,16 +47,23 @@ _DDEV_REPO_DEBIAN = (
 @dataclass(frozen=True)
 class _DdevMac:
     """macOS (spec §2): ddev from its tap, mkcert from homebrew-core, and mkcert's local CA
-    trusted once. Trusting the CA opens a macOS password dialog, so that step runs only
+    trusted once. `mkcert -install` asks for your password through sudo in the terminal
+    (macOS may also show a trust-settings authorization dialog), so that step runs only
     when someone is there; otherwise the module is `blocked` with the one command to run."""
 
     uses_brew: ClassVar[bool] = True
 
     @staticmethod
     def _ca_ready(ctx: Ctx) -> bool:
+        """The CA exists AND macOS trusts it. rootCA.pem alone is not enough: mkcert writes
+        it before the trust step (and on any `mkcert <host>`), so a cancelled `-install`
+        would leave it behind. `security verify-cert` is a read-only trust check."""
         res = ctx.ex.run(["mkcert", "-CAROOT"])
         root = res.stdout.strip()
-        return res.ok and bool(root) and (Path(root) / "rootCA.pem").is_file()
+        if not (res.ok and root):
+            return False
+        pem = Path(root) / "rootCA.pem"
+        return pem.is_file() and ctx.ex.run(["security", "verify-cert", "-c", str(pem)]).ok
 
     def verify(self, ctx: Ctx) -> bool:
         return (

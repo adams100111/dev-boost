@@ -69,6 +69,33 @@ def test_ddev_verify_needs_both_formulae_and_the_ca(tmp_path: Path) -> None:
     assert Ddev().verify(Ctx(os=MAC, ex=no_ca)) is False
 
 
+def _ca_on_disk_but_untrusted(tmp_path: Path) -> Scripted:
+    ca = tmp_path / "ca"
+    ca.mkdir(exist_ok=True)
+    (ca / "rootCA.pem").write_text("pem", encoding="utf-8")  # e.g. a cancelled -install
+    return Scripted(answers={
+        ("brew", "list"): Result(0),
+        ("mkcert", "-CAROOT"): Result(0, stdout=f"{ca}\n"),
+        ("security", "verify-cert"): Result(1, stderr="CSSMERR_TP_NOT_TRUSTED"),
+    })
+
+
+def test_ddev_a_ca_file_macos_does_not_trust_is_not_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ex = _ca_on_disk_but_untrusted(tmp_path)
+    assert Ddev().verify(Ctx(os=MAC, ex=ex)) is False
+    pem = str(tmp_path / "ca" / "rootCA.pem")
+    assert ["security", "verify-cert", "-c", pem] in ex.calls
+    monkeypatch.setattr("devboost.modules.ddev.is_interactive", lambda: True)
+    ex = _ca_on_disk_but_untrusted(tmp_path)
+    Ddev().install(Ctx(os=MAC, ex=ex))
+    assert ["mkcert", "-install"] in ex.calls
+    monkeypatch.setattr("devboost.modules.ddev.is_interactive", lambda: False)
+    with pytest.raises(NeedsUser, match="mkcert -install"):
+        Ddev().install(Ctx(os=MAC, ex=_ca_on_disk_but_untrusted(tmp_path)))
+
+
 def test_ddev_update_upgrades_both_formulae(tmp_path: Path) -> None:
     ca = tmp_path / "ca"
     ca.mkdir()
@@ -166,6 +193,7 @@ def test_tailscale_joins_with_the_bundle_key_as_a_plain_client(
 def test_tailscale_awaiting_approval_needs_the_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(server, "is_interactive", lambda: True)
     monkeypatch.setattr(server, "_secret", lambda ctx, field: None)
     ex = _tailscale(tmp_path, None)
     with pytest.raises(NeedsUser, match="Network Extensions"):
@@ -180,3 +208,57 @@ def test_playwright_on_macos_skips_the_system_libraries(tmp_path: Path) -> None:
     assert not any("dnf" in c or "install-deps" in c for c in ex.calls)
     assert ["npx", "--yes", "playwright", "install", "chromium",
             "chromium-headless-shell"] in ex.calls
+
+
+def test_tailscale_unattended_never_opens_the_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
+    monkeypatch.setattr(server, "_secret", lambda ctx, field: None)
+    ex = _tailscale(tmp_path, None)
+    with pytest.raises(NeedsUser, match="open Tailscale and approve"):
+        Tailscale().install(Ctx(os=MAC, ex=ex))
+    assert not any(c[0] == "open" for c in ex.calls)
+
+
+def test_tailscale_a_rejected_auth_key_is_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "_secret", lambda ctx, field: "tskey-old")
+    ex = _tailscale(tmp_path, "NeedsLogin")
+    cli = str(tmp_path / ".local" / "bin" / "tailscale")
+    ex.answers[(cli, "up")] = Result(1, stderr="invalid key: unable to validate API key")
+    with pytest.raises(NeedsUser, match=r"TAILSCALE_AUTHKEY .* rejected \(expired or revoked\)"):
+        Tailscale().install(Ctx(os=MAC, ex=ex))
+    assert not any(c[0] == "open" for c in ex.calls)
+
+
+def test_tailscale_leaves_a_symlinked_cli_alone(tmp_path: Path) -> None:
+    target = tmp_path / "their-tailscale"
+    target.write_bytes(b"\xcf\xfa\xed\xfe not utf-8")  # a Mach-O-like binary
+    cli = tmp_path / ".local" / "bin" / "tailscale"
+    cli.parent.mkdir(parents=True)
+    cli.symlink_to(target)
+    Tailscale().install(Ctx(os=MAC, ex=_tailscale(tmp_path, "Running")))
+    assert cli.is_symlink() and cli.readlink() == target
+    assert target.read_bytes() == b"\xcf\xfa\xed\xfe not utf-8"
+
+
+@pytest.mark.parametrize(
+    "content", [b"#!/bin/sh\nexec my-own-tailscale \"$@\"\n", b"\xcf\xfa\xed\xfe binary"]
+)
+def test_tailscale_leaves_a_foreign_cli_file_alone(tmp_path: Path, content: bytes) -> None:
+    cli = tmp_path / ".local" / "bin" / "tailscale"
+    cli.parent.mkdir(parents=True)
+    cli.write_bytes(content)
+    Tailscale().install(Ctx(os=MAC, ex=_tailscale(tmp_path, "Running")))
+    assert cli.read_bytes() == content
+
+
+def test_tailscale_repairs_the_exec_bit_of_its_own_wrapper(tmp_path: Path) -> None:
+    cli = tmp_path / ".local" / "bin" / "tailscale"
+    cli.parent.mkdir(parents=True)
+    cli.write_bytes(server._TS_WRAPPER.encode("utf-8"))
+    cli.chmod(0o644)
+    Tailscale().install(Ctx(os=MAC, ex=_tailscale(tmp_path, "Running")))
+    assert os.access(cli, os.X_OK)

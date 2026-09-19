@@ -12,6 +12,7 @@ strategy's, using only the tools listed for it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,7 @@ from devboost.core.osinfo import OsInfo
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx, Installer, Module
+from devboost.modules import server
 from devboost.modules._brew import BrewCask, BrewFormula
 
 _OS: dict[str, OsInfo] = {
@@ -77,9 +79,11 @@ def _calls(fn: Callable[[Ctx], object], ctx_os: OsInfo) -> list[list[str]]:
     ("name", "cls", "key"), _CASES, ids=[f"{n}-{k}" for n, _, k in _CASES]
 )
 def test_install_and_verify_hand_off_to_the_declared_strategy(
-    name: str, cls: type[Module], key: str, monkeypatch: pytest.MonkeyPatch
+    name: str, cls: type[Module], key: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
+    # Hermetic: the host's own /Applications/Tailscale.app must not change the outcome.
+    monkeypatch.setattr(server, "_TS_APP", tmp_path / "absent" / "Tailscale.app")
     os_info = _OS[key]
     strategy = getattr(cls.per_os, key)
     assert isinstance(strategy, Installer)
