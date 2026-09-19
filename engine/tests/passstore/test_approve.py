@@ -331,3 +331,22 @@ def test_revoke_scoped_folder_same_ids_in_other_order_inherits(tmp_path: Path) -
     ex = _ex()
     approve.revoke(_ctx(ex), s, "desk", "srv", lambda r: True)
     assert ["pass", "init", "-p", "harness", ""] in ex.calls
+
+
+def test_approve_unreadable_key_file_is_a_refusal_not_a_crash(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME])
+    _pending(s)
+    ex = _ex((("--show-keys", str(s.key_path("pending", "lap"))), Result(2)))
+    with pytest.raises(ConfigError, match="does not match"):
+        approve.approve(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert _no_pass_init(ex)
+
+
+def test_revoke_with_malformed_rotation_json_changes_nothing(tmp_path: Path) -> None:
+    s = _store(tmp_path, [FP_ME, FP_NEW])
+    s.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    (s.meta / "rotation.json").write_text("{oops", encoding="utf-8")
+    ex = _ex()
+    with pytest.raises(ConfigError, match="rotation.json"):
+        approve.revoke(_ctx(ex), s, "desk", "lap", lambda r: True)
+    assert _no_pass_init(ex) and s.record("devices", "lap") is not None

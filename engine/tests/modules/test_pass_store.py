@@ -7,10 +7,12 @@ import pytest
 from devboost.core.errors import NeedsUser
 from devboost.core.graph import toposort
 from devboost.core.osinfo import OsInfo
+from devboost.core.plan import PlannedModule
 from devboost.core.profiles import load_profiles
 from devboost.core.registry import load
+from devboost.core.runner import run_plan
 from devboost.exec.executor import Result
-from devboost.model import Ctx
+from devboost.model import Ctx, Module
 from devboost.modules._pass import pass_fields, pass_line, pass_show
 from devboost.modules.pass_store import Pass, PassStore
 from devboost.passstore.layout import DeviceRecord, Store
@@ -177,3 +179,57 @@ def test_pass_line_is_the_first_line_or_none() -> None:
     assert pass_line(Ctx(os=FEDORA, ex=RuleExecutor()), "x/y", who="t") is None  # no pass
     blank = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "\nuser: me\n"))])
     assert pass_line(Ctx(os=FEDORA, ex=blank), "x/y", who="t") is None
+
+
+# --- a bad config never crashes the run (I4) ---------------------------------------------
+
+
+def _wired(tmp_path: Path) -> Store:
+    """A clone whose hook and timer are in place, so verify reaches the device lookup."""
+    store = _seed(tmp_path)
+    (store.root / ".git" / "hooks" / "post-commit").write_text(
+        "#!/bin/sh\n# managed by devboost (pass-store)\n", encoding="utf-8")
+    units = tmp_path / "home" / ".config" / "systemd" / "user"
+    units.mkdir(parents=True)
+    (units / "devboost-pass-sync.timer").write_text("x", encoding="utf-8")
+    return store
+
+
+def _bad_toml(tmp_path: Path) -> None:
+    (tmp_path / "cfg" / "devboost" / "config.toml").write_text("device_name = [\n",
+                                                                encoding="utf-8")
+
+
+def test_verify_is_false_not_raising_on_invalid_config(tmp_path: Path) -> None:
+    _wired(tmp_path)
+    _bad_toml(tmp_path)
+    assert PassStore().verify(Ctx(os=FEDORA, ex=_ex())) is False
+
+
+def test_verify_is_false_not_raising_when_gpg_fails(tmp_path: Path) -> None:
+    _wired(tmp_path)
+    ex = RuleExecutor(present={"pass"}, rules=[(("--list-secret-keys",), Result(2))])
+    assert PassStore().verify(Ctx(os=FEDORA, ex=ex)) is False
+
+
+def test_invalid_config_fails_pass_store_but_later_modules_still_run(tmp_path: Path) -> None:
+    ran: list[str] = []
+
+    class Later(Module):
+        name = "t-later"
+        category = "base"
+        description = "runs after pass-store"
+
+        def verify(self, ctx: Ctx) -> bool:
+            return False
+
+        def install(self, ctx: Ctx) -> None:
+            ran.append(self.name)
+
+    _wired(tmp_path)
+    _bad_toml(tmp_path)
+    mods = {"pass-store": PassStore, "t-later": Later}
+    plan = [PlannedModule("pass-store"), PlannedModule("t-later")]
+    res = {r.name: r for r in run_plan(plan, mods, Ctx(os=FEDORA, ex=_ex()))}
+    assert res["pass-store"].status == "fail" and "invalid TOML" in res["pass-store"].detail
+    assert ran == ["t-later"]

@@ -246,3 +246,14 @@ def test_ensure_clone_refuses_a_file_path(tmp_path: Path) -> None:
     root.write_text("x", encoding="utf-8")
     with pytest.raises(ConfigError, match="not a git clone"):
         enroll.ensure_clone(_ctx(RuleExecutor()), Store(root), "me/store")
+
+
+def test_import_device_keys_skips_an_unreadable_key_file(tmp_path: Path) -> None:
+    store = _store(tmp_path, gpg_id=f"{FP_OLD}\n{FP_NEW}")
+    store.write_record("devices", DeviceRecord(name="a", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    store.write_record("devices", DeviceRecord(name="b", fingerprint=FP_OLD, os="fedora"), ARMOR)
+    ex = RuleExecutor(rules=[
+        (("--show-keys", str(store.key_path("devices", "a"))), Result(2)),
+        (("--show-keys",), Result(0, colons("pub", FP_OLD))),
+    ])
+    assert enroll.import_device_keys(_ctx(ex), store) == ["b"]

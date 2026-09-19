@@ -11,6 +11,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from devboost.core.errors import DevbootError
 from devboost.exec.primitives import age
 from devboost.model import Ctx
 from devboost.modules.secrets import age_key, bundle_path
@@ -113,7 +114,17 @@ def run_checks(ctx: Ctx, root: Path) -> list[Check]:
 
 
 def _pass_checks(ctx: Ctx) -> list[Check]:
-    """pass: enrollment state (informational) + rotation backlog after a revoke (blocking)."""
+    """pass: enrollment state (informational) + rotation backlog after a revoke (blocking).
+
+    Never raises: a bad config, a failing gpg or a malformed store file is a failing check.
+    """
+    try:
+        return _pass_state(ctx)
+    except (DevbootError, OSError) as exc:
+        return [Check("pass", False, str(exc))]
+
+
+def _pass_state(ctx: Ctx) -> list[Check]:
     store = Store(pass_paths.store_dir())
     if not store.is_clone():
         return [Check("pass", True, f"no store at {store.root} yet — `devboost install` "

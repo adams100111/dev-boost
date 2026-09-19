@@ -146,3 +146,20 @@ def test_doctor_pi_login_check_reports_not_installed_when_absent(
     pi = next(c for c in run_checks(ctx, tmp_path) if c.name == "pi-login")
     assert pi.ok is True
     assert "not installed" in pi.detail
+
+
+def test_doctor_pass_check_reports_errors_instead_of_raising(tmp_path: Path) -> None:
+    s = _pass_store(tmp_path)
+    s.meta.mkdir()
+    (s.meta / "rotation.json").write_text("{oops", encoding="utf-8")
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass"][0] is False and "rotation.json" in out["pass"][1]
+
+
+def test_doctor_pass_check_reports_invalid_config(tmp_path: Path) -> None:
+    _pass_store(tmp_path)
+    cfg = tmp_path / "cfg" / "devboost" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("device_name = [\n", encoding="utf-8")
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass"][0] is False and "invalid TOML" in out["pass"][1]

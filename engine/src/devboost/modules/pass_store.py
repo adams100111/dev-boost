@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
+from devboost.core.errors import DevbootError
 from devboost.core.osinfo import OsInfo
 from devboost.core.registry import register
 from devboost.core.userconfig import load_user_config
@@ -110,7 +111,10 @@ class PassStore(Module):
             return False
         if not (sync.hook_installed(store) and sync.scheduler_installed(ctx)):
             return False
-        acc = enroll.local_access(ctx, store, paths.device_name())
+        try:
+            acc = enroll.local_access(ctx, store, paths.device_name())
+        except DevbootError:
+            return False  # bad config / gpg trouble: install runs and reports the failure
         return acc.state == "enrolled" and acc.record is not None
 
     def install(self, ctx: Ctx) -> None:

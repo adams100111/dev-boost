@@ -127,3 +127,33 @@ def test_enroll_pending_prints_next_step(store: Store, monkeypatch: pytest.Monke
     _use(monkeypatch)
     res = runner.invoke(app, ["pass", "enroll"])
     assert res.exit_code == 0 and "devboost pass approve desk" in res.output
+
+
+def test_status_malformed_rotation_exits_cleanly(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (store.meta / "rotation.json").write_text("{oops", encoding="utf-8")
+    _use(monkeypatch)
+    res = runner.invoke(app, ["pass", "status"])
+    assert res.exit_code == 1 and "Traceback" not in res.output
+    assert "rotation.json" in res.output
+
+
+def test_status_invalid_config_exits_cleanly(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = store.root.parent / "cfg" / "devboost" / "config.toml"
+    cfg.write_text("pass_repo = [\n", encoding="utf-8")
+    _use(monkeypatch)
+    res = runner.invoke(app, ["pass", "status"])
+    assert res.exit_code == 1 and "invalid TOML" in res.output
+
+
+def test_revoke_malformed_rotation_exits_cleanly(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (store.root / ".gpg-id").write_text(f"{FP_ME}\n{FP_NEW}\n", encoding="utf-8")
+    store.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    (store.meta / "rotation.json").write_text("[1]", encoding="utf-8")
+    ex = _use(monkeypatch)
+    res = runner.invoke(app, ["pass", "revoke", "lap"], input="y\n")
+    assert res.exit_code == 1 and "rotation.json" in res.output
+    assert not any(c[:2] == ["pass", "init"] for c in ex.calls)

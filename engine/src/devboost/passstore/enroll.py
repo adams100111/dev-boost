@@ -195,7 +195,10 @@ def import_device_keys(ctx: Ctx, store: Store) -> list[str]:
         if rec.fingerprint in have:
             continue
         path = store.key_path("devices", rec.name)
-        shown = gpg.show_key_file(ctx, path)
+        try:
+            shown = gpg.show_key_file(ctx, path)
+        except InstallError:
+            shown = []  # unreadable key file: refused below like a mismatching one
         listed = has_access(store, KeyInfo(rec.fingerprint, ()), rec.scope)
         if len(shown) != 1 or shown[0].fingerprint != rec.fingerprint or not listed:
             log.warn(f"pass: {path} does not match its record / .gpg-id — not imported")

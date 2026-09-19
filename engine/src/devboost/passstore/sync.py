@@ -174,7 +174,12 @@ def _notify_pending(ctx: Ctx, store: Store, device: str, state: _State) -> None:
     pending = {f"{r.name}:{r.fingerprint}": r for r in store.records("pending")}
     # Forget requests that were approved or withdrawn, so a re-request is announced again.
     state.notified = [k for k in state.notified if k in pending]
-    if not enroll.is_workstation(enroll.local_access(ctx, store, device)):
+    try:
+        acc = enroll.local_access(ctx, store, device)
+    except DevbootError as exc:
+        _log(f"reading this device's access failed: {exc}")
+        return
+    if not enroll.is_workstation(acc):
         return  # only workstations can approve, so only they are asked
     for key, rec in pending.items():
         if key in state.notified:

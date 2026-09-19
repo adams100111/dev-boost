@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from devboost.core.errors import ConfigError
 from devboost.passstore.layout import DeviceRecord, RotationEntry, Store, now_iso
 
 FP = "A" * 40
@@ -64,3 +67,20 @@ def test_entries_exclude_meta_and_git(tmp_path: Path) -> None:
         p.write_text("x", encoding="utf-8")
     assert s.entries() == ["clickup/api-token", "harness/tg", "web/github"]
     assert s.entries("harness") == ["harness/tg"]
+
+
+@pytest.mark.parametrize("body", ["{not json", '[{"device": "lap"}]', '{"a": 1}'])
+def test_malformed_rotation_raises_config_error(tmp_path: Path, body: str) -> None:
+    s = _store(tmp_path)
+    s.meta.mkdir()
+    (s.meta / "rotation.json").write_text(body, encoding="utf-8")
+    with pytest.raises(ConfigError, match="rotation.json"):
+        s.rotation()
+
+
+def test_malformed_record_is_skipped_with_a_warning(tmp_path: Path) -> None:
+    s = _store(tmp_path)
+    (s.meta / "devices").mkdir(parents=True)
+    (s.meta / "devices" / "bad.json").write_bytes(b"\xff{")
+    s.write_record("devices", DeviceRecord(name="ok", fingerprint=FP, os="fedora"), "K")
+    assert [r.name for r in s.records("devices")] == ["ok"]

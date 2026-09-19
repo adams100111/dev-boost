@@ -70,18 +70,20 @@ def status() -> None:
     """This device's enrollment, pending requests, rotation backlog and last sync."""
     ctx, store = _ctx(), _store()
     _need_store(store)
-    try:
+    try:  # gather everything first: a bad config or store file exits cleanly, not midway
         device = paths.device_name()
+        repo = paths.pass_repo()
         acc = enroll_flow.local_access(ctx, store, device)
+        todo = approve_flow.unrotated(ctx, store)
     except DevbootError as exc:
         _fail(exc)
     name = acc.record.name if acc.record else device
-    typer.echo(f"repo:      {paths.pass_repo()}")
+    typer.echo(f"repo:      {repo}")
     typer.echo(f"store:     {store.root}")
     typer.echo(f"device:    {name} ({acc.state})")
     typer.echo(f"key:       {acc.key.fingerprint if acc.key else '-'}")
     typer.echo(f"pending:   {len(store.records('pending'))}")
-    typer.echo(f"rotation:  {len(approve_flow.unrotated(ctx, store))} entries to rotate")
+    typer.echo(f"rotation:  {len(todo)} entries to rotate")
     typer.echo(f"last sync: {sync_flow.last_sync() or 'never'}")
 
 

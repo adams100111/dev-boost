@@ -61,19 +61,24 @@ def _must(res: Result, command: str) -> Result:
     return res
 
 
+# A failing list raises rather than reading as "no keys": an empty answer would make a
+# device with a broken keyring look new (and request a second key).
+
+
 def secret_keys(ctx: Ctx) -> list[KeyInfo]:
-    res = _gpg(ctx, "--with-colons", "--list-secret-keys")
-    return parse_colons(res.stdout, "sec") if res.ok else []
+    res = _must(_gpg(ctx, "--with-colons", "--list-secret-keys"), "gpg --list-secret-keys")
+    return parse_colons(res.stdout, "sec")
 
 
 def public_fingerprints(ctx: Ctx) -> set[str]:
-    res = _gpg(ctx, "--with-colons", "--list-keys")
-    return {k.fingerprint for k in parse_colons(res.stdout, "pub")} if res.ok else set()
+    res = _must(_gpg(ctx, "--with-colons", "--list-keys"), "gpg --list-keys")
+    return {k.fingerprint for k in parse_colons(res.stdout, "pub")}
 
 
 def show_key_file(ctx: Ctx, path: Path) -> list[KeyInfo]:
-    res = _gpg(ctx, "--with-colons", "--show-keys", str(path))
-    return parse_colons(res.stdout, "pub") if res.ok else []
+    res = _must(_gpg(ctx, "--with-colons", "--show-keys", str(path)),
+                f"gpg --show-keys {path}")
+    return parse_colons(res.stdout, "pub")
 
 
 def device_uid(real_name: str, email: str, device: str) -> str:

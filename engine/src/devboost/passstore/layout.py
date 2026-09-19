@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from devboost.core import log
+from devboost.core.errors import ConfigError
 
 Kind = Literal["devices", "pending", "revoked"]
 
@@ -70,7 +71,7 @@ class Store:
             return None
         try:
             return DeviceRecord.model_validate_json(p.read_text(encoding="utf-8"))
-        except ValidationError:
+        except (ValidationError, UnicodeDecodeError):
             log.warn(f"pass: ignoring malformed {p}")
             return None
 
@@ -98,8 +99,15 @@ class Store:
         p = self.meta / "rotation.json"
         if not p.exists():
             return []
-        raw = json.loads(p.read_text(encoding="utf-8"))
-        return [RotationEntry.model_validate(x) for x in raw]
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(raw, list):
+                raise ValueError("expected a JSON list")
+            return [RotationEntry.model_validate(x) for x in raw]
+        except (ValueError, ValidationError) as exc:  # JSONDecodeError is a ValueError
+            raise ConfigError(f"pass: {p} is malformed ({exc.__class__.__name__}) — fix or "
+                              "restore it from git history (`git log -p -- "
+                              ".devboost/rotation.json`)") from exc
 
     def write_rotation(self, entries: Sequence[RotationEntry]) -> None:
         self.meta.mkdir(parents=True, exist_ok=True)

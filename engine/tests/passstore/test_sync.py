@@ -277,3 +277,8 @@ def test_unreadable_state_does_not_raise(tmp_path: Path) -> None:
     state.parent.mkdir(parents=True)
     state.write_bytes(b"\xff\xfe not json")
     assert sync.run(_ctx(_ex()), _store(tmp_path), "desk").status == "ok"
+
+
+def test_sync_survives_a_failing_gpg(tmp_path: Path) -> None:
+    ex = _ex((("--list-secret-keys",), Result(2)), (("--list-keys",), Result(2)))
+    assert sync.run(_ctx(ex), _store(tmp_path), "desk").status == "ok"

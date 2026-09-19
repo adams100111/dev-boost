@@ -97,3 +97,16 @@ def test_show_key_file_and_public_fingerprints(tmp_path: Path) -> None:
     ])
     assert gpg.show_key_file(_ctx(ex), tmp_path / "b.asc") == [KeyInfo(FP_B, ())]
     assert gpg.public_fingerprints(_ctx(ex)) == {FP_A, FP_B}
+
+
+@pytest.mark.parametrize("flag", ["--list-secret-keys", "--list-keys", "--show-keys"])
+def test_gpg_list_failure_raises_instead_of_looking_empty(tmp_path: Path, flag: str) -> None:
+    """A broken keyring must not read as 'no keys' (T4) — that would e.g. request a new key."""
+    ex = RuleExecutor(rules=[((flag,), Result(2))])
+    with pytest.raises(InstallError, match=flag):
+        if flag == "--list-secret-keys":
+            gpg.secret_keys(_ctx(ex))
+        elif flag == "--list-keys":
+            gpg.public_fingerprints(_ctx(ex))
+        else:
+            gpg.show_key_file(_ctx(ex), tmp_path / "k.asc")

@@ -109,7 +109,10 @@ def _checked_request(ctx: Ctx, store: Store, req: DeviceRecord,
             raise ConfigError(f"pass: refusing {name!r} — that name already belongs to {state} "
                               f"device (key …{other.fingerprint[-16:]}); re-request under "
                               "another name: devboost pass enroll --name <name>")
-    shown = gpg.show_key_file(ctx, store.key_path("pending", name))
+    try:
+        shown = gpg.show_key_file(ctx, store.key_path("pending", name))
+    except InstallError:
+        shown = []  # unreadable key file: refused below like a mismatching one
     if len(shown) != 1 or shown[0].fingerprint.upper() != fp:
         raise ConfigError(f"pass: refusing {name!r} — its key file does not match the "
                           "fingerprint in its request")
@@ -214,6 +217,7 @@ def revoke(ctx: Ctx, store: Store, device: str, name: str,
         raise ConfigError("pass: refusing to revoke this device — run the revoke from "
                           "another enrolled device")
     _require_fingerprint_ids(store, name)
+    earlier = store.rotation()  # a malformed rotation.json refuses now, before any change
     if not confirm(rec):
         return None
     key = KeyInfo(fp, ())
@@ -230,7 +234,7 @@ def revoke(ctx: Ctx, store: Store, device: str, name: str,
     entry = RotationEntry(device=name, fingerprint=fp, revoked_at=now_iso(),
                           after=git.head(ctx, store.root), entries=entries)
     store.move("devices", "revoked", name)
-    store.write_rotation([*store.rotation(), entry])
+    store.write_rotation([*earlier, entry])
     enroll.publish(ctx, store, f"devboost: revoke {name}")
     return entry
 
