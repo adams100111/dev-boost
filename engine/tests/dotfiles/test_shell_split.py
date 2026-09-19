@@ -81,3 +81,15 @@ def test_aliases_define_the_helpers_in_zsh(frag_home: Path, bin_dir: Path,
         capture_output=True, text=True,
     )
     assert res.stdout.splitlines() == ["dev: function", "pw-workstation: function"]
+
+
+@pytest.mark.skipif(not Path("/bin/bash").exists(), reason="no /bin/bash")
+def test_shell_bash_sources_quietly_under_system_bash(frag_home: Path, bin_dir: Path) -> None:
+    # macOS /bin/bash is 3.2: no globstar there. Sourcing must stay silent (M-R18).
+    res = subprocess.run(
+        ["/bin/bash", "-c", 'source "$HOME/.config/devboost/shell.bash"'],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(frag_home)},
+        capture_output=True, text=True,
+    )
+    assert res.returncode == 0, res.stderr
+    assert res.stderr == ""

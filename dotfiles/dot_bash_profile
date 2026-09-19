@@ -1,0 +1,14 @@
+# ~/.bash_profile — dev-boost managed (macOS). zsh is the login shell here; this file is
+# for `bash -lc …` launchers (MCP servers, scripts), so they see brew, mise's shims and
+# dev-boost's PATH like every other shell.
+# devboost — managed by chezmoi; edit dotfiles/dot_bash_profile in the dev-boost repo.
+
+if [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv bash)"
+fi
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate bash --shims)"
+fi
+if [ -r "${HOME}/.config/devboost/env.sh" ]; then
+  . "${HOME}/.config/devboost/env.sh"
+fi

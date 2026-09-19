@@ -21,7 +21,7 @@ HISTSIZE=100000
 HISTFILESIZE=200000
 shopt -s histappend
 shopt -s checkwinsize
-shopt -s globstar
+shopt -s globstar 2>/dev/null || true  # bash >= 4; macOS /bin/bash is 3.2
 
 # ---------------------------------------------------------------------------
 # POSIX environment shared with other shells (PATH, RIPGREP_CONFIG_PATH, EDITOR / VISUAL, …)
