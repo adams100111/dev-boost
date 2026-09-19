@@ -7,7 +7,8 @@
 
 # ---------------------------------------------------------------------------
 # PATH — user bins first. Each directory is added once (a nested shell re-sourcing this
-# file does not grow PATH) and only if it exists.
+# file does not grow PATH) and only if it exists. Prepending puts the LAST one first, so
+# the Android SDK goes on before the user bins and ~/.local/bin ends up at the front.
 # ---------------------------------------------------------------------------
 _devboost_path_prepend() {
   [ -d "$1" ] || return 0
@@ -16,10 +17,6 @@ _devboost_path_prepend() {
     *) PATH="$1:${PATH}" ;;
   esac
 }
-# `dotnet tool install -g` (aspire, csharp-ls, csharpier) installs here; without this on
-# PATH the tools install but are "not found" in an interactive shell.
-_devboost_path_prepend "${HOME}/.dotnet/tools"
-_devboost_path_prepend "${HOME}/.local/bin"
 
 # ---------------------------------------------------------------------------
 # macOS — locale, XDG config dir, Android SDK location
@@ -39,6 +36,10 @@ fi
 if [ -n "${ANDROID_HOME:-}" ]; then
   _devboost_path_prepend "${ANDROID_HOME}/platform-tools"
 fi
+# `dotnet tool install -g` (aspire, csharp-ls, csharpier) installs here; without this on
+# PATH the tools install but are "not found" in an interactive shell.
+_devboost_path_prepend "${HOME}/.dotnet/tools"
+_devboost_path_prepend "${HOME}/.local/bin"
 export PATH
 unset -f _devboost_path_prepend
 

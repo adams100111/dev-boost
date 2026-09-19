@@ -58,12 +58,15 @@ def test_darwin_environment(shell: str, tmp_path: Path, bin_dir: Path,
                             make_bin: MakeBin) -> None:
     tools = tmp_path / "Library" / "Android" / "sdk" / "platform-tools"
     tools.mkdir(parents=True)
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
     env = _env(shell, tmp_path, bin_dir, make_bin, uname="Darwin", extra={"LC_CTYPE": "UTF-8"})
     assert env["LANG"] == "en_US.UTF-8"
     assert env["LC_CTYPE"] == "en_US.UTF-8"  # a bare UTF-8 breaks ssh/mosh to Linux
     assert env["XDG_CONFIG_HOME"] == f"{tmp_path}/.config"
     assert env["ANDROID_HOME"] == f"{tmp_path}/Library/Android/sdk"
-    assert str(tools) in env["PATH"].split(":")
+    path = env["PATH"].split(":")
+    assert str(tools) in path
+    assert path[0] == f"{tmp_path}/.local/bin"  # user bins win over the Android SDK's adb
 
 
 @pytest.mark.parametrize("shell", SHELLS)
@@ -91,6 +94,21 @@ def test_env_sh_is_posix() -> None:
         res = subprocess.run(["shellcheck", "-s", "sh", str(ENV_SH)], capture_output=True,
                              text=True)
         assert res.returncode == 0, res.stdout
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_sourcing_without_a_local_file_returns_zero(shell: str, tmp_path: Path,
+                                                   bin_dir: Path, make_bin: MakeBin) -> None:
+    # `. env.sh && next` in a launcher must not stop because local.sh is absent.
+    make_bin("uname", "echo Linux")
+    res = subprocess.run(
+        [shell, "-c", f'. "{ENV_SH}"; echo "rc=$?"'],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)},
+        capture_output=True, text=True,
+    )
+    assert not (tmp_path / ".config" / "devboost" / "local.sh").exists()
+    assert res.stdout.strip() == "rc=0", res.stderr
+    assert res.stderr == ""
 
 
 @pytest.mark.parametrize("shell", SHELLS)
