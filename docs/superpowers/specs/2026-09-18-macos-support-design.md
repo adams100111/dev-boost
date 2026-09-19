@@ -142,9 +142,9 @@ Version-dependent behavior is data, keyed on `OsInfo.version_id` (major):
 - `_DEFAULT_PROFILE["macos"] = "macos"`.
 - On macOS: refuse to run as root (explain); `installer`, `accounts`, `brain` →
   `UnsupportedOS("<cmd> is Linux-only")`.
-- **Sudo once:** at run start on macOS, if the plan contains any sudo-needing step,
-  `sudo -v` once and refresh it in a background thread every 60 s until exit.
-- **No sleep:** the run re-execs itself under `caffeinate -dimsu` on macOS.
+- **Sudo once:** at the start of every non-dry-run install on macOS, `sudo -v` once, then
+  refreshed (`sudo -n -v`) every 60 s on a background thread until exit.
+- **No sleep:** a background `caffeinate -dimsu -w <devboost pid>` for the run's lifetime.
 - New commands: `devboost docker use <runtime>` (§4); `devboost revert macos-defaults
   [key…]` (§2); `devboost secrets import-key` (§5).
 
@@ -476,7 +476,7 @@ Each milestone PR ships its own docs; a PR is not done without them.
 
 | # | Milestone | Outcome |
 |---|---|---|
-| M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0 | engine runs on Darwin |
+| M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0, `devboost permissions`, `devboost secrets import-key` | engine runs on Darwin |
 | M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone |
 | M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | most of the workstation |
 | M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) | ddev, Aspire, data-services |

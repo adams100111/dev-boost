@@ -30,9 +30,20 @@ resumable; a failure names the module and the exact failing command.
 
 ## OS dispatch
 
-The package manager is selected once from `ctx.os` (Fedora's `Dnf` implemented; `Apt`/`Pacman` are
-seams). Per-OS divergence is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os`
-`Installer` strategies — resolved `distro → family → default`. No branching in the engine.
+The package manager is selected once from `ctx.os`: `Dnf` (Fedora), `Apt` (Debian/Ubuntu), `Pacman`
+(Arch/Omarchy), `Brew` (macOS — formulae, casks with `--adopt`, taps; never sudo). Per-OS divergence
+is typed data — `OsMap` package names, `Source` repos, or opt-in `per_os` `Installer` strategies —
+resolved `distro → family → default`. No branching in the engine.
+
+Primitives (`exec/primitives/`): `pkg`, `flatpak`, `copr`, `mise`, `config`, `dconf`, `age`, `github`,
+`systemd`, `gpu`, `fs`, `shell`, `launchd` (LaunchAgents/Daemons), `tcc` (macOS privacy grants).
+
+### User-only steps
+
+`NeedsUser(reason, how_to_fix)` is reported `blocked` with the fix and never fails the run;
+`PresentUnmanaged` (an app installed outside dev-boost) is a `skip`. Modules declare macOS privacy
+needs as `tcc = (TccGrant(...),)`; the runner blocks them until `devboost permissions --confirm
+<module>`.
 
 ## Delivery
 

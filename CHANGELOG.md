@@ -7,6 +7,13 @@ git history and the GitHub release notes.
 
 ## [Unreleased]
 
+### Added
+- **macOS engine core (M1)** — macOS family + arm64 normalization, Homebrew manager
+  (formulae/casks/taps), launchd primitive, NeedsUser/PresentUnmanaged, macOS
+  privacy-permission tracking (`devboost permissions`), macOS invocation rules (no root,
+  one sudo prompt, keep-awake), gh-first/keychain credentials (`devboost secrets
+  import-key`), macOS doctor, catalog contract test. Constitution v3.1.0.
+
 ## [0.1.80] — 2026-09-09
 
 ### Added
