@@ -145,6 +145,22 @@ def test_ambiguous_key_id_across_sources_stays_bare(tmp_path: Path) -> None:
     assert ok.extra == (SUB_A,) and ok.missing == ("alpha",)
 
 
+def test_forged_subkey_binding_cannot_hide_that_a_recipient_is_revoked(tmp_path: Path) -> None:
+    """A pushed devices/ record binding bravo's real subkey under its own primary makes the
+    key id ambiguous (bare in `extra`), but must not suppress the rotate advice (Important,
+    fix round 2)."""
+    s = _store(tmp_path)
+    s.write_record("devices", DeviceRecord(name="mallory", fingerprint=FP_C, os="fedora"),
+                    ARMOR)
+    ex = _ex(s)
+    ex.rules.insert(0, (("--show-keys", str(s.key_path("devices", "mallory"))),
+                        Result(0, _keys((FP_C, SUB_B)))))
+    report = audit.audit(Ctx(os=FEDORA, ex=ex), s)
+    offline = next(m for m in report.mismatches if m.entry == "web/offline")
+    assert offline.revoked is True
+    assert "pass edit" in audit.fix_hint(s, offline)
+
+
 def test_fix_hint_quotes_names_with_shell_metacharacters(tmp_path: Path) -> None:
     """(Minor, fix round 1) folder/entry names are attacker-controlled (push access); the
     hint must not hand back a copy-pasteable command that breaks out of its argument."""

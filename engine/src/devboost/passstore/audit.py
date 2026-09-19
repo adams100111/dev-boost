@@ -36,16 +36,22 @@ class Report:
     unauditable: list[str]  # folders whose .gpg-id names a key by email: cannot be checked
 
 
-def _owners(ctx: Ctx, store: Store) -> dict[str, str]:
-    """Key id → primary fingerprint: the keyring, plus the store's own key files — so a
-    revoked key (deleted from the keyring by sync) is still recognised. A key file only
-    vouches for the fingerprint its record names: a pushed `.asc` cannot rename a key.
+def _owners(ctx: Ctx, store: Store) -> tuple[dict[str, str], set[str]]:
+    """(key id → primary fingerprint, key ids a revoked record's own file vouches for).
+
+    The map covers the keyring plus the store's own key files — so a revoked key (deleted
+    from the keyring by sync) is still recognised. A key file only vouches for the
+    fingerprint its record names: a pushed `.asc` cannot rename a key.
 
     A key id two different primaries claim (e.g. a forged file binding another record's
     real subkey under its own primary — valid OpenPGP, no back-sig needed) is ambiguous:
-    it is dropped rather than resolved to either primary's name."""
+    it is dropped from the map rather than resolved to either primary's name. The second
+    set is collected independently of that ambiguity drop, so a forged record that steals
+    a revoked key id can dilute its *label* to a bare key id, but can never make the audit
+    forget the id was revoked — the rotate advice must survive."""
     ids: dict[str, str] = {}
     ambiguous: set[str] = set()
+    revoked_key_ids: set[str] = set()
 
     def claim(kid: str, fp: str) -> None:
         if kid in ambiguous:
@@ -68,7 +74,9 @@ def _owners(ctx: Ctx, store: Store) -> dict[str, str]:
             for kid, fp in found.items():
                 if fp == rec.fingerprint.upper():
                     claim(kid, fp)
-    return ids
+                    if kind == "revoked":
+                        revoked_key_ids.add(kid)
+    return ids, revoked_key_ids
 
 
 def _labels(store: Store) -> dict[str, str]:
@@ -81,7 +89,7 @@ def _labels(store: Store) -> dict[str, str]:
 
 
 def audit(ctx: Ctx, store: Store) -> Report:
-    owners = _owners(ctx, store)
+    owners, revoked_key_ids = _owners(ctx, store)
     labels = _labels(store)
     revoked_fps = store.revoked_fingerprints()
     mismatches: list[Mismatch] = []
@@ -104,8 +112,10 @@ def audit(ctx: Ctx, store: Store) -> Report:
         missing = sorted(labels.get(t.upper(), t) for t in tokens
                          if not any(gpg.matches_fingerprint(t, fp) for fp in fps))
         if extra or missing:
-            mismatches.append(Mismatch(entry, tuple(extra), tuple(missing),
-                                        bool(fps & revoked_fps)))
+            # a recipient key id a revoked record vouches for still counts, even if a
+            # forged claim on the same id later made it ambiguous (and so bare) in fps
+            revoked = bool(fps & revoked_fps) or bool(got & revoked_key_ids)
+            mismatches.append(Mismatch(entry, tuple(extra), tuple(missing), revoked))
     return Report(mismatches, sorted(unauditable))
 
 
