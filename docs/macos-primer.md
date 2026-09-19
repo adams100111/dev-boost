@@ -56,7 +56,9 @@ neither, so a reverted key stays reverted until the next plain run.
 Every key is typed (`-bool`/`-int`/`-string`), snapshotted before its first write, and
 reverted with `devboost revert macos-defaults [key…]` (§2). Ten keys need a **logout** to
 take full effect (marked below); the rest restart Dock, Finder or SystemUIServer
-immediately, only when the value actually changed.
+immediately, only when the value actually changed and only when you run dev-boost in a
+terminal. An unattended run (ssh, first boot) restarts nothing: the change applies at the
+next login or restart, or right away with `killall Dock Finder SystemUIServer`.
 
 | `<domain>:<key>` | Value | Effect | Takes effect |
 |---|---|---|---|

@@ -2,7 +2,8 @@
 
 The snapshot records each key's value from *before dev-boost first wrote it* (absent keys
 as null) and is never overwritten, so `devboost revert macos-defaults` restores the
-machine's own state. Processes restart only when one of their keys changed.
+machine's own state. Processes restart only when one of their keys changed, and only on an
+attended run (otherwise the change applies at the next login).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import macdefaults
 from devboost.exec.primitives.macdefaults import Value
 from devboost.model import Ctx, Module
+from devboost.modules import _credentials
 
 
 @dataclass(frozen=True)
@@ -182,7 +184,19 @@ def _applicable(ctx: Ctx) -> list[Setting]:
 
 
 def _restart(ctx: Ctx, procs: set[str]) -> None:
-    for proc in sorted(procs, key=_PROCS.index):
+    """Restart what changed, but only with someone at the terminal: `killall Finder`
+    closes Finder windows and `killall Dock` reshuffles the Dock on a desktop that may be
+    in use (remotely, say). Unattended, the written values take effect at the next login
+    or restart."""
+    if not procs:
+        return
+    names = sorted(procs, key=_PROCS.index)
+    if not _credentials.is_interactive():
+        log.info(f"macos-defaults: {', '.join(names)} not restarted (nobody at the "
+                 "terminal); the changes apply at the next login or restart, or now with "
+                 f"`killall {' '.join(names)}`")
+        return
+    for proc in names:
         ctx.ex.run(["killall", proc])  # not running → non-zero, harmless
 
 

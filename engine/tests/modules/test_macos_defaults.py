@@ -9,11 +9,18 @@ from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
 from devboost.exec.primitives.macdefaults import Value
 from devboost.model import Ctx
+from devboost.modules import _credentials
 from devboost.modules import macos_defaults as md
 from tests.modules.macos_fakes import PrefsExecutor
 
 MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 DOCK = "com.apple.dock"
+
+
+@pytest.fixture(autouse=True)
+def _attended(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests are about what restarts; the unattended path has its own tests."""
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: True)
 
 
 def _ctx(ex: PrefsExecutor) -> Ctx:
@@ -62,6 +69,29 @@ def test_nothing_changes_and_nothing_restarts_when_already_applied() -> None:
     ex.calls.clear()
     assert md.apply(_ctx(ex)) == []
     assert _writes(ex) == []
+    assert _kills(ex) == []
+
+
+def test_unattended_apply_restarts_nothing_and_says_when_it_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Minor 3: `killall Dock/Finder/SystemUIServer` closes Finder windows and reshuffles
+    the Dock on a desktop someone may be using remotely: attended runs only."""
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: False)
+    infos: list[str] = []
+    monkeypatch.setattr(md.log, "info", infos.append)
+    ex = PrefsExecutor()
+    assert len(md.apply(_ctx(ex))) == len(md.SETTINGS)  # every key is still written
+    assert _kills(ex) == []
+    assert any("next login" in m and "Dock" in m for m in infos), infos
+
+
+def test_unattended_revert_restarts_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    ex = PrefsExecutor()
+    md.apply(_ctx(ex))
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: False)
+    ex.calls.clear()
+    assert md.revert(_ctx(ex))
     assert _kills(ex) == []
 
 
