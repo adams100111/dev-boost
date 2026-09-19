@@ -14,6 +14,7 @@ from devboost.core.registry import load
 from devboost.core.runner import run_plan
 from devboost.exec.executor import Result
 from devboost.model import Ctx, Module
+from devboost.modules import _pass
 from devboost.modules._pass import pass_fields, pass_line, pass_show
 from devboost.modules.pass_store import Pass, PassStore
 from devboost.passstore import paths, sync
@@ -212,6 +213,15 @@ def test_readers_order_after_pass_store_without_requiring_it() -> None:
 
 
 # --- _pass helpers ----------------------------------------------------------------------
+
+
+def test_env_is_none_when_interactive() -> None:
+    assert _pass._env(True) is None
+
+
+def test_env_unattended_without_existing_gpg_opts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+    assert _pass._env(False) == {"PASSWORD_STORE_GPG_OPTS": "--pinentry-mode error"}
 
 
 def test_pass_show_degrades_and_reads() -> None:

@@ -32,8 +32,8 @@ def pass_show(ctx: Ctx, entry: str, *, who: str) -> str | None:
     res = ctx.ex.run(["pass", "show", entry], env=_env(interactive))
     if not res.ok or not res.stdout.strip():
         hint = "" if interactive else (
-            ", or its passphrase is not cached — unlock once in a terminal: "
-            f"`pass show {entry}`")
+            ", or its passphrase is not cached — unlock once in a terminal (this warms the "
+            f"gpg-agent cache without printing the secret): `pass show {entry} >/dev/null`")
         log.warn(f"{who}: `pass show {entry}` unavailable (missing, or this device is not "
                  f"approved yet — see `devboost pass status`{hint}) — skipping")
         return None
