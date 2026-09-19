@@ -128,6 +128,12 @@ def test_genesis_initialises_store_to_this_device(tmp_path: Path) -> None:
     i = ex.calls.index(["pass", "init", FP_NEW])
     assert ex.envs[i]["PASSWORD_STORE_DIR"] == str(store.root)
     assert ex.envs[i]["DEVBOOST_PASS_HOOK"] == "off"
+    assert {k: ex.envs[i][k] for k in (
+        "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0",
+        "GIT_TERMINAL_PROMPT", "GIT_ASKPASS", "SSH_ASKPASS",
+    )} == {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign",
+           "GIT_CONFIG_VALUE_0": "false", "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "",
+           "SSH_ASKPASS": ""}  # pass's own commits: unsigned, never prompting (D6)
     assert store.record("devices", "lap") is not None
 
 
