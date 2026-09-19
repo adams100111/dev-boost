@@ -13,7 +13,9 @@
       update and shows as permanent drift afterwards. So on Omarchy dev-boost is a tenant
       in ~/.config, not the landlord: it skips the paths the platform owns and delivers its
       own shell config as ~/.config/devboost/shell.bash, which the bash-config module
-      sources from Omarchy's own ~/.bashrc. Everything with no Omarchy counterpart
+      sources from Omarchy's own ~/.bashrc. Voxtype likewise: `omarchy-voxtype-install`
+      writes its own ~/.config/voxtype/config.toml (compositor-bound hotkey, its own model),
+      and dev-boost's shared one would break that working dictation. Everything with no Omarchy counterpart
       (atuin, ripgrep, bat, fresh, caddy, fleet, systemd units, ~/.claude, ~/.local/bin)
       still applies normally.
 
@@ -41,4 +43,5 @@
 .config/git/config
 .config/ghostty
 .config/wezterm
+.config/voxtype
 {{ end -}}

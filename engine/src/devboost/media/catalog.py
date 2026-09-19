@@ -129,10 +129,10 @@ class ReleaseAsset:
 
 @dataclass(frozen=True)
 class VoxtypeSpec:
-    """Pinned Voxtype Linux release (the ``[voxtype]`` block)."""
+    """Pinned Voxtype release for Linux and macOS (the ``[voxtype]`` block)."""
 
     version: str
-    assets: dict[str, ReleaseAsset]  # "rpm-x86_64" | "deb-x86_64" | "bin-aarch64"
+    assets: dict[str, ReleaseAsset]  # one per VOXTYPE_ASSETS key
 
 
 _VERSION = r"^\d+\.\d+(\.\d+)?$"
@@ -144,9 +144,23 @@ class _XcodeRow(BaseModel):
     min_macos: str = Field(pattern=r"^\d+\.\d+$")
 
 
+#: Every asset the voxtype module installs from; a pin missing one fails at load.
+VOXTYPE_ASSETS: frozenset[str] = frozenset(
+    {"rpm-x86_64", "deb-x86_64", "bin-aarch64", "bin-macos-universal"}
+)
+
+
 class _VoxtypeRow(BaseModel):
     version: str = Field(pattern=_VERSION)
     assets: dict[str, _HerdrAssetRow] = Field(min_length=1)  # url + 64-hex sha256
+
+    @field_validator("assets")
+    @classmethod
+    def _all_assets(cls, v: dict[str, _HerdrAssetRow]) -> dict[str, _HerdrAssetRow]:
+        missing = sorted(VOXTYPE_ASSETS - set(v))
+        if missing:
+            raise ValueError(f"missing voxtype assets: {', '.join(missing)}")
+        return v
 
 
 _CATALOG_ADAPTER = TypeAdapter(dict[str, _OsRow])
@@ -244,7 +258,7 @@ def xcode_pin() -> XcodeSpec:
 
 @cache
 def voxtype_pin() -> VoxtypeSpec:
-    """The pinned Voxtype Linux release (cached). Read from ``[voxtype]`` in catalog.toml."""
+    """The pinned Voxtype release for Linux and macOS (cached), from ``[voxtype]``."""
     try:
         row = _VoxtypeRow.model_validate(_section("voxtype"))
     except ValueError as exc:

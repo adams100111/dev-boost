@@ -44,6 +44,10 @@ _TAKEN_OVER = {".zshrc": "dot_zshrc", ".zprofile": "dot_zprofile",
 #: Omarchy, which owns ~/.bashrc itself (`.chezmoiignore`) and gets a sourced line instead
 #: (bash-config). `Dotfiles.install` picks this mapping on non-macOS, non-Omarchy hosts.
 _TAKEN_OVER_LINUX = {".bashrc": "dot_bashrc"}
+#: Non-rc files the dotfiles also take over wholesale, on every OS but Omarchy (which owns
+#: its own copy: `.chezmoiignore`). A user's own config there is kept as .pre-devboost
+#: before the first forced apply replaces it, exactly like an rc file.
+_TAKEN_OVER_CONFIGS = {".config/voxtype/config.toml": "dot_config/voxtype/config.toml.tmpl"}
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -74,6 +78,30 @@ def _read_rc_digests() -> dict[str, str]:
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
 
 
+def _write_rc_digests(digests: Mapping[str, str]) -> None:
+    """Atomically replace the digest store; the state dir is created 0700."""
+    target = _rc_digests_path()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".rc-digests.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(dict(digests), f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _managed_digest(path: Path) -> str | None:
+    if path.is_symlink() or not path.is_file():
+        return None
+    data = path.read_bytes()
+    if _MANAGED_MARKER.encode("utf-8") not in data:
+        return None
+    return hashlib.sha256(data).hexdigest()
+
+
 def record_rc_digests(home: Path, taken_over: Mapping[str, str] = _TAKEN_OVER) -> None:
     """Record the sha256 of each managed rc file as the apply just wrote it (M-R26).
 
@@ -85,23 +113,22 @@ def record_rc_digests(home: Path, taken_over: Mapping[str, str] = _TAKEN_OVER) -
     """
     digests: dict[str, str] = {}
     for name in taken_over:
-        path = home / name
-        if path.is_symlink() or not path.is_file():
-            continue
-        data = path.read_bytes()
-        if _MANAGED_MARKER.encode("utf-8") in data:
-            digests[name] = hashlib.sha256(data).hexdigest()
-    target = _rc_digests_path()
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".rc-digests.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(digests, f, indent=2, sort_keys=True)
-            f.write("\n")
-        os.replace(tmp, target)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+        digest = _managed_digest(home / name)
+        if digest is not None:
+            digests[name] = digest
+    _write_rc_digests(digests)
+
+
+def record_rc_digest(home: Path, name: str) -> None:
+    """Record ONE taken-over file after a targeted apply wrote it, keeping every other
+    entry: re-recording the whole set would bless an rc file someone has since edited."""
+    digests = _read_rc_digests()
+    digest = _managed_digest(home / name)
+    if digest is None:
+        digests.pop(name, None)
+    else:
+        digests[name] = digest
+    _write_rc_digests(digests)
 
 
 def back_up_rc_files(
@@ -185,11 +212,10 @@ def back_up_taken_over(
     if taken_over is None:
         return
     for backup in back_up_rc_files(home, source, taken_over):
-        name = backup.name.split(".pre-devboost")[0]
-        log.ok(
-            f"{who}: kept your previous ~/{name} as ~/{backup.name} —"
-            f" machine-specific lines belong in ~/{name}.local"
-        )
+        rel = backup.relative_to(home).as_posix()
+        name = rel.split(".pre-devboost")[0]
+        hint = f" — machine-specific lines belong in ~/{name}.local" if "/" not in name else ""
+        log.ok(f"{who}: kept your previous ~/{name} as ~/{rel}{hint}")
 
 
 def record_taken_over(home: Path, taken_over: Mapping[str, str] | None, who: str) -> None:
@@ -421,15 +447,15 @@ class Dotfiles(Module):
 
     @staticmethod
     def _taken_over_for(ctx: Ctx) -> Mapping[str, str] | None:
-        """Which rc files dev-boost's dotfiles take over wholesale on *ctx*'s OS, or None
+        """Which files dev-boost's dotfiles take over wholesale on *ctx*'s OS, or None
         where the dotfiles module leaves rc files alone: every non-macOS family gets only
         ~/.bashrc (dot_bashrc) — and Omarchy owns even that (`.chezmoiignore` skips it,
         bash-config sources a fragment from it instead).
         """
         if ctx.os.family == "macos":
-            return _TAKEN_OVER
+            return {**_TAKEN_OVER, **_TAKEN_OVER_CONFIGS}
         if ctx.os.distro != "omarchy":
-            return _TAKEN_OVER_LINUX
+            return {**_TAKEN_OVER_LINUX, **_TAKEN_OVER_CONFIGS}
         return None
 
     def install(self, ctx: Ctx) -> None:
