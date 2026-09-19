@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 import re
 import shlex
+from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 from devboost.core import log
-from devboost.core.errors import InstallError, PresentUnmanaged, UnsupportedOS
+from devboost.core.errors import InstallError, NeedsUser, PresentUnmanaged, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.exec.executor import Result
 from devboost.model import AptRepo, BrewTap, Ctx, DnfRepo
@@ -214,6 +215,13 @@ _ALREADY_PRESENT = (
     "already an App at",
 )
 
+#: sudo's refusals when brew runs a sudo step (``sudo -E -- chmod -R …`` while adopting an
+#: app whose files another user owns) with no cached timestamp and no tty for a password.
+_SUDO_REFUSED = (
+    "a password is required",
+    "a terminal is required",
+)
+
 
 class Brew:
     """macOS. Formulae and casks via Homebrew — never under sudo (brew refuses root).
@@ -233,15 +241,70 @@ class Brew:
             raise InstallError("brew", f"brew install --formula -y {' '.join(pkgs)}", res.code)
 
     def install_cask(self, ctx: Ctx, *casks: str) -> None:
+        """Install casks, adopting an app bundle that is already in place.
+
+        Adopting runs ``sudo chmod -R`` over the bundle when the user cannot fix its
+        permissions alone (files owned by another user), which fails in a session without
+        sudo. So without sudo (``ctx.no_sudo``) a hand-installed app is left untouched
+        before brew is asked (ruling R6), and a sudo failure brew reports anyway is read
+        the same way when the bundle exists. With sudo, adoption proceeds.
+        """
         if not casks:
             return
+        todo = list(casks)
+        unmanaged: list[str] = []
+        if ctx.no_sudo:
+            unmanaged = [c for c in todo if self._hand_installed(ctx, c)]
+            todo = [c for c in todo if c not in unmanaged]
+        if todo:
+            self._install_casks(ctx, todo)
+        if unmanaged:
+            raise PresentUnmanaged(", ".join(unmanaged))
+
+    def _install_casks(self, ctx: Ctx, casks: list[str]) -> None:
         res = self._brew(ctx, "install", "--cask", "-y", "--adopt", *casks)
         if res.ok:
             return
         output = f"{res.stdout}\n{res.stderr}"
         if any(marker in output for marker in _ALREADY_PRESENT):
             raise PresentUnmanaged(", ".join(casks))
+        if any(marker in output for marker in _SUDO_REFUSED):
+            if any(self._bundle_present(ctx, c) for c in casks):
+                raise PresentUnmanaged(", ".join(casks))
+            raise NeedsUser(
+                f"brew needs your password to install {', '.join(casks)}",
+                "re-run `devboost install` in a terminal (needs your password)",
+            )
         raise InstallError("brew", f"brew install --cask -y --adopt {' '.join(casks)}", res.code)
+
+    def cask_app_paths(self, ctx: Ctx, cask: str) -> list[Path]:
+        """The app bundles the cask installs (``brew info`` artifacts); [] when unknown."""
+        res = self._brew(ctx, "info", "--json=v2", "--cask", cask)
+        if not res.ok:
+            return []
+        try:
+            artifacts = json.loads(res.stdout)["casks"][0]["artifacts"]
+        except (ValueError, KeyError, IndexError, TypeError):
+            return []
+        paths: list[Path] = []
+        for art in artifacts if isinstance(artifacts, list) else []:
+            if not isinstance(art, dict) or "app" not in art:
+                continue
+            target = art.get("target")
+            if isinstance(target, str) and target:
+                paths.append(Path(target).expanduser())
+                continue
+            for entry in art["app"] if isinstance(art["app"], list) else []:
+                if isinstance(entry, str) and entry:
+                    paths.append(Path("/Applications") / Path(entry).name)
+        return paths
+
+    def _bundle_present(self, ctx: Ctx, cask: str) -> bool:
+        return any(p.exists() for p in self.cask_app_paths(ctx, cask))
+
+    def _hand_installed(self, ctx: Ctx, cask: str) -> bool:
+        """The cask's app is in place but brew does not list the cask as installed."""
+        return not self.cask_installed(ctx, cask) and self._bundle_present(ctx, cask)
 
     def installed(self, ctx: Ctx, pkg: str) -> bool:
         return self._brew(ctx, "list", "--formula", "--versions", pkg).ok

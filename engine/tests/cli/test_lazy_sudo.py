@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
+import typer
 
 from devboost.cli import app as cli_app
 from devboost.cli import host as plat
@@ -332,3 +334,99 @@ def test_update_with_nothing_to_refresh_says_so(
     cli_app._run(["docker"], profiles_file.parent, dry_run=False, force=False, update=True)
     assert plans == [[]]
     assert "nothing to update in selection" in infos
+
+
+# --- AF1: sudo asked for but not granted (unattended run, no tty) ----------------------
+
+#: CLT and brew present, Rosetta missing: `arch -x86_64` fails with "Bad CPU type".
+_NO_ROSETTA: dict[tuple[str, ...], Result] = {
+    **_SET_UP,
+    ("arch", "-x86_64"): Result(1, stderr="Bad CPU type in executable"),
+}
+
+
+def _deny_sudo(monkeypatch: pytest.MonkeyPatch, host_calls: list[list[str]]) -> None:
+    def _fake_subprocess_run(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        host_calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 1)  # "sudo: a password is required"
+
+    monkeypatch.setattr("subprocess.run", _fake_subprocess_run)
+
+
+def _spy_run_plan(monkeypatch: pytest.MonkeyPatch) -> tuple[list[Ctx], list[Any]]:
+    """Record the ctx the runner gets and its results (kept even when _run exits 1)."""
+    seen: list[Ctx] = []
+    results: list[Any] = []
+    from devboost.core.runner import run_plan as real
+
+    def _spy(plan: Any, modules: Any, ctx: Ctx, **kw: Any) -> Any:
+        seen.append(ctx)
+        out = real(plan, modules, ctx, **kw)
+        results.extend(out)
+        return out
+
+    monkeypatch.setattr(cli_app, "run_plan", _spy)
+    return seen, results
+
+
+def test_ungranted_sudo_blocks_a_pending_sudo_module_without_running_it(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # M3 acceptance AF1: rosetta ran `softwareupdate --install-rosetta` with no sudo and
+    # ended as an error. It must be blocked with the fix, never attempted.
+    host_calls, ex = _wire_runner(monkeypatch, _NO_ROSETTA)
+    _deny_sudo(monkeypatch, host_calls)
+    results = cli_app._run(["rosetta"], profiles_file.parent, dry_run=False, force=False)
+    [rosetta] = [r for r in results if r.name == "rosetta"]
+    assert ["sudo", "-v"] in host_calls
+    assert rosetta.status == "blocked"
+    assert "run `devboost install rosetta` in a terminal (needs your password)" in rosetta.detail
+    assert not any(c[:1] == ["softwareupdate"] for c in ex.calls)
+    assert not any("--install-rosetta" in c for c in ex.calls)
+
+
+def test_ungranted_sudo_still_runs_steps_that_need_no_root(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    # Homebrew present with analytics on: `brew analytics off` needs no root, so a
+    # session without sudo still runs it; a stray sudo step fails fast (C-R18).
+    answers = {**_NO_ROSETTA, ("brew", "analytics", "state"): Result(0, stdout="enabled")}
+    host_calls, ex = _wire_runner(monkeypatch, answers)
+    _deny_sudo(monkeypatch, host_calls)
+    seen, results = _spy_run_plan(monkeypatch)
+    with contextlib.suppress(typer.Exit):  # the scripted analytics state never flips
+        cli_app._run(["homebrew", "rosetta"], profiles_file.parent, dry_run=False, force=False)
+    status = {r.name: r.status for r in results}
+    assert status["rosetta"] == "blocked"
+    assert status["homebrew"] != "blocked"
+    assert ["brew", "analytics", "off"] in ex.calls
+    assert seen[0].no_sudo is True
+    seen[0].ex.run(["true"], sudo=True)
+    assert ex.calls[-1] == ["sudo", "-n", "true"]
+
+
+def test_granted_sudo_runs_the_sudo_module(
+    monkeypatch: pytest.MonkeyPatch, profiles_file: Path
+) -> None:
+    host_calls, ex = _wire_runner(monkeypatch, _NO_ROSETTA)
+    _, results = _spy_run_plan(monkeypatch)
+    with contextlib.suppress(typer.Exit):  # the scripted `arch` never starts working
+        cli_app._run(["rosetta"], profiles_file.parent, dry_run=False, force=False)
+    assert ["sudo", "-v"] in host_calls
+    assert ["sudo", "softwareupdate", "--install-rosetta", "--agree-to-license"] in ex.calls
+    assert {r.name: r.status for r in results}["rosetta"] != "blocked"
+
+
+def test_mac_session_yields_whether_sudo_is_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(plat, "keep_awake", lambda: None)
+    for code, held in ((0, True), (1, False)):
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda argv, _c=code, **_: subprocess.CompletedProcess(argv, _c),
+        )
+        with plat.mac_session(MAC, dry_run=False, sudo=True) as got:
+            assert got is held
+    with plat.mac_session(MAC, dry_run=False, sudo=False) as got:
+        assert got is False
+    with plat.mac_session(FEDORA, dry_run=False) as got:
+        assert got is True

@@ -45,10 +45,14 @@ class CodexPlugins(Module):
         return res.stdout if res.ok else ""
 
     def _installed_plugins(self, ctx: Ctx) -> set[str]:
+        # Unlike `claude plugin list --json` (a bare list), codex wraps its entries in
+        # {"installed": [...], "available": [...]} — read the "installed" list; a bare
+        # list is also accepted in case an older codex CLI still returns one.
         data = self._codex_json(ctx, "plugin", "list", "--available", "--json")
+        entries: object = data.get("installed") if isinstance(data, dict) else data
         names: set[str] = set()
-        if isinstance(data, list):
-            for e in data:
+        if isinstance(entries, list):
+            for e in entries:
                 if isinstance(e, dict) and e.get("installed") and isinstance(e.get("name"), str):
                     names.add(e["name"])
         return names
