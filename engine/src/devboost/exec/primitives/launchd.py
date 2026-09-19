@@ -40,6 +40,9 @@ def _plist(
     start_calendar: Mapping[str, int] | None,
     run_at_load: bool,
     env: Mapping[str, str] | None,
+    keep_alive: bool | Mapping[str, bool] | None = None,
+    throttle_interval: int | None = None,
+    log_path: Path | None = None,
 ) -> bytes:
     data: dict[str, Any] = {"Label": lbl, "ProgramArguments": list(program_args)}
     if start_interval is not None:
@@ -50,6 +53,13 @@ def _plist(
         data["RunAtLoad"] = True
     if env:
         data["EnvironmentVariables"] = dict(env)
+    if keep_alive is not None:
+        data["KeepAlive"] = keep_alive if isinstance(keep_alive, bool) else dict(keep_alive)
+    if throttle_interval is not None:
+        data["ThrottleInterval"] = throttle_interval
+    if log_path is not None:
+        data["StandardOutPath"] = str(log_path)
+        data["StandardErrorPath"] = str(log_path)
     return plistlib.dumps(data)
 
 
@@ -66,9 +76,12 @@ def agent_current(
     start_calendar: Mapping[str, int] | None = None,
     run_at_load: bool = False,
     env: Mapping[str, str] | None = None,
+    keep_alive: bool | Mapping[str, bool] | None = None,
+    throttle_interval: int | None = None,
+    log_path: Path | None = None,
 ) -> bool:
     """The agent's plist on disk is exactly this one AND launchd has it loaded."""
-    path = _agents_dir() / f"{lbl}.plist"
+    path = agent_plist(lbl)
     body = _plist(
         lbl,
         program_args,
@@ -76,12 +89,25 @@ def agent_current(
         start_calendar=start_calendar,
         run_at_load=run_at_load,
         env=env,
+        keep_alive=keep_alive,
+        throttle_interval=throttle_interval,
+        log_path=log_path,
     )
     return path.exists() and path.read_bytes() == body and agent_loaded(ctx, lbl)
 
 
 def daemon_loaded(ctx: Ctx, lbl: str) -> bool:
     return ctx.ex.run(["launchctl", "print", f"system/{lbl}"]).ok
+
+
+def agent_plist(lbl: str) -> Path:
+    """Where the per-user agent's plist lives."""
+    return _agents_dir() / f"{lbl}.plist"
+
+
+def agent_installed(ctx: Ctx, lbl: str) -> bool:
+    """The agent's plist is on disk and launchd has it loaded."""
+    return agent_plist(lbl).exists() and agent_loaded(ctx, lbl)
 
 
 def user_agent(
@@ -93,9 +119,17 @@ def user_agent(
     start_calendar: Mapping[str, int] | None = None,
     run_at_load: bool = False,
     env: Mapping[str, str] | None = None,
+    keep_alive: bool | Mapping[str, bool] | None = None,
+    throttle_interval: int | None = None,
+    log_path: Path | None = None,
 ) -> bool:
-    """Install/refresh a per-user LaunchAgent. Returns True when anything changed."""
-    path = _agents_dir() / f"{lbl}.plist"
+    """Install/refresh a per-user LaunchAgent. Returns True when anything changed.
+
+    ``keep_alive`` is launchd's ``KeepAlive`` (``True``, or e.g. ``{"SuccessfulExit":
+    False}`` — restart only after a failure, like systemd's ``Restart=on-failure``).
+    ``log_path`` receives both stdout and stderr; its directory is created.
+    """
+    path = agent_plist(lbl)
     body = _plist(
         lbl,
         program_args,
@@ -103,11 +137,13 @@ def user_agent(
         start_calendar=start_calendar,
         run_at_load=run_at_load,
         env=env,
+        keep_alive=keep_alive,
+        throttle_interval=throttle_interval,
+        log_path=log_path,
     )
-    if agent_current(
-        ctx, lbl, program_args, start_interval=start_interval,
-        start_calendar=start_calendar, run_at_load=run_at_load, env=env,
-    ):
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.read_bytes() == body and agent_loaded(ctx, lbl):
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
@@ -152,4 +188,10 @@ def system_daemon(
 
 def remove_agent(ctx: Ctx, lbl: str) -> None:
     ctx.ex.run(["launchctl", "bootout", f"{_gui_domain()}/{lbl}"])
-    (_agents_dir() / f"{lbl}.plist").unlink(missing_ok=True)
+    agent_plist(lbl).unlink(missing_ok=True)
+
+
+def remove_daemon(ctx: Ctx, lbl: str) -> None:
+    """Unload and delete a root LaunchDaemon (a missing one is not an error)."""
+    ctx.ex.run(["launchctl", "bootout", f"system/{lbl}"], sudo=True)
+    ctx.ex.run(["rm", "-f", str(DAEMONS_DIR / f"{lbl}.plist")], sudo=True)
