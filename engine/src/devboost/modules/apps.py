@@ -42,8 +42,16 @@ class FlatpakApp(Module):
     cask: ClassVar[str | None] = None
     category = "apps"
     gui = True
-    requires = (Flatpak, Homebrew)
+    requires: ClassVar[tuple[type[Module], ...]] = (Flatpak, Homebrew)
     profiles = ("apps",)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        # Homebrew is needed only to install a cask. An app with none never touches brew
+        # (on macOS it is provided by the OS or scoped to Linux), so pulling Homebrew — and
+        # the CLT under it — into its plan would install both for nothing.
+        if cls.cask is None and "requires" not in cls.__dict__:
+            cls.requires = tuple(r for r in cls.requires if r is not Homebrew)
 
     def _arch_name(self) -> str | None:
         return self.arch_pkg or self.aur_pkg

@@ -17,7 +17,10 @@ from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask, BrewFormula
+from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
+from devboost.modules.base import Flatpak
+from devboost.modules.macos import Homebrew
 
 MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
@@ -141,3 +144,38 @@ def test_update_keeps_brew_backed_modules_on_macos_only() -> None:
     assert _apply_update_filter(plan, modules, FEDORA) == []
     assert _apply_update_filter(plan, modules) == []  # no OS given: today's behaviour
     assert _brew_managed_on_macos(_Heavy) is False
+
+
+def test_cask_auto_updates_falls_back_to_false_when_brew_fails_or_knows_no_cask() -> None:
+    # False → the caller upgrades: at worst a needless re-download, never a stale app.
+    failing = FakeExecutor(scripts={"brew": Result(1, stderr="Error: No available cask")})
+    assert pkg.cask_auto_updates(Ctx(os=MAC, ex=failing), "vlc") is False
+    empty = FakeExecutor(scripts={"brew": Result(0, stdout='{"formulae": [], "casks": []}')})
+    assert pkg.cask_auto_updates(Ctx(os=MAC, ex=empty), "vlc") is False
+
+
+class _Pkg(PackageModule):
+    name: ClassVar[str] = "pkg-update-probe"
+    cmd: ClassVar[str] = "probe"
+    fedora_pkg: ClassVar[str] = "probe"
+
+
+class _NoCaskApp(FlatpakApp):
+    name: ClassVar[str] = "no-cask-probe"
+    app_id: ClassVar[str] = "org.probe.NoCask"
+
+
+def test_update_filter_keeps_package_modules_and_drops_caskless_apps_on_macos() -> None:
+    # A PackageModule is one formula (or cask) on macOS: refreshed. A FlatpakApp with no
+    # cask has nothing brew could upgrade there: dropped.
+    assert _brew_managed_on_macos(_Pkg) is True
+    assert _brew_managed_on_macos(_NoCaskApp) is False
+    modules: dict[str, type[Module]] = {"pkg-update-probe": _Pkg, "no-cask-probe": _NoCaskApp}
+    plan = [PlannedModule(n) for n in modules]
+    assert [p.name for p in _apply_update_filter(plan, modules, MAC)] == ["pkg-update-probe"]
+
+
+def test_a_caskless_app_does_not_require_homebrew() -> None:
+    # Homebrew (and the CLT under it) only matter for installing a cask.
+    assert Homebrew not in _NoCaskApp.requires and Flatpak in _NoCaskApp.requires
+    assert Homebrew in _App.requires and Flatpak in _App.requires
