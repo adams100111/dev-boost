@@ -16,7 +16,7 @@ from devboost.modules import _credentials as creds_src
 from devboost.passstore import approve as approve_flow
 from devboost.passstore import audit as audit_flow
 from devboost.passstore import enroll as enroll_flow
-from devboost.passstore import paths
+from devboost.passstore import notify, paths
 from devboost.passstore import sync as sync_flow
 from devboost.passstore.layout import DeviceRecord, Kind, Store
 
@@ -199,13 +199,14 @@ def audit_cmd() -> None:
         report = audit_flow.audit(ctx, store)
     except DevbootError as exc:
         _fail(exc)
+    p = notify.printable
     for folder in report.unauditable:
-        typer.echo(f"not checked: {folder}/.gpg-id names keys by email")
+        typer.echo(f"not checked: {p(folder)}/.gpg-id names keys by email")
     if not report.mismatches:
         typer.echo("every entry matches its .gpg-id")
         return
     for m in report.mismatches:
-        typer.echo(f"{m.entry}\n  extra:   {', '.join(m.extra) or '-'}\n"
-                   f"  missing: {', '.join(m.missing) or '-'}\n"
-                   f"  fix:     {audit_flow.fix_hint(store, m)}")
+        typer.echo(f"{p(m.entry)}\n  extra:   {', '.join(p(e) for e in m.extra) or '-'}\n"
+                   f"  missing: {', '.join(p(e) for e in m.missing) or '-'}\n"
+                   f"  fix:     {p(audit_flow.fix_hint(store, m))}")
     raise typer.Exit(1)

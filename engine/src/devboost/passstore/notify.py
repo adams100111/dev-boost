@@ -15,11 +15,18 @@ _UNSAFE = re.compile(
 )
 
 
+def printable(text: str) -> str:
+    """A remote-sourced string made safe to write to a terminal or log line: no control /
+    invisible characters. No truncation, no markup handling — those are `clean`'s and the
+    notifier's business respectively."""
+    return _UNSAFE.sub("", text)
+
+
 def clean(text: str, limit: int = 64) -> str:
     """A remote-sourced string (a record's name / os) made safe to show in a notification:
     no control / invisible characters, no leading `-` (never read as an option), at most
     *limit* chars. Markup escaping is the notifier's business (see `_native_argv`)."""
-    return _UNSAFE.sub("", text).strip().lstrip("-").strip()[:limit]
+    return printable(text).strip().lstrip("-").strip()[:limit]
 
 
 def _markup(text: str) -> str:

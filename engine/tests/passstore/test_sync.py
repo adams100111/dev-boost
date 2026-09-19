@@ -474,3 +474,15 @@ def test_push_only_sync_never_audits(tmp_path: Path, monkeypatch: pytest.MonkeyP
     calls = _audited(monkeypatch)
     sync.run(_ctx(_ex((("rev-parse", "HEAD"), Result(0, "h1\n")))), s, "desk", push_only=True)
     assert calls == []
+
+
+def test_sync_survives_a_malformed_gpg_id_during_audit(tmp_path: Path) -> None:
+    """A pushed non-UTF-8 `web/.gpg-id` must not crash the (real, unmocked) audit call, or
+    the sync would exit without saving state — the background agent would crash every run."""
+    s = _store(tmp_path)
+    (s.root / "web").mkdir()
+    (s.root / "web" / "x.gpg").write_bytes(b"x")
+    (s.root / "web" / ".gpg-id").write_bytes(b"\xff\xfe not utf-8")
+    ex = _ex((("rev-parse", "HEAD"), Result(0, "h1\n")))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    assert '"audited_head": "h1"' in _state(tmp_path)

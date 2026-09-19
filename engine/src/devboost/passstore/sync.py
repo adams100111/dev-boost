@@ -285,7 +285,9 @@ def _audit(ctx: Ctx, store: Store, state: _State) -> None:
         return
     try:
         report = audit.audit(ctx, store)
-    except DevbootError as exc:
+    except (DevbootError, OSError, ValueError) as exc:
+        # A push-controlled `.gpg-id` (bad bytes, a directory in its place, …) must not
+        # crash the sync (or `UnicodeDecodeError`/`IsADirectoryError` escape it un-saved).
         _log(f"recipient audit failed: {exc}")
         return
     state.audited_head = head
@@ -295,7 +297,7 @@ def _audit(ctx: Ctx, store: Store, state: _State) -> None:
     if not new:
         return
     _log(f"recipient audit: {len(flagged)} entries differ from their .gpg-id: "
-         f"{', '.join(flagged)}")
+         f"{', '.join(notify.printable(e) for e in flagged)}")
     notify.native(ctx, "pass: entries with the wrong recipients",
                   f"{notify.clean(', '.join(new), 200)} — encrypted to other keys than their "
                   ".gpg-id. Run: devboost pass audit")

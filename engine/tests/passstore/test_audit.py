@@ -161,6 +161,25 @@ def test_forged_subkey_binding_cannot_hide_that_a_recipient_is_revoked(tmp_path:
     assert "pass edit" in audit.fix_hint(s, offline)
 
 
+def test_malformed_gpg_id_is_unauditable_not_raised(tmp_path: Path) -> None:
+    """A `.gpg-id` with non-UTF-8 bytes is attacker-controlled (push access) — it must make
+    the folder unauditable, never raise `UnicodeDecodeError` out of `audit()`."""
+    s = _store(tmp_path)
+    (s.root / "web" / ".gpg-id").write_bytes(b"\xff\xfe not utf-8")
+    report = audit.audit(Ctx(os=FEDORA, ex=_ex(s)), s)
+    assert report.mismatches == []
+    assert report.unauditable == ["web"]
+
+
+def test_gpg_id_as_a_directory_is_unauditable_not_raised(tmp_path: Path) -> None:
+    """`IsADirectoryError` (an `OSError`) must be handled the same way as a bad encoding."""
+    s = _store(tmp_path)
+    (s.root / "web" / ".gpg-id").mkdir()
+    report = audit.audit(Ctx(os=FEDORA, ex=_ex(s)), s)
+    assert report.mismatches == []
+    assert report.unauditable == ["web"]
+
+
 def test_fix_hint_quotes_names_with_shell_metacharacters(tmp_path: Path) -> None:
     """(Minor, fix round 1) folder/entry names are attacker-controlled (push access); the
     hint must not hand back a copy-pasteable command that breaks out of its argument."""

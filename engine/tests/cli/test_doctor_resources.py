@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from devboost.cli.doctor import all_ok, run_checks
+from devboost.core.errors import InstallError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.resources import resource_path, resource_root
@@ -184,3 +185,22 @@ def test_doctor_recipients_ok_when_entries_match(
     monkeypatch.setattr(audit, "audit", lambda ctx, store: audit.Report([], []))
     out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
     assert out["pass-recipients"][0] is True
+
+
+def test_doctor_recipients_failure_does_not_hide_other_pass_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raising audit (a malformed store, a broken gpg, …) must fail only pass-recipients —
+    the doctor must still return, and pass / pass-rotation must stay visible."""
+    from devboost.passstore import audit
+
+    _pass_store(tmp_path)
+
+    def boom(ctx: Ctx, store: Store) -> audit.Report:
+        raise InstallError("pass-store", "gpg --list-keys", 2)
+
+    monkeypatch.setattr(audit, "audit", boom)
+    out = _checks(tmp_path, FakeExecutor(present={"curl", "age"}))
+    assert out["pass-recipients"][0] is False
+    assert out["pass"][0] is True
+    assert "pass-rotation" in out

@@ -159,3 +159,15 @@ def test_clean_strips_zero_width_and_bidi_but_no_longer_escapes() -> None:
     assert notify.clean("<b>a&b</b>") == "<b>a&b</b>"
     hidden = "d\u200be\u200fs\u061ck\ufeff\u202a\u2066"
     assert notify.clean(hidden) == "desk"
+
+
+def test_printable_strips_unsafe_chars_without_trimming_or_truncating() -> None:
+    """`printable` is the display-sanitiser used for log lines and CLI/doctor output: no
+    truncation, no dash-stripping \u2014 those are `clean`'s (notification-specific) business."""
+    assert notify.printable(" -lap\x1b[31m\nx\u202e ") == " -lap[31mx "
+    assert notify.printable("a" * 500) == "a" * 500
+    assert notify.printable("<b>a&b</b>") == "<b>a&b</b>"
+
+
+def test_clean_is_printable_then_trimmed_and_capped() -> None:
+    assert notify.clean("x") == notify.printable("x").strip().lstrip("-").strip()[:64]

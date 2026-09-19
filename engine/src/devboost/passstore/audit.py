@@ -88,6 +88,17 @@ def _labels(store: Store) -> dict[str, str]:
     return out
 
 
+def _safe_gpg_ids(store: Store, folder: str) -> list[str] | None:
+    """`.gpg-id` contents, or None if the file cannot be read as text (attacker-controlled
+    via push access: a non-UTF-8 byte sequence, a directory in its place, a permission
+    problem, …). The audit must never crash on a malformed store — that folder is simply
+    unauditable."""
+    try:
+        return store.gpg_ids(folder)
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def audit(ctx: Ctx, store: Store) -> Report:
     owners, revoked_key_ids = _owners(ctx, store)
     labels = _labels(store)
@@ -96,8 +107,8 @@ def audit(ctx: Ctx, store: Store) -> Report:
     unauditable: set[str] = set()
     for entry in store.entries():
         folder = store.governing_folder(entry)
-        tokens = store.gpg_ids(folder)
-        if not tokens or not all(gpg.is_key_token(t) for t in tokens):
+        tokens = _safe_gpg_ids(store, folder)
+        if tokens is None or not tokens or not all(gpg.is_key_token(t) for t in tokens):
             unauditable.add(folder or ".")
             continue
         try:
@@ -126,7 +137,7 @@ def fix_hint(store: Store, m: Mismatch) -> str:
     Folder and entry names are attacker-controlled (anyone with push access), so they're
     shell-quoted before landing in a copy-pasteable command."""
     folder = store.governing_folder(m.entry)
-    ids = " ".join(store.gpg_ids(folder))
+    ids = " ".join(_safe_gpg_ids(store, folder) or ())
     scope = f"-p {shlex.quote(folder)} " if folder else ""
     init = f"pass init {scope}{ids}"
     if m.revoked:
