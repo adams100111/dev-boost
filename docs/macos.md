@@ -89,8 +89,8 @@ triggers, but it's worth knowing if either script is ever run under something th
 | Own installers | .NET 10 SDK in `~/.dotnet` (`dotnet-install.sh`), herdr 0.9.1 (pinned, SHA-256-checked), Claude Code, Codex, the Pi harness |
 | Scheduled jobs (M4) | `aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync` as launchd agents (systemd `--user` timers on Linux); `browser-mcp` — opt-in (`devboost install browser-mcp`): a LaunchAgent on macOS, the dotfiles' systemd unit on Linux, enabled only by the module |
 | Same as Linux | mise runtimes (node/pnpm/bun, java, devops tools), LSP servers, Playwright, Aspire, csharp-ls, the Claude/Codex plugins, skills and MCP servers |
-| Provided by macOS (skipped) | curl, unzip, wl-clipboard, flameshot (⌘⇧5), fwupd, thermald, power-profiles-daemon, va-hwaccel |
-| Linux-only (not planned) | bash-config, gearlever, earlyoom, gpu-detect, zram, the brain-host services, the Fedora system layer |
+| Provided by macOS (skipped) | curl, unzip, wl-clipboard, flameshot (⌘⇧5), fwupd, thermald, power-profiles-daemon, va-hwaccel, bash-config (zsh is the login shell here; `zsh-config` covers it — reports `provided-by-macos`, not silently dropped) |
+| Linux-only (not planned) | gearlever, earlyoom, gpu-detect, zram, the brain-host services, the Fedora system layer |
 
 `devboost install --update` upgrades every Homebrew formula and cask in the plan, except
 apps that update themselves (Zed, Ghostty, Obsidian, VS Code, Tailscale, …).

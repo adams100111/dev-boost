@@ -27,20 +27,38 @@ git history and the GitHub release notes.
 - **macOS delivery (M6)** — `curl … | bash` now works on a fresh Mac: `scripts/get.sh`
   gained a Darwin path (Homebrew + CLT bootstrap, macOS-version gate, root refusal, HTTPS-
   only fetch) that installs the frozen `devboost-darwin-arm64` binary — no clone, no
-  Ventoy archive. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it
-  (ad-hoc `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`).
-  `devboost self-update` resolves its release asset by `(os, arch)` and now **refuses to
-  downgrade** the running binary. CI gained a `macos-15` / `xcode-27` (preview,
-  non-blocking) matrix and a `binary-compat` job proving the macos-15-built binary also
-  runs on macos-26; the release workflow publishes all three binaries plus one shared
-  `checksums.txt`. `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway
-  tart VM (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished
-  build); `.github/workflows/vm-smoke.yml` gained an advisory `linux-smoke` job
-  (Fedora/Arch containers + the Ubuntu host) alongside the existing Kickstart smoke.
-  Root-owned files a root-run profile leaves behind under the demoting executor are now
-  reclaimed (`chown`ed back to the target user) after `devboost accounts bootstrap`, and
-  `bash-config` is no longer silently skipped on an unrecognized Linux distro (only macOS
-  drops it, `provided-by-macos`).
+  Ventoy archive. It refuses an Intel Mac (a Rosetta-translated arm64 shell still counts as
+  Apple Silicon) and refuses root, both before any network call; refuses the `usb` profile
+  on macOS before any network call or filesystem change (it's Linux-only); fails **closed**
+  — refuses, rather than continuing — when the macOS version can't be read at all; warns
+  loudly, naming the host, whenever `DEVBOOST_RELEASE_BASE` overrides the official release
+  (both the binary and the checksums that vouch for it would then come from that same
+  un-official place); pins every fetch with `--proto '=https,file' --proto-redir
+  '=https'` so a redirect can never downgrade to plaintext; and cleans up its temp
+  download dir on every exit path — a normal return, a `set -e` abort, and `INT`/`HUP`/
+  `TERM`. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it (ad-hoc
+  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`). `devboost
+  self-update` resolves its release asset by `(os, arch)` and now **refuses to downgrade**
+  the running binary. CI gained a `macos-15` / `xcode-27` (preview, non-blocking) matrix
+  and a `binary-compat` job proving the macos-15-built binary also runs on macos-26; the
+  release workflow publishes all three binaries plus one shared `checksums.txt`.
+  `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway tart VM
+  (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished build);
+  `.github/workflows/vm-smoke.yml` gained an advisory `linux-smoke` job (Fedora/Arch
+  containers + the Ubuntu host) alongside the existing Kickstart smoke. Root-owned files a
+  root-run profile leaves behind under the demoting executor are now reclaimed: after a
+  root-run `devboost accounts bootstrap`, a TOCTOU-safe walk (`os.fwalk` plus
+  `dir_fd`-relative `stat`/`chown`, immune to a directory being swapped for a symlink
+  mid-pass) hands every root-owned path under the managed user's HOME back to them; a HOME
+  that is itself a symlink is refused outright (nothing under it is touched), and because
+  `chown` follows a hardlink to its inode, a multiply-linked regular file is only reclaimed
+  when `fs.protected_hardlinks` is on (the default on every distro dev-boost targets) —
+  otherwise it's left root-owned and the skip is logged. `bash-config` is no longer
+  silently skipped on an unrecognized Linux distro (only macOS drops it now,
+  `provided-by-macos`), and — because it now runs there instead of being dropped from the
+  plan — its `verify` fails loudly on an unrecognised distro whose own packaging already
+  owns `~/.bashrc` rather than dev-boost's dotfiles, instead of the module simply never
+  running.
 - **macOS desktop (M5)** — `macos-defaults` with snapshot + `devboost revert
   macos-defaults [key…]`, open-files limit, firewall, Time Machine exclusions,
   Raycast/AeroSpace (+config)/AltTab/Thaw/MonitorControl/Keka/Stats/Quick Look, code files

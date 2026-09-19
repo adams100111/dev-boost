@@ -188,12 +188,15 @@ plugins at pinned git refs (D13)), **utiluti**, **xcodes**
 ### `provided_by=("macos",)`
 curl (brew curl is keg-only), unzip, wl-clipboard (pbcopy/pbpaste), flameshot (⌘⇧5; brew
 cask deprecated), fwupd, thermald, power-profiles-daemon, dnf-automatic-security, codecs,
-va-hwaccel, openh264.
+va-hwaccel, openh264. `bash-config` joined this list at M6-D11: it has no `families`
+restriction any more (it is planned on every Linux distro, including an unrecognised one)
+and reports `provided-by-macos` on macOS, since zsh is the login shell there instead
+(`zsh-config` covers it).
 
 ### `families` = Linux only
 rpmfusion, dnf-tune, fedora-third-party, flatpak, gearlever, gnome-*, hardware/NVIDIA,
 snapper, snapper-dnf-hook, grub-btrfs, btrfs-assistant, btrfsmaintenance, swapfile, zram,
-earlyoom, gpu-detect, server-firewall, bash-config, caddy, code-server, browser-view,
+earlyoom, gpu-detect, server-firewall, caddy, code-server, browser-view,
 crossarch-build, orca-*, Ubuntu multimedia variants, omarchy-update-hook.
 
 ### Per-OS strategies (`per_os.macos`) — including custom-install modules
