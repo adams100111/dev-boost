@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DEVBOOST_")
 
     root: Path = _default_root()
+    #: DEVBOOST_DOCKER_RUNTIME — deliberately a plain str: `settings = Settings()` runs at
+    #: import, so a Literal here would turn a typo into a traceback on every command.
+    #: userconfig.selected_docker_runtime() validates it.
+    docker_runtime: str | None = None
 
     @property
     def profiles_path(self) -> Path:
