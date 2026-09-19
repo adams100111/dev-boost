@@ -73,9 +73,16 @@ truly diverge. The OS-agnostic majority is untouched.
 
 - Simple tools: `PackageModule` works as-is; set `brew_pkg` when the formula name differs
   from the module name (e.g. `delta` → `git-delta`), or `brew_cask` for app-only tools.
+- A `PackageModule` that needs a custom **Linux** path overrides `install_linux` /
+  `verify_linux` (never `install` / `verify`), so macOS stays on Homebrew automatically.
 - GUI apps: set `cask` on your `FlatpakApp` subclass.
-- Custom install logic: declare `per_os = OsMap(macos=YourMacStrategy())`, or
-  `families = ("fedora", "debian", "arch")` if the module cannot exist on a Mac, or
+- Custom install logic: declare the macOS answer as data —
+  `per_os = OsMap(macos=BrewFormula("tool"))` or `OsMap(macos=BrewCask("App"))` (from
+  `modules/_brew.py`), or your own `Installer` strategy. A module whose own
+  `install`/`verify` implement the Linux path hands off first:
+  `if (s := self.os_strategy(ctx)) is not None: return s.install(ctx)`. The plan treats
+  that own `install` as the fallback for OSes `per_os` does not name.
+- Or: `families = ("fedora", "debian", "arch")` if the module cannot exist on a Mac,
   `provided_by = ("macos",)` if macOS already covers it, or `portable = True` once you have
   verified it runs unchanged.
 - Background jobs: use `launchd.user_agent(...)` (label `launchd.label("<name>")`).

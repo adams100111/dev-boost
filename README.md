@@ -5,7 +5,7 @@ zero config — delivered by an unattended **Ventoy USB** (primary: `curl … | 
 Kickstart). "Production ready" means the box can **build, out of the box**: Laravel (ddev),
 .NET + Aspire, Python (uv), Next.js/React (web), React Native + Expo (Android) — plus editors
 (Zed + fresh; VS Code opt-in), GUI apps (Obsidian w/ GitHub sync, Bruno, Bitwarden, …), terminal/shell/desktop
-(wezterm + starship + tmux + GNOME), all restored from chezmoi-managed dotfiles. A bad update is a
+(Ghostty + starship + tmux + GNOME; zsh on macOS), all restored from chezmoi-managed dotfiles. A bad update is a
 **reboot**, not a rebuild (Btrfs snapshots).
 
 dev-boost is a small, legible **strictly-typed Python engine** (Typer + Pydantic) plus declarative
@@ -60,6 +60,9 @@ sudo devboost installer            # wizard: pick the USB, confirm the wipe
 `-- usb` also downloads the Ventoy injection archive, so `installer` works with no clone/build; it
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
 
+**macOS (Apple Silicon):** preview — see [docs/macos.md](docs/macos.md) (`devboost install
+terminal` from a clone; `curl … | bash` lands in M6).
+
 Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
 
 ## Quick start — from the repo
@@ -93,10 +96,12 @@ enrollment on NVIDIA when Secure Boot is on.
 | `gnome-theme` | `gnome-theme-bundle` |
 | `hardware-nvidia` | `nvidia-akmod`, `cuda`, `libva-nvidia-driver`, `secureboot-mok`, `nvidia-resign-service`, `nvidia-container-toolkit`, `nvidia-driver-ubuntu` |
 | `laravel` | `ddev`, `ddev-remote`, `laravel-lsp` |
+| `macos` | `terminal` |
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
 | `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
 | `optional-editors` | `neovim`, `jetbrains-toolbox`, `vscode` |
+| `optional-terminals` | `wezterm` |
 | `orca` | `orca-ide` |
 | `orca-box` | `orca-ide`, `orca-serve` |
 | `pi` | `pi-harness` |
@@ -105,10 +110,10 @@ enrollment on NVIDIA when Secure Boot is on.
 | `remote` | `tailscale`, `mosh` |
 | `security-cli` | `pass`, `pass-store` (alias — both are in `base`) |
 | `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
-| `shell` | `starship`, `bash-config`, `wezterm`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
+| `shell` | `starship`, `bash-config`, `zsh-config`, `zsh-plugins`, `bash`, `ghostty`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
 | `system` | `snapper`, `snapper-dnf-hook`, `grub-btrfs`, `btrfs-assistant`, `btrfsmaintenance`, `fwupd`, `power-profiles-daemon`, `thermald`, `smartmontools`, `dnf-automatic-security`, `restic-backup`, `earlyoom`, `swapfile`, `gpu-detect` |
 | `term` | `terminal` |
-| `terminal` | `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `mise`, `chezmoi`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `fastfetch`, `tmux`, `fresh`, `starship`, `bash-config`, `dotfiles`, `wezterm`, `nerd-fonts`, `claude-statusline` |
+| `terminal` | `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `mise`, `chezmoi`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `btop`, `zoxide`, `atuin`, `direnv`, `delta`, `lazygit`, `dust`, `duf`, `sd`, `yq`, `gh`, `tealdeer`, `fastfetch`, `tmux`, `fresh`, `starship`, `bash-config`, `zsh-config`, `bash`, `dotfiles`, `ghostty`, `nerd-fonts`, `claude-statusline` |
 | `web` | `web-runtimes`, `web-lsp` |
 
 | Module | Category | Description |
@@ -118,6 +123,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `aspire` | dotnet | Aspire CLI (dotnet global tool). |
 | `aspire-gc` | dev-hygiene | Hourly GC of orphaned Aspire/dev containers (systemd --user timer). |
 | `atuin` | cli |  |
+| `bash` | shell | bash 5 as a tool on macOS (/bin/bash is 3.2); zsh stays the login shell. |
 | `bash-config` | shell | Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it). |
 | `bat` | cli |  |
 | `bitwarden` | apps | Bitwarden desktop. |
@@ -180,7 +186,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `fzf` | base |  |
 | `gearlever` | apps | Gear Lever — integrate & update AppImages (LM Studio, WezTerm, …). |
 | `gh` | cli |  |
-| `ghostty` | shell | GPU-accelerated terminal (optional; WezTerm is the default). |
+| `ghostty` | shell | GPU-accelerated terminal — the default on every OS (Omarchy keeps foot). |
 | `git` | base |  |
 | `gnome-aesthetics-bundle` | gnome | Opt-in aesthetic extras (fonts + theming helpers). |
 | `gnome-extensions` | gnome | Install + enable the functional GNOME extension set (session-free via gext). |
@@ -246,13 +252,15 @@ enrollment on NVIDIA when Secure Boot is on.
 | `vscode` | optional-editors | Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor. |
 | `web-lsp` | editors | ts/eslint/tailwind/prettier servers (fresh). |
 | `web-runtimes` | web | node/pnpm/bun via mise. |
-| `wezterm` | shell | GPU-accelerated terminal + multiplexer (nightly); default terminal. |
+| `wezterm` | shell | GPU terminal + multiplexer (nightly) — opt-in, deprecated: Ghostty is the default and herdr the multiplexer. |
 | `wget` | base |  |
-| `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste) — powers the image-paste bridge. |
+| `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste). |
 | `yq` | cli |  |
 | `zed` | editors | Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs. |
 | `zoxide` | cli |  |
 | `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
+| `zsh-config` | shell | Check dev-boost's zsh config is live (~/.zshrc → shell.zsh) — macOS. |
+| `zsh-plugins` | shell | zsh-autosuggestions + zsh-syntax-highlighting (sourced by shell.zsh). |
 
 <!-- END generated profiles table -->
 
@@ -328,10 +336,11 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 | Tool | Config |
 |------|--------|
 | starship | Catppuccin prompt: minimal git, polyglot versions, RAM/disk gauges (auto-hidden inside tmux — the tmux bar owns them there), last-command exit code on failure, red `⚠` badge when resources are critical (`dot_config/starship.toml`) |
-| wezterm | default terminal: OS light/dark-reactive Catppuccin, **top** tab bar (tmux owns the bottom), tmux-style keys, SSH domains, clickable links (`Ctrl+Shift+Click` / `LEADER u` — work through tmux), smart paste (clipboard image → uploaded to the VPS → path Claude reads as `[Image]`), **opt-in** RAM/disk gauges (`prefs.show_resource_gauges`) + critical-resource background alert (`dot_config/wezterm/`) |
+| wezterm | **opt-in, deprecated** (`optional-terminals`): OS light/dark-reactive Catppuccin, **top** tab bar (tmux owns the bottom), tmux-style keys, SSH domains, clickable links (`Ctrl+Shift+Click` / `LEADER u` — work through tmux), **opt-in** RAM/disk gauges (`prefs.show_resource_gauges`) + critical-resource background alert (`dot_config/wezterm/`) |
 | zed | default editor: VS Code keymap, Tokyo Night, JetBrainsMono, per-stack LSPs pinned by dev-boost, Claude/Codex/Pi agents; seeded once, must-have keys merged — see [docs/zed.md](docs/zed.md) (`dot_config/zed/`) |
 | claude-statusline | Claude Code status line: dir · git · RAM/disk (left), model · context% · cost (right); whole row goes red when resources are critical (`private_dot_claude/statusline.sh`) |
-| ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
+| ghostty | default terminal on every OS: Catppuccin Mocha, JetBrainsMono Nerd Font, `ssh-terminfo`, finish notifications; macOS: left Option = Alt and Cmd twins of the Ctrl+Shift keys; no Ctrl+V binding (herdr owns image paste) (`dot_config/ghostty/config.tmpl`) |
+| zsh (macOS) | `~/.zshrc` → `shell.zsh` (history, completion, fzf/atuin/zoxide/direnv/mise/starship, autosuggestions + syntax highlighting), shared `env.sh`/`aliases.sh`, `~/.zshrc.local` for machine-specific lines (`dot_zshrc`, `dot_config/devboost/`) |
 | tmux | mouse, true-color, vi copy, **bottom** status bar with RAM/disk gauges + critical badge (visible even while a full-screen app fills the pane), session-persistence via resurrect+continuum (survives a reboot) (`dot_tmux.conf`, `dot_config/tmux/resources.sh`) |
 | atuin | fuzzy history, directory up-key, enter-accept, secret-scrub, e2e-encrypted **sync** across machines (top-level keys — a prior `[settings]` nesting was silently ignored by atuin; recording wired via bash-preexec in the managed `.bashrc`) |
 | claude-notify | phone push (ntfy) on Claude Code task-done / needs-input via Stop/Notification hooks; no-op until `DEVBOOST_NTFY_URL` is set (`private_dot_claude/hooks/notify.sh`) |
@@ -382,7 +391,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 
 ## Docs
 
-[architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
+[architecture](docs/architecture.md) · [macos](docs/macos.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
 [remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [zed](docs/zed.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)

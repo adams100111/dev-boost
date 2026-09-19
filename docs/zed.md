@@ -89,6 +89,8 @@ agents: Zed downloads each adapter on first use; each reuses its own CLI login (
 `EDITOR=fresh` everywhere. `VISUAL="zed --wait"` only in a local desktop session (not over SSH)
 and only when `zed` is installed — set in `~/.config/devboost/env.sh`. git has no
 `core.editor`, so commit messages open in Zed on the desktop and in fresh over SSH.
+`env.sh` sources `~/.config/devboost/local.sh` last if it exists (never shipped or managed by
+dev-boost), so a machine that wants a different `EDITOR`/`VISUAL` can override it there.
 
 ## macOS (planned — milestone Z2)
 

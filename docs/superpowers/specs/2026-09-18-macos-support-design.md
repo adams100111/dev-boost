@@ -156,7 +156,10 @@ git, wget, jq, htop, fd, fzf, tmux, eza, bat, btop, zoxide, atuin, direnv,
 coreutils, ripgrep, mosh, starship, chezmoi, uv, mise, neovim, age, smartmontools, restic,
 **ffmpeg-full → `ffmpeg`**, **fresh → `fresh-editor`**, **glow** (new), **bash** (new,
 tool only), **zsh-autosuggestions** + **zsh-syntax-highlighting** (module `zsh-plugins`,
-`families=("macos",)` since zsh is the shell only on macOS; sourced by `shell.zsh`), **duti**, **xcodes**
+`families=("macos",)` since zsh is the shell only on macOS; sourced by `shell.zsh`; **from
+Homebrew formulae, no plugin manager** — `--update` upgrades them (`self_updating = True`);
+this supersedes the unimplemented `2026-07-29-zsh-optional-shell-design.md`, which vendored
+plugins at pinned git refs (D13)), **duti**, **xcodes**
 (homebrew-core), **mkcert**. ddev via `BrewTap("ddev/ddev")` → `ddev/ddev/ddev`.
 
 ### Casks
@@ -271,7 +274,8 @@ Typed values (`-bool`/`-int`/`-string`). Before the first write, prior values (o
 ### Profiles (`profiles.toml`)
 - `base` += `homebrew`, `xcode-clt`, `rosetta`, `pass`, `pass-store` (pass per companion spec).
 - `cli` += `herdr-plugins`, `glow` (**every OS**).
-- `shell` += `zsh-config`, `zsh-plugins`; `terminal` += `zsh-config`.
+- `shell` += `zsh-config`, `zsh-plugins`; `terminal` += `zsh-config` (and `bash`;
+  `zsh-config` requires `zsh-plugins`).
 - `shell` and `terminal`: `wezterm` → `ghostty` (**every OS**). `wezterm` moves to a new
   opt-in profile `optional-terminals` and is marked deprecated in the docs.
 - `editors` = `zed`, `fresh`, `fresh-lsp` (Zed spec); `optional-editors` += `vscode`.
@@ -307,12 +311,19 @@ dotfiles/
     env.sh        NEW POSIX: PATH (~/.local/bin, ~/.dotnet/tools, $ANDROID_HOME/platform-tools),
                       RIPGREP_CONFIG_PATH, VISUAL/EDITOR (Zed spec), Darwin: LANG=en_US.UTF-8,
                       XDG_CONFIG_HOME=$HOME/.config, ANDROID_HOME=~/Library/Android/sdk
-    aliases.sh    NEW POSIX aliases/functions (moved out of shell.bash)
+    aliases.sh    NEW the bash ∩ zsh subset, not strict POSIX — `local`, arrays and
+                      here-strings (checked with `bash -n` + `zsh -n`); moved out of
+                      shell.bash (D8)
     shell.bash        env.sh + aliases.sh; shopt, bash-preexec, inits
     shell.zsh     NEW env.sh + aliases.sh; zsh-only parts
-  dot_zprofile.tmpl   NEW (darwin): brew shellenv; `mise activate zsh --shims` (GUI apps/IDEs)
-  dot_zshrc.tmpl      NEW (darwin): loader → shell.zsh; then `[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local`
-  dot_bash_profile.tmpl NEW (darwin): sources env.sh (so `bash -lc` launchers get PATH)
+  dot_zprofile        NEW (darwin, .chezmoiignore-scoped): brew shellenv; `mise activate zsh
+                          --shims` (GUI apps/IDEs); sources env.sh; then ~/.zprofile.local
+  dot_zshrc           NEW (darwin, .chezmoiignore-scoped): loader → shell.zsh; then
+                          `[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local`
+  dot_bash_profile    NEW (darwin, .chezmoiignore-scoped): brew shellenv; `mise activate
+                          bash --shims`; sources ~/.profile (if present), env.sh, then
+                          ~/.bash_profile.local; sources ~/.bashrc when interactive (so
+                          `bash -lc` launchers get PATH and see the same env as every shell)
 ```
 
 - `shell.zsh`: history (`HISTSIZE`/`SAVEHIST`, `share_history`, `hist_ignore_all_dups`);
@@ -322,23 +333,34 @@ dotfiles/
   upstream); `ulimit -n 524288`.
 - `shell.bash`: `eval "$(fzf --bash)"` **only if** `fzf --bash` is supported (fzf ≥ 0.48);
   otherwise the existing `/usr/share/fzf/...` paths (Ubuntu 24.04 ships 0.44).
-- **Existing `~/.zshrc`:** first apply backs it up to `~/.zshrc.pre-devboost`; the
-  managed file sources `~/.zshrc.local` for machine-specific/installer lines.
+- **A pre-existing, foreign `~/.zshrc` / `~/.zprofile` / `~/.bash_profile`** is **copied**
+  (not moved — the original stays in place until chezmoi's own `apply` overwrites it) to
+  `<name>.pre-devboost` by the `dotfiles` module before `chezmoi apply`; never overwritten
+  (later ones become `.pre-devboost.1`, `.2`, …); content is not migrated automatically
+  (D7). The managed `~/.zshrc` sources `~/.zshrc.local` and the managed `~/.zprofile`
+  sources `~/.zprofile.local`, for machine-specific and installer lines.
 - `LANG=en_US.UTF-8` on Darwin — otherwise macOS sends `LC_CTYPE=UTF-8` over ssh/mosh,
   which Linux rejects and mosh refuses.
 - Brew `bash` 5 is installed as a tool (not login shell) so `#!/usr/bin/env bash` scripts
   and `bash -lc` MCP launchers get a modern bash.
-- **Portable scripts:** tmux `resources.sh`, wezterm `status.lua`, Claude `statusline.sh`
-  read RAM/disk via `sysctl hw.memsize` / `vm_stat` / `df -g` on Darwin (today `/proc` +
-  `df -BG`); `starship.toml` switches to starship's built-in `memory_usage` module;
-  `pw-autoregister.sh` uses `gtimeout` when `timeout` is absent.
+- **Portable scripts:** every gauge (tmux, starship, WezTerm, Claude status line) reads one
+  probe, `~/.local/bin/devboost-resources` (`df -Pk`, the data volume on macOS); starship
+  keeps its tmux-gated three-tier modules; `pw-autoregister.sh` uses `gtimeout` when
+  `timeout` is absent.
 - **Terminal (every OS): Ghostty.** Why: WezTerm's last stable is Feb 2024 (nightlies
   only) and its multiplexer is redundant with herdr; Ghostty 1.3 is actively maintained,
   fastest on macOS, native on both OSes, and has everything agent work needs (kitty
   keyboard protocol → Shift+Enter, OSC 52, synchronized output, kitty graphics,
   `notify-on-command-finish`). Linux install: the existing `ghostty` module's Fedora/Ubuntu
   strategies (unchanged); Omarchy keeps foot (`provided_by=("omarchy",)`).
-  Ghostty config sets `notify-on-command-finish = unfocused`.
+  Ghostty config sets `notify-on-command-finish = unfocused`. `ghostty/config` is the
+  chezmoi template `config.tmpl`: Darwin gets `macos-option-as-alt = left`,
+  `macos-titlebar-style = tabs` (not `window-decoration = none`, which drops the traffic
+  lights and rounded corners) and a `super+…` twin of every Ctrl(+Shift) binding; every OS
+  gets `shell-integration = detect`, `shell-integration-features = ssh-env,ssh-terminfo`,
+  `notify-on-command-finish = unfocused`. Two bugs from the first cut are fixed:
+  `theme = catppuccin-mocha` → `Catppuccin Mocha` (Title Case theme names since Ghostty
+  1.2) and the unknown action `toggle_zoom` → `toggle_split_zoom` (D10).
 - **Image paste is herdr's, not the terminal's:** `herdr --remote` reads the local
   clipboard image (Linux `wl-paste`, macOS `osascript` PNG), ships it over its SSH
   connection, stages it in the remote's `$TMPDIR/herdr-clipboard-images-<uid>/` and pastes
@@ -477,7 +499,7 @@ Each milestone PR ships its own docs; a PR is not done without them.
 | # | Milestone | Outcome |
 |---|---|---|
 | M1 | Engine core: `OsMap.macos`, arch normalize, executor PATH, `Brew` (+adopt/upgrade/tap), `launchd`, `NeedsUser`, `TccGrant` + doctor listing, root guard, sudo keepalive, caffeinate, `secrets` gh-first + keychain age key, contract test (xfail list), constitution v3.1.0, `devboost permissions`, `devboost secrets import-key` | engine runs on Darwin |
-| M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone |
+| M2 | Shell & dotfiles (+ Ghostty default / WezTerm → `optional-terminals` on every OS): env/aliases split, `shell.zsh`, zprofile/zshrc/bash_profile, `.chezmoiignore` fix, portable scripts, fzf fallback, Option-as-Alt + Cmd bindings, `zsh-config`, zsh plugins | `devboost install terminal` from the clone (the terminal set's macOS strategies are pulled forward from M3) |
 | M3 | Catalog: formulae/casks, custom-install `per_os.macos`, provided_by/families sweep, `xcode-clt`, `homebrew`, `rosetta`, herdr pins + `herdr-plugins`/`glow` default, `macos` profile | most of the workstation |
 | M4 | Docker runtimes + `devboost docker use`; launchd timers (aspire-gc, build-gc, restic, obsidian-sync, browser-mcp) | ddev, Aspire, data-services |
 | M5 | Desktop: `macos-defaults` (+revert), limits, firewall, Time Machine exclusions, casks (Raycast, AeroSpace + config, AltTab, Thaw, monitor tools, Keka, Stats, Quick Look), `default-apps`, `voxtype` (+ opt-in `voxtype-arabic`); opt-in `ios`, `macos-extras`, `android-emulator`; primer | full desktop + iOS |

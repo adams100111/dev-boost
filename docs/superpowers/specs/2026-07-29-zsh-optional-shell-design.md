@@ -4,6 +4,11 @@
 **Date:** 2026-07-29
 **Author:** dits.sa.co@gmail.com
 
+> **Superseded by macOS M2 (D13):** the plugin vendoring mechanism below (pinned git refs,
+> provisioning-time clone) was never implemented. macOS M2 ships zsh-autosuggestions and
+> zsh-syntax-highlighting as pinned Homebrew formulae instead — no plugin manager, no
+> vendoring. See `docs/superpowers/specs/2026-09-18-macos-support-design.md` §2.
+
 ---
 
 ## 1. Goal
