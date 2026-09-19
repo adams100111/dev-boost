@@ -48,6 +48,28 @@ _TAKEN_OVER_LINUX = {".bashrc": "dot_bashrc"}
 #: its own copy: `.chezmoiignore`). A user's own config there is kept as .pre-devboost
 #: before the first forced apply replaces it, exactly like an rc file.
 _TAKEN_OVER_CONFIGS = {".config/voxtype/config.toml": "dot_config/voxtype/config.toml.tmpl"}
+#: macOS-only configs taken over the same way (Linux never applies them: `.chezmoiignore`).
+AEROSPACE_CONFIG = ".config/aerospace/aerospace.toml"
+_TAKEN_OVER_MACOS_CONFIGS = {AEROSPACE_CONFIG: "dot_config/aerospace/aerospace.toml.tmpl"}
+#: AeroSpace's other config location. AeroSpace reads ~/.aerospace.toml or
+#: ${XDG_CONFIG_HOME}/aerospace/aerospace.toml and reports an ambiguity when both exist
+#: (AeroSpace docs/guide.adoc, "Custom config location"), so when the user has this one,
+#: `.chezmoiignore` skips dev-boost's XDG config and nothing takes it over.
+AEROSPACE_LEGACY_CONFIG = ".aerospace.toml"
+
+
+def aerospace_legacy_config(home: Path, who: str) -> bool:
+    """True (with a warning naming both paths) when the user keeps ~/.aerospace.toml, so
+    dev-boost must not write ~/.config/aerospace/aerospace.toml next to it."""
+    if not (home / AEROSPACE_LEGACY_CONFIG).exists():
+        return False
+    log.warn(
+        f"{who}: ~/{AEROSPACE_LEGACY_CONFIG} exists, so dev-boost's ~/{AEROSPACE_CONFIG} "
+        "is skipped (AeroSpace refuses to load when both exist). Merge the Ctrl+Alt "
+        f"bindings from dotfiles/dot_config/aerospace/aerospace.toml.tmpl into "
+        f"~/{AEROSPACE_LEGACY_CONFIG}, or move it aside and re-run `devboost install`"
+    )
+    return True
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -453,7 +475,7 @@ class Dotfiles(Module):
         bash-config sources a fragment from it instead).
         """
         if ctx.os.family == "macos":
-            return {**_TAKEN_OVER, **_TAKEN_OVER_CONFIGS}
+            return {**_TAKEN_OVER, **_TAKEN_OVER_CONFIGS, **_TAKEN_OVER_MACOS_CONFIGS}
         if ctx.os.distro != "omarchy":
             return {**_TAKEN_OVER_LINUX, **_TAKEN_OVER_CONFIGS}
         return None
@@ -464,6 +486,13 @@ class Dotfiles(Module):
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
         taken_over = self._taken_over_for(ctx)
+        if (
+            ctx.os.family == "macos"
+            and taken_over is not None
+            and aerospace_legacy_config(_home(), "dotfiles")
+        ):
+            # `.chezmoiignore` skips the XDG config here: nothing to back up or record.
+            taken_over = {k: v for k, v in taken_over.items() if k != AEROSPACE_CONFIG}
         back_up_taken_over(_home(), src, taken_over, "dotfiles")
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be

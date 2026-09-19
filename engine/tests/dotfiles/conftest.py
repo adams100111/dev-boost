@@ -7,8 +7,9 @@ import json
 import os
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 
@@ -18,7 +19,12 @@ CHEZMOI = shutil.which("chezmoi")
 
 MakeBin = Callable[[str, str], Path]
 Render = Callable[[Path, str, str], str]
-Apply = Callable[[str, str], Path]
+
+
+class Apply(Protocol):
+    def __call__(
+        self, os_name: str, distro: str, existing: Mapping[str, str] | None = None
+    ) -> Path: ...
 
 
 @pytest.fixture
@@ -89,10 +95,14 @@ def chezmoi_apply(tmp_path: Path) -> Apply:
         pytest.skip("chezmoi not installed")
     exe = CHEZMOI
 
-    def apply(os_name: str, distro: str) -> Path:
+    def apply(os_name: str, distro: str, existing: Mapping[str, str] | None = None) -> Path:
+        """*existing*: files (HOME-relative path -> text) already there before the apply."""
         tag = f"{os_name}-{distro}"
         home = tmp_path / f"home-{tag}"
         home.mkdir()
+        for rel, text in (existing or {}).items():
+            (home / rel).parent.mkdir(parents=True, exist_ok=True)
+            (home / rel).write_text(text, encoding="utf-8")
         subprocess.run(
             [exe, "apply", "--force", "--no-tty", "--source", str(DOT),
              "--destination", str(home), "--config", str(tmp_path / "chezmoi.toml"),

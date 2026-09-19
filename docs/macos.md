@@ -99,6 +99,12 @@ re-run makes no second copy of an identical file. Move the lines you still need 
 matching `.local` file — `~/.zshrc.local`, `~/.zprofile.local` or `~/.bash_profile.local` —
 which dev-boost never touches.
 
+The Voxtype config (`~/.config/voxtype/config.toml`) and the AeroSpace config
+(`~/.config/aerospace/aerospace.toml`) get the same one-time `.pre-devboost` copy. If you
+keep your AeroSpace config at `~/.aerospace.toml` instead, dev-boost writes no
+`~/.config/aerospace/aerospace.toml` at all (AeroSpace refuses to load when both exist)
+and warns with both paths: merge its Ctrl+Alt bindings into your file yourself.
+
 The same protection applies when `chezmoi-repo` points at your own external dotfiles repo
 (`DEVBOOST_DOTFILES_REPO`, or `DOTFILES_REPO` in the secrets bundle): its `chezmoi init
 --apply --force` backs up a drifted rc file first too, before handing the file over to

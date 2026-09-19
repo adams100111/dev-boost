@@ -82,3 +82,13 @@ def test_linux_apply_never_writes_the_aerospace_config(
 ) -> None:
     home = chezmoi_apply("linux", distro)
     assert not (home / ".config" / "aerospace").exists()
+
+
+def test_macos_apply_skips_the_xdg_config_next_to_a_legacy_one(chezmoi_apply: Apply) -> None:
+    """I1: AeroSpace reports an ambiguity when ~/.aerospace.toml and the XDG config both
+    exist, so a user's own ~/.aerospace.toml means dev-boost writes no XDG copy."""
+    own = "# mine\n"
+    home = chezmoi_apply("darwin", "macos", existing={".aerospace.toml": own})
+    assert not (home / ".config" / "aerospace").exists()
+    assert (home / ".aerospace.toml").read_text(encoding="utf-8") == own
+    assert (home / ".zshrc").is_file()  # the rest still applies

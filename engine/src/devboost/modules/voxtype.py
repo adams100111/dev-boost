@@ -41,7 +41,10 @@ from devboost.model import Ctx, Module, TccGrant
 from devboost.modules import _credentials
 from devboost.modules.shell import (
     _TAKEN_OVER_CONFIGS,
+    _TAKEN_OVER_MACOS_CONFIGS,
+    AEROSPACE_CONFIG,
     Dotfiles,
+    aerospace_legacy_config,
     back_up_taken_over,
     record_rc_digest,
 )
@@ -426,11 +429,15 @@ class VoxtypeArabic(Module):
         home, src = _home(), settings.root / "dotfiles"
         # Same rule as the dotfiles module: a config the user changed is kept as
         # config.toml.pre-devboost before the forced apply replaces it.
-        back_up_taken_over(home, src, {_CONFIG_REL: _TAKEN_OVER_CONFIGS[_CONFIG_REL]},
-                           self.name)
-        targets = [str(_config_file())]
+        taken: dict[str, str] = {_CONFIG_REL: _TAKEN_OVER_CONFIGS[_CONFIG_REL]}
         if ctx.os.family == "macos":
-            targets.append(str(home / ".config" / "aerospace" / "aerospace.toml"))
+            if aerospace_legacy_config(home, self.name):
+                log.warn(f"{self.name}: bind Ctrl+Alt+D in ~/.aerospace.toml yourself to "
+                         "toggle Arabic dictation")
+            else:  # the AeroSpace config carries the Ctrl+Alt+D toggle
+                taken[AEROSPACE_CONFIG] = _TAKEN_OVER_MACOS_CONFIGS[AEROSPACE_CONFIG]
+        back_up_taken_over(home, src, taken, self.name)
+        targets = [str(home / rel) for rel in taken]
         # --parent-dirs: a targeted apply fails when a target's directory does not exist yet
         # (`stat …/.config/aerospace: no such file or directory`, chezmoi 2.72).
         res = ctx.ex.run([
@@ -441,7 +448,8 @@ class VoxtypeArabic(Module):
             raise InstallError("voxtype-arabic", "chezmoi apply (voxtype/aerospace config)",
                                res.code)
         try:
-            record_rc_digest(home, _CONFIG_REL)  # what dev-boost wrote, for the next backup
+            for rel in taken:  # what dev-boost wrote, for the next backup
+                record_rc_digest(home, rel)
         except OSError as exc:
             log.warn(f"voxtype-arabic: could not record the config digest ({exc})")
         restart = _restart_marker()
