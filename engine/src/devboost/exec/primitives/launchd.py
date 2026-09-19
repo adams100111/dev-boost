@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -20,8 +21,23 @@ from devboost.model import Ctx
 DAEMONS_DIR = Path("/Library/LaunchDaemons")
 
 
+#: A launchd label that is safe to join into a plist path (no `/`, whitespace or leading
+#: `-`). Checked before any path is built — the daemon paths are written as root.
+_LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+
+
 def label(name: str) -> str:
     return f"dev.devboost.{name}"
+
+
+def _checked(lbl: str) -> str:
+    if not _LABEL_RE.fullmatch(lbl):
+        raise ValueError(f"invalid launchd label {lbl!r}")
+    return lbl
+
+
+def _daemon_plist(lbl: str) -> Path:
+    return DAEMONS_DIR / f"{_checked(lbl)}.plist"
 
 
 def _agents_dir() -> Path:
@@ -102,7 +118,7 @@ def daemon_loaded(ctx: Ctx, lbl: str) -> bool:
 
 def agent_plist(lbl: str) -> Path:
     """Where the per-user agent's plist lives."""
-    return _agents_dir() / f"{lbl}.plist"
+    return _agents_dir() / f"{_checked(lbl)}.plist"
 
 
 def agent_installed(ctx: Ctx, lbl: str) -> bool:
@@ -165,7 +181,7 @@ def system_daemon(
     start_interval: int | None = None,
 ) -> bool:
     """Install/refresh a root LaunchDaemon (root:wheel 644, as launchd requires)."""
-    path = DAEMONS_DIR / f"{lbl}.plist"
+    path = _daemon_plist(lbl)
     body = _plist(
         lbl,
         program_args,
@@ -192,6 +208,14 @@ def remove_agent(ctx: Ctx, lbl: str) -> None:
 
 
 def remove_daemon(ctx: Ctx, lbl: str) -> None:
-    """Unload and delete a root LaunchDaemon (a missing one is not an error)."""
+    """Unload and delete a root LaunchDaemon (a missing one is not an error).
+
+    A failed ``bootout`` is ignored (the job may not be loaded). A failed ``rm -f`` is not:
+    ``rm -f`` succeeds on a missing file, so a failure means the root job stays installed
+    (no sudo credentials, permission denied) and the caller must not report it removed.
+    """
+    path = _daemon_plist(lbl)
     ctx.ex.run(["launchctl", "bootout", f"system/{lbl}"], sudo=True)
-    ctx.ex.run(["rm", "-f", str(DAEMONS_DIR / f"{lbl}.plist")], sudo=True)
+    res = ctx.ex.run(["rm", "-f", str(path)], sudo=True)
+    if not res.ok:
+        raise InstallError("launchd", f"rm -f {path}", res.code)

@@ -148,3 +148,40 @@ def test_license_notes() -> None:
     assert orb is not None and "non-commercial" in orb and "$8/user/month" in orb
     dd = rt.license_note("docker-desktop")
     assert dd is not None and "250 employees" in dd and "US$10M" in dd
+
+
+class _TimeoutRecorder(RuleExecutor):
+    """Records the per-call timeout of every ``docker … info`` probe."""
+
+    def __init__(self, fails: int) -> None:
+        super().__init__()
+        self.fails = fails
+        self.timeouts: list[float | None] = []
+
+    def run(self, argv: Sequence[str], **kw: Any) -> Result:
+        res = super().run(argv, **kw)
+        if "info" in argv:
+            self.timeouts.append(kw.get("timeout"))
+            if self.fails > 0:
+                self.fails -= 1
+                return Result(124, stderr="timed out")
+        return res
+
+
+def test_engine_up_bounds_the_probe() -> None:
+    ex = _TimeoutRecorder(0)
+    assert rt.engine_up(Ctx(os=MAC, ex=ex), "colima") is True
+    assert ex.timeouts == [rt.PROBE_TIMEOUT]
+
+
+def test_wait_for_engine_bounds_each_probe_by_the_time_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hung `docker info` (reported as a timed-out Result) cannot outlive the deadline."""
+    ticks: Iterator[float] = iter([0.0, 0.0, 175.0, 175.0, 999.0])
+    monkeypatch.setattr(rt, "_sleep", lambda s: None)
+    monkeypatch.setattr(rt, "_clock", lambda: next(ticks))
+    ex = _TimeoutRecorder(99)
+    with pytest.raises(InstallError, match="docker --context colima info"):
+        rt.wait_for_engine(Ctx(os=MAC, ex=ex), "colima", timeout=180.0)
+    assert ex.timeouts == [rt.PROBE_TIMEOUT, 5.0]

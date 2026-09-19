@@ -8,6 +8,8 @@ still win where a module documents one (e.g. ``DEVBOOST_PASS_REPO``).
 from __future__ import annotations
 
 import os
+import stat
+import tempfile
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -51,8 +53,7 @@ def load_user_config(path: Path | None = None) -> UserConfig:
     try:
         return UserConfig.model_validate(data)
     except ValidationError as exc:
-        fields = ", ".join(str(e["loc"][0]) for e in exc.errors() if e["loc"])
-        raise ConfigError(f"{p}: invalid value for {fields}") from exc
+        raise ConfigError(f"{p}: invalid value for {_invalid_fields(exc)}") from exc
 
 
 def parse_docker_runtime(value: str) -> DockerRuntimeName:
@@ -74,10 +75,16 @@ def selected_docker_runtime(path: Path | None = None) -> DockerRuntimeName:
     return load_user_config(path).docker_runtime or DEFAULT_DOCKER_RUNTIME
 
 
+def _invalid_fields(exc: ValidationError) -> str:
+    return ", ".join(str(e["loc"][0]) for e in exc.errors() if e["loc"])
+
+
 def set_user_value(key: str, value: str, path: Path | None = None) -> None:
     """Set one key in config.toml, keeping the others. Refuses to write an invalid file.
 
-    The file is rewritten with tomli-w, so comments in it are not preserved.
+    The new file is written to a unique temp file in the same directory, fsynced, given
+    the old file's mode and renamed over it, so a reader never sees a partial file. It is
+    rewritten with tomli-w, so comments in it are not preserved.
     """
     p = path if path is not None else config_path()
     data: dict[str, Any] = {}
@@ -90,8 +97,17 @@ def set_user_value(key: str, value: str, path: Path | None = None) -> None:
     try:
         UserConfig.model_validate(data)
     except ValidationError as exc:
-        raise ConfigError(f"{p}: invalid value for {key}") from exc
+        raise ConfigError(f"{p}: invalid value for {_invalid_fields(exc)}") from exc
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(tomli_w.dumps(data), encoding="utf-8")
-    tmp.replace(p)
+    mode = stat.S_IMODE(p.stat().st_mode) if p.exists() else None
+    fd, tmp_name = tempfile.mkstemp(dir=p.parent, prefix=f".{p.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(tomli_w.dumps(data))
+            fh.flush()
+            os.fsync(fh.fileno())
+        tmp.chmod(mode if mode is not None else 0o644)
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
