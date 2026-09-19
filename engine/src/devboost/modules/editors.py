@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import tempfile
+import uuid
+from pathlib import Path
+
 from devboost.core.errors import InstallError, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.core.registry import register
@@ -32,16 +36,19 @@ _FRESH_INSTALL = "https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/mas
 _ZED_INSTALL = "https://zed.dev/install.sh"
 
 
-def zed_install_argv(os_info: OsInfo) -> list[str]:
-    """How Zed is installed on *os_info*.
+def zed_install_steps(os_info: OsInfo, script: Path) -> list[list[str]]:
+    """How Zed is installed on *os_info*: the argvs to run, in order.
 
     Linux (every family, Arch included): the official user-local script — ~/.local/zed.app
-    plus a ~/.local/bin/zed symlink, no sudo. Distro packages are avoided on purpose: Arch
-    ships the CLI as `zeditor`, which would break `VISUAL="zed --wait"`. Zed updates itself.
+    plus a ~/.local/bin/zed symlink, no sudo. It is downloaded to *script* first and only
+    then run, so a failed download fails loudly instead of piping nothing into `sh`.
+    Distro packages are avoided on purpose: Arch ships the CLI as `zeditor`, which would
+    break `VISUAL="zed --wait"`. Zed updates itself.
     """
     if os_info.family == "macos":
         raise UnsupportedOS("zed: macOS installs via the Homebrew cask (Zed milestone Z2)")
-    return ["sh", "-c", f"curl -fsSL {_ZED_INSTALL} | sh"]
+    download = ["curl", "-fsSL", "--proto", "=https", "--tlsv1.2", "-o", str(script)]
+    return [[*download, _ZED_INSTALL], ["sh", str(script)]]
 
 
 @register
@@ -89,11 +96,20 @@ class Zed(Module):
 
     def install(self, ctx: Ctx) -> None:
         if not self._installed(ctx):
-            argv = zed_install_argv(ctx.os)
-            res = ctx.ex.run(argv)
-            if not res.ok:
-                raise InstallError(self.name, argv[-1], res.code)
+            self._run_installer(ctx)
         _zed.ensure_config(ctx, all_pins())
+
+    def _run_installer(self, ctx: Ctx) -> None:
+        # A fresh, unpredictable name that is NOT created here: curl creates it as whoever
+        # runs it (the target user under a demoting executor), so it can write it.
+        script = Path(tempfile.gettempdir()) / f"devboost-zed-install-{uuid.uuid4().hex}.sh"
+        try:
+            for argv in zed_install_steps(ctx.os, script):
+                res = ctx.ex.run(argv)
+                if not res.ok:
+                    raise InstallError(self.name, " ".join(argv), res.code)
+        finally:
+            script.unlink(missing_ok=True)
 
 
 @register

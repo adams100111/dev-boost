@@ -281,3 +281,40 @@ def test_hook_warning_with_markup_like_text_does_not_raise(
 
     monkeypatch.setattr(_zed, "ensure_config", _boom)
     _zed.refresh_after_lsp(CTX, all_pins())  # real log.warn: loguru markup must not raise
+
+
+# --- m5: mise shims honour MISE_DATA_DIR, then XDG_DATA_HOME -----------------------------
+
+
+def test_mise_shims_prefer_mise_data_dir(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MISE_DATA_DIR", str(home / "mise-data"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "xdg"))
+    assert _zed.mise_shims(home) == home / "mise-data" / "shims"
+
+
+def test_mise_shims_then_xdg_data_home(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "xdg"))
+    assert _zed.mise_shims(home) == home / "xdg" / "mise" / "shims"
+
+
+@pytest.mark.parametrize("xdg", [None, ""])
+def test_mise_shims_default(home: Path, monkeypatch: pytest.MonkeyPatch, xdg: str | None) -> None:
+    monkeypatch.setenv("MISE_DATA_DIR", "")
+    if xdg is None:
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", xdg)
+    assert _zed.mise_shims(home) == home / ".local" / "share" / "mise" / "shims"
+
+
+def test_lsp_binary_path_follows_mise_data_dir(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MISE_DATA_DIR", str(home / "m"))
+    shim = home / "m" / "shims" / "ruff"
+    shim.parent.mkdir(parents=True)
+    shim.write_text("", encoding="utf-8")
+    assert _zed.lsp_binaries(all_pins(), home) == {
+        "ruff": {"binary": {"path": str(shim), "arguments": ["server"]}}
+    }

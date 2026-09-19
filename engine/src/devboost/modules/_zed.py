@@ -5,7 +5,7 @@ dev-boost seeds ~/.config/zed/{settings,keymap}.json once (the same bundled file
 deep merge. Language servers are pointed at dev-boost's pinned binaries (data/fresh/*.tsv).
 
 Z2 (macOS) seam: adding "macos" to SUPPORTED_FAMILIES is NOT enough. Zed.install always
-calls the Linux-only zed_install_argv, so Z2 must also route the install through
+calls the Linux-only zed_install_steps, so Z2 must also route the install through
 pkg / per_os = OsMap(macos=BrewCask("zed")) (M2), then call the same ensure_config.
 """
 
@@ -80,6 +80,16 @@ def read_lsp_map() -> list[tuple[str, str, str]]:
     return [(cols[0], cols[1], cols[2]) for cols in tsv_rows("data", "zed", "lsp-binaries.tsv")]
 
 
+def mise_shims(home: Path) -> Path:
+    """mise's shim dir, as mise resolves its data dir: $MISE_DATA_DIR, then
+    $XDG_DATA_HOME/mise, then ~/.local/share/mise (an empty variable counts as unset)."""
+    data = os.environ.get("MISE_DATA_DIR")
+    if data:
+        return Path(data) / "shims"
+    xdg = os.environ.get("XDG_DATA_HOME")
+    return (Path(xdg) if xdg else home / ".local" / "share") / "mise" / "shims"
+
+
 def lsp_binaries(pins: Sequence[ServerPin], home: Path) -> dict[str, Any]:
     """``lsp.<id>.binary`` entries for every mapped server whose binary exists on disk."""
     by_cmd = {p.cmd: p for p in pins}
@@ -89,7 +99,7 @@ def lsp_binaries(pins: Sequence[ServerPin], home: Path) -> dict[str, Any]:
             pin = by_cmd.get(cmd)
             if pin is None:
                 raise ValueError(f"lsp-binaries.tsv: {cmd!r} has no pin in data/fresh/*.tsv")
-            path = home / ".local" / "share" / "mise" / "shims" / cmd
+            path = mise_shims(home) / cmd
             args = list(pin.args)
         elif resolver == "dotnet-tool":
             path = home / ".dotnet" / "tools" / cmd
