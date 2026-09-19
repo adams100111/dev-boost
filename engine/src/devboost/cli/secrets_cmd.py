@@ -15,16 +15,38 @@ from devboost.modules.secrets import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE
 app = typer.Typer(help="bootstrap secrets (age key)", no_args_is_help=True)
 
 
+def _secret_key_line(path: Path) -> str:
+    """The single `AGE-SECRET-KEY-…` line of an age identity file.
+
+    `age-keygen -o` writes `# created:` / `# public key:` comment lines above the key, so
+    comments and blank lines are skipped; zero or several keys is refused.
+    """
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()]
+    content = [ln for ln in lines if ln and not ln.startswith("#")]
+    keys = [ln for ln in content if ln.startswith("AGE-SECRET-KEY-")]
+    if len(keys) != 1:
+        raise typer.BadParameter(
+            f"{path} must contain exactly one AGE-SECRET-KEY- line (found {len(keys)})"
+        )
+    return keys[0]
+
+
 @app.command("import-key")
 def import_key(
-    path: Annotated[Path, typer.Argument(help="age identity file (AGE-SECRET-KEY-…)")],
+    path: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="age identity file (AGE-SECRET-KEY-…), e.g. from age-keygen -o",
+        ),
+    ],
 ) -> None:
     """Store an age key in the macOS login keychain (then the file can be deleted)."""
     if osinfo.detect().family != "macos":
         raise typer.BadParameter("import-key is macOS-only; on Linux keep the key file")
-    key = path.read_text(encoding="utf-8").strip()
-    if not key.startswith("AGE-SECRET-KEY-"):
-        raise typer.BadParameter(f"{path} does not look like an age secret key")
+    key = _secret_key_line(path)
     # `security -i` reads the command from stdin, so the key never appears in argv / ps.
     cmd = (
         f"add-generic-password -U -a {KEYCHAIN_ACCOUNT} -s {KEYCHAIN_SERVICE} "

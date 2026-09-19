@@ -133,19 +133,138 @@ def test_github_credentials_none(home: Path) -> None:
     assert creds.github_credentials(Ctx(os=FEDORA, ex=FakeExecutor())) is None
 
 
-def test_import_key_sends_key_on_stdin_never_argv(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+class _StdinEx(FakeExecutor):
+    """Records stdin alongside argv; answers from ``replies`` (argv prefix → Result)."""
+
+    def __init__(self, replies: dict[tuple[str, ...], Result] | None = None) -> None:
+        super().__init__()
+        self.stdins: list[str | None] = []
+        self.envs: list[Mapping[str, str] | None] = []
+        self.replies = replies or {}
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        sudo: bool = False,
+        stdin: str | None = None,
+        env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
+        interactive: bool = False,
+    ) -> Result:
+        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        self.stdins.append(stdin)
+        self.envs.append(env)
+        for prefix, res in self.replies.items():
+            if tuple(argv[: len(prefix)]) == prefix:
+                return res
+        return Result(0)
+
+
+_AGE_KEYGEN_FILE = (
+    "# created: 2026-09-19T10:00:00+02:00\n"
+    "# public key: age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\n"
+    "AGE-SECRET-KEY-1SECRET\n"
+)
+
+
+def _import_key(
+    monkeypatch: pytest.MonkeyPatch, keyfile: Path, os_info: OsInfo = MAC
+) -> tuple[_StdinEx, object]:
     from typer.testing import CliRunner
 
     from devboost.cli import secrets_cmd
     from devboost.cli.app import app
 
-    keyfile = home / "age-key.txt"
-    keyfile.write_text("AGE-SECRET-KEY-1SECRET\n", encoding="utf-8")
-    stdins: list[str | None] = []
+    ex = _StdinEx()
+    monkeypatch.setattr(secrets_cmd, "RealExecutor", lambda: ex)
+    monkeypatch.setattr(osinfo, "detect", lambda: os_info)
+    return ex, CliRunner().invoke(app, ["secrets", "import-key", str(keyfile)])
 
-    class _Ex(FakeExecutor):
+
+def test_import_key_accepts_age_keygen_file_and_sends_only_key_on_stdin(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keyfile = home / "age-key.txt"
+    keyfile.write_text(_AGE_KEYGEN_FILE, encoding="utf-8")
+    ex, res = _import_key(monkeypatch, keyfile)
+    assert res.exit_code == 0, res.output  # type: ignore[attr-defined]
+    assert ex.calls == [["security", "-i"]]
+    assert ex.stdins == [
+        "add-generic-password -U -a devboost -s devboost-age -w AGE-SECRET-KEY-1SECRET\n"
+    ]
+    assert "AGE-SECRET-KEY-1SECRET" not in res.output  # type: ignore[attr-defined]
+
+
+def test_import_key_rejects_file_without_key(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keyfile = home / "age-key.txt"
+    keyfile.write_text("# created: x\n# public key: age1qqq\n\n", encoding="utf-8")
+    ex, res = _import_key(monkeypatch, keyfile)
+    assert res.exit_code != 0  # type: ignore[attr-defined]
+    assert ex.calls == []
+
+
+def test_import_key_rejects_file_with_two_keys(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keyfile = home / "age-key.txt"
+    keyfile.write_text("AGE-SECRET-KEY-1A\nAGE-SECRET-KEY-1B\n", encoding="utf-8")
+    ex, res = _import_key(monkeypatch, keyfile)
+    assert res.exit_code != 0  # type: ignore[attr-defined]
+    assert ex.calls == []
+
+
+def test_import_key_is_macos_only(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    keyfile = home / "age-key.txt"
+    keyfile.write_text(_AGE_KEYGEN_FILE, encoding="utf-8")
+    ex, res = _import_key(monkeypatch, keyfile, os_info=FEDORA)
+    assert res.exit_code != 0  # type: ignore[attr-defined]
+    assert ex.calls == []
+
+
+def test_github_credentials_falls_back_to_git_credential_fill(home: Path) -> None:
+    fill = ("git", "credential", "fill")
+    ex = _StdinEx({fill: Result(0, stdout="protocol=https\nhost=github.com\n"
+                                          "username=carol\npassword=ghp_kc\n")})
+    assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == {
+        "GIT_USER": "carol", "GIT_EMAIL": "", "GITHUB_PAT": "ghp_kc",
+    }
+    i = ex.calls.index(list(fill))
+    assert ex.stdins[i] == "protocol=https\nhost=github.com\n\n"
+    assert ex.envs[i] == {"GIT_TERMINAL_PROMPT": "0"}
+
+
+def test_git_credential_fill_without_password_is_none(home: Path) -> None:
+    ex = _StdinEx({("git", "credential", "fill"): Result(0, stdout="username=carol\n")})
+    assert creds.github_credentials(Ctx(os=MAC, ex=ex)) is None
+
+
+def test_github_credentials_skips_incomplete_bundle(home: Path) -> None:
+    boot = home / "boot"
+    boot.mkdir()
+    (boot / "secrets.age").write_text("cipher", encoding="utf-8")
+    (boot / "age-key.txt").write_text("AGE-SECRET-KEY-1X", encoding="utf-8")
+    partial = json.dumps({"GIT_USER": "alice", "GIT_EMAIL": "a@x"})  # no GITHUB_PAT
+    ex = _StdinEx({
+        ("age",): Result(0, stdout=partial),
+        ("gh", "api", "user"): Result(0, stdout=_GH_USER),
+        ("gh", "auth", "token"): Result(0, stdout="gho_tok\n"),
+    })
+    ex.present = {"gh"}
+    assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == {
+        "GIT_USER": "alice", "GIT_EMAIL": "a@x", "GITHUB_PAT": "gho_tok",
+    }
+
+
+def test_github_credentials_reads_bundle_with_keychain_key(home: Path) -> None:
+    boot = home / "boot"
+    boot.mkdir()
+    (boot / "secrets.age").write_text("cipher", encoding="utf-8")  # no age-key.txt
+    seen: dict[str, str] = {}
+
+    class _Ex(_StdinEx):
         def run(
             self,
             argv: Sequence[str],
@@ -156,21 +275,22 @@ def test_import_key_sends_key_on_stdin_never_argv(
             cwd: Path | None = None,
             interactive: bool = False,
         ) -> Result:
-            stdins.append(stdin)
+            if argv[0] == "age":
+                key = Path(argv[argv.index("-i") + 1])
+                seen["path"] = str(key)
+                seen["key"] = key.read_text(encoding="utf-8").strip()
             return super().run(
                 argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive
             )
 
-    ex = _Ex()
-    monkeypatch.setattr(secrets_cmd, "RealExecutor", lambda: ex)
-    monkeypatch.setattr(osinfo, "detect", lambda: MAC)
-    res = CliRunner().invoke(app, ["secrets", "import-key", str(keyfile)])
-    assert res.exit_code == 0, res.output
-    assert ex.calls == [["security", "-i"]]
-    assert stdins == [
-        "add-generic-password -U -a devboost -s devboost-age -w AGE-SECRET-KEY-1SECRET\n"
-    ]
-    assert "AGE-SECRET-KEY-1SECRET" not in res.output
+    ex = _Ex({
+        ("security",): Result(0, stdout="AGE-SECRET-KEY-1KC\n"),
+        ("age",): Result(0, stdout=_JSON),
+    })
+    assert creds.github_credentials(Ctx(os=MAC, ex=ex)) == json.loads(_JSON)
+    assert seen["key"] == "AGE-SECRET-KEY-1KC"
+    assert seen["path"] != str(boot / "age-key.txt")
+    assert not Path(seen["path"]).exists()  # temp key removed after decrypt
 
 
 def test_ssh_setup_without_credentials_is_non_blocking(

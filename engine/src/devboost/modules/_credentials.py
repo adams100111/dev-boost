@@ -121,8 +121,38 @@ def _from_git_credentials() -> Credentials | None:
     return None
 
 
+def _from_git_credential_fill(ctx: Ctx) -> Credentials | None:
+    """Ask git's configured helper (e.g. the macOS keychain) for a github.com login.
+
+    `GIT_TERMINAL_PROMPT=0` makes git fail instead of prompting when no helper has one.
+    The output carries the token, so it is parsed here and never logged.
+    """
+    res = ctx.ex.run(
+        ["git", "credential", "fill"],
+        stdin="protocol=https\nhost=github.com\n\n",
+        env={"GIT_TERMINAL_PROMPT": "0"},
+    )
+    if not res.ok:
+        return None
+    fields: dict[str, str] = {}
+    for line in res.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            fields[key] = value
+    if not fields.get("password"):
+        return None
+    return {
+        "GIT_USER": fields.get("username", ""),
+        "GIT_EMAIL": "",
+        "GITHUB_PAT": fields["password"],
+    }
+
+
 def github_credentials(ctx: Ctx) -> Credentials | None:
-    """The one place modules get a GitHub token: bundle → gh → ~/.git-credentials.
+    """The one place modules get a GitHub token.
+
+    Order: bundle → gh → ~/.git-credentials → git's credential helper (`git credential
+    fill`, which on macOS reads the token `secrets` stored in the login keychain).
 
     Never raises for a missing/unreadable source — callers (ssh-setup, obsidian-sync) are
     non-blocking and treat None as "try again next run".
@@ -135,14 +165,19 @@ def github_credentials(ctx: Ctx) -> Credentials | None:
         with age_key(ctx) as key:
             if key is not None:
                 try:
-                    return age.decrypt(ctx, bundle_path(), key)
+                    data = age.decrypt(ctx, bundle_path(), key)
                 except SecretsError:  # fall through to the next source
                     log.warn("secrets bundle present but unreadable; trying gh")
+                else:
+                    missing = [f for f in age.REQUIRED_FIELDS if not data.get(f)]
+                    if not missing:
+                        return data
+                    log.warn(f"secrets bundle is missing {', '.join(missing)}; trying gh")
     if gh_is_authenticated(ctx):
         found = from_gh(ctx)
         if found:
             return found
-    return _from_git_credentials()
+    return _from_git_credentials() or _from_git_credential_fill(ctx)
 
 
 # --- 3. the interactive path -------------------------------------------------------------
