@@ -104,6 +104,10 @@ class Module:
     #: True when a custom-install module is verified to work unchanged on macOS (no
     #: per_os.macos needed). Read by the macOS catalog contract test.
     portable: ClassVar[bool] = False
+    #: True when this module's macOS install runs sudo (or a script that needs a cached
+    #: sudo timestamp). A macOS run asks for the password up front only when such a
+    #: module is pending; otherwise it never prompts.
+    needs_sudo_on_macos: ClassVar[bool] = False
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 

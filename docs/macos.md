@@ -10,8 +10,9 @@ each milestone. **Status: M2 — the terminal tier.** `devboost install terminal
 - Apple Silicon (Intel is refused). macOS 27 Golden Gate or 26 Tahoe; 15 is best-effort.
 - Until M3/M6 automate them: the Xcode Command Line Tools (`xcode-select --install`) and
   Homebrew (<https://brew.sh>) installed once by hand.
-- Run as your normal user, never with `sudo`: Homebrew refuses root, and dev-boost asks for
-  your password once when a step needs it.
+- Run as your normal user, never with `sudo`: Homebrew refuses root. You get a sudo prompt,
+  once at the start, only if Command Line Tools / Homebrew / Rosetta are missing (or you
+  pass `--force`); a re-run on a set-up Mac never asks for your password.
 
 ## Install from a clone
 

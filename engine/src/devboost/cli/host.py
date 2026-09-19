@@ -82,11 +82,18 @@ def keep_awake(popen: Callable[[list[str]], object] = subprocess.Popen) -> objec
 
 
 @contextmanager
-def mac_session(os_info: OsInfo, *, dry_run: bool) -> Iterator[None]:
-    """Keep-awake + one sudo prompt for a real install run on macOS; no-op otherwise."""
+def mac_session(os_info: OsInfo, *, dry_run: bool, sudo: bool = True) -> Iterator[None]:
+    """Keep-awake for a real install run on macOS, plus one sudo prompt when ``sudo``.
+
+    The caller passes ``sudo=False`` when no pending step needs root, so a re-run on a
+    set-up Mac never asks for a password. A no-op off macOS and in a dry run.
+    """
     if os_info.family != "macos" or dry_run:
         yield
         return
     keep_awake()
+    if not sudo:
+        yield
+        return
     with SudoKeepalive():
         yield

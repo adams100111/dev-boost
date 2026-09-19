@@ -151,6 +151,32 @@ def _apply_update_filter(
     ]
 
 
+def _needs_sudo(
+    plan: list[PlannedModule],
+    modules: Mapping[str, type[Module]],
+    ctx: Ctx,
+) -> bool:
+    """True when a module that will run on macOS needs root (ruling C-R3: ask lazily).
+
+    Only flagged modules (``needs_sudo_on_macos``) are probed, with their read-only
+    ``verify``; ``--force`` installs without verifying, so it counts as pending. A probe
+    that raises counts as pending too: asking once too often beats a sudo step that fails
+    mid-run with "a password is required".
+    """
+    for pm in plan:
+        cls = modules[pm.name]
+        if pm.skip_reason is not None or not cls.needs_sudo_on_macos:
+            continue
+        if ctx.force:
+            return True
+        try:
+            if not cls().verify(ctx):
+                return True
+        except Exception:  # noqa: BLE001 — a probe must never break the run
+            return True
+    return False
+
+
 def _run(
     tokens: list[str],
     root: Path,
@@ -175,10 +201,11 @@ def _run(
         if not plan:
             log.info("no self-updating tools in selection")
         ctx = Ctx(os=ctx.os, ex=ctx.ex, force=True, dry_run=dry_run)  # force-refresh the kept tools
-    with plat.mac_session(ctx.os, dry_run=dry_run):
-        if offline:
-            plan = _apply_offline_filter(plan, modules)
-        elif not dry_run:
+    if offline:
+        plan = _apply_offline_filter(plan, modules)
+    sudo = ctx.os.family == "macos" and not dry_run and _needs_sudo(plan, modules, ctx)
+    with plat.mac_session(ctx.os, dry_run=dry_run, sudo=sudo):
+        if not offline and not dry_run:
             # Refresh the package index once up front so installs don't fail against a
             # stale index on a fresh box (no network access happens in offline/dry-run
             # modes).

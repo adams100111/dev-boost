@@ -82,6 +82,7 @@ class XcodeClt(Module):
     profiles = ("base",)
     families: ClassVar[tuple[str, ...]] = _MACOS
     portable: ClassVar[bool] = True  # its install IS the macOS path (contract test)
+    needs_sudo_on_macos: ClassVar[bool] = True
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["xcode-select", "-p"]).ok
@@ -112,6 +113,7 @@ class Homebrew(Module):
     profiles = ("base",)
     families: ClassVar[tuple[str, ...]] = _MACOS
     portable: ClassVar[bool] = True  # its install IS the macOS path (contract test)
+    needs_sudo_on_macos: ClassVar[bool] = True
     requires = (XcodeClt,)
 
     def _present(self, ctx: Ctx) -> bool:
@@ -127,7 +129,8 @@ class Homebrew(Module):
     def install(self, ctx: Ctx) -> None:
         if not self._present(ctx):
             # NONINTERACTIVE: no "press RETURN"; it uses the sudo timestamp the macOS run
-            # session (cli/host.py SudoKeepalive) already holds. Never run as root.
+            # session (cli/host.py SudoKeepalive, started because this module sets
+            # needs_sudo_on_macos) already holds. Never run as root.
             remote_script.run_script(
                 ctx, self.name, BREW_INSTALLER, "/bin/bash", env={"NONINTERACTIVE": "1"}
             )
@@ -149,6 +152,7 @@ class Rosetta(Module):
     profiles = ("base",)
     families: ClassVar[tuple[str, ...]] = _MACOS
     portable: ClassVar[bool] = True  # its install IS the macOS path (contract test)
+    needs_sudo_on_macos: ClassVar[bool] = True
 
     def verify(self, ctx: Ctx) -> bool:
         # From macOS 28 Rosetta is limited to legacy games: nothing to install; `devboost
