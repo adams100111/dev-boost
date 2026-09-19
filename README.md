@@ -75,7 +75,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | Profile | Modules |
 |---|---|
 | `apps` | `obsidian`, `bruno`, `bitwarden`, `flameshot`, `localsend`, `vlc`, `gearlever`, `obsidian-sync` |
-| `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc` |
+| `base` | `secrets`, `ssh-setup`, `rpmfusion`, `dnf-tune`, `fedora-third-party`, `flatpak`, `coreutils`, `git`, `curl`, `wget`, `unzip`, `jq`, `htop`, `ripgrep`, `fd`, `fzf`, `tmux`, `build-tools`, `mise`, `chezmoi`, `chezmoi-repo`, `docker`, `docker-build-gc`, `pass`, `pass-store` |
 | `brain-host` | `mosh`, `caddy`, `crossarch-build`, `code-server`, `browser-view` |
 | `brain-tools` | `herdr`, `herdr-plugins` |
 | `claude` | `claude-code`, `claude-plugins`, `claude-skills`, `claude-mcp` |
@@ -103,7 +103,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `python` | `uv`, `python-lsp` |
 | `react-native` | `web-runtimes`, `android-sdk`, `expo` |
 | `remote` | `tailscale`, `mosh` |
-| `security-cli` | `pass`, `pass-store` |
+| `security-cli` | `pass`, `pass-store` (alias — both are in `base`) |
 | `server` | `tailscale`, `server-firewall`, `zram`, `restic-b2`, `tmux-persist`, `docker`, `docker-build-gc` |
 | `shell` | `starship`, `bash-config`, `wezterm`, `nerd-fonts`, `dotfiles`, `claude-statusline`, `claude-notify`, `wl-clipboard` |
 | `system` | `snapper`, `snapper-dnf-hook`, `grub-btrfs`, `btrfs-assistant`, `btrfsmaintenance`, `fwupd`, `power-profiles-daemon`, `thermald`, `smartmontools`, `dnf-automatic-security`, `restic-backup`, `earlyoom`, `swapfile`, `gpu-detect` |
@@ -213,8 +213,8 @@ enrollment on NVIDIA when Secure Boot is on.
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `orca-ide` | orca | Orca — multi-agent development environment (stablyai/orca). |
 | `orca-serve` | orca | Run Orca headless (orca-ide serve) as a systemd --user service. |
-| `pass` | security-cli | pass password-store CLI. |
-| `pass-store` | security-cli | Initialize the GPG-backed password store (optionally cloned). |
+| `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max). |
+| `pass-store` | base | Shared pass store: clone, enroll/adopt this device's GPG key, push-on-commit + 15-min sync (devboost pass …). |
 | `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |
 | `power-profiles-daemon` | system | Power profile switching (D-Bus). |
@@ -286,6 +286,7 @@ See **[docs/remote-fleet.md](docs/remote-fleet.md)** for the full operator guide
 | `devboost update [--profile a,b]` | Propose pinned bumps + regenerate `devboost.lock`; never auto-commits. |
 | `devboost self-update` | `git pull` dev-boost, then re-validate. |
 | `devboost dev <status\|gc\|down>` | Dev-environment resource hygiene (orphan Aspire AppHost GC). |
+| `devboost pass <status\|devices\|enroll\|approve\|revoke\|sync>` | The shared pass store: per-device keys, enroll/approve/revoke, auto-sync (Linux; see [docs/pass.md](docs/pass.md)). |
 | `devboost installer [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), stages **both the Live (manual) and netinst (zero-touch) ISOs**, downloads + verifies + caches each with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
 
 ## Recovery walkthrough

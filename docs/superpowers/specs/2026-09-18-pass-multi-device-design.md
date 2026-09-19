@@ -135,5 +135,5 @@ bootstrap), `docs/recovery-runbook.md` ("lost a laptop" → revoke + rotate), RE
 
 | # | PR | Notes |
 |---|---|---|
-| P1 | Linux: profile move, default repo config, adopt + enroll + approve + revoke, sync timer + hook, `devboost pass` CLI, docs | lands independently |
+| P1 | Linux: profile move, default repo config, adopt + enroll + approve + revoke, sync timer + hook, `devboost pass` CLI, docs | lands independently — plan: [2026-09-19-pass-p1-linux](../plans/2026-09-19-pass-p1-linux.md) |
 | P2 | macOS: pinentry-mac, launchd sync agent, native notifications | after macOS M1 |

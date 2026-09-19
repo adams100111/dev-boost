@@ -8,11 +8,32 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **`pass` multi-device (P1, Linux)** — per-device GPG keys (fingerprint-only access and
+  trust; email ids in `.gpg-id` never grant access), enroll → approve → sync onto a shared
+  private GitHub `pass` store, scoped enrollment for servers, revoke + a rotation checklist
+  `devboost doctor` tracks until it's clear, a post-commit push hook plus a 15-min systemd
+  user timer that also pushes a store whose first push never landed. New `devboost pass`
+  CLI (`status`/`devices`/`enroll`/`approve`/`revoke`/`sync`) — **Linux-only until P2**; on
+  macOS it exits `` `devboost pass` is Linux-only ``. `pass` / `pass-store` move to `base`
+  (the `security-cli` profile is now an alias for both). See [docs/pass.md](docs/pass.md).
 - **macOS engine core (M1)** — macOS family + arm64 normalization, Homebrew manager
   (formulae/casks/taps), launchd primitive, NeedsUser/PresentUnmanaged, macOS
   privacy-permission tracking (`devboost permissions`), macOS invocation rules (no root,
   one sudo prompt, keep-awake), gh-first/keychain credentials (`devboost secrets
   import-key`), macOS doctor, catalog contract test. Constitution v3.1.0.
+
+### Removed
+- `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device
+  ("genesis": generate the key, `pass init <fp>`, register, push) instead of a hand-made
+  GPG id.
+
+### Docs
+- Added [docs/pass.md](docs/pass.md) (the multi-device model, enroll/approve/sync, revoke
+  + rotation, servers, disaster recovery); updated
+  [docs/credentials.md](docs/credentials.md), [docs/recovery-runbook.md](docs/recovery-runbook.md),
+  [docs/AGENTS.md](docs/AGENTS.md), [docs/architecture.md](docs/architecture.md) and
+  [docs/adding-a-module.md](docs/adding-a-module.md) for the pass multi-device model and the
+  `Module.after` ordering-only dependency.
 
 ## [0.1.80] — 2026-09-09
 
