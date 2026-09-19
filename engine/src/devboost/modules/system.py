@@ -8,7 +8,7 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
-from devboost.core.osinfo import OsMap
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
@@ -75,6 +75,8 @@ class Fwupd(SystemService):
     description = "Firmware updates."
     svc_pkg = "fwupd"
     service = "fwupd.service"
+    # macOS updates firmware through Software Update
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
 
 @register
@@ -84,7 +86,8 @@ class PowerProfilesDaemon(SystemService):
     svc_pkg = "power-profiles-daemon"
     service = "power-profiles-daemon"
     # Omarchy ships and enables ppd, and drives it through `omarchy powerprofiles ...`.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: Low Power Mode in System Settings
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
     def _ppd_already_provided(self, ctx: Ctx) -> bool:
         # power-profiles-daemon and tuned-ppd both Provide AND Conflict on `ppd-service`, so
@@ -114,7 +117,8 @@ class Thermald(SystemService):
     svc_pkg = "thermald"
     service = "thermald"
     # Shipped in Omarchy's base package set and enabled by its install scripts.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: thermal management is the OS's job on a Mac
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
 
 @register
@@ -268,9 +272,8 @@ class Earlyoom(Module):
     category = "system"
     description = "Userspace OOM killer (dev-protecting)."
     profiles = ("system",)
-    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
-    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
-    requires = (Homebrew,)
+    # Linux OOM killer
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _conf(self, ctx: Ctx | None = None) -> str:
         """Return the earlyoom config path.
@@ -440,6 +443,8 @@ class GpuDetect(Module):
     category = "system"
     description = "Auto-detect the GPU vendor and record it for driver selection."
     profiles = ("system",)
+    # picks a Linux GPU driver (lspci)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _marker(self) -> Path:
         state = os.environ.get("XDG_STATE_HOME") or str(

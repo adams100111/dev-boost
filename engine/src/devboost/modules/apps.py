@@ -9,7 +9,7 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import GithubError, UnsupportedOS
-from devboost.core.osinfo import OsMap
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, github, pkg, systemd
 from devboost.model import Ctx, Module
@@ -105,7 +105,8 @@ class Flameshot(FlatpakApp):
     description = "Flameshot screenshots."
     app_id = "org.flameshot.Flameshot"
     arch_pkg = "flameshot"
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: ⌘⇧5 is built in; the brew cask is deprecated
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
 
 @register
@@ -130,6 +131,8 @@ class Gearlever(FlatpakApp):
     description = "Gear Lever — integrate & update AppImages (LM Studio, WezTerm, …)."
     app_id = "it.mijorus.gearlever"
     aur_pkg = "gearlever"
+    # AppImage manager
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
 
 def _home() -> Path:

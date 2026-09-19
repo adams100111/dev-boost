@@ -136,9 +136,8 @@ class VaHwaccel(Module):
     # Omarchy installs the vendor VA-API/Vulkan drivers itself, matched to detected
     # hardware (`omarchy-hw-*`), so re-deriving the vendor from lspci here would only
     # duplicate that work. Vanilla Arch still gets the branch below.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
-    # install() calls pkg.install unconditionally, which is brew on macOS; not yet
-    # macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it ever runs.
+    # macOS: VideoToolbox is built in
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
     requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:

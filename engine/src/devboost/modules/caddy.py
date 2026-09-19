@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core.errors import UnsupportedOS
-from devboost.core.osinfo import OsMap
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, Module
@@ -66,6 +67,8 @@ class Caddy(Module):
     category = "brain-host"
     description = "Caddy — locally-trusted reverse proxy (tls internal) for brain dev UIs."
     profiles = ("brain-host",)
+    # brain-host service (a Mac is never a brain, spec: out of scope)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _caddyfile(self) -> Path:
         return Path(os.environ["HOME"]) / ".config" / "caddy" / "Caddyfile"

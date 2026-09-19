@@ -14,12 +14,11 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import SecretsError, UnsupportedOS
-from devboost.core.osinfo import OsMap
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
 from devboost.modules._pending import MacosPending
-from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import bundle_path, key_path
 
 
@@ -111,10 +110,8 @@ class Zram(Module):
     category = "server"
     description = "Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents."
     profiles = ("server",)
-    # install()'s else branch calls pkg.install unconditionally, which is brew on macOS;
-    # not yet macOS-designed (KNOWN_GAPS), but the ordering invariant still holds if it
-    # ever runs.
-    requires = (Homebrew,)
+    # Linux compressed swap
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _conf(self, ctx: Ctx) -> str:
         override = os.environ.get("DEVBOOST_ZRAM_CONF")
@@ -158,6 +155,8 @@ class AgentSudo(Module):
     category = "server"
     description = "Passwordless sudo for your user — so agents/automation never hang on a prompt."
     profiles = ()
+    # passwordless sudo for agents on a server/brain
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def verify(self, ctx: Ctx) -> bool:
         # True only if sudo works non-interactively AND our drop-in is what enables it.
