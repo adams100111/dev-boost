@@ -88,6 +88,18 @@ def test_release_version_parse_without_grep_P(stub_path: StubPath, tmp_path: Pat
     assert "release: v1.2.3 (host arch: darwin-arm64)" in out
 
 
+def test_release_dry_run_creates_a_draft_and_publishes_last(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    rc, out, err = _dry_run(stub_path, tmp_path)
+    assert rc == 0, err
+    lines = out.splitlines()
+    create = next(ln for ln in lines if ln.startswith("+ gh release create"))
+    assert "--draft" in create
+    assert "--latest" not in create
+    assert lines[-1].startswith("+ gh release edit v1.2.3 --draft=false --latest")
+
+
 def test_release_dry_run_darwin_uploads_binary_only(
     stub_path: StubPath, tmp_path: Path
 ) -> None:
@@ -154,3 +166,218 @@ def test_release_is_shellcheck_clean() -> None:
         cwd=REPO_ROOT,
     )
     assert res.returncode == 0, res.stdout + res.stderr
+
+
+# --------------------------------------------------------------------------- real runs
+# A gh stub backed by a directory per release (``<store>/<tag>/``) plus a draft flag file,
+# so a full (non-dry) run can be observed end to end: every call is logged in order.
+
+GH_STORE_STUB = r"""
+printf '%s\n' "$*" >> "$GH_LOG"
+[ "$1" = auth ] && exit 0
+[ "$1" = release ] || exit 0
+sub="$2"; tag="$3"; shift 3
+rel="$GH_STORE/$tag"
+case "$sub" in
+  view)
+    [ -d "$rel" ] || exit 1
+    case "$*" in
+      "--json isDraft --jq .isDraft") cat "$rel.draft" ;;
+      "--json assets --jq .assets[].name") ls "$rel" ;;
+      --json*) printf 'assets: %s\n' "$(ls "$rel" | tr '\n' ' ')" ;;
+    esac ;;
+  create)
+    mkdir -p "$rel"
+    draft=false
+    for a in "$@"; do [ "$a" = --draft ] && draft=true; done
+    echo "$draft" > "$rel.draft" ;;
+  upload)
+    for a in "$@"; do
+      case "$a" in --*) ;; *) cp "$a" "$rel/" ;; esac
+    done ;;
+  download)
+    pat=""; dir=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --pattern) pat="$2"; shift 2 ;;
+        --dir) dir="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    for f in "$rel"/*; do
+      n="${f##*/}"
+      if [ -n "$pat" ]; then
+        case "$n" in $pat) ;; *) continue ;; esac
+      fi
+      cp "$f" "$dir/$n"
+    done
+    if [ -z "$pat" ] && [ -n "${GH_TAMPER:-}" ]; then echo evil > "$dir/$GH_TAMPER"; fi ;;
+  edit)
+    for a in "$@"; do [ "$a" = --draft=false ] && echo false > "$rel.draft"; done ;;
+esac
+exit 0
+"""
+
+#: The fake build: writes this host's assets into dist/ the way build-bundle.sh does.
+FAKE_BUILD = """#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+mkdir -p dist
+case "$(uname -s)" in
+  Darwin) echo "darwin-bin" > dist/devboost-darwin-arm64 ;;
+  *) echo "x86-bin" > dist/devboost-x86_64; echo "x86-tar" > dist/devboost-x86_64.tar.gz ;;
+esac
+"""
+
+LINUX_AND_ARM = {
+    "devboost-x86_64": "x86-bin",
+    "devboost-x86_64.tar.gz": "x86-tar",
+    "devboost-aarch64": "arm-bin",
+    "devboost-aarch64.tar.gz": "arm-tar",
+}
+
+
+class _Store:
+    def __init__(self, root: Path, log: Path) -> None:
+        self.root = root
+        self.log = log
+
+    def seed(self, tag: str, files: dict[str, str], *, draft: bool) -> None:
+        rel = self.root / tag
+        rel.mkdir(parents=True)
+        for name, body in files.items():
+            (rel / name).write_text(body + "\n", encoding="utf-8")
+        (self.root / f"{tag}.draft").write_text(
+            "true\n" if draft else "false\n", encoding="utf-8"
+        )
+
+    def draft(self, tag: str) -> bool:
+        return (self.root / f"{tag}.draft").read_text(encoding="utf-8").strip() == "true"
+
+    def calls(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").splitlines()
+
+
+def _real_run(
+    stub_path: StubPath,
+    tmp_path: Path,
+    store: _Store,
+    *args: str,
+    system: str = "Darwin",
+    machine: str = "arm64",
+    **env: str,
+) -> subprocess.CompletedProcess[str]:
+    stub_path.add("uname", _uname(system, machine))
+    stub_path.add("gh", GH_STORE_STUB)
+    stub_path.add("git", "echo abc1234")
+    mk = tmp_path / "mk"
+    mk.mkdir(exist_ok=True)
+    stub_path.add("mktemp", f'/usr/bin/mktemp -d "{mk}/r.XXXXXX"')
+    script = _fixture_repo(tmp_path, "1.2.3", "1.2.3")
+    build = script.parent / "build-bundle.sh"
+    build.write_text(FAKE_BUILD, encoding="utf-8")
+    build.chmod(0o755)
+    return run_bash(
+        script,
+        *args,
+        env=stub_path.env(GH_STORE=str(store.root), GH_LOG=str(store.log), **env),
+    )
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> _Store:
+    root = tmp_path / "store"
+    root.mkdir()
+    return _Store(root, tmp_path / "gh.log")
+
+
+def test_first_host_leaves_a_verified_draft(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    """A-I5: the first host's run must never make a one-arch release `latest`."""
+    res = _real_run(stub_path, tmp_path, store)
+    assert res.returncode == 0, res.stderr
+    assert store.draft("v1.2.3")
+    calls = store.calls()
+    create = next(c for c in calls if c.startswith("release create"))
+    assert "--draft" in create and "--latest" not in create
+    assert not [c for c in calls if c.startswith("release edit")]
+    assert "left as a DRAFT — still missing: devboost-x86_64" in res.stdout
+    assert "verified 1 asset(s) against checksums.txt" in res.stdout
+    sums = (store.root / "v1.2.3" / "checksums.txt").read_text(encoding="utf-8")
+    assert sums.split()[1] == "devboost-darwin-arm64"
+
+
+def test_last_host_verifies_then_publishes_latest(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    """With every other arch already on the draft, the run uploads, regenerates and
+    uploads checksums.txt, downloads it all back to verify, and only THEN publishes."""
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    res = _real_run(stub_path, tmp_path, store)
+    assert res.returncode == 0, res.stderr
+    assert not store.draft("v1.2.3")
+    calls = store.calls()
+    order = [
+        next(i for i, c in enumerate(calls) if c.startswith("release upload") and "dist/" in c),
+        next(i for i, c in enumerate(calls) if "checksums.txt" in c and "upload" in c),
+        next(
+            i for i, c in enumerate(calls)
+            if c.startswith("release download") and "--pattern" not in c
+        ),
+        next(i for i, c in enumerate(calls) if c.startswith("release edit")),
+    ]
+    assert order == sorted(order), calls
+    assert calls[order[-1]] == "release edit v1.2.3 --draft=false --latest"
+    assert "published and marked latest" in res.stdout
+    names = sorted(
+        ln.split()[1]
+        for ln in (store.root / "v1.2.3" / "checksums.txt").read_text().splitlines()
+    )
+    assert names == sorted([*LINUX_AND_ARM, "devboost-darwin-arm64"])
+
+
+def test_a_tampered_asset_is_never_published(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    store.seed("v1.2.3", LINUX_AND_ARM, draft=True)
+    res = _real_run(stub_path, tmp_path, store, GH_TAMPER="devboost-aarch64")
+    assert res.returncode == 1
+    assert "do not match checksums.txt — left as a draft" in res.stderr
+    assert store.draft("v1.2.3")
+    assert not [c for c in store.calls() if c.startswith("release edit")]
+
+
+def test_publish_flag_ships_a_partial_release(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    res = _real_run(stub_path, tmp_path, store, "--publish")
+    assert res.returncode == 0, res.stderr
+    assert not store.draft("v1.2.3")
+    assert "release edit v1.2.3 --draft=false --latest" in store.calls()
+
+
+def test_a_published_release_is_never_clobbered(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    """Replacing an asset on a live release would serve it against stale checksums."""
+    store.seed("v1.2.3", {**LINUX_AND_ARM, "devboost-darwin-arm64": "old"}, draft=False)
+    res = _real_run(stub_path, tmp_path, store)
+    assert res.returncode == 1
+    assert "already published and has devboost-darwin-arm64" in res.stderr
+    assert not [c for c in store.calls() if c.startswith("release upload")]
+    body = (store.root / "v1.2.3" / "devboost-darwin-arm64").read_text(encoding="utf-8")
+    assert body == "old\n"
+
+
+def test_linux_host_uploads_binary_and_archive(
+    stub_path: StubPath, tmp_path: Path, store: _Store
+) -> None:
+    res = _real_run(stub_path, tmp_path, store, system="Linux", machine="x86_64")
+    assert res.returncode == 0, res.stderr
+    assert sorted(p.name for p in (store.root / "v1.2.3").iterdir()) == [
+        "checksums.txt",
+        "devboost-x86_64",
+        "devboost-x86_64.tar.gz",
+    ]
+    assert store.draft("v1.2.3")
