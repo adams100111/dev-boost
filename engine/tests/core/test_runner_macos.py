@@ -6,8 +6,10 @@ from devboost.core.errors import NeedsUser, PresentUnmanaged
 from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule
 from devboost.core.runner import run_plan
-from devboost.exec.executor import FakeExecutor
+from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx, Module
+from devboost.modules.macos import Rosetta
+from tests.scripted import Scripted
 
 MAC = OsInfo("macos", "macos", "aarch64")
 
@@ -105,3 +107,31 @@ def test_forced_none_forces_every_module() -> None:
     plan = [PlannedModule("present-dep"), PlannedModule("present-selected")]
     run_plan(plan, modules, Ctx(os=MAC, ex=FakeExecutor(), force=True))
     assert _Present.seen == [True, True]
+
+
+# --- AF1: a session without sudo blocks pending sudo modules --------------------------
+
+
+def test_no_sudo_session_blocks_pending_sudo_module_with_the_fix() -> None:
+    mac = OsInfo("macos", "macos", "aarch64", version_id="27.0")
+    ex = Scripted(answers={("arch", "-x86_64"): Result(1)})  # Rosetta missing
+    [res] = run_plan([PlannedModule("rosetta")], {"rosetta": Rosetta}, Ctx(mac, ex, no_sudo=True))
+    assert res.status == "blocked"
+    assert res.detail.endswith(
+        "run `devboost install rosetta` in a terminal (needs your password)"
+    )
+    assert not any("softwareupdate" in c for c in ex.calls)
+
+
+def test_no_sudo_session_leaves_present_or_unflagged_modules_alone() -> None:
+    mac = OsInfo("macos", "macos", "aarch64", version_id="27.0")
+    [res] = run_plan(
+        [PlannedModule("rosetta")], {"rosetta": Rosetta}, Ctx(mac, Scripted(), no_sudo=True)
+    )
+    assert res.status == "skip"  # Rosetta present: nothing pending
+    [res2] = run_plan(
+        [PlannedModule("needs-user-mod")],
+        {"needs-user-mod": _NeedsUserMod},
+        Ctx(MAC, FakeExecutor(), no_sudo=True),
+    )
+    assert res2.status == "blocked" and "Apple ID" in res2.detail  # its own reason, not sudo
