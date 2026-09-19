@@ -1,12 +1,15 @@
 """Every module must have a macOS answer: installable, dropped, provided, or a known gap.
 
-KNOWN_GAPS is the list of modules with no macOS path yet. M2 cleared the `terminal` set
-(the `macos` profile); M3–M5 add the rest and delete names from it. It must be empty by
-the end of M5 (spec §9).
+KNOWN_GAPS maps each module with no macOS path yet to the milestone that brings it
+(spec §11). M2 cleared the terminal set and M3 the catalog; what is left is the Docker
+runtime and the launchd timers (M4, each declared `MacosPending`). A new module must
+arrive with its macOS answer; the map must be empty by the end of M5 (§9).
 """
 
 from __future__ import annotations
 
+import importlib
+import re
 from pathlib import Path
 
 from devboost.core.graph import toposort
@@ -15,76 +18,19 @@ from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load
 from devboost.model import Module
+from devboost.modules._pending import MacosPending
 from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
+from tests.conftest import HOST_APP_PATHS
 
-KNOWN_GAPS: frozenset[str] = frozenset({
-    "agent-sudo",
-    "android-sdk",
-    "aspire",
-    "aspire-gc",
-    "bitwarden",
-    "browser-view",
-    "bruno",
-    "build-tools",
-    "caddy",
-    "chezmoi-repo",
-    "claude-code",
-    "claude-mcp",
-    "claude-notify",
-    "claude-plugins",
-    "claude-skills",
-    "code-server",
-    "codex-code",
-    "codex-config",
-    "codex-mcp",
-    "codex-plugins",
-    "codex-skills",
-    "crossarch-build",
-    "data-services",
-    "ddev",
-    "ddev-remote",
-    "devops-lsp",
-    "devops-tools",
-    "docker",
-    "docker-build-gc",
-    "dotnet-lsp",
-    "dotnet-sdk",
-    "earlyoom",
-    "expo",
-    "flameshot",
-    "fresh-lsp",
-    "fwupd",
-    "gearlever",
-    "gpu-detect",
-    "herdr",
-    "herdr-plugins",
-    "jetbrains-toolbox",
-    "laravel-lsp",
-    "localsend",
-    "mosh",
-    "neovim",
-    "obsidian",
-    "obsidian-sync",
-    "pi-harness",
-    "playwright",
-    "power-profiles-daemon",
-    "python-lsp",
-    "restic-b2",
-    "restic-backup",
-    "smartmontools",
-    "tailscale",
-    "thermald",
-    "tmux-persist",
-    "tpm",
-    "uv",
-    "va-hwaccel",
-    "vlc",
-    "vscode",
-    "web-lsp",
-    "web-runtimes",
-    "zram",
-})
+KNOWN_GAPS: dict[str, str] = {
+    "aspire-gc": "M4",
+    "docker": "M4",
+    "docker-build-gc": "M4",
+    "obsidian-sync": "M4",
+    "restic-b2": "M4",
+    "restic-backup": "M4",
+}
 
 
 def resolvable_on_macos(cls: type[Module]) -> bool:
@@ -92,6 +38,8 @@ def resolvable_on_macos(cls: type[Module]) -> bool:
         return True  # dropped from the plan on macOS
     if "macos" in cls.provided_by:
         return True
+    if isinstance(cls.per_os.macos, MacosPending):
+        return False  # designed, but owned by a later milestone: still a known gap
     if cls.per_os.macos is not None:
         return True
     if issubclass(cls, PackageModule):
@@ -108,14 +56,24 @@ def unresolved() -> set[str]:
 
 
 def test_no_new_macos_gaps() -> None:
-    new = unresolved() - KNOWN_GAPS
+    new = unresolved() - set(KNOWN_GAPS)
     msg = f"modules with no macOS path (add per_os.macos / families / cask): {sorted(new)}"
     assert not new, msg
 
 
 def test_known_gaps_are_still_gaps() -> None:
-    fixed = KNOWN_GAPS - unresolved()
+    fixed = set(KNOWN_GAPS) - unresolved()
     assert not fixed, f"now resolvable — remove from KNOWN_GAPS: {sorted(fixed)}"
+
+
+def test_later_milestone_gaps_are_the_pending_modules() -> None:
+    # A gap owned by a later milestone must say so on a Mac (MacosPending), never fall
+    # through to its Linux path; and every MacosPending module is listed under its owner.
+    pending = {
+        name: cls.per_os.macos.milestone for name, cls in load().items()
+        if isinstance(cls.per_os.macos, MacosPending)
+    }
+    assert pending == KNOWN_GAPS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -129,16 +87,38 @@ def _plan(profile: str, os_info: OsInfo, tmp_path: Path) -> list[PlannedModule]:
     return build_plan(toposort(names, modules), modules, os_info, gpu_marker=tmp_path / "none")
 
 
-def test_the_macos_profile_plans_cleanly_on_a_mac(tmp_path: Path) -> None:
+def test_known_gaps_have_an_owner() -> None:
+    # M3 closed the catalog: every gap left is the Docker runtime / launchd timers (C-R8a).
+    assert set(KNOWN_GAPS.values()) == {"M4"}
+
+
+def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:
     modules = load()
     reasons = {p.name: p.skip_reason for p in _plan("macos", MAC, tmp_path)}
-    assert not sorted(n for n in reasons if not resolvable_on_macos(modules[n]))
+    gaps = {n for n in reasons if not resolvable_on_macos(modules[n])}
+    assert gaps <= set(KNOWN_GAPS), sorted(gaps - set(KNOWN_GAPS))
     assert not [n for n, r in reasons.items() if r == "unsupported-os"]
-    for want in ("ghostty", "zsh-config", "zsh-plugins", "bash", "dotfiles", "starship",
-                 "nerd-fonts", "fresh", "claude-statusline"):
+    for want in (
+        "xcode-clt", "homebrew", "rosetta", "zed", "fresh", "herdr", "herdr-plugins", "glow",
+        "dotnet-sdk", "aspire", "android-sdk", "expo", "ddev", "uv", "web-runtimes",
+        "tailscale", "mosh", "obsidian", "bruno", "claude-code", "codex-code", "pi-harness",
+        "ghostty", "zsh-config", "dotfiles", "pass", "pass-store", "utiluti",
+    ):
         assert reasons.get(want, "missing") is None, want
-    assert reasons["curl"] == reasons["unzip"] == "provided-by-macos"
-    assert "bash-config" not in reasons and "wezterm" not in reasons
+    assert reasons["flameshot"] == reasons["curl"] == "provided-by-macos"
+    for gone in ("gearlever", "rpmfusion", "flatpak", "bash-config", "wezterm"):
+        assert gone not in reasons, gone
+
+
+def test_the_macos_profile_covers_the_terminal_set(tmp_path: Path) -> None:
+    mac = {p.name for p in _plan("macos", MAC, tmp_path)}
+    assert {p.name for p in _plan("terminal", MAC, tmp_path)} <= mac
+
+
+def test_the_linux_workstation_gains_only_glow_and_herdr_plugins(tmp_path: Path) -> None:
+    names = {p.name for p in _plan("full", FEDORA, tmp_path)}
+    assert {"glow", "herdr-plugins"} <= names
+    assert not {"xcode-clt", "homebrew", "rosetta", "utiluti", "zsh-config"} & names
 
 
 def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> None:
@@ -146,3 +126,33 @@ def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> N
     assert not {n: r for n, r in reasons.items() if r is not None}
     assert "bash-config" in reasons and "ghostty" in reasons
     assert not {"zsh-config", "zsh-plugins", "bash"} & set(reasons)
+
+
+# --- hermeticity: no test reads the host's /Applications ------------------------------
+
+_SRC = Path(__file__).resolve().parents[2] / "src"
+_APP_CONST = re.compile(
+    r'^(\w+)\s*(?::[^=\n]*)?=\s*Path\(\s*"/Applications/[^"]+\.app"\s*\)', re.M
+)
+
+
+def _app_constants_in_src() -> set[tuple[str, str]]:
+    found: set[tuple[str, str]] = set()
+    for py in _SRC.rglob("*.py"):
+        module = ".".join(py.relative_to(_SRC).with_suffix("").parts)
+        found |= {(module, m) for m in _APP_CONST.findall(py.read_text(encoding="utf-8"))}
+    return found
+
+
+def test_every_app_bundle_constant_is_neutralised_in_tests() -> None:
+    # B2 review: a new `/Applications/*.app` probe must be added to conftest's
+    # HOST_APP_PATHS, or the suite would silently depend on what this Mac has installed.
+    found = _app_constants_in_src()
+    assert found, "the scan found nothing: the pattern no longer matches the sources"
+    assert found == set(HOST_APP_PATHS)
+
+
+def test_the_app_bundle_constants_point_nowhere(tmp_path: Path) -> None:
+    for name, attr in HOST_APP_PATHS:
+        path = getattr(importlib.import_module(name), attr)
+        assert path.is_relative_to(tmp_path) and not path.exists(), (name, attr)

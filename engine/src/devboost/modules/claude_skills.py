@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -37,6 +39,28 @@ def _lock_entries(home: Path) -> list[tuple[str, str]]:
     return out
 
 
+def install_dir_name(name: str) -> str:
+    """The directory `npx skills add` installs a skill into, from its lock-file name.
+
+    The lock file keys skills by their SKILL.md ``name``, which may be a display name
+    ("Poteto Mode"); the CLI installs into ``sanitizeName(name)`` ("poteto-mode"). Mirrors
+    vercel-labs/skills ``sanitizeName``: lowercase, runs of other characters become "-",
+    leading/trailing dots and hyphens trimmed, at most 255 characters.
+    """
+    out = re.sub(r"[^a-z0-9._]+", "-", name.lower())
+    out = re.sub(r"^[.\-]+|[.\-]+$", "", out)[:255]
+    return out or "unnamed-skill"
+
+
+def skill_present(skills_dir: Path, name: str) -> bool:
+    """True when the lock-file skill *name* is installed under *skills_dir*."""
+    for dirname in dict.fromkeys((name, install_dir_name(name))):
+        p = skills_dir / dirname
+        if p.exists() or p.is_symlink():
+            return True
+    return False
+
+
 @register
 class ClaudeSkills(Module):
     name = "claude-skills"
@@ -44,10 +68,10 @@ class ClaudeSkills(Module):
     description = "Reproduce lockfile-tracked skills via `npx skills add`."
     requires = (ClaudeCode, Dotfiles)
     profiles = ("claude",)
+    portable: ClassVar[bool] = True  # `npx skills add`
 
     def _present(self, name: str) -> bool:
-        p = _home() / ".claude" / "skills" / name
-        return p.exists() or p.is_symlink()
+        return skill_present(_home() / ".claude" / "skills", name)
 
     def verify(self, ctx: Ctx) -> bool:
         entries = _lock_entries(_home())

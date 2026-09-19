@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
@@ -20,6 +21,7 @@ from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
+from devboost.modules.macos import Homebrew
 
 _NF_VERSION = "v3.2.1"
 _NF_URL = (
@@ -38,6 +40,10 @@ _MANAGED_MARKER = "devboost — managed by chezmoi"
 #: unless it is exactly what dev-boost wrote.
 _TAKEN_OVER = {".zshrc": "dot_zshrc", ".zprofile": "dot_zprofile",
                ".bash_profile": "dot_bash_profile"}
+#: Linux rc file dev-boost's dotfiles take over wholesale (spec §3) — every family except
+#: Omarchy, which owns ~/.bashrc itself (`.chezmoiignore`) and gets a sourced line instead
+#: (bash-config). `Dotfiles.install` picks this mapping on non-macOS, non-Omarchy hosts.
+_TAKEN_OVER_LINUX = {".bashrc": "dot_bashrc"}
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -68,15 +74,17 @@ def _read_rc_digests() -> dict[str, str]:
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
 
 
-def record_rc_digests(home: Path) -> None:
+def record_rc_digests(home: Path, taken_over: Mapping[str, str] = _TAKEN_OVER) -> None:
     """Record the sha256 of each managed rc file as the apply just wrote it (M-R26).
 
     A later run then tells "untouched since dev-boost wrote it, but from an older release"
     (no backup needed) apart from "someone appended to it" (keep a copy). Atomic write;
     the state dir is created 0700.
+
+    *taken_over* defaults to the macOS set; pass ``_TAKEN_OVER_LINUX`` for ~/.bashrc.
     """
     digests: dict[str, str] = {}
-    for name in _TAKEN_OVER:
+    for name in taken_over:
         path = home / name
         if path.is_symlink() or not path.is_file():
             continue
@@ -96,7 +104,9 @@ def record_rc_digests(home: Path) -> None:
         raise
 
 
-def back_up_rc_files(home: Path, source: Path) -> list[Path]:
+def back_up_rc_files(
+    home: Path, source: Path, taken_over: Mapping[str, str] = _TAKEN_OVER
+) -> list[Path]:
     """Copy each rc file ``apply --force`` would lose to ``<name>.pre-devboost``.
 
     A file is kept when it is foreign (no dev-boost marker) or when it is dev-boost's
@@ -114,10 +124,12 @@ def back_up_rc_files(home: Path, source: Path) -> list[Path]:
     ``.2``, … No new copy is made when the newest backup already holds the same file
     (a retried run, M-R21). Content is not merged — the managed files source
     ``~/<name>.local`` for machine-specific lines.
+
+    *taken_over* defaults to the macOS set; pass ``_TAKEN_OVER_LINUX`` for ~/.bashrc.
     """
     kept: list[Path] = []
     recorded = _read_rc_digests()
-    for name, src in _TAKEN_OVER.items():
+    for name, src in taken_over.items():
         path = home / name
         if not (path.is_file() or path.is_symlink()):
             continue
@@ -146,12 +158,60 @@ def back_up_rc_files(home: Path, source: Path) -> list[Path]:
     return kept
 
 
+def back_up_once(path: Path) -> Path | None:
+    """Copy *path* to ``<name>.pre-devboost`` the first time something is about to rewrite
+    it in place (e.g. mise's nvm/sdkman migration commenting out a block in a user-owned
+    rc file). A no-op once that backup already exists — later drift is the user's own,
+    same one-shot ``.pre-devboost`` convention ``back_up_rc_files`` uses for the files
+    dev-boost's dotfiles take over wholesale. Returns the backup path, or None when
+    *path* doesn't exist or was already backed up.
+    """
+    if not path.is_file():
+        return None
+    backup = path.with_name(path.name + ".pre-devboost")
+    if backup.exists():
+        return None
+    shutil.copy2(path, backup)
+    return backup
+
+
+def back_up_taken_over(
+    home: Path, source: Path, taken_over: Mapping[str, str] | None, who: str
+) -> None:
+    """Back up rc files ``taken_over`` is about to overwrite and log each one as *who*
+    (the calling module's name, e.g. ``"dotfiles"`` or ``"chezmoi-repo"``). A no-op when
+    *taken_over* is None (nothing taken over on this OS — see ``Dotfiles._taken_over_for``).
+    """
+    if taken_over is None:
+        return
+    for backup in back_up_rc_files(home, source, taken_over):
+        name = backup.name.split(".pre-devboost")[0]
+        log.ok(
+            f"{who}: kept your previous ~/{name} as ~/{backup.name} —"
+            f" machine-specific lines belong in ~/{name}.local"
+        )
+
+
+def record_taken_over(home: Path, taken_over: Mapping[str, str] | None, who: str) -> None:
+    """Record rc digests after a successful forced apply, logged as *who*. Bookkeeping
+    only: an OSError is warned and swallowed, never allowed to fail an otherwise
+    successful apply. A no-op when *taken_over* is None.
+    """
+    if taken_over is None:
+        return
+    try:
+        record_rc_digests(home, taken_over)
+    except OSError as exc:
+        log.warn(f"{who}: could not record rc digests ({exc}) — best-effort only")
+
+
 @register
 class Starship(Module):
     name = "starship"
     category = "shell"
     description = "Cross-shell prompt."
     profiles = ("shell",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     per_os = OsMap(macos=BrewFormula("starship"))
 
     def verify(self, ctx: Ctx) -> bool:
@@ -194,6 +254,7 @@ class Wezterm(Module):
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the nightly cask (the last stable release is Feb 2024).
     per_os = OsMap(macos=BrewCask("wezterm@nightly"))
 
@@ -255,6 +316,7 @@ class Ghostty(Module):
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the cask is the app bundle (no CLI on PATH), so verify asks brew.
     per_os = OsMap(macos=BrewCask("ghostty"))
 
@@ -295,6 +357,7 @@ class NerdFonts(Module):
     # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
     # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
     profiles = ("shell",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the Homebrew font cask (tracks the latest Nerd Fonts; Linux pins v3.2.1).
     per_os = OsMap(macos=BrewCask("font-jetbrains-mono-nerd-font"))
 
@@ -356,18 +419,26 @@ class Dotfiles(Module):
             and stamp.read_text(encoding="utf-8").strip() == self._source_digest(src)
         )
 
+    @staticmethod
+    def _taken_over_for(ctx: Ctx) -> Mapping[str, str] | None:
+        """Which rc files dev-boost's dotfiles take over wholesale on *ctx*'s OS, or None
+        where the dotfiles module leaves rc files alone: every non-macOS family gets only
+        ~/.bashrc (dot_bashrc) — and Omarchy owns even that (`.chezmoiignore` skips it,
+        bash-config sources a fragment from it instead).
+        """
+        if ctx.os.family == "macos":
+            return _TAKEN_OVER
+        if ctx.os.distro != "omarchy":
+            return _TAKEN_OVER_LINUX
+        return None
+
     def install(self, ctx: Ctx) -> None:
         src = settings.root / "dotfiles"
         if not src.is_dir():
             log.warn(f"dotfiles: source not found ({src}) — skipping")
             return
-        if ctx.os.family == "macos":
-            for backup in back_up_rc_files(_home(), src):
-                name = backup.name.split(".pre-devboost")[0]
-                log.ok(
-                    f"dotfiles: kept your previous ~/{name} as ~/{backup.name} —"
-                    f" machine-specific lines belong in ~/{name}.local"
-                )
+        taken_over = self._taken_over_for(ctx)
+        back_up_taken_over(_home(), src, taken_over, "dotfiles")
         # --force: apply without prompting. The dotfiles are the source of truth, so
         # local drift (e.g. btop/atuin rewriting their own config at runtime) must be
         # overwritten silently. Without it, chezmoi tries to prompt on /dev/tty for any
@@ -379,8 +450,10 @@ class Dotfiles(Module):
         )
         if not res.ok:
             raise InstallError("chezmoi", "chezmoi apply", res.code)
-        if ctx.os.family == "macos":
-            record_rc_digests(_home())
+        # Bookkeeping only (M-R26): a PermissionError on the state dir (mkdir/mkstemp) or
+        # any other OSError reading the rc files back must never fail an otherwise
+        # successful apply — worst case, the next run's drift backup is a bit stricter.
+        record_taken_over(_home(), taken_over, "dotfiles")
         stamp = self._stamp()
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(self._source_digest(src) + "\n", encoding="utf-8")
@@ -429,7 +502,7 @@ class BashConfig(Module):
         bashrc = _home() / ".bashrc"
         if not bashrc.exists():
             return False
-        text = bashrc.read_text(encoding="utf-8")
+        text = bashrc.read_text(encoding="utf-8", errors="replace")
         if not self._owns_bashrc(ctx):
             # Satisfied once the fragment exists AND the distro's bashrc sources it.
             return (_home() / _SHELL_FRAGMENT).is_file() and _SOURCE_MARKER in text
@@ -442,7 +515,7 @@ class BashConfig(Module):
             # The bashrc content is applied by the dotfiles module (this is a marker check).
             return
         bashrc = _home() / ".bashrc"
-        text = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+        text = bashrc.read_text(encoding="utf-8", errors="replace") if bashrc.exists() else ""
         if _SOURCE_MARKER in text:
             return  # idempotent — never append the block twice
         bashrc.parent.mkdir(parents=True, exist_ok=True)
@@ -460,6 +533,7 @@ class ZshPlugins(Module):
     # zsh is the interactive shell only on macOS (bash on Linux) — spec §2.
     families: ClassVar[tuple[str, ...]] = ("macos",)
     self_updating = True  # `devboost install --update` → brew upgrade
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     per_os = OsMap(macos=BrewFormula("zsh-autosuggestions", "zsh-syntax-highlighting"))
 
 
@@ -548,9 +622,10 @@ class ClaudeStatusline(Module):
 class ClaudeNotify(Module):
     name = "claude-notify"
     category = "shell"
-    description = "Ping ntfy (phone) on Claude task-done / needs-input via Stop/Notification hooks."
+    description = "Notify on Claude task-done / needs-input: macOS notification + ntfy (phone)."
     requires = (Dotfiles,)
     profiles = ("shell",)
+    portable: ClassVar[bool] = True  # settings.json; the hook handles Darwin
 
     def _settings_path(self) -> Path:
         return _home() / ".claude" / "settings.json"

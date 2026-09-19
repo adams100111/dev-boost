@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -23,12 +24,13 @@ from devboost.cli.permissions import permissions as _permissions
 from devboost.cli.selection import select_modules
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
+from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load, validate_profiles
-from devboost.core.runner import RunResult, run_plan
+from devboost.core.runner import RunResult, module_ctx, run_plan
 from devboost.core.settings import settings
-from devboost.exec.executor import RealExecutor
+from devboost.exec.executor import NoPromptSudoExecutor, RealExecutor
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 
@@ -37,7 +39,12 @@ app = typer.Typer(help="dev-boost — typed workstation installer", no_args_is_h
 ProfilesArg = Annotated[list[str], typer.Argument(help="profiles/modules (default: full)")]
 RootOpt = Annotated[Path, typer.Option(help="repo root with profiles.toml + modules")]
 DryOpt = Annotated[bool, typer.Option("--dry-run", help="preview without executing")]
-ForceOpt = Annotated[bool, typer.Option("--force", help="reinstall even if verify passes")]
+ForceOpt = Annotated[
+    bool,
+    typer.Option(
+        "--force", help="reinstall the selected modules (not their dependencies) even if verified"
+    ),
+]
 UpdateOpt = Annotated[
     bool,
     typer.Option(
@@ -112,16 +119,80 @@ def _apply_offline_filter(
     ]
 
 
+def _brew_managed_on_macos(cls: type[Module]) -> bool:
+    """True when a module's whole macOS install is one Homebrew formula or cask.
+
+    `brew upgrade` is safe for all of these; custom macOS strategies (the Android SDK,
+    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux.
+    """
+    from devboost.modules._brew import BrewCask, BrewFormula
+    from devboost.modules._pkgmodule import PackageModule
+    from devboost.modules.apps import FlatpakApp
+
+    if issubclass(cls, FlatpakApp):
+        return cls.cask is not None
+    if issubclass(cls, PackageModule):
+        return True
+    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask))
+
+
 def _apply_update_filter(
     plan: list[PlannedModule],
     modules: Mapping[str, type[Module]],
+    os_info: OsInfo | None = None,
 ) -> list[PlannedModule]:
     """Keep only self-updating modules (single-package/binary tools safe to force-refresh).
 
     Non-self-updating modules are dropped from the plan entirely — `--update` must not
-    install a heavy provisioning module, only refresh the CLI tools.
+    install a heavy provisioning module, only refresh the CLI tools. On macOS every module
+    that is exactly a Homebrew formula or cask is refreshed too (casks that update
+    themselves are skipped by BrewCask).
     """
-    return [pm for pm in plan if modules[pm.name].self_updating]
+    on_mac = os_info is not None and os_info.family == "macos"
+    return [
+        pm
+        for pm in plan
+        if modules[pm.name].self_updating
+        or (on_mac and _brew_managed_on_macos(modules[pm.name]))
+    ]
+
+
+def _needs_sudo(
+    plan: list[PlannedModule],
+    modules: Mapping[str, type[Module]],
+    ctx: Ctx,
+    forced: Collection[str] | None = None,
+) -> bool:
+    """True when a module that will run on macOS needs root (ruling C-R3: ask lazily).
+
+    Only flagged modules (``needs_sudo_on_macos``) are probed, with their read-only
+    ``sudo_needed`` presence probe, under the context each will run with (``--force``
+    reaches only the ``forced`` names; see ``runner.module_ctx``). A probe that raises
+    counts as pending: asking once too often beats a sudo step that fails mid-run with
+    "a password is required".
+    """
+    for pm in plan:
+        cls = modules[pm.name]
+        if pm.skip_reason is not None or not cls.needs_sudo_on_macos:
+            continue
+        try:
+            if cls().sudo_needed(module_ctx(ctx, pm.name, forced)):
+                return True
+        except Exception:  # noqa: BLE001 — a probe must never break the run
+            return True
+    return False
+
+
+def _added_dependencies(plan: list[PlannedModule], selected: Sequence[str]) -> list[str]:
+    """Modules the plan will run that the user did not ask for (their dependencies).
+
+    Read from the final plan (after the ``--update`` filter), not from the dependency
+    closure: a dependency only another OS needs (Homebrew under a brew-backed tool on
+    Linux) is dropped by build_plan, and one the plan will only skip (``curl`` provided by
+    macOS) is not news to the user either.
+    """
+    chosen = set(selected)
+    return [pm.name for pm in plan if pm.name not in chosen and pm.skip_reason is None]
 
 
 def _run(
@@ -138,25 +209,36 @@ def _run(
     modules, expanded = _resolve(tokens, root)
     selected = select_modules(expanded, modules, all_=all_, apps=apps or [])
     order = toposort(selected, modules)
-    extra = [n for n in order if n not in selected]
-    if extra:
-        log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
+    #: --force reinstalls what the user selected, never the dependencies added for it;
+    #: --update force-refreshes every module its filter keeps (None = all).
+    forced: Collection[str] | None = set(selected)
     if update:
-        plan = _apply_update_filter(plan, modules)
+        plan = _apply_update_filter(plan, modules, ctx.os)
         if not plan:
-            log.info("no self-updating tools in selection")
+            log.info("nothing to update in selection")
         ctx = Ctx(os=ctx.os, ex=ctx.ex, force=True, dry_run=dry_run)  # force-refresh the kept tools
-    with plat.mac_session(ctx.os, dry_run=dry_run):
-        if offline:
-            plan = _apply_offline_filter(plan, modules)
-        elif not dry_run:
+        forced = None
+    extra = _added_dependencies(plan, selected)
+    if extra:
+        log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
+    if offline:
+        plan = _apply_offline_filter(plan, modules)
+    sudo = ctx.os.family == "macos" and not dry_run and _needs_sudo(plan, modules, ctx, forced)
+    with plat.mac_session(ctx.os, dry_run=dry_run, sudo=sudo) as sudo_held:
+        if ctx.os.family == "macos" and not (sudo and sudo_held):
+            # No sudo timestamp: either nothing pending needed root, or the password was
+            # asked for and not given (no tty in an unattended run). The runner blocks
+            # every flagged module whose sudo step is pending, and a sudo step that runs
+            # anyway fails fast instead of prompting on a hidden tty (ruling C-R18).
+            ctx = replace(ctx, ex=NoPromptSudoExecutor(ctx.ex), no_sudo=True)
+        if not offline and not dry_run:
             # Refresh the package index once up front so installs don't fail against a
             # stale index on a fresh box (no network access happens in offline/dry-run
             # modes).
             pkg.refresh_index(ctx)
-        results = run_plan(plan, modules, ctx)
+        results = run_plan(plan, modules, ctx, forced=forced)
     if any(r.status == "fail" for r in results):
         raise typer.Exit(code=1)
     return results

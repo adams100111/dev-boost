@@ -22,6 +22,10 @@ _FAMILY = {
     "macos": "macos", "darwin": "macos",
 }
 
+#: Every Linux family dev-boost supports. A module that cannot exist on a Mac declares
+#: ``families = LINUX_FAMILIES`` so macOS plans drop it (spec §2 "families = Linux only").
+LINUX_FAMILIES: tuple[str, ...] = ("fedora", "debian", "arch")
+
 
 @dataclass(frozen=True)
 class OsInfo:

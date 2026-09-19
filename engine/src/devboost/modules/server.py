@@ -8,15 +8,26 @@ elsewhere rather than silently no-op.
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
-from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.errors import NeedsUser, PresentUnmanaged, SecretsError, UnsupportedOS
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import age, pkg, systemd, usermgmt
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewCask
+from devboost.modules._credentials import is_interactive
+from devboost.modules._pending import MacosPending
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import bundle_path, key_path
 
 
@@ -34,20 +45,173 @@ def _secret(ctx: Ctx, field: str) -> str | None:
     return data.get(field)
 
 
+_TS_APP = Path("/Applications/Tailscale.app")
+_TS_APP_BIN = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+_TS_CASK = BrewCask("tailscale-app")
+#: Tailscale KB 1080: on macOS the CLI is the app binary, called by its real path. A
+#: wrapper keeps that path (a symlink would not) and works in scripts, unlike an alias.
+_TS_WRAPPER = (
+    "#!/bin/sh\n"
+    "# devboost — the Tailscale app's CLI. Managed by dev-boost (tailscale module).\n"
+    f'exec "{_TS_APP_BIN}" "$@"\n'
+)
+
+
+def ts_cli() -> Path:
+    return Path(os.environ["HOME"]) / ".local" / "bin" / "tailscale"
+
+
+@contextmanager
+def _auth_key_file(key: str) -> Iterator[str]:
+    """The auth key as a ``--auth-key`` value that keeps it off argv (``ps`` shows argv).
+
+    The key goes to a 0600 file in a private (0700) temp dir, removed afterwards; the
+    Tailscale CLI documents ``--auth-key=file:<path>`` as "a path to a file containing the
+    auth key". The CLI reads it itself, before it talks to the daemon, so the file is the
+    invoking user's even when `tailscale up` runs under sudo (root can read it).
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="devboost-tailscale-"))
+    try:
+        path = tmp / "authkey"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key)
+        yield f"--auth-key=file:{path}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _ts_app_running(ctx: Ctx) -> bool:
+    """Whether the Tailscale app is running. On macOS the CLI is the app binary, so
+    `status` against a stopped app may start the GUI — a probe must never do that."""
+    return ctx.ex.run(["pgrep", "-x", "Tailscale"]).ok
+
+
+def _ts_state(ctx: Ctx) -> str:
+    """BackendState from `tailscale status --json` ("Running", "NeedsLogin", …); "" if none
+    — also when the app is not running, which is never started just to ask."""
+    if not _ts_app_running(ctx):
+        return ""
+    res = ctx.ex.run([str(ts_cli()), "status", "--json"])
+    try:
+        data = json.loads(res.stdout) if res.stdout.strip() else None
+    except ValueError:
+        return ""
+    state = data.get("BackendState") if isinstance(data, dict) else None
+    return state if isinstance(state, str) else ""
+
+
+def _ensure_wrapper(cli: Path) -> None:
+    """Write the CLI wrapper when the path is free or already ours; never touch anything
+    else there (a symlink to the app binary, the user's own script) — that is the user's."""
+    want = _TS_WRAPPER.encode("utf-8")
+    if cli.is_symlink() or (cli.exists() and (not cli.is_file() or cli.read_bytes() != want)):
+        log.skip(f"tailscale: {cli} is not dev-boost's wrapper — left as it is")
+        return
+    if not cli.exists():
+        cli.parent.mkdir(parents=True, exist_ok=True)
+        cli.write_bytes(want)
+    cli.chmod(0o755)  # also repairs a managed wrapper that lost its exec bit
+
+
+@dataclass(frozen=True)
+class _TailscaleMac:
+    """macOS: the standalone app (cask `tailscale-app`), its CLI on PATH, and the one-time
+    approval only the user can give. The Mac is a fleet client: no Tailscale SSH server.
+
+    A hand-installed Tailscale.app that brew cannot adopt (PresentUnmanaged) is left as it
+    is, but still gets the CLI wrapper and the connection check (ruling R6)."""
+
+    uses_brew: ClassVar[bool] = True
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (
+            (_TS_CASK.verify(ctx) or _TS_APP.is_dir())
+            and ts_cli().is_file()
+            and _ts_state(ctx) == "Running"
+        )
+
+    def install(self, ctx: Ctx) -> None:
+        # The cask is a .pkg: brew cannot --adopt it and would re-run the installer over a
+        # hand-installed app, so an app brew does not manage is left as it is (C-R21).
+        if _TS_APP.is_dir() and not _TS_CASK.verify(ctx):
+            log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
+        else:
+            try:
+                _TS_CASK.install(ctx)
+            except PresentUnmanaged:
+                if not _TS_APP.is_dir():
+                    raise
+                log.skip(f"tailscale: {_TS_APP} was installed outside Homebrew — left as it is")
+        cli = ts_cli()
+        _ensure_wrapper(cli)
+        state = _ts_state(ctx)
+        if state == "Running":
+            return
+        key = _secret(ctx, "TAILSCALE_AUTHKEY")
+        if key and state == "NeedsLogin":
+            with _auth_key_file(key) as auth_arg:
+                joined = ctx.ex.run([str(cli), "up", auth_arg]).ok
+            if joined:
+                return
+            raise NeedsUser(
+                "the TAILSCALE_AUTHKEY in the secrets bundle was rejected (expired or revoked)",
+                "create a new auth key in the Tailscale admin console and update the secrets "
+                "bundle, or sign in from the Tailscale menu bar app",
+            )
+        approve = (
+            "allow its VPN configuration when macOS asks (System Settings → General → "
+            "Login Items & Extensions → Network Extensions), then sign in — or add "
+            "TAILSCALE_AUTHKEY to the secrets bundle"
+        )
+        if not is_interactive():
+            # Launching the app pops macOS's VPN / extension prompt: never on an unwatched
+            # desktop (global constraint), so the user opens it themselves.
+            raise NeedsUser(
+                "Tailscale is installed but not connected — open Tailscale and approve it",
+                f"open Tailscale from Applications, {approve}",
+            )
+        ctx.ex.run(["open", "-a", "Tailscale"])
+        raise NeedsUser(
+            "Tailscale is installed but not connected",
+            f"open Tailscale from the menu bar, {approve}",
+        )
+
+
 @register
 class Tailscale(Module):
     name = "tailscale"
     category = "server"
     description = "Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key)."
     profiles = ("server", "remote")
+    requires = (Homebrew,)
+    per_os = OsMap(macos=_TailscaleMac())
+    # The tailscale-app cask is a .pkg, which brew installs with sudo (C-R21).
+    needs_sudo_on_macos: ClassVar[bool] = True
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("tailscale")
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "macos":
+            return super().sudo_needed(ctx)
+        # Only the .pkg cask needs root: when it is not installed and no app is there,
+        # or, under --force, when brew would upgrade it. Connecting and approving never
+        # need a password, so an installed-but-unapproved Tailscale does not ask for one.
+        managed = _TS_CASK.verify(ctx)
+        if ctx.force and managed:
+            return True
+        return not managed and not _TS_APP.is_dir()
+
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Official cross-distro installer (same curl|sh escape hatch as chezmoi/starship).
         if not ctx.ex.which("tailscale"):
             ctx.ex.run(["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"])
@@ -55,7 +219,8 @@ class Tailscale(Module):
         # the one-time interactive `tailscale up` to the operator — never block install.
         key = _secret(ctx, "TAILSCALE_AUTHKEY")
         if key:
-            ctx.ex.run(["tailscale", "up", "--ssh", f"--authkey={key}"], sudo=True)
+            with _auth_key_file(key) as auth_arg:
+                ctx.ex.run(["tailscale", "up", "--ssh", auth_arg], sudo=True)
         else:
             log.warn(
                 "tailscale: no TAILSCALE_AUTHKEY in secrets — "
@@ -108,6 +273,8 @@ class Zram(Module):
     category = "server"
     description = "Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents."
     profiles = ("server",)
+    # Linux compressed swap
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _conf(self, ctx: Ctx) -> str:
         override = os.environ.get("DEVBOOST_ZRAM_CONF")
@@ -151,6 +318,8 @@ class AgentSudo(Module):
     category = "server"
     description = "Passwordless sudo for your user — so agents/automation never hang on a prompt."
     profiles = ()
+    # passwordless sudo for agents on a server/brain
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def verify(self, ctx: Ctx) -> bool:
         # True only if sudo works non-interactively AND our drop-in is what enables it.
@@ -181,17 +350,25 @@ class ResticB2(Module):
     category = "server"
     description = "Offsite encrypted backups — restic → Backblaze B2, nightly systemd timer."
     profiles = ("server",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "run the restic → B2 backup by hand; the nightly launchd timer lands in M4"
+    ))
     # No hard `requires = (Secrets,)`: these read secrets OPTIONALLY via _secret (which
     # degrades to None when the bundle is absent). A hard require would let a missing
     # bundle *block* them entirely (defeating the graceful path) — see _secret's docstring.
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         d = systemd._user_unit_dir()
         if not ((d / "restic-b2.service").exists() and (d / "restic-b2.timer").exists()):
             return False
         return systemd.is_enabled(ctx, "restic-b2.timer", user=True)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if not ctx.ex.which("restic"):
             pkg.install(ctx, "restic")
         # Destination + credentials come from the age bundle. Without them we can't run an

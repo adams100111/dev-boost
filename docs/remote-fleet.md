@@ -71,6 +71,15 @@ installs `dotfiles` (chezmoi), which is what puts the `fleet` command on your PA
 (`~/.local/bin/fleet`, from `dotfiles/dot_local/bin/executable_fleet`) and seeds
 `~/.config/fleet/config`.
 
+### A Mac as a fleet client
+
+`devboost install` on a Mac installs the `remote` profile's client side: the Tailscale
+app (`tailscale-app` cask; CLI at `~/.local/bin/tailscale`, no Tailscale SSH server — the
+Mac serves nothing), `mosh`, and herdr 0.9.1. `herdr --remote <server>` pastes a clipboard
+image into the remote pane on Ctrl+V (macOS screenshots go to the clipboard: ⌘⇧4, then
+Ctrl+V). Keep herdr on the same release on both ends — the Mac client of herdr < 0.8
+disconnects right after connecting.
+
 ### Server (Ubuntu/Debian) — production host
 
 ```bash

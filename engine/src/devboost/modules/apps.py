@@ -9,11 +9,15 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import GithubError, UnsupportedOS
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, github, pkg, systemd
 from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
+from devboost.modules._brew import BrewCask
+from devboost.modules._pending import MacosPending
 from devboost.modules.base import Flatpak
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import Secrets
 from devboost.modules.ssh_setup import SshSetup
 
@@ -38,15 +42,23 @@ class FlatpakApp(Module):
     cask: ClassVar[str | None] = None
     category = "apps"
     gui = True
-    requires = (Flatpak,)
+    requires: ClassVar[tuple[type[Module], ...]] = (Flatpak, Homebrew)
     profiles = ("apps",)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        # Homebrew is needed only to install a cask. An app with none never touches brew
+        # (on macOS it is provided by the OS or scoped to Linux), so pulling Homebrew — and
+        # the CLT under it — into its plan would install both for nothing.
+        if cls.cask is None and "requires" not in cls.__dict__:
+            cls.requires = tuple(r for r in cls.requires if r is not Homebrew)
 
     def _arch_name(self) -> str | None:
         return self.arch_pkg or self.aur_pkg
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family == "macos":
-            return self.cask is not None and pkg.cask_installed(ctx, self.cask)
+            return self.cask is not None and BrewCask(self.cask).verify(ctx)
         if ctx.os.family == "arch":
             name = self._arch_name()
             return name is not None and pkg.installed(ctx, name)
@@ -56,7 +68,7 @@ class FlatpakApp(Module):
         if ctx.os.family == "macos":
             if self.cask is None:
                 raise UnsupportedOS(f"{self.name}: no macOS cask declared (set cask)")
-            pkg.install_cask(ctx, self.cask)
+            BrewCask(self.cask).install(ctx)
             return
         if ctx.os.family == "arch":
             if self.arch_pkg is not None:
@@ -77,6 +89,7 @@ class Obsidian(FlatpakApp):
     description = "Obsidian notes."
     app_id = "md.obsidian.Obsidian"
     arch_pkg = "obsidian"
+    cask = "obsidian"
 
 
 @register
@@ -85,6 +98,7 @@ class Bruno(FlatpakApp):
     description = "Bruno API client."
     app_id = "com.usebruno.Bruno"
     aur_pkg = "bruno-bin"
+    cask = "bruno"
 
 
 @register
@@ -93,6 +107,7 @@ class Bitwarden(FlatpakApp):
     description = "Bitwarden desktop."
     app_id = "com.bitwarden.desktop"
     arch_pkg = "bitwarden"
+    cask = "bitwarden"
 
 
 @register
@@ -101,7 +116,8 @@ class Flameshot(FlatpakApp):
     description = "Flameshot screenshots."
     app_id = "org.flameshot.Flameshot"
     arch_pkg = "flameshot"
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: ⌘⇧5 is built in; the brew cask is deprecated
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
 
 @register
@@ -110,6 +126,7 @@ class Localsend(FlatpakApp):
     description = "LocalSend file sharing."
     app_id = "org.localsend.localsend_app"
     arch_pkg = "localsend"
+    cask = "localsend"
 
 
 @register
@@ -118,6 +135,7 @@ class Vlc(FlatpakApp):
     description = "VLC media player."
     app_id = "org.videolan.VLC"
     arch_pkg = "vlc"
+    cask = "vlc"
 
 
 @register
@@ -126,6 +144,8 @@ class Gearlever(FlatpakApp):
     description = "Gear Lever — integrate & update AppImages (LM Studio, WezTerm, …)."
     app_id = "it.mijorus.gearlever"
     aur_pkg = "gearlever"
+    # AppImage manager
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
 
 def _home() -> Path:
@@ -147,11 +167,19 @@ class ObsidianSync(Module):
     description = "Provision the Obsidian vault: deploy key, clone, daily push backstop."
     requires = (Obsidian, Secrets, SshSetup)
     profiles = ("apps",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "clone the vault by hand (`git clone <repo> ~/Vault`); daily sync lands in M4"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return (_vault_dir() / ".git").is_dir()
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         repo = os.environ.get("DEVBOOST_VAULT_REPO")
         if not repo:
             log.warn("obsidian-sync: DEVBOOST_VAULT_REPO not set — skipping (non-blocking)")

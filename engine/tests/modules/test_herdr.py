@@ -28,7 +28,8 @@ def test_herdr_is_optional_agents_profile() -> None:
 
 def test_herdr_verify_uses_which() -> None:
     assert Herdr().verify(_ctx(present=set())) is False
-    assert Herdr().verify(_ctx(present={"herdr"})) is True
+    on_path = _ctx(present={"herdr"}, scripts={"herdr": Result(0, stdout="herdr 0.9.1")})
+    assert Herdr().verify(on_path) is True
 
 
 def test_herdr_install_downloads_verified_x86_64(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,6 +50,33 @@ def test_herdr_install_selects_aarch64(monkeypatch: pytest.MonkeyPatch) -> None:
     Herdr().install(ctx)
     script = ctx.ex.calls[0][2]  # type: ignore[attr-defined]
     assert "herdr-linux-aarch64" in script
+
+
+def test_herdr_install_traps_the_tmp_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A curl failure or checksum mismatch under `set -e` must still clean up $tmp — a
+    # trailing `rm -rf` never runs on early exit, a trap does.
+    monkeypatch.setenv("HOME", "/home/tester")
+    ctx = _ctx()
+    Herdr().install(ctx)
+    script = ctx.ex.calls[0][2]  # type: ignore[attr-defined]
+    assert 'trap \'rm -rf "$tmp"\' EXIT' in script
+
+
+def test_herdr_install_pins_https_on_the_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "/home/tester")
+    ctx = _ctx()
+    Herdr().install(ctx)
+    script = ctx.ex.calls[0][2]  # type: ignore[attr-defined]
+    assert "--proto '=https'" in script
+
+
+def test_herdr_verify_treats_an_unparseable_version_as_drift() -> None:
+    # A corrupt or wrong-arch binary makes `herdr --version` fail or print junk — that
+    # must not be mistaken for "installed" (I3), or the broken binary is never replaced.
+    unparseable = _ctx(present={"herdr"}, scripts={"herdr": Result(0, stdout="not a version")})
+    assert Herdr().verify(unparseable) is False
+    failing = _ctx(present={"herdr"}, scripts={"herdr": Result(1, stderr="boom")})
+    assert Herdr().verify(failing) is False
 
 
 def test_herdr_install_raises_on_checksum_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +103,15 @@ from devboost.modules.herdr import _PLUGINS, HerdrPlugins  # noqa: E402
 
 def test_herdr_plugins_requires_herdr() -> None:
     assert Herdr in HerdrPlugins.requires
-    assert HerdrPlugins.profiles == ("optional-agents", "brain-tools")
+    assert HerdrPlugins.profiles == ("cli", "optional-agents", "brain-tools")
+
+
+def test_herdr_plugins_requires_xcode_clt_on_macos() -> None:
+    # `herdr plugin install` runs `git rev-parse` internally (I1) — ordered after the CLT
+    # on macOS (families=("macos",) drops the edge from Linux plans).
+    from devboost.modules.macos import XcodeClt
+
+    assert XcodeClt in HerdrPlugins.requires
 
 
 def test_herdr_plugins_pins_a_ref_for_every_entry() -> None:

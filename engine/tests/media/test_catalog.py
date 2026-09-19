@@ -259,9 +259,9 @@ def test_herdr_pin_is_present_in_live_catalog() -> None:
     pin = herdr_pin()
     assert isinstance(pin, HerdrSpec)
     assert pin.version
-    assert "x86_64" in pin.assets and "aarch64" in pin.assets
+    assert {"linux-x86_64", "linux-aarch64", "macos-aarch64"} <= set(pin.assets)
     for asset in pin.assets.values():
-        assert asset.url.startswith("https://github.com/ogulcancelik/herdr/")
+        assert asset.url.startswith("https://github.com/herdrdev/herdr/")
         assert re.fullmatch(r"[0-9a-f]{64}", asset.sha256)
 
 

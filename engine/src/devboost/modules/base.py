@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
-from devboost.core.errors import SecretsError, UnsupportedOS
+from devboost.core.errors import NeedsUser, UnsupportedOS
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
+from devboost.core.settings import settings
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
+from devboost.modules.macos import Homebrew, XcodeClt
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
 _BUILD_PKGS_FEDORA = (
@@ -127,11 +129,19 @@ class BuildTools(Module):
     category = "base"
     description = "Compiler toolchain + common build dependencies."
     profiles = ("base",)
+    # The CLT bring clang/make/git; brew adds the one missing build tool (cmake).
+    requires = (XcodeClt, Homebrew)
+    per_os = OsMap(macos=BrewFormula("cmake"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return all(ctx.ex.which(c) for c in ("gcc", "make", "cmake"))
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             pkg.install(ctx, *_BUILD_PKGS_DEBIAN)
         elif ctx.os.family == "arch":
@@ -146,9 +156,10 @@ class Chezmoi(Module):
     category = "base"
     description = "Install the chezmoi dotfiles manager."
     profiles = ("base",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the brew formula; Linux keeps the upstream installer into ~/.local/bin. Not
-    # self_updating, so `devboost install --update` does not upgrade it yet (`brew upgrade
-    # chezmoi` does); an OS-aware --update is planned for M3.
+    # self_updating, so `devboost install --update` leaves it alone on Linux; on macOS it
+    # is brew-managed, so --update runs `brew upgrade chezmoi`.
     per_os = OsMap(macos=BrewFormula("chezmoi"))
 
     def verify(self, ctx: Ctx) -> bool:
@@ -173,6 +184,7 @@ class ChezmoiRepo(Module):
     description = "Clone + apply the managed dotfiles repo via the credential store."
     requires = (Chezmoi, Secrets)
     profiles = ("base",)
+    portable: ClassVar[bool] = True  # `chezmoi init` — same on every OS
 
     def verify(self, ctx: Ctx) -> bool:
         return (Path(os.environ["HOME"]) / ".local" / "share" / "chezmoi").is_dir()
@@ -187,9 +199,25 @@ class ChezmoiRepo(Module):
             except Exception:
                 pass
         if not repo:
-            raise SecretsError(
-                "chezmoi-repo: dotfiles repo URL not found — set DEVBOOST_DOTFILES_REPO "
-                "or add a DOTFILES_REPO key to the secrets bundle"
+            raise NeedsUser(
+                "chezmoi-repo: no dotfiles repo configured",
+                "set DEVBOOST_DOTFILES_REPO=<git url> (or add DOTFILES_REPO to the secrets "
+                "bundle) and re-run",
             )
-        if not ctx.ex.run(["chezmoi", "init", "--apply", repo]).ok:
+        # Local import: shell.py imports Chezmoi from this module, so importing shell.py at
+        # module scope here would cycle. Reuse Dotfiles' own backup/digest helpers exactly —
+        # an external repo's forced apply can drop a pre-existing or foreign rc file just as
+        # easily as the bundled dotfiles' own apply can (mirrors Dotfiles.install).
+        from devboost.modules.shell import Dotfiles, back_up_taken_over, record_taken_over
+
+        home = Path(os.environ["HOME"])
+        src = settings.root / "dotfiles"
+        taken_over = Dotfiles._taken_over_for(ctx)
+        back_up_taken_over(home, src, taken_over, "chezmoi-repo")
+        # --force: never stop at chezmoi's "overwrite?" prompt — under devboost's captured
+        # stdio nobody sees it and the run hangs (same reason as the dotfiles module).
+        if not ctx.ex.run(["chezmoi", "init", "--apply", "--force", repo]).ok:
             log.warn("chezmoi-repo: init/clone failed — dotfiles not synced (non-blocking)")
+        else:
+            # Bookkeeping only: never fail an otherwise successful apply over recording drift.
+            record_taken_over(home, taken_over, "chezmoi-repo")

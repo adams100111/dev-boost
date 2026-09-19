@@ -88,3 +88,18 @@ truly diverge. The OS-agnostic majority is untouched.
 - Background jobs: use `launchd.user_agent(...)` (label `launchd.label("<name>")`).
 - Privacy permissions: `tcc = (TccGrant("Accessibility", "AppName"),)`.
 - `tests/core/test_macos_contract.py` fails if you add a module with no macOS answer.
+- A module whose macOS install uses Homebrew **requires `Homebrew`** (`modules/macos.py`).
+  `PackageModule` and `FlatpakApp` already do; a custom strategy that calls brew sets
+  `uses_brew: ClassVar[bool] = True` and its module lists `Homebrew` in `requires`
+  (`tests/core/test_homebrew_edges.py` enforces it). Linux plans drop Homebrew.
+- A macOS path that a later milestone owns: `per_os = OsMap(macos=MacosPending("M4",
+  "<manual workaround>"))` (`modules/_pending.py`). The module reports `blocked` on a Mac
+  and stays in `KNOWN_GAPS` (module → milestone) until the real strategy lands.
+- A pinned binary is keyed by OS **and** arch: `media.catalog.asset_key(ctx.os)` →
+  `linux-x86_64`, `linux-aarch64`, `macos-aarch64`. Never key by arch alone.
+- An installer script: `remote_script.run_script(ctx, name, url, "bash", *args)` —
+  downloads into a private temp dir, then runs it.
+- A step that opens a macOS dialog runs only when `_credentials.is_interactive()`;
+  otherwise raise `NeedsUser(reason, how_to_fix)`.
+- Default apps: add rows to `data/macos/default-apps.tsv` and call
+  `default_apps.apply(ctx, rows, can_prompt=…)`.

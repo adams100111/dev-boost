@@ -13,6 +13,10 @@ dev-boost reproduces your AI coding-agent setup across devices. Install a profil
 | `pi` | `pi-harness` — bootstraps your Pi harness (`harness-cli`) | yes |
 | `orca` | `orca-ide` — Orca desktop app + `orca-ide` CLI | no (opt-in) |
 | `orca-box` | `orca-ide` + `orca-serve` — headless Orca server | no (opt-in) |
+| `cli` (every OS) | … includes herdr + herdr-plugins (pinned, curated) and glow | yes |
+
+herdr and its pinned plugin set are installed by default on every OS (macOS included;
+Omarchy ships its own herdr). herdr is pinned to 0.9.1 per OS and arch in `catalog.toml`.
 
 ## Claude / Codex
 
@@ -26,8 +30,9 @@ sign in to each CLI once per box.
 `devboost install pi` (in `full`). dev-boost bootstraps your own
 [`agent-harness`](https://github.com/adams100111/agent-harness) (`harness-cli`) onto `PATH`; that
 CLI — driven by its git-tracked manifest — then installs and configures everything under `~/.pi`.
-dev-boost does **not** replicate `~/.pi` config (that would drift from your manifest). Requires the
-secrets-bundle GitHub PAT to have read access to the private harness repo. First session: `pi /login`
+dev-boost does **not** replicate `~/.pi` config (that would drift from your manifest). git must be
+able to read the private harness repo — through gh (`gh auth login`; macOS and gh users) or the
+secrets-bundle token (Linux). First session: `pi /login`
 (`devboost doctor` reminds you). Override the harness source with `DEVBOOST_HARNESS_REPO` /
 `DEVBOOST_HARNESS_REF`.
 

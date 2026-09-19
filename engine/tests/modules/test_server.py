@@ -55,7 +55,17 @@ def test_tailscale_up_with_ssh_when_key_present(monkeypatch: pytest.MonkeyPatch)
     ctx = _ubuntu(present={"tailscale"})
     Tailscale().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
-    assert ["sudo", "tailscale", "up", "--ssh", "--authkey=tskey-abc"] in calls
+    [up] = [c for c in calls if c[:3] == ["sudo", "tailscale", "up"]]
+    assert up[:4] == ["sudo", "tailscale", "up", "--ssh"]
+    # The key is read from a private file (removed afterwards), never passed on argv.
+    assert len(up) == 5 and up[4].startswith("--auth-key=file:")
+    assert not any("tskey-abc" in arg for c in calls for arg in c)
+    assert not Path(up[4].removeprefix("--auth-key=file:")).parent.exists()
+
+
+def test_tailscale_sudo_needed_off_macos_is_the_default() -> None:
+    assert Tailscale().sudo_needed(_ubuntu()) is True
+    assert Tailscale().sudo_needed(_ubuntu(present={"tailscale"})) is False
 
 
 # ── server-firewall ──────────────────────────────────────────────────────────

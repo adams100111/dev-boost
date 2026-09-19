@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
@@ -28,6 +29,7 @@ class CodexPlugins(Module):
     description = "Register Codex marketplaces + install enabled plugins."
     requires = (CodexCode, Secrets)  # Secrets → git creds for the private clickup-flow marketplace
     profiles = ("codex",)
+    portable: ClassVar[bool] = True  # only drives the codex CLI
 
     def _codex_json(self, ctx: Ctx, *args: str) -> object:
         res = ctx.ex.run(["codex", *args])
@@ -43,10 +45,14 @@ class CodexPlugins(Module):
         return res.stdout if res.ok else ""
 
     def _installed_plugins(self, ctx: Ctx) -> set[str]:
+        # Unlike `claude plugin list --json` (a bare list), codex wraps its entries in
+        # {"installed": [...], "available": [...]} — read the "installed" list; a bare
+        # list is also accepted in case an older codex CLI still returns one.
         data = self._codex_json(ctx, "plugin", "list", "--available", "--json")
+        entries: object = data.get("installed") if isinstance(data, dict) else data
         names: set[str] = set()
-        if isinstance(data, list):
-            for e in data:
+        if isinstance(entries, list):
+            for e in entries:
                 if isinstance(e, dict) and e.get("installed") and isinstance(e.get("name"), str):
                     names.add(e["name"])
         return names

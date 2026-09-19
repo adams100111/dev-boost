@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from devboost.core.errors import InstallError, UnsupportedOS
+from devboost.core import log
+from devboost.core.errors import InstallError, PresentUnmanaged, UnsupportedOS
 from devboost.core.osinfo import OsInfo, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import AptRepo, Ctx, DnfRepo, Module
 from devboost.modules import _zed
-from devboost.modules._brew import BrewFormula
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules._lsp import LspModule, all_pins, seed_base_config
+from devboost.modules.cli_tools import Utiluti
+from devboost.modules.macos import Homebrew
 from devboost.modules.mise import Mise
 
 _MS_KEY = "https://packages.microsoft.com/keys/microsoft.asc"
@@ -33,6 +36,8 @@ _VSCODE_SOURCE: pkg.Source = OsMap(
 )
 _FRESH_INSTALL = "https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh"
 _ZED_INSTALL = "https://zed.dev/install.sh"
+#: Where the cask (or a hand install) puts the app on macOS.
+_ZED_APP = Path("/Applications/Zed.app")
 
 
 def zed_install_steps(os_info: OsInfo, script: Path) -> list[list[str]]:
@@ -45,7 +50,7 @@ def zed_install_steps(os_info: OsInfo, script: Path) -> list[list[str]]:
     break `VISUAL="zed --wait"`. Zed updates itself.
     """
     if os_info.family == "macos":
-        raise UnsupportedOS("zed: macOS installs via the Homebrew cask (Zed milestone Z2)")
+        raise UnsupportedOS("zed: macOS installs the Homebrew cask (Zed.per_os)")
     download = ["curl", "-fsSL", "--proto", "=https", "--tlsv1.2", "-o", str(script)]
     return [[*download, _ZED_INSTALL], ["sh", str(script)]]
 
@@ -57,11 +62,18 @@ class Vscode(Module):
     description = "Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor."
     gui = True
     profiles = ("optional-editors",)
+    requires = (Homebrew,)
+    per_os = OsMap(macos=BrewCask("visual-studio-code"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("code")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "arch":
             # Arch's own `code` package is the OSS rebuild (no Marketplace, no MS
             # branding). The Microsoft build is `visual-studio-code-bin`, which Omarchy
@@ -81,8 +93,11 @@ class Zed(Module):
     description = "Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs."
     gui = True
     profiles = ("editors",)
-    #: Linux only until Z2: adding "macos" there also needs the BrewCask install via pkg.
     families = _zed.SUPPORTED_FAMILIES
+    #: macOS only (Linux plans drop both): the cask comes from brew; utiluti makes Zed the
+    #: default app for code/text files.
+    requires = (Homebrew, Utiluti)
+    per_os = OsMap(macos=BrewCask("zed"))
 
     @staticmethod
     def _installed(ctx: Ctx) -> bool:
@@ -91,9 +106,28 @@ class Zed(Module):
         return (_zed.home() / ".local" / "bin" / "zed").exists() or ctx.ex.which("zed")
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            # A hand-installed Zed.app brew does not manage counts as installed (ruling R6).
+            return (
+                (s.verify(ctx) or _ZED_APP.is_dir())
+                and _zed.config_ok(all_pins())
+                and _zed.default_apps_done()
+            )
         return self._installed(ctx) and _zed.config_ok(all_pins())
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            try:
+                s.install(ctx)  # BrewCask: installs when missing; Zed updates itself
+            except PresentUnmanaged:
+                # A hand-installed Zed.app brew cannot adopt (its version drifted from the
+                # cask's): left as it is, but still configured (ruling R6).
+                if not _ZED_APP.is_dir():
+                    raise
+                log.skip(f"zed: {_ZED_APP} was installed outside Homebrew — left as it is")
+            _zed.ensure_config(ctx, all_pins())
+            _zed.ensure_default_apps(ctx)
+            return
         if not self._installed(ctx):
             self._run_installer(ctx)
         _zed.ensure_config(ctx, all_pins())
@@ -122,6 +156,7 @@ class Fresh(Module):
     category = "editors"
     description = "The fresh terminal editor."
     profiles = ("editors",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: Homebrew's `fresh-editor` formula (the binary is still `fresh`).
     per_os = OsMap(macos=BrewFormula("fresh-editor"))
 

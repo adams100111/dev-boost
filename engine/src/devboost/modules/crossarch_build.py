@@ -9,6 +9,9 @@ qemu-user-static package (Debian also gets binfmt-support).
 
 from __future__ import annotations
 
+from typing import ClassVar
+
+from devboost.core.osinfo import LINUX_FAMILIES
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
@@ -20,6 +23,8 @@ class CrossArchBuild(Module):
     category = "brain-host"
     description = "Rootless podman + qemu binfmt for capped multi-arch (amd64+arm64) builds."
     profiles = ("brain-host",)
+    # brain-host service (a Mac is never a brain, spec: out of scope)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def verify(self, ctx: Ctx) -> bool:
         if not ctx.ex.which("podman"):

@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,10 +27,18 @@ from devboost.modules._pass import pass_show
 from devboost.passstore import approve, audit, enroll, git, gpg, sync
 from devboost.passstore.layout import Store
 
-pytestmark = pytest.mark.skipif(
-    not all(shutil.which(t) for t in ("gpg", "gpgconf", "pass", "git")),
-    reason="needs gpg, pass and git",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not all(shutil.which(t) for t in ("gpg", "gpgconf", "pass", "git")),
+        reason="needs gpg, pass and git",
+    ),
+    # Real gpg-agent/pinentry can wedge (stale socket, loopback pinentry misconfigured, an
+    # agent waiting on a tty that doesn't exist in a subagent sandbox) with no built-in
+    # timeout anywhere in RealExecutor. Bound it so a wedged agent fails the test instead
+    # of hanging the whole run; excluded from the fast lane (`pytest -m "not slow"`).
+    pytest.mark.slow,
+    pytest.mark.timeout(60),
+]
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
 
@@ -99,7 +108,16 @@ def make_device(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Mak
     for g in gnupg_dirs:
         subprocess.run(["gpgconf", "--homedir", str(g), "--kill", "all"], check=False,
                        capture_output=True)
-        shutil.rmtree(g, ignore_errors=True)
+        # `gpgconf --kill` requests the agent's shutdown but does not wait for it to
+        # actually exit and release its file locks (private-keys-v1.d/.lock, sockets).
+        # An rmtree attempted immediately can race that shutdown and silently leave the
+        # homedir behind (ignore_errors swallows the failure) — retry briefly instead of
+        # leaving real, if low-value, key material sitting under /tmp indefinitely.
+        for _ in range(10):
+            shutil.rmtree(g, ignore_errors=True)
+            if not g.exists():
+                break
+            time.sleep(0.1)
 
 
 @pytest.fixture

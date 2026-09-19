@@ -3,19 +3,27 @@
 from __future__ import annotations
 
 import os
+import shlex
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core import log
+from devboost.core.errors import InstallError
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
-from devboost.exec.primitives import mise, pkg
+from devboost.exec import userpaths
+from devboost.exec.primitives import mise, pkg, remote_script
 from devboost.exec.resources import resource_path
 from devboost.model import Ctx, Module
 from devboost.modules import _zed
+from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules._lsp import LspModule, all_pins
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
 from devboost.modules.editors import Fresh
+from devboost.modules.macos import Homebrew
 from devboost.modules.mise import Mise
 
 _UV_VERSION = "0.11.23"
@@ -34,11 +42,18 @@ class Uv(Module):
     category = "python"
     description = "uv — fast Python package/project manager."
     profiles = ("python",)
+    requires = (Homebrew,)
+    per_os = OsMap(macos=BrewFormula("uv"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return ctx.ex.which("uv")
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "arch":
             # uv is a first-class Arch package; prefer it over the curl|sh escape hatch so
             # pacman owns the file and `omarchy update` keeps it current.
@@ -66,6 +81,7 @@ class WebRuntimes(Module):
     description = "node/pnpm/bun via mise."
     requires = (Mise,)
     profiles = ("web",)
+    portable: ClassVar[bool] = True  # mise; node/pnpm/bun ship darwin-arm64
     _SPECS = ("node@22", "pnpm@11.8.0", "bun@1.3.14")
 
     def verify(self, ctx: Ctx) -> bool:
@@ -91,6 +107,8 @@ class Playwright(Module):
     description = "Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI."
     requires = (WebRuntimes,)
     profiles = ("web",)  # semantic home; installed via the `devtools` aggregate in profiles.toml
+    # npm + Playwright's own browser downloads; macOS needs no system libs.
+    portable: ClassVar[bool] = True
 
     def _marker(self) -> Path:
         return Path(os.environ["HOME"]) / ".cache" / "ms-playwright" / ".devboost"
@@ -111,7 +129,8 @@ class Playwright(Module):
                 sudo=True,
                 env={"NEEDRESTART_MODE": "a"},
             )
-        else:
+        # macOS: Chromium bundles its own frameworks — no system libraries to add.
+        elif ctx.os.family != "macos":
             # Fedora: Playwright's install-deps is apt-only, so install Chromium's system libs
             # via dnf ourselves. Best-effort — a lib renamed on some future Fedora must NOT fail
             # the module (browsers still install; degrade with a warn, never error). dnf5 rejects
@@ -167,6 +186,36 @@ class LaravelLsp(LspModule):
 
 # --- dotnet ------------------------------------------------------------------------------
 
+# Microsoft's official script host (dot.net/v1/dotnet-install.sh 301s here); pinning the
+# final URL saves a redirect hop.
+_DOTNET_INSTALL = "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh"
+_DOTNET_CHANNEL = "10.0"  # .NET 10 LTS, the same pin as the Linux packages
+
+
+def _has_sdk(listing: str) -> bool:
+    major = _DOTNET_CHANNEL.split(".", 1)[0] + "."
+    return any(ln.startswith(major) for ln in listing.splitlines())
+
+
+@dataclass(frozen=True)
+class _DotnetUserInstall:
+    """macOS: Microsoft's dotnet-install.sh into ~/.dotnet — no sudo, no .pkg (spec §2).
+
+    The executor puts ~/.dotnet on PATH (dotnet tools install in the same run); env.sh
+    exports DOTNET_ROOT so tools like csharp-ls find the runtime later.
+    """
+
+    def verify(self, ctx: Ctx) -> bool:
+        dotnet = userpaths.dotnet_root(_home()) / "dotnet"
+        out = ctx.ex.run([str(dotnet), "--list-sdks"])
+        return out.ok and _has_sdk(out.stdout)
+
+    def install(self, ctx: Ctx) -> None:
+        remote_script.run_script(
+            ctx, "dotnet-sdk", _DOTNET_INSTALL, "bash",
+            "--channel", _DOTNET_CHANNEL, "--install-dir", str(userpaths.dotnet_root(_home())),
+        )
+
 
 @register
 class DotnetSdk(Module):
@@ -174,12 +223,21 @@ class DotnetSdk(Module):
     category = "dotnet"
     description = ".NET 10 LTS SDK."
     profiles = ("dotnet",)
+    # macOS installs into ~/.dotnet (no brew), but Homebrew stays first on a Mac: the
+    # foundation every macOS module orders after (and Linux plans drop it).
+    requires = (Homebrew,)
+    per_os = OsMap(macos=_DotnetUserInstall())
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         out = ctx.ex.run(["dotnet", "--list-sdks"])
-        return out.ok and any(ln.startswith("10.") for ln in out.stdout.splitlines())
+        return out.ok and _has_sdk(out.stdout)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family == "debian":
             # Microsoft's config package wires up the correct prod repo AND its current
             # signing key for the running Ubuntu release; a hand-rolled repo + the
@@ -213,6 +271,7 @@ class Aspire(Module):
     description = "Aspire CLI (dotnet global tool)."
     requires = (DotnetSdk,)
     profiles = ("dotnet",)
+    portable: ClassVar[bool] = True  # `dotnet tool install` (~/.dotnet on PATH)
 
     def verify(self, ctx: Ctx) -> bool:
         # `dotnet tool install -g` lands in ~/.dotnet/tools, which is NOT on PATH in the
@@ -232,6 +291,7 @@ class DotnetLsp(Module):
     description = "csharp-ls + csharpier (dotnet global tools)."
     requires = (Fresh, DotnetSdk)
     profiles = ("dotnet",)
+    portable: ClassVar[bool] = True  # `dotnet tool install` (~/.dotnet on PATH)
 
     def verify(self, ctx: Ctx) -> bool:
         return (_home() / ".dotnet" / "tools" / "csharp-ls").exists()
@@ -252,6 +312,7 @@ class DataServices(Module):
     description = "Containerized data services (postgres/valkey/dbgate) compose template."
     requires = (Docker,)
     profiles = ("data",)
+    portable: ClassVar[bool] = True  # a bundled compose template only
 
     def _compose(self) -> Path:
         return resource_path("templates", "data", "compose.yaml")
@@ -278,6 +339,7 @@ class DevopsTools(Module):
     description = "OpenTofu/kubectl/helm/k9s via mise."
     requires = (Mise,)
     profiles = ("devops",)
+    portable: ClassVar[bool] = True  # mise + aqua (darwin-arm64 builds)
     _SPECS = (
         "aqua:opentofu/opentofu@1.11.6",
         "aqua:kubernetes/kubectl@1.35.2",
@@ -303,23 +365,61 @@ class DevopsLsp(LspModule):
 
 # --- react-native ------------------------------------------------------------------------
 
+_ANDROID_PACKAGES = "'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'"
+
+
+@dataclass(frozen=True)
+class _AndroidSdkMac:
+    """macOS: Google's command-line tools from the Homebrew cask (sdkmanager lands in
+    /opt/homebrew/bin), the SDK in $ANDROID_HOME (~/Library/Android/sdk, exported by
+    env.sh). No /etc/profile.d on a Mac."""
+
+    uses_brew: ClassVar[bool] = True
+
+    @staticmethod
+    def sdk() -> Path:
+        default = _home() / "Library" / "Android" / "sdk"
+        return Path(os.environ.get("ANDROID_HOME") or str(default))
+
+    def verify(self, ctx: Ctx) -> bool:
+        return (self.sdk() / "platform-tools" / "adb").exists()
+
+    def install(self, ctx: Ctx) -> None:
+        mise.use_global(ctx, "java@temurin-17")
+        BrewCask("android-commandlinetools").install(ctx)
+        sdk = self.sdk()
+        sdk.mkdir(parents=True, exist_ok=True)
+        cmd = f"yes | sdkmanager --sdk_root={shlex.quote(str(sdk))} {_ANDROID_PACKAGES}"
+        res = ctx.ex.run(["sh", "-c", cmd])
+        if not res.ok:
+            raise InstallError("android-sdk", f"sdkmanager {_ANDROID_PACKAGES}", res.code)
+
 
 @register
 class AndroidSdk(Module):
     name = "android-sdk"
     category = "react-native"
     description = "Android SDK (cmdline-tools + platform/build-tools) + JDK via mise."
-    requires = (Mise,)
+    requires = (Mise, Homebrew)
     profiles = ("react-native",)
+    per_os = OsMap(macos=_AndroidSdkMac())
     _CMDLINE_VERSION = "13114758"
 
     def _home_sdk(self) -> Path:
-        return Path(os.environ.get("ANDROID_HOME", str(_home() / "Android" / "Sdk")))
+        # `or` (not .get's default) so ANDROID_HOME="" is treated as unset, same as the
+        # macOS strategy above (_AndroidSdkMac.sdk) — an exported-but-empty var must not
+        # resolve to Path(""), which is the cwd in disguise.
+        return Path(os.environ.get("ANDROID_HOME") or str(_home() / "Android" / "Sdk"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return (self._home_sdk() / "platform-tools" / "adb").exists()
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         mise.use_global(ctx, "java@temurin-17")
         if ctx.os.family == "debian":
             # libfuse2 is required by the Android Emulator on Ubuntu (FUSE2 compat layer).
@@ -341,10 +441,7 @@ class AndroidSdk(Module):
             if extracted.is_dir() and not tools.exists():
                 extracted.rename(tools)
         sm = str(tools / "bin" / "sdkmanager")
-        ctx.ex.run(
-            ["sh", "-c", f"yes | {sm} --sdk_root={sdk} 'platform-tools' "
-             "'platforms;android-35' 'build-tools;35.0.0'"]
-        )
+        ctx.ex.run(["sh", "-c", f"yes | {sm} --sdk_root={sdk} {_ANDROID_PACKAGES}"])
         # Persist ANDROID_HOME so shells pick it up after reboot.
         profile_d = Path("/etc/profile.d")
         android_sh = profile_d / "devboost-android.sh"
@@ -364,6 +461,7 @@ class Expo(Module):
     description = "React Native / Expo project template (npx-only; no global expo-cli)."
     requires = (WebRuntimes,)
     profiles = ("react-native",)
+    portable: ClassVar[bool] = True  # a bundled template only
 
     def verify(self, ctx: Ctx) -> bool:
         return resource_path("templates", "react-native", "README.md").exists()

@@ -11,6 +11,7 @@ from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, pkg, systemd
 from devboost.model import AptRepo, Ctx, Module
+from devboost.modules._pending import MacosPending
 
 #: Docker's official engine package set on Debian/Ubuntu. `docker.io` (Ubuntu's own
 #: package) is deliberately NOT used — Docker's docs list it as a *conflicting*
@@ -63,8 +64,14 @@ class Docker(Module):
     category = "base"
     description = "Container engine (daemon enabled; invoking user added to docker group)."
     profiles = ("base",)
+    # macOS: a switchable runtime (Colima default) arrives in M4 (spec §4).
+    per_os = OsMap(macos=MacosPending(
+        "M4", "for now: `brew install colima docker docker-compose && colima start`"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         # docker-ce daemon on BOTH Fedora and Debian. On Fedora, the podman-docker shim provides
         # a `docker` command but no daemon — is-enabled(docker.service) is what proves a real
         # engine, so a shim-only box correctly verifies False and gets docker-ce installed.
@@ -80,6 +87,9 @@ class Docker(Module):
         return True
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # docker-ce on both OSes (one engine, consistent with the VPS). `which("dockerd")`
         # distinguishes a real engine already installed from Fedora's podman-docker shim, so the
         # repo setup + install runs only when there's no daemon yet.
@@ -121,8 +131,13 @@ class DockerBuildCacheGc(Module):
     description = "Cap Docker's build cache (daemon.json builder.gc) so it can't fill the disk."
     requires = (Docker,)
     profiles = ("base",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "set builder.gc in the runtime's docker config (Colima: `colima start --edit`)"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         p = Path(_daemon_json())
         if not p.exists():
             return False
@@ -135,6 +150,9 @@ class DockerBuildCacheGc(Module):
         return bool(isinstance(gc, dict) and gc.get("enabled"))
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         # Read-modify-write merge preserves any existing daemon.json keys (e.g. the NVIDIA
         # runtime). Restart only when the file actually changed, so re-runs are no-ops.
         if config.json_merge(ctx, _daemon_json(), _BUILDER_GC):

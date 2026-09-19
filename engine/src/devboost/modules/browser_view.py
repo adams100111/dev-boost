@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from devboost.core.errors import UnsupportedOS
+from devboost.core.osinfo import LINUX_FAMILIES
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
@@ -70,6 +72,8 @@ class BrowserView(Module):
     category = "brain-host"
     description = "Xvfb + x11vnc + noVNC to watch a headful (agent) browser from any device."
     profiles = ("brain-host",)
+    # brain-host service (a Mac is never a brain, spec: out of scope)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("Xvfb") and ctx.ex.which("x11vnc") and _helper_path().exists()

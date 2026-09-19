@@ -8,9 +8,13 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
+from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, copr, gpu, pkg, systemd
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
+from devboost.modules._pending import MacosPending
+from devboost.modules.macos import Homebrew
 
 
 def _snapper_config_value(get_config_stdout: str, key: str) -> str | None:
@@ -36,9 +40,14 @@ class SystemService(Module):
     profiles = ("system",)
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         return systemd.is_enabled(ctx, self.service)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         pkg.install(ctx, self.svc_pkg)
         systemd.enable_system_unit(ctx, self.service, now=True)
 
@@ -69,6 +78,8 @@ class Fwupd(SystemService):
     description = "Firmware updates."
     svc_pkg = "fwupd"
     service = "fwupd.service"
+    # macOS updates firmware through Software Update
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
 
 @register
@@ -78,7 +89,8 @@ class PowerProfilesDaemon(SystemService):
     svc_pkg = "power-profiles-daemon"
     service = "power-profiles-daemon"
     # Omarchy ships and enables ppd, and drives it through `omarchy powerprofiles ...`.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: Low Power Mode in System Settings
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
     def _ppd_already_provided(self, ctx: Ctx) -> bool:
         # power-profiles-daemon and tuned-ppd both Provide AND Conflict on `ppd-service`, so
@@ -108,7 +120,8 @@ class Thermald(SystemService):
     svc_pkg = "thermald"
     service = "thermald"
     # Shipped in Omarchy's base package set and enabled by its install scripts.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: thermal management is the OS's job on a Mac
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
 
 
 @register
@@ -117,6 +130,9 @@ class Smartmontools(SystemService):
     description = "Disk SMART monitoring."
     svc_pkg = "smartmontools"
     service = "smartd"
+    requires = (Homebrew,)
+    # macOS: the smartctl tool only — no smartd service (launchd would be M4's business).
+    per_os = OsMap(macos=BrewFormula("smartmontools"))
 
 
 @register
@@ -262,6 +278,8 @@ class Earlyoom(Module):
     category = "system"
     description = "Userspace OOM killer (dev-protecting)."
     profiles = ("system",)
+    # Linux OOM killer
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _conf(self, ctx: Ctx | None = None) -> str:
         """Return the earlyoom config path.
@@ -394,14 +412,22 @@ class ResticBackup(Module):
     category = "system"
     description = "Restic backup user service + timer."
     profiles = ("system",)
+    per_os = OsMap(macos=MacosPending(
+        "M4", "run `restic backup --files-from ~/.config/devboost/restic-include` by hand"
+    ))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         d = systemd._user_unit_dir()
         if not ((d / "restic-backup.service").exists() and (d / "restic-backup.timer").exists()):
             return False
         return systemd.is_enabled(ctx, "restic-backup.timer", user=True)
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if not ctx.ex.which("restic"):
             pkg.install(ctx, "restic")
         service = (
@@ -423,6 +449,8 @@ class GpuDetect(Module):
     category = "system"
     description = "Auto-detect the GPU vendor and record it for driver selection."
     profiles = ("system",)
+    # picks a Linux GPU driver (lspci)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def _marker(self) -> Path:
         state = os.environ.get("XDG_STATE_HOME") or str(

@@ -11,22 +11,28 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import UnsupportedOS
+from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
+from devboost.modules._brew import BrewFormula
 from devboost.modules.base import Rpmfusion
+from devboost.modules.macos import Homebrew
 
 
 @register
 class FfmpegFull(Module):
     name = "ffmpeg-full"
     category = "multimedia"
-    description = "Swap ffmpeg-free for the full ffmpeg from RPM Fusion (Fedora-only)."
-    requires = (Rpmfusion,)
+    description = "Full ffmpeg: RPM Fusion's on Fedora (swaps ffmpeg-free), Homebrew's on macOS."
+    requires = (Rpmfusion, Homebrew)
     profiles = ("multimedia",)
-    families: ClassVar[tuple[str, ...]] = ("fedora",)
+    families: ClassVar[tuple[str, ...]] = ("fedora", "macos")
+    per_os = OsMap(macos=BrewFormula("ffmpeg"))
 
     def verify(self, ctx: Ctx) -> bool:
+        if (s := self.os_strategy(ctx)) is not None:
+            return s.verify(ctx)
         if ctx.os.family != "fedora":
             return False
         return ctx.ex.run(["rpm", "-q", "ffmpeg"]).ok and not ctx.ex.run(
@@ -34,6 +40,9 @@ class FfmpegFull(Module):
         ).ok
 
     def install(self, ctx: Ctx) -> None:
+        if (s := self.os_strategy(ctx)) is not None:
+            s.install(ctx)
+            return
         if ctx.os.family != "fedora":
             raise UnsupportedOS(
                 f"ffmpeg-full requires RPM Fusion (Fedora-only); detected {ctx.os.distro!r}"
@@ -135,7 +144,9 @@ class VaHwaccel(Module):
     # Omarchy installs the vendor VA-API/Vulkan drivers itself, matched to detected
     # hardware (`omarchy-hw-*`), so re-deriving the vendor from lspci here would only
     # duplicate that work. Vanilla Arch still gets the branch below.
-    provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    # macOS: VideoToolbox is built in
+    provided_by: ClassVar[tuple[str, ...]] = ("omarchy", "macos")
+    requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.run(["vainfo"]).ok

@@ -8,6 +8,7 @@ from devboost.core.osinfo import OsMap
 from devboost.exec.primitives import copr, pkg
 from devboost.model import Ctx, Installer, Module
 from devboost.modules._brew import BrewCask, BrewFormula
+from devboost.modules.macos import Homebrew
 
 
 class PackageModule(Module):
@@ -19,6 +20,8 @@ class PackageModule(Module):
     """
 
     cmd: ClassVar[str]
+    #: macOS installs through brew (spec §1 "Ordering"); Linux plans drop Homebrew.
+    requires: ClassVar[tuple[type[Module], ...]] = (Homebrew,)
     fedora_pkg: ClassVar[str]
     debian_pkg: ClassVar[str | None] = None   # apt package name; None → fedora_pkg
     debian_cmd: ClassVar[str | None] = None   # binary on Debian/Ubuntu; None → cmd

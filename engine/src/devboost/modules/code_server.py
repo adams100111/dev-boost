@@ -8,7 +8,9 @@ tailnet, executing on the brain. Closes the "edit from a browser-only device" ga
 from __future__ import annotations
 
 import os
+from typing import ClassVar
 
+from devboost.core.osinfo import LINUX_FAMILIES
 from devboost.core.registry import register
 from devboost.exec.primitives import systemd
 from devboost.model import Ctx, Module
@@ -24,6 +26,8 @@ class CodeServer(Module):
     category = "brain-host"
     description = "code-server — VS Code in the browser (front with tailscale serve; any device)."
     profiles = ("brain-host",)
+    # brain-host service (a Mac is never a brain, spec: out of scope)
+    families: ClassVar[tuple[str, ...]] = LINUX_FAMILIES
 
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("code-server")

@@ -186,21 +186,21 @@ def test_lsp_install_does_not_create_zed_settings(home: Path) -> None:
     assert not _zed.settings_path().exists()
 
 
-# --- I1: Zed is Linux-only (SUPPORTED_FAMILIES) --------------------------------------------
+# --- I1: SUPPORTED_FAMILIES guards every Zed config write -----------------------------------
 
-MAC_CTX = Ctx(os=OsInfo("macos", "macos", "aarch64"), ex=FakeExecutor())
+OFF_CTX = Ctx(os=OsInfo("freebsd", "freebsd", "x86_64"), ex=FakeExecutor())
 _NEEDS_MERGE = '{"buffer_font_size": 17}'  # lacks every must-have key → a merge would write
 
 
 def test_supported_families_is_the_single_source_for_zed_families() -> None:
     from devboost.modules.editors import Zed
 
-    assert _zed.SUPPORTED_FAMILIES == ("fedora", "debian", "arch")
+    assert _zed.SUPPORTED_FAMILIES == ("fedora", "debian", "arch", "macos")
     assert Zed.families == _zed.SUPPORTED_FAMILIES
 
 
 @pytest.mark.parametrize("module", [PythonLsp, DotnetLsp])
-def test_lsp_hook_does_nothing_on_macos(home: Path, module: type) -> None:
+def test_lsp_hook_does_nothing_off_family(home: Path, module: type) -> None:
     p = _zed.settings_path()
     p.parent.mkdir(parents=True)
     p.write_text(_NEEDS_MERGE, encoding="utf-8")
@@ -208,7 +208,7 @@ def test_lsp_hook_does_nothing_on_macos(home: Path, module: type) -> None:
     tools = home / ".dotnet" / "tools"
     tools.mkdir(parents=True)
     (tools / "csharp-ls").write_text("", encoding="utf-8")
-    module().install(MAC_CTX)
+    module().install(OFF_CTX)
     assert p.read_text(encoding="utf-8") == _NEEDS_MERGE
     assert not (p.parent / "settings.json.devboost-bak").exists()
     assert not _zed.keymap_path().exists()
@@ -216,8 +216,17 @@ def test_lsp_hook_does_nothing_on_macos(home: Path, module: type) -> None:
 
 
 def test_ensure_config_does_nothing_off_family(home: Path) -> None:
-    assert _zed.ensure_config(MAC_CTX, all_pins()) is False
+    assert _zed.ensure_config(OFF_CTX, all_pins()) is False
     assert not _zed.settings_path().parent.exists()
+
+
+def test_lsp_hook_merges_on_macos(home: Path) -> None:
+    p = _zed.settings_path()
+    p.parent.mkdir(parents=True)
+    p.write_text(_NEEDS_MERGE, encoding="utf-8")
+    mac = Ctx(os=OsInfo("macos", "macos", "aarch64", version_id="27.0"), ex=FakeExecutor())
+    _zed.refresh_after_lsp(mac, all_pins())
+    assert "agent_servers" in p.read_text(encoding="utf-8")
 
 
 # --- I2: the hook never fails an LSP install ----------------------------------------------

@@ -1,12 +1,13 @@
 # Zed — the default editor
 
-`devboost install editors` (part of `full` and `omarchy`) installs [Zed](https://zed.dev) on
-Fedora, Ubuntu and Arch/Omarchy with the official user-local installer
-(`~/.local/zed.app`, `~/.local/bin/zed`; no sudo). The script is downloaded with
-`curl -fsSL --proto =https --tlsv1.2` into a private temp directory (`mktemp -d`, mode 0700),
-run with `sh`, and the directory is then deleted, so a failed download fails the install
-instead of silently running nothing. Zed updates itself. GUI only — skipped on headless
-servers. VS Code is opt-in: `devboost install optional-editors`.
+`devboost install editors` (part of `full`, `omarchy` and the macOS `macos` profile)
+installs [Zed](https://zed.dev). On Fedora, Ubuntu and Arch/Omarchy it uses the official
+user-local installer (`~/.local/zed.app`, `~/.local/bin/zed`; no sudo): the script is
+downloaded with `curl -fsSL --proto =https --tlsv1.2` into a private temp directory
+(`mktemp -d`, mode 0700), run with `sh`, and the directory is then deleted, so a failed
+download fails the install instead of silently running nothing. On macOS it installs the
+`zed` Homebrew cask instead (see [macOS](#macos) below). Zed updates itself either way. GUI
+only — skipped on headless servers. VS Code is opt-in: `devboost install optional-editors`.
 
 ## Seeded vs guaranteed
 
@@ -36,11 +37,11 @@ with the exact keys to add.
 **When the merge runs:** the `zed` module merges on every `devboost install` that includes it.
 The LSP modules (`fresh-lsp`, the per-stack `*-lsp` modules, `dotnet-lsp`) also merge the
 guaranteed keys right after installing their servers, whenever `~/.config/zed/settings.json`
-exists on a supported Linux family — even if the run doesn't include the `editors` profile.
-Dropping the `editors` profile therefore does **not** stop the merge. It never runs on macOS
-(until Z2), never creates the file, and a failure there is only a warning. Setting a
-guaranteed extension to `false` does not stick — remove the extension from Zed instead of
-fighting the merge.
+exists on a supported family (Fedora, Debian, Arch, or — since Z2 — macOS) — even if the run
+doesn't include the `editors` profile. Dropping the `editors` profile therefore does **not**
+stop the merge. Off a supported family it never runs and never creates the file, and a
+failure there is only a warning. Setting a guaranteed extension to `false` does not stick —
+remove the extension from Zed instead of fighting the merge.
 
 ## What the seed configures
 
@@ -92,14 +93,35 @@ and only when `zed` is installed — set in `~/.config/devboost/env.sh`. git has
 `env.sh` sources `~/.config/devboost/local.sh` last if it exists (never shipped or managed by
 dev-boost), so a machine that wants a different `EDITOR`/`VISUAL` can override it there.
 
-## macOS (planned — milestone Z2)
+## macOS
 
-This module is Linux-only today: `_zed.SUPPORTED_FAMILIES = ("fedora", "debian", "arch")` is
-both `Zed.families` and the guard on every path that writes Zed config for another module (the
-LSP hook), and `zed_install_steps()` raises `UnsupportedOS` on macOS. `_zed.py` has no other
-OS branches — it is written to be reused unchanged. Adding `"macos"` to `SUPPORTED_FAMILIES`
-is **not** enough for Z2: `Zed.install` always calls `zed_install_steps` today, so Z2 must
-also route the install through `pkg` with `per_os = OsMap(macos=BrewCask("zed"))` (the
-Homebrew-cask install, M2), then call the same `ensure_config()` used on Linux.
-`zed_install_steps` stays Linux-only — macOS installs through the cask, not the installer
-script.
+Same files, same guarantees: `~/.config/zed/settings.json` and `keymap.json` are seeded
+once (chezmoi `create_`), and the must-have keys are merged on every run
+(`_zed.SUPPORTED_FAMILIES` includes `macos`). Zed comes from the `zed` Homebrew cask
+(`Zed.per_os`), which also puts the `zed` CLI on PATH. Zed updates itself, so
+`devboost install --update` skips the cask's own upgrade step — but the `zed` module still
+runs on `--update` (its whole macOS install is one cask), so the config merge always
+happens and the default-apps step can still report `blocked` if that run is unattended.
+
+**Default app.** Code and text files open in Zed: the Zed rows of
+`data/macos/default-apps.tsv`, applied through `utiluti` (`exec/primitives/default_apps.py`,
+shared with M5's `default-apps` module). macOS 26.4+ asks you to confirm every change, one
+dialog per file type (extensions sharing a type share one), so dev-boost only tries when a
+terminal is attached, asks each type once, and records it in
+`~/.local/state/devboost/default-apps.json` — a "no" is never asked again. An unattended
+run leaves `zed` **blocked** with "run `devboost install zed` in a terminal". `.ts` is not
+claimed: macOS gives it the same type as MPEG transport-stream video (`.mts`, `.m2ts`).
+
+**Your own editor.** `~/.config/devboost/local.sh` is sourced last by `env.sh`; set
+`EDITOR` / `VISUAL` there.
+
+**First run.** The first `devboost install zed` (or any LSP module, since the LSP hook
+merges Zed's config too) rewrites `~/.config/zed/settings.json` as plain JSON — every key
+already in the file is kept, and dev-boost only adds `auto_install_extensions`,
+`agent_servers` and the CSharp language server entries, the same must-have keys as Linux.
+The original file, including its comments and trailing commas, is kept alongside it as
+`settings.json.devboost-bak`. The chezmoi apply that seeds `settings.json` in the first
+place only creates the file when it is absent — it never touches an existing one.
+
+A hand-installed `/Applications/Zed.app` that Homebrew cannot adopt is kept as it is (Zed
+reports `present-unmanaged`, not blocked); config and default apps are still applied to it.

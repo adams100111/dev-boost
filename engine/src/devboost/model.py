@@ -21,6 +21,10 @@ class Ctx:
     ex: Executor
     force: bool = False
     dry_run: bool = False
+    #: True on a macOS run whose session holds no sudo timestamp (the password was not
+    #: asked for, or was not given). A ``needs_sudo_on_macos`` module whose sudo step is
+    #: still pending is then reported ``blocked`` and never attempted (runner._run_one).
+    no_sudo: bool = False
 
 
 @runtime_checkable
@@ -104,6 +108,10 @@ class Module:
     #: True when a custom-install module is verified to work unchanged on macOS (no
     #: per_os.macos needed). Read by the macOS catalog contract test.
     portable: ClassVar[bool] = False
+    #: True when this module's macOS install runs sudo (or a script that needs a cached
+    #: sudo timestamp). A macOS run asks for the password up front only when such a
+    #: module is pending; otherwise it never prompts.
+    needs_sudo_on_macos: ClassVar[bool] = False
     gui: ClassVar[bool] = False
     per_os: ClassVar[OsMap[Installer]] = OsMap()
 
@@ -135,6 +143,17 @@ class Module:
         if strat is self:
             self._require_override("verify")
         return strat.verify(ctx)
+
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        """Whether this run's install would need root on macOS (read-only probe).
+
+        Read by the macOS sudo pre-check, only for modules flagged ``needs_sudo_on_macos``.
+        The default is conservative: anything not installed, and anything forced, counts.
+        A module whose sudo step depends on less than its whole ``verify`` (Homebrew
+        present with analytics still on needs no root) overrides this with a presence
+        probe, so a re-run does not ask for a password it will never use.
+        """
+        return ctx.force or not self.verify(ctx)
 
     def install(self, ctx: Ctx) -> None:
         strat = self._strategy(ctx)

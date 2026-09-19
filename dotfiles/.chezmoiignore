@@ -3,8 +3,8 @@
 
    1. Per-OS files. macOS runs zsh, so bash's rc files and the Linux-only services
       (systemd user units, caddy) are not applied there; Linux runs bash, so the macOS
-      login files and the AeroSpace config are not applied there. Zed config is
-      Linux-only until Z2 routes macOS through the zed module's ensure_config.
+      login files and the AeroSpace config are not applied there. Zed's config
+      (~/.config/zed) applies on both: same seed, same path.
 
    2. Omarchy. The distro ships its own copies of the files listed in its block and
       REPLACES the user's version during `omarchy update`: migrations call
@@ -25,7 +25,6 @@
 .bash-preexec.sh
 .config/systemd
 .config/caddy
-.config/zed
 {{ else -}}
 .zshrc
 .zprofile

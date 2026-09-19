@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import devboost.modules.shell as shell_mod
 from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.graph import toposort
@@ -16,6 +17,7 @@ from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules.shell import (
+    _TAKEN_OVER_LINUX,
     BashConfig,
     Dotfiles,
     ZshConfig,
@@ -202,6 +204,27 @@ def test_a_failed_apply_records_no_digests(home: Path) -> None:
     assert not _digests_file(home).exists()
 
 
+def test_a_digest_bookkeeping_error_warns_but_does_not_fail_install(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """record_rc_digests is bookkeeping only (M-R26): a PermissionError on the state dir
+    (mkdir/mkstemp/read_bytes) must log a warning, never fail an otherwise successful
+    dotfiles install (C-R16)."""
+
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("[Errno 13] Permission denied: rc-digests state dir")
+
+    monkeypatch.setattr(shell_mod, "record_rc_digests", _raise)
+    warnings: list[str] = []
+    monkeypatch.setattr(log, "warn", warnings.append)
+    (home / ".zshrc").write_bytes((DOT / "dot_zshrc").read_bytes())
+
+    Dotfiles().install(Ctx(os=MAC, ex=FakeExecutor()))  # must not raise
+
+    assert any("rc digest" in w for w in warnings)
+    assert Dotfiles()._stamp().is_file()  # install still ran to completion
+
+
 def test_an_untouched_file_from_an_older_release_gets_no_backup(
     home: Path, tmp_path: Path
 ) -> None:
@@ -266,6 +289,59 @@ def test_dotfiles_leaves_rc_files_alone_on_linux(home: Path) -> None:
     Dotfiles().install(Ctx(os=FEDORA, ex=FakeExecutor()))
     assert (home / ".zshrc").read_text(encoding="utf-8") == "mine\n"
     assert not (home / ".zshrc.pre-devboost").exists()
+
+
+def test_bashrc_foreign_is_backed_up_on_linux(home: Path) -> None:
+    (home / ".bashrc").write_text("mine\n", encoding="utf-8")
+    kept = back_up_rc_files(home, DOT, _TAKEN_OVER_LINUX)
+    assert [p.name for p in kept] == [".bashrc.pre-devboost"]
+    assert (home / ".bashrc.pre-devboost").read_text(encoding="utf-8") == "mine\n"
+    # A copy, not a move: the original stays until `chezmoi apply --force` replaces it.
+    assert (home / ".bashrc").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_bashrc_drifted_is_backed_up_on_linux(home: Path) -> None:
+    # Managed, but another tool appended a line the next `apply --force` would drop.
+    drifted = (DOT / "dot_bashrc").read_bytes() + b'export PATH="$HOME/.tool/bin:$PATH"\n'
+    (home / ".bashrc").write_bytes(drifted)
+    kept = back_up_rc_files(home, DOT, _TAKEN_OVER_LINUX)
+    assert [p.name for p in kept] == [".bashrc.pre-devboost"]
+    assert (home / ".bashrc.pre-devboost").read_bytes() == drifted
+
+
+def test_bashrc_unchanged_gets_no_backup_on_linux(home: Path) -> None:
+    (home / ".bashrc").write_bytes((DOT / "dot_bashrc").read_bytes())
+    assert back_up_rc_files(home, DOT, _TAKEN_OVER_LINUX) == []
+    assert not list(home.glob(".bashrc.pre-devboost*"))
+
+
+def test_dotfiles_backs_up_a_foreign_bashrc_on_linux_before_applying(home: Path) -> None:
+    (home / ".bashrc").write_text("mine\n", encoding="utf-8")
+    ex = FakeExecutor()
+    Dotfiles().install(Ctx(os=FEDORA, ex=ex))
+    assert (home / ".bashrc.pre-devboost").read_text(encoding="utf-8") == "mine\n"
+    assert any(c[:2] == ["chezmoi", "apply"] for c in ex.calls)
+
+
+def test_dotfiles_records_the_bashrc_digest_on_linux(home: Path) -> None:
+    (home / ".bashrc").write_bytes((DOT / "dot_bashrc").read_bytes())
+    Dotfiles().install(Ctx(os=FEDORA, ex=FakeExecutor()))
+    state = _digests_file(home)
+    assert json.loads(state.read_text(encoding="utf-8")) == {
+        ".bashrc": hashlib.sha256((DOT / "dot_bashrc").read_bytes()).hexdigest()
+    }
+
+
+def test_dotfiles_leaves_bashrc_alone_on_omarchy(home: Path) -> None:
+    """Omarchy owns ~/.bashrc itself (`.chezmoiignore` skips it) and dev-boost only sources
+    a fragment from it (bash-config) — apply never touches it, so there's nothing to back
+    up or record a digest for."""
+    omarchy = OsInfo("omarchy", "arch", "x86_64", id_like=("arch",))
+    (home / ".bashrc").write_text("mine\n", encoding="utf-8")
+    Dotfiles().install(Ctx(os=omarchy, ex=FakeExecutor()))
+    assert (home / ".bashrc").read_text(encoding="utf-8") == "mine\n"
+    assert not (home / ".bashrc.pre-devboost").exists()
+    assert not _digests_file(home).exists()
 
 
 def test_bash_config_is_linux_only() -> None:

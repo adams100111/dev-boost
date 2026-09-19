@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.errors import InstallError
 from devboost.core.registry import register
-from devboost.media.catalog import herdr_pin
+from devboost.media.catalog import asset_key, herdr_pin
 from devboost.model import Ctx, Module
 from devboost.modules._pass import pass_fields, pass_show
+from devboost.modules.macos import XcodeClt
 from devboost.modules.pass_store import PassStore
+
+
+def _version(text: str) -> tuple[int, int, int] | None:
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    return (int(m[1]), int(m[2]), int(m[3])) if m else None
 
 
 @register
@@ -26,24 +33,43 @@ class Herdr(Module):
     # then fight `omarchy refresh herdr` on every system update.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
 
+    #: Same install code on every OS: the catalog pin is keyed by (os, arch).
+    portable: ClassVar[bool] = True
+
     def verify(self, ctx: Ctx) -> bool:
-        return ctx.ex.which("herdr")
+        if not ctx.ex.which("herdr"):
+            return False
+        res = ctx.ex.run(["herdr", "--version"])
+        have = _version(res.stdout)
+        if not res.ok or have is None:
+            # A corrupt or wrong-arch binary (or one that just fails to run) must not be
+            # mistaken for "installed" — treat it as drift so it gets reinstalled.
+            return False
+        # An older pin is upgraded; a newer herdr (after `herdr update`) is kept as is.
+        want = _version(herdr_pin().version)
+        return want is None or have >= want
 
     def install(self, ctx: Ctx) -> None:
         pin = herdr_pin()
-        asset = pin.assets.get(ctx.os.arch)
+        key = asset_key(ctx.os)
+        asset = pin.assets.get(key)
         if asset is None:
-            raise InstallError("herdr", f"no pinned binary for arch {ctx.os.arch!r}", 1)
+            raise InstallError("herdr", f"no pinned binary for {key!r}", 1)
         bindir = Path(os.environ["HOME"]) / ".local" / "bin"
-        # Download → verify SHA256 (sha256sum -c fails the `set -e` script on mismatch,
-        # before install) → install onto PATH. No native package exists for herdr.
+        # BSD-safe on macOS: shasum ships with every Mac, and BSD `install` has no -D.
+        check = "shasum -a 256 -c -" if ctx.os.family == "macos" else "sha256sum -c -"
+        # Download → verify SHA256 (the check fails the `set -e` script on a mismatch,
+        # before install) → install onto PATH. No native package is used (see D9). The
+        # trap cleans up $tmp on any exit (a checksum mismatch under `set -e` included),
+        # not just the happy path.
         script = (
             "set -e\n"
             "tmp=$(mktemp -d)\n"
-            f'curl -fL --retry 2 -o "$tmp/herdr" "{asset.url}"\n'
-            f'echo "{asset.sha256}  $tmp/herdr" | sha256sum -c -\n'
-            f'install -Dm755 "$tmp/herdr" "{bindir}/herdr"\n'
-            'rm -rf "$tmp"\n'
+            'trap \'rm -rf "$tmp"\' EXIT\n'
+            f'curl -fL --proto \'=https\' --retry 2 -o "$tmp/herdr" "{asset.url}"\n'
+            f'echo "{asset.sha256}  $tmp/herdr" | {check}\n'
+            f'mkdir -p "{bindir}"\n'
+            f'install -m 755 "$tmp/herdr" "{bindir}/herdr"\n'
         )
         res = ctx.ex.run(["sh", "-c", script])
         if not res.ok:
@@ -87,9 +113,12 @@ class HerdrPlugins(Module):
     name = "herdr-plugins"
     category = "optional-agents"
     description = "Curated, pinned herdr plugin set."
-    requires = (Herdr,)
+    # `herdr plugin install` shells out to `git rev-parse` internally, so it hits the
+    # same CLT-stub dialog risk as tpm/tmux-persist on a fresh Mac without the CLT.
+    requires = (Herdr, XcodeClt)
     after = (PassStore,)
-    profiles = ("optional-agents", "brain-tools")
+    profiles = ("cli", "optional-agents", "brain-tools")
+    portable: ClassVar[bool] = True  # only calls the herdr CLI
 
     def verify(self, ctx: Ctx) -> bool:
         listed = ctx.ex.run(["herdr", "plugin", "list"]).stdout
