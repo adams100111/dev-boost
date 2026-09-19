@@ -39,8 +39,11 @@ class PrefsExecutor(RuleExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        res = super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive, timeout=timeout
+        )
         if any(all(t in argv for t in tokens) for tokens, _ in self.rules):
             return res
         if len(argv) < 4 or argv[0] != "defaults":

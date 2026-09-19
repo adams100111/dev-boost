@@ -14,30 +14,61 @@ from devboost.core.errors import NeedsUser
 from devboost.model import Ctx
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    current: dict[str, Any] = {}
+    if path.exists():
+        current = json.loads(path.read_text(encoding="utf-8"))
+    return current
+
+
+def _write_json(ctx: Ctx, path: Path, merged: Mapping[str, Any]) -> None:
+    """Write the merged object to *path*, through sudo ``tee`` when we cannot write it.
+
+    Writability is judged against the nearest EXISTING ancestor: a not-yet-created parent
+    under a writable dir (e.g. tmp/sub/) is still a direct write (we mkdir it), while a
+    root-owned tree (e.g. /etc/docker/) routes through the executor — mirroring `write_kv`,
+    so privileged config is updated uniformly.
+    """
+    body = json.dumps(merged, indent=2) + "\n"
+    probe = path if path.exists() else next(a for a in path.parents if a.exists())
+    if os.access(probe, os.W_OK):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    else:
+        ctx.ex.run(["tee", str(path)], sudo=True, stdin=body)
+
+
 def json_merge(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
     """Idempotently merge `patch` into the JSON object at `path` (shallow, top-level keys).
 
-    Returns True iff the file's contents changed.  When the target isn't writable in
-    process (e.g. a root-owned file under /etc), the write is routed through the executor
-    (`tee`, sudo) — mirroring `write_kv` — so privileged config is updated uniformly.
+    Returns True iff the file's contents changed.
     """
     p = Path(path)
-    current: dict[str, Any] = {}
-    if p.exists():
-        current = json.loads(p.read_text(encoding="utf-8"))
+    current = _read_json_object(p)
     merged = {**current, **patch}
     if merged == current:
         return False
-    body = json.dumps(merged, indent=2) + "\n"
-    # Writability is judged against the nearest EXISTING ancestor: a not-yet-created parent
-    # under a writable dir (e.g. tmp/sub/) is still a direct write (we mkdir it), while a
-    # root-owned tree (e.g. /etc/docker/) routes through the executor.
-    probe = p if p.exists() else next(a for a in p.parents if a.exists())
-    if os.access(probe, os.W_OK):
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body, encoding="utf-8")
-    else:
-        ctx.ex.run(["tee", path], sudo=True, stdin=body)
+    _write_json(ctx, p, merged)
+    return True
+
+
+def json_merge_deep(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
+    """Like `json_merge`, but merges recursively: a nested object in `patch` merges into
+    the matching object in the current file instead of replacing it outright.
+
+    `json_merge`'s shallow ``{**current, **patch}`` is fine when `patch`'s top-level keys
+    are wholly ours (e.g. a plugin's own config block) — but when a key is a shared
+    object a user might also configure (e.g. Docker's `daemon.json` `builder`, which the
+    NVIDIA runtime setup and dev-boost's own build-cache cap both touch), a shallow merge
+    silently drops the user's other subkeys under it. Used where a merged key is such a
+    shared object.
+    """
+    p = Path(path)
+    current = _read_json_object(p)
+    merged = deep_merge(current, patch)
+    if merged == current:
+        return False
+    _write_json(ctx, p, merged)
     return True
 
 

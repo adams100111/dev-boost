@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import github
@@ -54,7 +55,8 @@ def test_obsidian_sync_requires() -> None:
 def test_obsidian_sync_skips_without_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEVBOOST_VAULT_REPO", raising=False)
     ctx = _ctx()
-    ObsidianSync().install(ctx)  # non-blocking, no calls
+    with pytest.raises(NeedsUser, match="DEVBOOST_VAULT_REPO|vault repo"):
+        ObsidianSync().install(ctx)  # blocked with the fix, no calls
     assert ctx.ex.calls == []  # type: ignore[attr-defined]
 
 

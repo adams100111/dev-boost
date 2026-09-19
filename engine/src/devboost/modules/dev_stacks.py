@@ -19,6 +19,7 @@ from devboost.model import Ctx, Module
 from devboost.modules import _zed
 from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules._lsp import LspModule, all_pins
+from devboost.modules._playwright_mcp import PLAYWRIGHT_MCP_PKG
 from devboost.modules.base import Chezmoi  # noqa: F401 — keeps base import side effects predictable
 from devboost.modules.ddev import Ddev
 from devboost.modules.docker import Docker
@@ -119,7 +120,7 @@ class Playwright(Module):
     def install(self, ctx: Ctx) -> None:
         # Native aarch64 Chromium ships with Playwright (Puppeteer has none) — so this
         # works unchanged on the Ampere VPS.
-        ctx.ex.run(["npm", "install", "-g", "playwright", "@playwright/mcp"])
+        ctx.ex.run(["npm", "install", "-g", "playwright", PLAYWRIGHT_MCP_PKG])
         # Browser OS libs: Playwright's dep installer is apt-only. On Debian/Ubuntu it
         # just works; on Fedora install libs via dnf (or run tests in a container).
         if ctx.os.family == "debian":
@@ -156,7 +157,7 @@ class Playwright(Module):
             # works on every arch. `--` separates the MCP command from `claude mcp add`'s flags.
             ctx.ex.run(
                 ["claude", "mcp", "add", "playwright", "--",
-                 "npx", "@playwright/mcp@latest", "--browser", "chromium"]
+                 "npx", PLAYWRIGHT_MCP_PKG, "--browser", "chromium"]
             )
         m = self._marker()
         m.parent.mkdir(parents=True, exist_ok=True)

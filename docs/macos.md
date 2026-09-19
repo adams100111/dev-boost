@@ -2,9 +2,9 @@
 
 Apple Silicon Macs are a first-class dev-boost target (constitution v3.1.0, Principle VI).
 Design: `docs/superpowers/specs/2026-09-18-macos-support-design.md`. This page grows with
-each milestone. **Status: M3 — the workstation.** `devboost install` (the `macos` profile)
-installs the whole catalog; Docker and the scheduled jobs arrive in M4, the desktop layer
-in M5, `curl … | bash` in M6.
+each milestone. **Status: M4 — Docker runtimes and scheduled jobs.** `devboost install`
+(the `macos` profile) installs the whole catalog, Docker included; the desktop layer
+arrives in M5, `curl … | bash` in M6.
 
 - Desktop layer, iOS and extras (M5): see [macos-primer.md](macos-primer.md).
 
@@ -37,9 +37,10 @@ installed.
 | Kind | Modules |
 |---|---|
 | Foundation | `xcode-clt` (silent CLT install), `homebrew` (analytics off), `rosetta` (macOS ≤ 27) |
-| Homebrew formulae | the terminal set (M2), plus glow, mosh, neovim (opt-in), uv, cmake (`build-tools`), smartmontools, ffmpeg (`multimedia`), utiluti, mkcert, ddev (`ddev/ddev` tap) |
-| Homebrew casks | ghostty, nerd-fonts, zed, obsidian, bruno, bitwarden, localsend, vlc, tailscale-app, android-commandlinetools; opt-in: visual-studio-code, jetbrains-toolbox, wezterm@nightly |
+| Homebrew formulae | the terminal set (M2), plus glow, mosh, neovim (opt-in), uv, cmake (`build-tools`), smartmontools, ffmpeg (`multimedia`), utiluti, mkcert, ddev (`ddev/ddev` tap), colima, docker, docker-compose, docker-buildx |
+| Homebrew casks | ghostty, nerd-fonts, zed, obsidian, bruno, bitwarden, localsend, vlc, tailscale-app, android-commandlinetools; opt-in: visual-studio-code, jetbrains-toolbox, wezterm@nightly, orbstack, docker-desktop |
 | Own installers | .NET 10 SDK in `~/.dotnet` (`dotnet-install.sh`), herdr 0.9.1 (pinned, SHA-256-checked), Claude Code, Codex, the Pi harness |
+| Scheduled jobs (M4) | `aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync` as launchd agents (systemd `--user` timers on Linux); `browser-mcp` — opt-in (`devboost install browser-mcp`): a LaunchAgent on macOS, the dotfiles' systemd unit on Linux, enabled only by the module |
 | Same as Linux | mise runtimes (node/pnpm/bun, java, devops tools), LSP servers, Playwright, Aspire, csharp-ls, the Claude/Codex plugins, skills and MCP servers |
 | Provided by macOS (skipped) | curl, unzip, wl-clipboard, flameshot (⌘⇧5), fwupd, thermald, power-profiles-daemon, va-hwaccel |
 | Linux-only (not planned) | bash-config, gearlever, earlyoom, gpu-detect, zram, the brain-host services, the Fedora system layer |
@@ -144,6 +145,29 @@ and never asks again, even if you said no.
 `export EDITOR=nvim VISUAL=nvim`). It is yours — dev-boost never writes it — and it is read
 last, in every shell.
 
+## Docker, ddev, Aspire and scheduled jobs (M4)
+
+Colima is the default runtime; see [docker-runtimes.md](docker-runtimes.md) for the
+licensing table and `devboost docker use`, which switches to OrbStack or Docker Desktop
+later without losing anything.
+
+`devboost install laravel dotnet data dev-hygiene` gives ddev (`brew install ddev/ddev/ddev`
++ `mkcert -install`), the Aspire CLI (a `dotnet tool` in `~/.dotnet`) and the data-services
+compose template. The postgres, valkey and dbgate images it references are multi-arch.
+
+The timers (`aspire-gc`, `restic-backup`, `restic-b2`, `obsidian-sync`) are LaunchAgents
+labelled `dev.devboost.<name>`. See
+[docker-runtimes.md](docker-runtimes.md#scheduled-jobs-launchd) for the schedule and log
+locations.
+
+`browser-mcp` is **opt-in**: no profile installs it, not even `remote`. Turn it on with
+`devboost install browser-mcp`, which loads an always-on agent. It runs
+`@playwright/mcp@0.0.82`, pinned and never `@latest`, on the Mac's Tailscale IP at port 8931.
+That server has `browser_run_code_unsafe`, which is RCE-equivalent, and no option turns it
+off. Any tailnet peer that can reach tcp:8931 can run code as you, so restrict tcp:8931 with
+a Tailscale ACL before you turn it on. See
+[remote-dev.md](remote-dev.md#security-port-8931-runs-code-on-your-machine) for the policy.
+
 ## One-time manual steps
 
 A step only you can do is reported as **blocked** with the exact fix, and the rest of the
@@ -153,18 +177,12 @@ run carries on. Run `devboost install` again afterwards.
 |---|---|
 | `tailscale` blocked | Open Tailscale from the menu bar, allow its VPN configuration (System Settings → General → Login Items & Extensions → Network Extensions) and sign in — or add `TAILSCALE_AUTHKEY` to the secrets bundle. The Mac joins as a client (no Tailscale SSH server). A hand-installed `/Applications/Tailscale.app` is left alone — Homebrew's cask step skips it rather than trying to adopt it — and dev-boost never overwrites a `~/.local/bin/tailscale` it didn't write itself. dev-boost only opens the app to prompt for approval in an interactive run; an unattended run reports blocked with "open Tailscale and approve" instead. |
 | `ddev` blocked | Run `mkcert -install` in a terminal once; macOS asks for your password to trust the local CA. |
+| `docker`/`docker-build-gc` blocked | A Colima home split, or a root-owned `~/.docker/config.json`/daemon config — the fix command is in the block's `NeedsUser` message; see [docker-runtimes.md](docker-runtimes.md#colima-details). |
+| `obsidian-sync` blocked | Set `export DEVBOOST_VAULT_REPO=<repo>` (a GitHub repo name) and make GitHub credentials available (`gh auth login`, or `GIT_USER`/`GITHUB_PAT` in the secrets bundle). The block message names what is missing. |
+| `restic-b2` blocked | Add `B2_ACCOUNT_ID`, `B2_ACCOUNT_KEY`, `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` to the secrets bundle. restic itself is already installed. |
 | `zed` blocked | Run `devboost install zed` in a terminal and answer the "use Zed?" dialogs (one per file type). |
 | `xcode-clt` blocked | Rare: run `xcode-select --install` and click Install. |
 | a cask is `present-unmanaged` | You installed that app by hand and Homebrew cannot take it over; dev-boost leaves it alone. |
-
-## Not on macOS yet (M4)
-
-`docker`, `docker-build-gc`, `aspire-gc`, `restic-backup`, `restic-b2` and `obsidian-sync`
-report **blocked: not automated on macOS yet (lands in M4)** with a manual workaround;
-`data-services` and `ddev` `require` Docker directly, and `laravel-lsp` requires `ddev`, so
-all three are blocked too until Docker lands. (`aspire`, the CLI tool, does not need Docker
-to install — only `aspire-gc`, the orphaned-container GC timer, waits for M4.) Until then:
-`brew install colima docker docker-compose && colima start`.
 
 ## Troubleshooting
 
@@ -188,6 +206,5 @@ CI (`ubuntu-22.04`) plus hermetic `chezmoi apply` tests for `("linux", "fedora")
 
 ## Coming next
 
-M4 — Docker runtimes (Colima default) and launchd timers. M5 — desktop layer (defaults,
-AeroSpace, Raycast, default-apps, …) and the opt-in iOS profile. M6 — `curl … | bash` on a
-fresh Mac.
+M5 — desktop layer (defaults, AeroSpace, Raycast, default-apps, …) and the opt-in iOS
+profile. M6 — `curl … | bash` on a fresh Mac.

@@ -54,8 +54,11 @@ class _Brew(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive, timeout=timeout
+        )
         a = list(argv)
         if a[:2] == ["brew", "list"] and "--cask" in a:
             # Real brew 7.0.4 (cmd/list.rb): a named cask is listed only when

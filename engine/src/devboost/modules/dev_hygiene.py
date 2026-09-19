@@ -6,7 +6,7 @@ from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import systemd
 from devboost.model import Ctx, Module
-from devboost.modules._pending import MacosPending
+from devboost.modules._launchd_jobs import LaunchdTimer
 from devboost.modules.docker import Docker
 
 _SERVICE = (
@@ -23,12 +23,10 @@ _TIMER = (
 class AspireGc(Module):
     name = "aspire-gc"
     category = "dev-hygiene"
-    description = "Hourly GC of orphaned Aspire/dev containers (systemd --user timer)."
+    description = "Hourly GC of orphaned Aspire/dev containers (systemd timer / launchd agent)."
     requires = (Docker,)
     profiles = ("dev-hygiene",)
-    per_os = OsMap(macos=MacosPending(
-        "M4", "prune stopped Aspire containers by hand: `docker container prune`"
-    ))
+    per_os = OsMap(macos=LaunchdTimer("aspire-gc", "devboost dev gc", "hourly"))
 
     def verify(self, ctx: Ctx) -> bool:
         if (s := self.os_strategy(ctx)) is not None:

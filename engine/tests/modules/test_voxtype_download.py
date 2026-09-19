@@ -38,7 +38,8 @@ def fake_curl(tmp_path: Path) -> Path:
     src.write_bytes(PAYLOAD)
     quarantine = (
         'xattr -w com.apple.quarantine "0081;00000000;Safari;" "$out"\n'
-        if sys.platform == "darwin" else ""
+        if sys.platform == "darwin"
+        else ""
     )
     curl = bindir / "curl"
     curl.write_text(
@@ -67,17 +68,26 @@ class ShellEx(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive, timeout=timeout
+        )
         if list(argv[:2]) == ["sh", "-c"]:
-            p = subprocess.run(list(argv), capture_output=True, text=True,
-                               env={**os.environ, "PATH": self.path})
+            p = subprocess.run(
+                list(argv), capture_output=True, text=True, env={**os.environ, "PATH": self.path}
+            )
             return Result(p.returncode, p.stdout, p.stderr)
         if argv and argv[0] == "install":
             src = Path(argv[-2])
-            q = subprocess.run(["xattr", "-p", "com.apple.quarantine", str(src)],
-                               capture_output=True).returncode == 0 \
-                if sys.platform == "darwin" else False
+            q = (
+                subprocess.run(
+                    ["xattr", "-p", "com.apple.quarantine", str(src)], capture_output=True
+                ).returncode
+                == 0
+                if sys.platform == "darwin"
+                else False
+            )
             self.seen.append((src, q))
         return Result(0)
 
@@ -96,8 +106,11 @@ def test_a_checksum_mismatch_deletes_the_file_and_fails(
 ) -> None:
     if os_info is MAC and sys.platform != "darwin":
         pytest.skip("shasum/xattr are macOS tools")
-    if os_info is FEDORA and not subprocess.run(["sh", "-c", "command -v sha256sum"],
-                                                capture_output=True).returncode == 0:
+    if (
+        os_info is FEDORA
+        and not subprocess.run(["sh", "-c", "command -v sha256sum"], capture_output=True).returncode
+        == 0
+    ):
         pytest.skip("no sha256sum on this host")
     dest = tmp_path / "dl" / "voxtype"
     dest.parent.mkdir()

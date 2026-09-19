@@ -18,3 +18,8 @@ Unattended, secure-by-default notes sync (the `apps` profile's `obsidian-sync` m
 `devboost-vault-sync.{service,timer}` (`systemd --user`, `OnCalendar=daily`, `Persistent=true`):
 add → commit → `pull --rebase --autostash` → push over the deploy key, logging to
 `~/.local/state/devboost/vault-sync.log` — so a push happens even on days Obsidian never opens.
+
+On macOS the daily push is the LaunchAgent `dev.devboost.obsidian-sync` (log:
+`~/Library/Logs/devboost/obsidian-sync.log`). It behaves like `Persistent=true` for a run
+missed while the Mac was **asleep** (it runs once on wake) — but a run missed while the Mac
+was **off** is not caught up, the one difference from the systemd timer.

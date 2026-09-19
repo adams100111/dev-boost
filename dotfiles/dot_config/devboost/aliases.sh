@@ -111,7 +111,9 @@ if command -v npx &>/dev/null; then
       bind=$(tailscale ip -4 2>/dev/null | head -1)
       command -v jq &>/dev/null && name=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName | rtrimstr(".")')
     fi
-    [ -n "${bind:-}" ] || { bind=0.0.0.0; echo "pw-mcp: no tailnet IP — binding 0.0.0.0" >&2; }
+    # Never fall back to 0.0.0.0: the MCP's browser_run_code_unsafe is RCE-equivalent and has
+    # no auth, so binding every interface would hand it to the local/cafe wifi.
+    [ -n "${bind:-}" ] || { echo "pw-mcp: no tailnet IP (is tailscale up?) — refusing to bind 0.0.0.0" >&2; return 1; }
     { [ -n "${name:-}" ] && [ "$name" != null ]; } || name="$bind"
     local args
     if [ "$ext" = 1 ]; then
@@ -123,7 +125,9 @@ if command -v npx &>/dev/null; then
     echo "pw-mcp: on the SERVER just run:  pw-workstation   (auto-detects this machine over ssh)" >&2
     echo "        manual: claude mcp add --transport http --scope user playwright-workstation http://${name}:${port}/mcp" >&2
     echo "pw-mcp: starting @playwright/mcp on ${bind}:${port} as ${name} (Ctrl-C to stop)…" >&2
-    npx @playwright/mcp@latest --port "$port" --host "$bind" "${args[@]}"
+    # Pinned like the browser-mcp launcher (PLAYWRIGHT_MCP_VERSION, engine/.../_playwright_mcp.py).
+    npx -y "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION:-0.0.82}" --port "$port" --host "$bind" \
+      --allowed-hosts "${bind}:${port},${name}:${port}" "${args[@]}"
   }
 fi
 

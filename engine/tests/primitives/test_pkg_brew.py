@@ -33,9 +33,13 @@ class _EnvRecorder(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         self.envs.append(dict(env or {}))
-        return super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        return super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
 
 
 def test_manager_for_macos_is_brew() -> None:

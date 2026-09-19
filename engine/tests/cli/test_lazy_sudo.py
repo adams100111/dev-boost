@@ -39,10 +39,12 @@ def test_only_the_foundation_modules_and_tailscale_need_sudo_on_macos() -> None:
     # M5-D5: macos-limits (system_daemon + `sudo sh`), macos-firewall (`sudo
     # socketfilterfw`) and xcode (`sudo xcodebuild -license accept` / `-runFirstLaunch`)
     # all run sudo too.
+    # docker: Colima's socket LaunchDaemon is written with sudo (M4-D5); Docker itself
+    # decides per run whether that sudo is actually needed (Docker.sudo_needed).
     flagged = {name for name, cls in load().items() if cls.needs_sudo_on_macos}
     assert flagged == {
         "xcode-clt", "homebrew", "rosetta", "tailscale",
-        "macos-limits", "macos-firewall", "xcode",
+        "macos-limits", "macos-firewall", "xcode", "docker",
     }
     assert XcodeClt.needs_sudo_on_macos and Homebrew.needs_sudo_on_macos
     assert Rosetta.needs_sudo_on_macos

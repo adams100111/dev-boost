@@ -33,8 +33,12 @@ class RuleExecutor(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         self.envs.append(dict(env or {}))
         self.stdins.append(stdin)
         self.interactive.append(interactive)

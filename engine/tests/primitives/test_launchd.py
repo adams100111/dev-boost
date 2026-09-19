@@ -97,6 +97,7 @@ def test_system_daemon_writes_via_sudo_and_bootstraps_system_domain(home: Path) 
             env: Mapping[str, str] | None = None,
             cwd: Path | None = None,
             interactive: bool = False,
+            timeout: float | None = None,
         ) -> Result:
             calls.append((["sudo"] if sudo else []) + list(argv))
             return Result(1) if argv[:2] == ["launchctl", "print"] else Result(0)
@@ -129,3 +130,140 @@ def test_agent_current_needs_identical_plist_and_loaded(home: Path) -> None:
     assert not launchd.agent_current(ctx, "dev.devboost.x", args, start_interval=60)
     unloaded = Ctx(os=MAC, ex=FakeExecutor(scripts={"launchctl": Result(113)}))
     assert not launchd.agent_current(unloaded, "dev.devboost.x", args, start_interval=900)
+
+
+def test_user_agent_keep_alive_throttle_and_log(home: Path) -> None:
+    log = home / "Library" / "Logs" / "devboost" / "x.log"
+    launchd.user_agent(
+        Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.x", ["/bin/echo"],
+        run_at_load=True, keep_alive={"SuccessfulExit": False},
+        throttle_interval=60, log_path=log,
+    )
+    data = plistlib.loads((home / "Library/LaunchAgents/dev.devboost.x.plist").read_bytes())
+    assert data["KeepAlive"] == {"SuccessfulExit": False}
+    assert data["ThrottleInterval"] == 60
+    assert data["StandardOutPath"] == str(log)
+    assert data["StandardErrorPath"] == str(log)
+    assert log.parent.is_dir()
+
+
+def test_user_agent_keep_alive_true(home: Path) -> None:
+    launchd.user_agent(
+        Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.k", ["/bin/echo"], keep_alive=True
+    )
+    data = plistlib.loads((home / "Library/LaunchAgents/dev.devboost.k.plist").read_bytes())
+    assert data["KeepAlive"] is True
+
+
+def test_user_agent_without_new_options_has_no_new_keys(home: Path) -> None:
+    launchd.user_agent(Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.p", ["/bin/echo"])
+    data = plistlib.loads((home / "Library/LaunchAgents/dev.devboost.p.plist").read_bytes())
+    assert data == {"Label": "dev.devboost.p", "ProgramArguments": ["/bin/echo"]}
+
+
+def test_pass_sync_style_plist_bytes_are_unchanged(home: Path) -> None:
+    """M4-D7: the new kwargs default to None, so an existing agent's bytes stay identical."""
+    args = ["/bin/devboost", "pass", "sync", "--quiet"]
+    launchd.user_agent(Ctx(os=MAC, ex=FakeExecutor()), "dev.devboost.pass-sync", args,
+                       start_interval=900)
+    expected = plistlib.dumps(
+        {"Label": "dev.devboost.pass-sync", "ProgramArguments": args, "StartInterval": 900}
+    )
+    assert (home / "Library/LaunchAgents/dev.devboost.pass-sync.plist").read_bytes() == expected
+
+
+def test_agent_current_honours_the_new_options(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    log = home / "Library" / "Logs" / "devboost" / "t.log"
+    lbl, args = "dev.devboost.t", ["/bin/echo"]
+    ka = {"SuccessfulExit": False}
+    launchd.user_agent(ctx, lbl, args, keep_alive=ka, throttle_interval=30, log_path=log)
+    assert launchd.agent_current(
+        ctx, lbl, args, keep_alive=ka, throttle_interval=30, log_path=log
+    )
+    assert not launchd.agent_current(ctx, lbl, args)
+    assert not launchd.agent_current(
+        ctx, lbl, args, keep_alive=True, throttle_interval=30, log_path=log
+    )
+    again = launchd.user_agent(
+        Ctx(os=MAC, ex=FakeExecutor()), lbl, args,
+        keep_alive=ka, throttle_interval=30, log_path=log,
+    )
+    assert again is False
+
+
+def test_agent_plist_and_agent_installed(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    assert launchd.agent_installed(ctx, "dev.devboost.x") is False  # no plist yet
+    launchd.user_agent(ctx, "dev.devboost.x", ["/bin/echo"])
+    assert launchd.agent_plist("dev.devboost.x") == (
+        home / "Library" / "LaunchAgents" / "dev.devboost.x.plist"
+    )
+    assert launchd.agent_installed(ctx, "dev.devboost.x") is True
+    unloaded = Ctx(os=MAC, ex=FakeExecutor(scripts={"launchctl": Result(113)}))
+    assert launchd.agent_installed(unloaded, "dev.devboost.x") is False
+
+
+def test_daemon_plist_path(home: Path) -> None:
+    assert launchd.daemon_plist("dev.devboost.docker-sock") == (
+        home / "LaunchDaemons" / "dev.devboost.docker-sock.plist"
+    )
+
+
+def test_daemon_current_needs_identical_plist_and_loaded(home: Path) -> None:
+    # system_daemon writes its plist via `sudo tee`, which a FakeExecutor never actually
+    # runs — so the on-disk plist is placed by hand here, the way a real run would leave it.
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    lbl, args = "dev.devboost.docker-sock", ["/bin/ln", "-shf", "a", "b"]
+    assert launchd.daemon_current(ctx, lbl, args) is False  # no plist on disk yet
+    path = launchd.daemon_plist(lbl)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps({"Label": lbl, "ProgramArguments": args, "RunAtLoad": True}))
+    assert launchd.daemon_current(ctx, lbl, args) is True
+    assert launchd.daemon_current(ctx, lbl, ["/bin/ln", "-shf", "a", "c"]) is False
+    unloaded = Ctx(os=MAC, ex=FakeExecutor(scripts={"launchctl": Result(113)}))
+    assert launchd.daemon_current(unloaded, lbl, args) is False
+
+
+def test_system_daemon_uses_daemon_current_to_skip_an_unchanged_load(home: Path) -> None:
+    lbl, args = "dev.devboost.docker-sock", ["/bin/ln", "-shf", "a", "b"]
+    path = launchd.daemon_plist(lbl)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps({"Label": lbl, "ProgramArguments": args, "RunAtLoad": True}))
+    ex = FakeExecutor()  # launchctl print → ok (loaded)
+    assert launchd.system_daemon(Ctx(os=MAC, ex=ex), lbl, args) is False
+    assert ex.calls == [["launchctl", "print", f"system/{lbl}"]]  # no sudo write at all
+
+
+def test_remove_daemon_bootouts_and_deletes_with_sudo(home: Path) -> None:
+    ex = FakeExecutor()
+    launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")
+    assert ex.calls == [
+        ["sudo", "launchctl", "bootout", "system/dev.devboost.docker-sock"],
+        ["sudo", "rm", "-f", str(home / "LaunchDaemons" / "dev.devboost.docker-sock.plist")],
+    ]
+
+
+def test_remove_daemon_raises_when_the_privileged_delete_fails(home: Path) -> None:
+    ex = FakeExecutor(scripts={"rm": Result(1, stderr="sudo: a password is required")})
+    with pytest.raises(InstallError, match="rm -f"):
+        launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")
+
+
+def test_remove_daemon_ignores_a_bootout_of_an_unloaded_job(home: Path) -> None:
+    ex = FakeExecutor(scripts={"launchctl": Result(113)})
+    launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")  # no raise
+
+
+@pytest.mark.parametrize(
+    "bad", ["../evil", "dev.devboost.x/../../etc", "a b", "", "-rf", "dev.devboost.x\n"]
+)
+def test_labels_are_validated_before_any_path_is_built(home: Path, bad: str) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.remove_daemon(ctx, bad)
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.system_daemon(ctx, bad, ["/bin/echo"])
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.agent_plist(bad)
+    assert ctx.ex.calls == []  # type: ignore[attr-defined]
