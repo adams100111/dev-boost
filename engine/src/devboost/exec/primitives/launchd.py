@@ -57,6 +57,29 @@ def agent_loaded(ctx: Ctx, lbl: str) -> bool:
     return ctx.ex.run(["launchctl", "print", f"{_gui_domain()}/{lbl}"]).ok
 
 
+def agent_current(
+    ctx: Ctx,
+    lbl: str,
+    program_args: Sequence[str],
+    *,
+    start_interval: int | None = None,
+    start_calendar: Mapping[str, int] | None = None,
+    run_at_load: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """The agent's plist on disk is exactly this one AND launchd has it loaded."""
+    path = _agents_dir() / f"{lbl}.plist"
+    body = _plist(
+        lbl,
+        program_args,
+        start_interval=start_interval,
+        start_calendar=start_calendar,
+        run_at_load=run_at_load,
+        env=env,
+    )
+    return path.exists() and path.read_bytes() == body and agent_loaded(ctx, lbl)
+
+
 def daemon_loaded(ctx: Ctx, lbl: str) -> bool:
     return ctx.ex.run(["launchctl", "print", f"system/{lbl}"]).ok
 
@@ -81,7 +104,10 @@ def user_agent(
         run_at_load=run_at_load,
         env=env,
     )
-    if path.exists() and path.read_bytes() == body and agent_loaded(ctx, lbl):
+    if agent_current(
+        ctx, lbl, program_args, start_interval=start_interval,
+        start_calendar=start_calendar, run_at_load=run_at_load, env=env,
+    ):
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)

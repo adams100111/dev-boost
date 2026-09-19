@@ -118,3 +118,14 @@ def test_remove_agent_bootouts_and_deletes(home: Path) -> None:
     launchd.remove_agent(Ctx(os=MAC, ex=ex), "dev.devboost.x")
     assert ["launchctl", "bootout", f"gui/{UID}/dev.devboost.x"] in ex.calls
     assert not (home / "Library/LaunchAgents/dev.devboost.x.plist").exists()
+
+
+def test_agent_current_needs_identical_plist_and_loaded(home: Path) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    args = ["/bin/devboost", "pass", "sync", "--quiet"]
+    assert not launchd.agent_current(ctx, "dev.devboost.x", args, start_interval=900)
+    launchd.user_agent(ctx, "dev.devboost.x", args, start_interval=900)
+    assert launchd.agent_current(ctx, "dev.devboost.x", args, start_interval=900)
+    assert not launchd.agent_current(ctx, "dev.devboost.x", args, start_interval=60)
+    unloaded = Ctx(os=MAC, ex=FakeExecutor(scripts={"launchctl": Result(113)}))
+    assert not launchd.agent_current(unloaded, "dev.devboost.x", args, start_interval=900)
