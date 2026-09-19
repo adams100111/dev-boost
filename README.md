@@ -4,7 +4,7 @@ From a fresh laptop to a fully-configured developer workstation in **minutes**, 
 zero config — delivered by an unattended **Ventoy USB** (primary: `curl … | bash`; bonus: zero-touch
 Kickstart). "Production ready" means the box can **build, out of the box**: Laravel (ddev),
 .NET + Aspire, Python (uv), Next.js/React (web), React Native + Expo (Android) — plus editors
-(VS Code + fresh), GUI apps (Obsidian w/ GitHub sync, Bruno, Bitwarden, …), terminal/shell/desktop
+(Zed + fresh; VS Code opt-in), GUI apps (Obsidian w/ GitHub sync, Bruno, Bitwarden, …), terminal/shell/desktop
 (wezterm + starship + tmux + GNOME), all restored from chezmoi-managed dotfiles. A bad update is a
 **reboot**, not a rebuild (Btrfs snapshots).
 
@@ -86,7 +86,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `devops` | `devops-tools`, `devops-lsp` |
 | `devtools` | `web-runtimes`, `uv`, `python-lsp`, `web-lsp`, `dotnet-sdk`, `aspire`, `dotnet-lsp`, `ddev`, `playwright` |
 | `dotnet` | `dotnet-sdk`, `aspire`, `dotnet-lsp` |
-| `editors` | `vscode`, `fresh`, `fresh-lsp` |
+| `editors` | `zed`, `fresh`, `fresh-lsp` |
 | `full` | `base`, `cli`, `shell`, `gnome`, `multimedia`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `claude`, `codex`, `pi` |
 | `gnome` | `gnome-settings`, `gnome-extensions`, `gnome-manager-apps` |
 | `gnome-aesthetics` | `gnome-aesthetics-bundle` |
@@ -96,7 +96,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `multimedia` | `ffmpeg-full`, `codecs`, `va-hwaccel`, `openh264`, `ffmpeg-ubuntu`, `codecs-ubuntu` |
 | `omarchy` | `base`, `cli`, `shell`, `editors`, `python`, `web`, `laravel`, `dotnet`, `data`, `devops`, `react-native`, `apps`, `system`, `dev-hygiene`, `remote`, `omarchy-update-hook` |
 | `optional-agents` | `herdr-plugins` |
-| `optional-editors` | `neovim`, `jetbrains-toolbox` |
+| `optional-editors` | `neovim`, `jetbrains-toolbox`, `vscode` |
 | `orca` | `orca-ide` |
 | `orca-box` | `orca-ide`, `orca-serve` |
 | `pi` | `pi-harness` |
@@ -243,13 +243,14 @@ enrollment on NVIDIA when Secure Boot is on.
 | `uv` | python | uv — fast Python package/project manager. |
 | `va-hwaccel` | multimedia | GPU-aware VA-API hardware acceleration (Intel/AMD/NVIDIA); cross-distro. |
 | `vlc` | apps | VLC media player. |
-| `vscode` | editors | Visual Studio Code (Microsoft repo). |
+| `vscode` | optional-editors | Visual Studio Code (Microsoft repo) — opt-in; Zed is the default editor. |
 | `web-lsp` | editors | ts/eslint/tailwind/prettier servers (fresh). |
 | `web-runtimes` | web | node/pnpm/bun via mise. |
 | `wezterm` | shell | GPU-accelerated terminal + multiplexer (nightly); default terminal. |
 | `wget` | base |  |
 | `wl-clipboard` | shell | Wayland clipboard CLI (wl-copy/wl-paste) — powers the image-paste bridge. |
 | `yq` | cli |  |
+| `zed` | editors | Zed — default GUI editor; curated settings, in-editor agents, pinned LSPs. |
 | `zoxide` | cli |  |
 | `zram` | server | Compressed-RAM swap (zstd, ~half RAM) — OOM insurance for long builds/agents. |
 
@@ -328,6 +329,7 @@ dev-boost ships curated, chezmoi-managed configs (Catppuccin Mocha) applied by t
 |------|--------|
 | starship | Catppuccin prompt: minimal git, polyglot versions, RAM/disk gauges (auto-hidden inside tmux — the tmux bar owns them there), last-command exit code on failure, red `⚠` badge when resources are critical (`dot_config/starship.toml`) |
 | wezterm | default terminal: OS light/dark-reactive Catppuccin, **top** tab bar (tmux owns the bottom), tmux-style keys, SSH domains, clickable links (`Ctrl+Shift+Click` / `LEADER u` — work through tmux), smart paste (clipboard image → uploaded to the VPS → path Claude reads as `[Image]`), **opt-in** RAM/disk gauges (`prefs.show_resource_gauges`) + critical-resource background alert (`dot_config/wezterm/`) |
+| zed | default editor: VS Code keymap, Tokyo Night, JetBrainsMono, per-stack LSPs pinned by dev-boost, Claude/Codex/Pi agents; seeded once, must-have keys merged — see [docs/zed.md](docs/zed.md) (`dot_config/zed/`) |
 | claude-statusline | Claude Code status line: dir · git · RAM/disk (left), model · context% · cost (right); whole row goes red when resources are critical (`private_dot_claude/statusline.sh`) |
 | ghostty | optional terminal theme + font (`dot_config/ghostty/config`) |
 | tmux | mouse, true-color, vi copy, **bottom** status bar with RAM/disk gauges + critical badge (visible even while a full-screen app fills the pane), session-persistence via resurrect+continuum (survives a reboot) (`dot_tmux.conf`, `dot_config/tmux/resources.sh`) |
@@ -383,7 +385,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 [architecture](docs/architecture.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
-[remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)
+[remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [zed](docs/zed.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)
 
 ## Validate before shipping (in a throwaway Fedora VM)
 
