@@ -1,17 +1,21 @@
 """ios — Xcode and the iOS simulator runtime via xcodes (opt-in `ios` profile, spec §2).
 
-xcodes may prompt for an Apple ID password or a 2FA code, so it always runs attached to
-the terminal (never with captured output, where it would block on an invisible prompt).
-With neither XCODES_USERNAME/XCODES_PASSWORD nor a terminal, the module reports what the
-user must do (`blocked`) instead. The credentials reach xcodes only through the inherited
-environment: dev-boost never reads them into argv, an `env=` override, a log or an error.
-xcodes itself then keeps the password in the login keychain for later runs.
+xcodes may prompt for an Apple ID password or a 2FA code, so with a human present it runs
+attached to the terminal (never with captured output, where it would block on an invisible
+prompt). Unattended, it runs with stdin cut off so a prompt fails fast. With neither
+XCODES_USERNAME/XCODES_PASSWORD nor a terminal, or when an unattended xcodes run fails, the
+module reports what the user must do (`blocked`) instead. The credentials reach xcodes
+only through the inherited environment: dev-boost never reads them into argv, an `env=`
+override, a log or an error. xcodes itself then keeps the password in the login keychain
+for later runs.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 from devboost.core.errors import InstallError, NeedsUser
@@ -44,18 +48,46 @@ def _require_auth(what: str) -> None:
 
 
 def _run_xcodes(ctx: Ctx, module: str, argv: list[str]) -> None:
-    res = ctx.ex.run(argv, interactive=True)
+    """Run xcodes on the terminal when a human is there; otherwise cut stdin off.
+
+    Unattended, stdin may be an open pipe (`ssh host devboost …`, `curl … | bash`, CI) or a
+    tty under DEVBOOST_NONINTERACTIVE, where a 2FA or password prompt would wait forever.
+    An empty captured stdin makes such a prompt read EOF and fail at once. xcodes' captured
+    output is never copied into an error or a log: it can echo the Apple ID.
+    """
+    attended = _interactive()
+    if attended:
+        res = ctx.ex.run(argv, interactive=True)
+    else:
+        res = ctx.ex.run(argv, stdin="")
     if res.ok:
         return
-    if not _interactive():
-        # Unattended: a 2FA code prompt read EOF (or the stored session expired). Only
-        # the user can finish that login, so this is `blocked`, not a failure.
+    if not attended:
         raise NeedsUser(
-            f"`{' '.join(argv[:3])}` exited {res.code} with no terminal — the Apple ID "
-            "sign-in may need a 2FA code",
-            "run `devboost install ios` in a terminal and complete the Apple ID login",
+            f"xcodes could not finish unattended (2FA, network or disk; exit {res.code})",
+            "run `devboost install ios` in a terminal",
         )
     raise InstallError(module, " ".join(argv), res.code)
+
+
+#: The Xcode .xip is >10 GB and unxip needs about as much again, plus the installed app.
+_MIN_FREE_GIB = 40
+
+
+def _free_bytes(path: Path) -> int:
+    """Free bytes on the volume holding *path* (patched in tests)."""
+    return shutil.disk_usage(path).free
+
+
+def _require_space() -> None:
+    home = Path.home()
+    free = _free_bytes(home)
+    if free < _MIN_FREE_GIB * 1024**3:
+        raise NeedsUser(
+            f"Xcode needs at least {_MIN_FREE_GIB} GiB free in {home} "
+            f"({free // 1024**3} GiB free)",
+            "free up disk space, then re-run `devboost install ios`",
+        )
 
 
 def _supported(os_info: OsInfo) -> bool:
@@ -94,6 +126,7 @@ class _XcodeInstall:
     def install(self, ctx: Ctx) -> None:
         pin = xcode_pin()
         _require_auth("Downloading Xcode")
+        _require_space()
         _run_xcodes(ctx, "xcode", [
             "xcodes", "install", pin.version, "--select", "--experimental-unxip",
             "--empty-trash",
