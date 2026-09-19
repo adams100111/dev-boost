@@ -32,6 +32,12 @@ if [ "$(uname -s)" = "Darwin" ]; then
   # on macOS and never see the chezmoi-managed files in ~/.config.
   export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
   export ANDROID_HOME="${ANDROID_HOME:-${HOME}/Library/Android/sdk}"
+  # dotnet-install.sh puts the SDK in ~/.dotnet (dotnet-sdk module). A .NET app host
+  # (csharp-ls, aspire) finds the runtime only through DOTNET_ROOT, never through PATH.
+  if [ -x "${HOME}/.dotnet/dotnet" ]; then
+    export DOTNET_ROOT="${DOTNET_ROOT:-${HOME}/.dotnet}"
+    _devboost_path_prepend "${HOME}/.dotnet"
+  fi
 fi
 if [ -n "${ANDROID_HOME:-}" ]; then
   _devboost_path_prepend "${ANDROID_HOME}/platform-tools"
