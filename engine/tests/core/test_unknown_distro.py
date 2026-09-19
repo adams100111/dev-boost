@@ -6,6 +6,10 @@ an unknown distro — whose family is its own id (``osinfo.detect`` falls back t
 module without saying why. ``families = ()`` plus ``provided_by = ("macos",)`` keeps the
 module everywhere on Linux and turns the macOS case into an explicit
 ``provided-by-macos`` skip (zsh-config covers it there).
+
+(The class attributes themselves are asserted by
+``tests/modules/test_zsh_modules.py::test_bash_config_is_planned_everywhere_but_provided_by_macos``;
+this file tests what ``build_plan`` and the module do with them.)
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load
+from devboost.exec.executor import FakeExecutor
+from devboost.model import Ctx
 from devboost.modules.shell import BashConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -42,13 +48,10 @@ def _reason(profile: str, os_info: OsInfo, tmp_path: Path, name: str) -> str | N
     return reasons[name]
 
 
-def test_bash_config_is_not_family_scoped() -> None:
-    assert BashConfig.families == ()
-    assert BashConfig.provided_by == ("macos",)
-
-
 def test_unknown_distro_keeps_bash_config(tmp_path: Path) -> None:
-    assert _reason("shell", GENTOO, tmp_path, "bash-config") is None
+    reasons = {p.name: p.skip_reason for p in _plan("shell", GENTOO, tmp_path)}
+    assert reasons.get("bash-config", "missing") is None
+    assert reasons.get("dotfiles", "missing") is None  # its dependency plans too
 
 
 def test_macos_reports_bash_config_provided(tmp_path: Path) -> None:
@@ -60,9 +63,26 @@ def test_known_linux_families_unchanged(os_info: OsInfo, tmp_path: Path) -> None
     assert _reason("shell", os_info, tmp_path, "bash-config") is None
 
 
-def test_unknown_distro_plan_has_no_unsupported_bash_config(tmp_path: Path) -> None:
-    """The point of the change: nothing in the shell profile is dropped on an unknown
-    distro just because its family is unrecognised."""
-    reasons = {p.name: p.skip_reason for p in _plan("shell", GENTOO, tmp_path)}
-    assert reasons.get("bash-config") is None
-    assert reasons.get("dotfiles") is None
+def test_bash_config_fails_loudly_when_an_unknown_distro_owns_bashrc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flip side of D11: bash-config now actually *runs* on an unrecognised distro.
+
+    ``_owns_bashrc`` special-cases only Omarchy, so anywhere else the module assumes
+    dev-boost's dotfiles wrote ``~/.bashrc`` and ``install`` is a marker check. On a distro
+    that ships its own ``~/.bashrc`` and whose package owns the file, chezmoi leaves it
+    alone, so ``verify`` stays False after ``install`` and the runner reports
+    ``verify failed after install`` — a loud failure where D11's predecessor produced a
+    silent drop. That is the intended trade: visible over invisible.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = Ctx(os=GENTOO, ex=FakeExecutor())
+    bashrc = tmp_path / ".bashrc"
+    distro_owned = "# /etc/skel/.bashrc, shipped by the distro\nPS1='$ '\n"
+    bashrc.write_text(distro_owned, encoding="utf-8")
+
+    assert BashConfig()._owns_bashrc(ctx) is True  # not Omarchy: dotfiles own the file
+    assert BashConfig().verify(ctx) is False
+    BashConfig().install(ctx)  # a no-op marker check, not an append
+    assert bashrc.read_text(encoding="utf-8") == distro_owned
+    assert BashConfig().verify(ctx) is False  # → the runner fails the module, loudly
