@@ -213,7 +213,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `openh264` | multimedia | Cisco OpenH264 for browser H.264 support (Fedora-only). |
 | `orca-ide` | orca | Orca — multi-agent development environment (stablyai/orca). |
 | `orca-serve` | orca | Run Orca headless (orca-ide serve) as a systemd --user service. |
-| `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max). |
+| `pass` | base | pass password-store CLI + gpg-agent passphrase cache (8 h idle / 24 h max; pinentry-mac on macOS). |
 | `pass-store` | base | Shared pass store: clone, enroll/adopt this device's GPG key, push-on-commit + 15-min sync (devboost pass …). |
 | `pi-harness` | cli | Bootstrap the Pi coding-agent harness (clone+build harness-cli; delegate config). |
 | `playwright` | web | Playwright browsers + MCP — headless-shell on servers, full Chromium on GUI. |

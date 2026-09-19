@@ -24,7 +24,9 @@ systemd) differ per OS — see [Model](#model) and [Sync](#sync) below.
   module also installs Homebrew `pass`, `gnupg` and `pinentry-mac`, and sets
   `pinentry-program /opt/homebrew/bin/pinentry-mac` in `gpg-agent.conf` (`/usr/local` on
   Intel). pinentry-mac's dialog offers **Save in Keychain**, which keeps the passphrase in
-  your login keychain across reboots. `pinentry-program` is a managed setting: a value set
+  your login keychain across reboots — for an interactive terminal read. An unattended run
+  never opens pinentry-mac at all, so it never consults the keychain (see
+  [Unattended runs](#unattended-runs)). `pinentry-program` is a managed setting: a value set
   by hand is replaced back to pinentry-mac on the next `devboost install`.
 
 Choose the repo in `~/.config/devboost/config.toml` (`DEVBOOST_PASS_REPO` overrides):
@@ -100,6 +102,12 @@ secret is then skipped (never a hard failure), with a hint to run
 `pass show <entry> >/dev/null` once in a terminal — that warms the gpg-agent cache
 without printing the secret.
 
+On macOS, it's pinentry-mac that reads the login keychain; with `--pinentry-mode error`,
+gpg-agent never launches pinentry-mac at all, so a passphrase saved only via its **Save in
+Keychain** checkbox is never consulted by an unattended run — only gpg-agent's in-memory
+cache (8 h idle / 24 h max) is. After a reboot, or once that cache expires, unattended
+secret reads are skipped until you do one `pass show` in a terminal, keychain or not.
+
 ## Recipient audit
 
 An entry can end up encrypted to the wrong keys without ever failing to decrypt: it was
@@ -113,8 +121,9 @@ audit` (prints every mismatch), `devboost doctor`'s `pass-recipients` check, `de
 pass status` (a mismatch count), and a sync notification the first time a new entry is
 flagged.
 
-`devboost pass audit` prints, per mismatched entry, the recipients it has that its
-`.gpg-id` doesn't (`extra`) and the `.gpg-id` keys it isn't encrypted to (`missing`),
+`devboost pass audit` exits **1** if any entry is flagged (0 otherwise), and prints, per
+mismatched entry, the recipients it has that its `.gpg-id` doesn't (`extra`) and the
+`.gpg-id` keys it isn't encrypted to (`missing`),
 plus a fix line: `pass init [-p <folder>] <the .gpg-id keys>` (the folder and the entry
 name are shell-quoted; `pass init` re-encrypts only the entries that differ). If any
 current recipient is a **revoked** device's key — decided by key id and fingerprint,
@@ -199,7 +208,7 @@ invalid scope (absolute, `..`, or a reserved folder like `.devboost`) is refused
 | `devboost pass approve [NAME] [--scope F]…` | approve pending requests (typed `y`) |
 | `devboost pass revoke NAME` | revoke a device and print the rotation checklist |
 | `devboost pass sync [--resolve]` | sync now / print conflict-recovery guidance |
-| `devboost pass audit` | print entries not encrypted to exactly their `.gpg-id` keys |
+| `devboost pass audit` | print entries not matching their `.gpg-id` keys; exits 1 if any flagged |
 
 ## If every device is lost
 
