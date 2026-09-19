@@ -133,19 +133,7 @@ def socket_daemon_current(ctx: Ctx) -> bool:
         # configure's ensure_colima_home may still pick a different home, which changes
         # the daemon's args: never report "current" before the home exists.
         return False
-    path = launchd.DAEMONS_DIR / f"{SOCKET_LABEL}.plist"
-    if not path.exists():
-        return False
-    # Same body system_daemon builds (launchd has no public "daemon_current" yet).
-    body = launchd._plist(
-        SOCKET_LABEL,
-        socket_daemon_args(),
-        start_interval=None,
-        start_calendar=None,
-        run_at_load=True,
-        env=None,
-    )
-    return path.read_bytes() == body and launchd.daemon_loaded(ctx, SOCKET_LABEL)
+    return launchd.daemon_current(ctx, SOCKET_LABEL, socket_daemon_args(), run_at_load=True)
 
 
 class Colima:

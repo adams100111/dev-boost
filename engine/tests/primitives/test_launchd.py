@@ -204,6 +204,37 @@ def test_agent_plist_and_agent_installed(home: Path) -> None:
     assert launchd.agent_installed(unloaded, "dev.devboost.x") is False
 
 
+def test_daemon_plist_path(home: Path) -> None:
+    assert launchd.daemon_plist("dev.devboost.docker-sock") == (
+        home / "LaunchDaemons" / "dev.devboost.docker-sock.plist"
+    )
+
+
+def test_daemon_current_needs_identical_plist_and_loaded(home: Path) -> None:
+    # system_daemon writes its plist via `sudo tee`, which a FakeExecutor never actually
+    # runs — so the on-disk plist is placed by hand here, the way a real run would leave it.
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    lbl, args = "dev.devboost.docker-sock", ["/bin/ln", "-shf", "a", "b"]
+    assert launchd.daemon_current(ctx, lbl, args) is False  # no plist on disk yet
+    path = launchd.daemon_plist(lbl)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps({"Label": lbl, "ProgramArguments": args, "RunAtLoad": True}))
+    assert launchd.daemon_current(ctx, lbl, args) is True
+    assert launchd.daemon_current(ctx, lbl, ["/bin/ln", "-shf", "a", "c"]) is False
+    unloaded = Ctx(os=MAC, ex=FakeExecutor(scripts={"launchctl": Result(113)}))
+    assert launchd.daemon_current(unloaded, lbl, args) is False
+
+
+def test_system_daemon_uses_daemon_current_to_skip_an_unchanged_load(home: Path) -> None:
+    lbl, args = "dev.devboost.docker-sock", ["/bin/ln", "-shf", "a", "b"]
+    path = launchd.daemon_plist(lbl)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps({"Label": lbl, "ProgramArguments": args, "RunAtLoad": True}))
+    ex = FakeExecutor()  # launchctl print → ok (loaded)
+    assert launchd.system_daemon(Ctx(os=MAC, ex=ex), lbl, args) is False
+    assert ex.calls == [["launchctl", "print", f"system/{lbl}"]]  # no sudo write at all
+
+
 def test_remove_daemon_bootouts_and_deletes_with_sudo(home: Path) -> None:
     ex = FakeExecutor()
     launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")
