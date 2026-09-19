@@ -6,18 +6,36 @@ caller skips that one secret — the spec's "warn + skip, never fail".
 
 from __future__ import annotations
 
+import os
+
 from devboost.core import log
 from devboost.model import Ctx
+from devboost.modules import _credentials as creds_src
+
+#: Unattended reads never open a passphrase prompt nobody answers (pinentry-mac is a GUI
+#: dialog; R12): gpg still uses a cached passphrase, and without one it fails at once.
+NO_PINENTRY = "--pinentry-mode error"
+
+
+def _env(interactive: bool) -> dict[str, str] | None:
+    if interactive:
+        return None
+    opts = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").strip()
+    return {"PASSWORD_STORE_GPG_OPTS": f"{opts} {NO_PINENTRY}".strip()}
 
 
 def pass_show(ctx: Ctx, entry: str, *, who: str) -> str | None:
     if not ctx.ex.which("pass"):
         log.skip(f"{who}: pass not installed — skipping {entry}")
         return None
-    res = ctx.ex.run(["pass", "show", entry])
+    interactive = creds_src.is_interactive()
+    res = ctx.ex.run(["pass", "show", entry], env=_env(interactive))
     if not res.ok or not res.stdout.strip():
+        hint = "" if interactive else (
+            ", or its passphrase is not cached — unlock once in a terminal: "
+            f"`pass show {entry}`")
         log.warn(f"{who}: `pass show {entry}` unavailable (missing, or this device is not "
-                 "approved yet — see `devboost pass status`) — skipping")
+                 f"approved yet — see `devboost pass status`{hint}) — skipping")
         return None
     return res.stdout
 

@@ -223,6 +223,35 @@ def test_pass_show_degrades_and_reads() -> None:
     assert ok.calls == [["pass", "show", "x/y"]]
 
 
+def test_unattended_pass_show_never_opens_pinentry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--armor")
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "s3cret\n"))])
+    assert pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t") == "s3cret\n"
+    assert ex.envs[-1] == {"PASSWORD_STORE_GPG_OPTS": "--armor --pinentry-mode error"}
+
+
+def test_interactive_pass_show_may_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    from devboost.modules import _credentials
+
+    monkeypatch.delenv("DEVBOOST_NONINTERACTIVE", raising=False)
+    monkeypatch.setattr(_credentials, "is_interactive", lambda: True)
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(0, "s\n"))])
+    pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t")
+    assert ex.envs[-1] == {}
+
+
+def test_unattended_uncached_read_is_skipped_with_a_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")
+    ex = RuleExecutor(present={"pass"}, rules=[(("show",), Result(2))])
+    assert pass_show(Ctx(os=FEDORA, ex=ex), "web/x", who="t") is None
+    assert len(warned) == 1 and "passphrase is not cached" in warned[0]
+
+
 def test_pass_fields_parses_key_value_lines() -> None:
     assert pass_fields("tok\ntoken: T1\nChat_ID:  C1 \nnoise\n") == {"token": "T1", "chat_id": "C1"}
 
