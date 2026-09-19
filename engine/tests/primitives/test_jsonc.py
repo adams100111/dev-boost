@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -143,3 +144,60 @@ def test_backup_written_for_plain_json_when_none_exists_yet(tmp_path: Path) -> N
     assert not bak.exists()
     assert config.jsonc_merge_deep(CTX, str(p), {"b": 2}) is True
     assert bak.read_text(encoding="utf-8") == '{"a": 1}'
+
+
+def test_undecodable_file_raises_needs_user_with_keys_and_never_rewrites(tmp_path: Path) -> None:
+    p = tmp_path / "settings.json"
+    body = b'{"font": "caf\xe9"}'  # latin-1, not UTF-8
+    p.write_bytes(body)
+    with pytest.raises(NeedsUser) as exc:
+        config.jsonc_merge_deep(CTX, str(p), {"telemetry": {"metrics": False}})
+    assert "telemetry.metrics" in exc.value.how_to_fix
+    assert p.read_bytes() == body
+    assert not (tmp_path / "settings.json.devboost-bak").exists()
+
+
+def test_symlinked_file_is_written_through_and_the_link_kept(tmp_path: Path) -> None:
+    real = tmp_path / "dotfiles" / "settings.json"
+    real.parent.mkdir()
+    real.write_text('{"a": 1}', encoding="utf-8")
+    link = tmp_path / "zed" / "settings.json"
+    link.parent.mkdir()
+    link.symlink_to(real)
+    assert config.jsonc_merge_deep(CTX, str(link), {"b": 2}) is True
+    assert link.is_symlink() and link.resolve() == real.resolve()
+    assert json.loads(real.read_text(encoding="utf-8")) == {"a": 1, "b": 2}
+    assert not list(real.parent.glob("*.devboost-tmp"))
+
+
+def test_rewrite_keeps_the_original_file_mode(tmp_path: Path) -> None:
+    p = tmp_path / "settings.json"
+    p.write_text('{"a": 1}', encoding="utf-8")
+    p.chmod(0o600)
+    assert config.jsonc_merge_deep(CTX, str(p), {"b": 2}) is True
+    assert p.stat().st_mode & 0o777 == 0o600
+
+
+def test_non_ascii_round_trips_unescaped(tmp_path: Path) -> None:
+    p = tmp_path / "settings.json"
+    p.write_text('{"ui_font_family": "Noto Sans 日本語", "x": "café"}', encoding="utf-8")
+    assert config.jsonc_merge_deep(CTX, str(p), {"b": 2}) is True
+    text = p.read_text(encoding="utf-8")
+    assert "日本語" in text and "café" in text and "\\u" not in text
+    assert json.loads(text)["ui_font_family"] == "Noto Sans 日本語"
+
+
+def test_failed_write_leaves_no_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p = tmp_path / "settings.json"
+    p.write_text('{"a": 1}', encoding="utf-8")
+
+    def _denied(*_: object) -> None:
+        raise PermissionError(13, "Permission denied", str(p))
+
+    monkeypatch.setattr(os, "replace", _denied)
+    with pytest.raises(PermissionError):
+        config.jsonc_merge_deep(CTX, str(p), {"b": 2})
+    assert p.read_text(encoding="utf-8") == '{"a": 1}'
+    assert not (tmp_path / "settings.json.devboost-tmp").exists()

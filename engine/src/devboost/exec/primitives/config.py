@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -211,21 +212,24 @@ def jsonc_merge_deep(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
     backs the original up to ``<file>.devboost-bak`` (unless a backup already exists and the
     raw bytes carry no comments/trailing commas — a plain-JSON rewrite must never clobber an
     earlier backup of the user's original commented file) and writes plain JSON atomically;
-    comments are lost only then, and that is logged. An unparseable file is never rewritten:
-    the user gets ``NeedsUser`` with the exact keys to add.
+    comments are lost only then, and that is logged. A symlinked file is written through to
+    its target (the link survives) and the file keeps its mode. An unparseable or
+    undecodable file is never rewritten: the user gets ``NeedsUser`` with the exact keys.
     """
     p = Path(path)
-    raw = p.read_text(encoding="utf-8") if p.exists() else None
+    raw: str | None = None
     current: dict[str, Any] = {}
-    if raw is not None and raw.strip():
-        try:
+    try:
+        if p.exists():
+            raw = p.read_text(encoding="utf-8")
+        if raw is not None and raw.strip():
             current = _parse_object(raw)
-        except ValueError as exc:
-            raise NeedsUser(
-                f"{path} is not valid JSON/JSONC ({exc})",
-                "fix it (or delete it — dev-boost re-seeds a missing file) and re-run; "
-                f"dev-boost must set: {', '.join(_leaf_paths(patch))}",
-            ) from exc
+    except ValueError as exc:  # UnicodeDecodeError and JSONDecodeError are ValueErrors
+        raise NeedsUser(
+            f"{path} is not valid UTF-8 JSON/JSONC ({exc})",
+            "fix it (or delete it — dev-boost re-seeds a missing file) and re-run; "
+            f"dev-boost must set: {', '.join(_leaf_paths(patch))}",
+        ) from exc
     merged = deep_merge(current, patch)
     if raw is not None and merged == current:
         return False
@@ -239,8 +243,21 @@ def jsonc_merge_deep(ctx: Ctx, path: str, patch: Mapping[str, Any]) -> bool:
                 f"{path}: rewritten to add dev-boost keys — comments/trailing commas were "
                 f"not preserved; the original is at {backup}"
             )
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".devboost-tmp")
-    tmp.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, p)
+    _atomic_write(p, json.dumps(merged, indent=2, ensure_ascii=False) + "\n")
     return True
+
+
+def _atomic_write(p: Path, body: str) -> None:
+    """Replace *p* with *body* via a sibling temp file. A symlink is followed (its target is
+    replaced, the link kept) and an existing file's permission bits are preserved."""
+    target = p.resolve() if p.is_symlink() else p
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
+    tmp = target.with_name(target.name + ".devboost-tmp")
+    try:
+        tmp.write_text(body, encoding="utf-8")
+        if mode is not None:
+            tmp.chmod(mode)
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
