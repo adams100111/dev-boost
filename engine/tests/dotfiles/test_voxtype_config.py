@@ -96,8 +96,18 @@ def test_voxtype_arabic_targeted_apply_renders_both_configs(tmp_path: Path) -> N
         mp.undo()
     argv = next(c for c in ex.calls if c[:2] == ["chezmoi", "apply"])
     assert CHEZMOI is not None
-    subprocess.run([CHEZMOI, *argv[1:2], "--no-tty", *argv[2:]], check=True,
-                   capture_output=True, env={**os.environ, "HOME": str(home)})
+    # Real chezmoi reads the HOST os; the engine ran as macOS, so override the template
+    # data (same seam as the chezmoi_apply fixture) or the Darwin-only AeroSpace target is
+    # ignored and the apply fails on Linux CI.
+    from tests.dotfiles.conftest import _data
+
+    subprocess.run([CHEZMOI, *argv[1:2], "--no-tty", *argv[2:],
+                    "--config", str(tmp_path / "chezmoi.toml"),
+                    "--persistent-state", str(tmp_path / "arabic.boltdb"),
+                    "--cache", str(tmp_path / "cache-arabic"),
+                    "--override-data", _data("darwin", "macos")],
+                   check=True, capture_output=True,
+                   env={**os.environ, "HOME": str(home)})
     cfg = tomllib.loads((home / ".config" / "voxtype" / "config.toml").read_text("utf-8"))
     assert cfg["whisper"]["secondary_model"] == "large-v3-turbo"
     aero = tomllib.loads((home / ".config" / "aerospace" / "aerospace.toml").read_text("utf-8"))
