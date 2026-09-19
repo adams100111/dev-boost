@@ -387,8 +387,11 @@ def _write_private(path: Path, text: str) -> None:
         raise
 
 
-def _b2_prepare(ctx: Ctx, *, shell_quoted: bool = False) -> Path | None:
-    """Write restic-include (once) and the 0600 env file; None when a secret is missing.
+def _b2_prepare(ctx: Ctx, *, shell_quoted: bool = False) -> Path:
+    """Write restic-include (once) and the 0600 env file.
+
+    A missing secret raises ``NeedsUser`` (the run reports ``blocked`` with the fix) rather
+    than returning quietly into a verify that must fail (final review I2).
 
     ``shell_quoted`` quotes values for ``sh`` to source (macOS); systemd's
     EnvironmentFile format (Linux) is unchanged. Secrets live only in this file, never
@@ -398,12 +401,11 @@ def _b2_prepare(ctx: Ctx, *, shell_quoted: bool = False) -> Path | None:
     for field in _B2_FIELDS:
         value = _secret(ctx, field)
         if not value:
-            log.warn(
-                "restic-b2: installed restic, but B2/restic secrets are missing — add "
-                "B2_ACCOUNT_ID, B2_ACCOUNT_KEY, RESTIC_REPOSITORY, RESTIC_PASSWORD to the "
-                "secrets bundle to enable the nightly timer"
+            raise NeedsUser(
+                "restic-b2: restic is installed, but the B2/restic secrets are missing",
+                "add B2_ACCOUNT_ID, B2_ACCOUNT_KEY, RESTIC_REPOSITORY and RESTIC_PASSWORD "
+                "to the secrets bundle, then re-run",
             )
-            return None
         values[field] = value
     d = _devboost_dir()
     d.mkdir(parents=True, exist_ok=True)
@@ -438,8 +440,7 @@ class _MacResticB2:
     def install(self, ctx: Ctx) -> None:
         if not pkg.installed(ctx, "restic"):
             pkg.install(ctx, "restic")
-        if _b2_prepare(ctx, shell_quoted=True) is None:
-            return
+        _b2_prepare(ctx, shell_quoted=True)
         schedule_job(ctx, _B2_JOB, B2_MAC_SCRIPT, "daily")
 
 
@@ -473,10 +474,9 @@ class ResticB2(Module):
         if not ctx.ex.which("restic"):
             pkg.install(ctx, "restic")
         # Destination + credentials come from the age bundle. Without them we can't run an
-        # offsite backup, so install the binary and stop — don't wire a timer to nowhere.
+        # offsite backup, so install the binary and stop (blocked, with the fix) — don't
+        # wire a timer to nowhere.
         envfile = _b2_prepare(ctx)
-        if envfile is None:
-            return
         include = envfile.parent / "restic-include"
         service = (
             "[Unit]\nDescription=devboost restic → B2 backup\n\n[Service]\nType=oneshot\n"

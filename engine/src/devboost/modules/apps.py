@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from devboost.core import log
-from devboost.core.errors import GithubError, UnsupportedOS
+from devboost.core.errors import GithubError, NeedsUser, UnsupportedOS
 from devboost.core.osinfo import LINUX_FAMILIES, OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, github, pkg, systemd
@@ -173,19 +172,26 @@ def _ssh_alias(ctx: Ctx, key: Path) -> None:
         cfg.write_text(text + block, encoding="utf-8")
 
 
-def _provision_vault(ctx: Ctx) -> Path | None:
-    """Deploy key, SSH alias, clone. The vault dir, or None when skipped (non-blocking)."""
+def _provision_vault(ctx: Ctx) -> Path:
+    """Deploy key, SSH alias, clone; the vault dir.
+
+    What only the user can supply — the repo name, GitHub credentials, a PAT allowed to add
+    deploy keys — raises ``NeedsUser``: the run reports ``blocked`` with the fix, never a
+    ``fail`` from a verify that could not pass (final review I2; M3 reported it blocked too).
+    """
     repo = os.environ.get("DEVBOOST_VAULT_REPO")
     if not repo:
-        log.warn("obsidian-sync: DEVBOOST_VAULT_REPO not set — skipping (non-blocking)")
-        return None
+        raise NeedsUser(
+            "obsidian-sync: no vault repo configured",
+            "export DEVBOOST_VAULT_REPO=<repo> (a GitHub repo name) and re-run",
+        )
     creds = creds_src.github_credentials(ctx)
     if creds is None:
-        log.warn(
-            "obsidian-sync: no GitHub credentials found (bundle, gh, git credentials) "
-            "— skipping (non-blocking)"
+        raise NeedsUser(
+            "obsidian-sync: no GitHub credentials found (bundle, gh, git credentials)",
+            "run `gh auth login` (or add GIT_USER and GITHUB_PAT to the secrets bundle) "
+            "and re-run",
         )
-        return None
     owner, pat = creds["GIT_USER"], creds["GITHUB_PAT"]
 
     key = _home() / _DEPLOY_KEY
@@ -200,9 +206,12 @@ def _provision_vault(ctx: Ctx) -> Path | None:
         try:
             github.add_deploy_key(pat, owner, repo, pub.read_text(encoding="utf-8"),
                                   f"devboost-vault:{socket.gethostname()}")
-        except GithubError:
-            log.warn("obsidian-sync: deploy-key registration failed (non-blocking)")
-            return None
+        except GithubError as exc:
+            raise NeedsUser(
+                f"obsidian-sync: GitHub refused the deploy key for {owner}/{repo} ({exc})",
+                f"check that {owner}/{repo} exists and your token may add deploy keys "
+                "to it, then re-run",
+            ) from exc
 
     vault = _vault_dir()
     if not (vault / ".git").is_dir():
@@ -232,8 +241,6 @@ class _MacObsidianSync:
 
     def install(self, ctx: Ctx) -> None:
         vault = _provision_vault(ctx)
-        if vault is None:
-            return
         schedule_job(ctx, _VAULT_JOB, _vault_script(vault), "daily")
 
 
@@ -255,9 +262,7 @@ class ObsidianSync(Module):
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
             return
-        vault = _provision_vault(ctx)
-        if vault is not None:
-            self._systemd_backstop(ctx, vault)
+        self._systemd_backstop(ctx, _provision_vault(ctx))
 
     def _systemd_backstop(self, ctx: Ctx, vault: Path) -> None:
         service = (

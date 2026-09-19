@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import GithubError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import age, github
@@ -85,7 +86,9 @@ def test_restic_b2_on_macos_without_secrets_wires_nothing(
 ) -> None:
     monkeypatch.setattr(server, "_secret", lambda ctx, f: None)
     ctx = Ctx(os=MAC, ex=RuleExecutor(rules=[(("--versions", "restic"), Result(1))]))
-    ResticB2().install(ctx)
+    with pytest.raises(NeedsUser, match="secrets") as exc:
+        ResticB2().install(ctx)
+    assert "RESTIC_PASSWORD" in exc.value.how_to_fix
     assert ["brew", "install", "--formula", "-y", "restic"] in ctx.ex.calls  # type: ignore[attr-defined]
     assert not (tmp_path / "Library" / "LaunchAgents").exists()
     assert not (tmp_path / ".config" / "devboost" / "restic-b2.env").exists()
@@ -231,8 +234,55 @@ def test_obsidian_sync_quotes_a_vault_path_with_spaces(
 def test_obsidian_sync_on_macos_skips_without_a_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Final review I2: no repo is `blocked` with the fix (as in M3), never a verify fail."""
     monkeypatch.delenv("DEVBOOST_VAULT_REPO", raising=False)
     ctx = Ctx(os=MAC, ex=FakeExecutor())
-    ObsidianSync().install(ctx)
+    with pytest.raises(NeedsUser, match="no vault repo configured") as exc:
+        ObsidianSync().install(ctx)
+    assert "export DEVBOOST_VAULT_REPO=" in exc.value.how_to_fix
     assert ctx.ex.calls == []  # type: ignore[attr-defined]
     assert ObsidianSync().verify(ctx) is False
+
+
+def test_obsidian_sync_without_github_credentials_needs_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _vault_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(_credentials, "github_credentials", lambda ctx: None)
+    with pytest.raises(NeedsUser, match="GitHub credentials"):
+        ObsidianSync().install(Ctx(os=MAC, ex=FakeExecutor()))
+
+
+def test_obsidian_sync_deploy_key_failure_needs_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _vault_env(tmp_path, monkeypatch)
+
+    def _refused(*a: object, **k: object) -> bool:
+        raise GithubError("403")
+
+    monkeypatch.setattr(github, "add_deploy_key", _refused)
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    with pytest.raises(NeedsUser, match="deploy key"):
+        ObsidianSync().install(ctx)
+    assert not any(c[:2] == ["git", "clone"] for c in ctx.ex.calls)  # type: ignore[attr-defined]
+
+
+def test_a_zero_config_mac_run_blocks_obsidian_sync_and_restic_b2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runner contract: with no env and no secrets, neither module ends `fail`."""
+    from devboost.core.plan import build_plan
+    from devboost.core.registry import load
+    from devboost.core.runner import run_plan
+
+    monkeypatch.delenv("DEVBOOST_VAULT_REPO", raising=False)
+    monkeypatch.setattr(server, "_secret", lambda ctx, f: None)
+    monkeypatch.setattr(_credentials, "github_credentials", lambda ctx: None)
+    mods = load()
+    plan = [p for p in build_plan(["obsidian-sync", "restic-b2"], mods, MAC,
+                                  gpu_marker=tmp_path / "none")
+            if p.name in {"obsidian-sync", "restic-b2"}]
+    results = run_plan(plan, mods, Ctx(os=MAC, ex=RuleExecutor()))
+    status = {r.name: r.status for r in results}
+    assert status == {"obsidian-sync": "blocked", "restic-b2": "blocked"}

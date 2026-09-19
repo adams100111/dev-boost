@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from devboost.core.errors import UnsupportedOS
+from devboost.core.errors import NeedsUser, UnsupportedOS
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
@@ -133,11 +133,13 @@ def _b2_secrets(ctx: Ctx, field: str) -> str | None:
 def test_restic_b2_skips_timer_without_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No destination → install restic but wire no timer (never point a timer at nowhere)."""
+    """No destination → install restic, wire no timer (never point a timer at nowhere),
+    and report `blocked` with the fix instead of a later verify failure (final review I2)."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(server, "_secret", _no_secret)
     ctx = _ubuntu()
-    ResticB2().install(ctx)
+    with pytest.raises(NeedsUser, match="B2_ACCOUNT_ID"):
+        ResticB2().install(ctx)
     calls = ctx.ex.calls  # type: ignore[attr-defined]
     assert ["sudo", "apt-get", "install", "-y", "restic"] in calls
     assert not any("restic-b2.timer" in c for c in calls)
