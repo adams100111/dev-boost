@@ -56,8 +56,11 @@ def test_sanitize_rejects_empty() -> None:
 def test_devboost_bin_prefers_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(paths, "is_frozen", lambda: False)
-    monkeypatch.setattr(paths.shutil, "which", lambda _c: "/home/u/.local/bin/devboost")
+    monkeypatch.setattr("devboost.passstore.paths.is_frozen", lambda: False)
+    monkeypatch.setattr(
+        "devboost.passstore.paths.shutil.which",
+        lambda _c: "/home/u/.local/bin/devboost",
+    )
     assert paths.devboost_bin() == "/home/u/.local/bin/devboost"
-    monkeypatch.setattr(paths.shutil, "which", lambda _c: None)
+    monkeypatch.setattr("devboost.passstore.paths.shutil.which", lambda _c: None)
     assert paths.devboost_bin() == "devboost"
