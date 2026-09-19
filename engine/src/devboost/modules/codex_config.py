@@ -12,8 +12,9 @@ import tomli_w
 from devboost.core import log
 from devboost.core.registry import register
 from devboost.model import Ctx, Module
+from devboost.modules._pass import pass_line
 from devboost.modules.codex_code import CodexCode
-from devboost.modules.optional import PassStore
+from devboost.modules.pass_store import PassStore
 from devboost.modules.shell import Dotfiles
 
 CODEX_PREFS: dict[str, str] = {
@@ -42,22 +43,15 @@ class CodexConfig(Module):
     description = (
         "Merge shareable ~/.codex/config.toml prefs/features/shell-env (CLICKUP via pass)."
     )
-    requires = (CodexCode, Dotfiles, PassStore)
+    requires = (CodexCode, Dotfiles)
+    after = (PassStore,)
     profiles = ("codex",)
 
     def _config_path(self) -> Path:
         return _home() / ".codex" / "config.toml"
 
     def _clickup(self, ctx: Ctx) -> str | None:
-        if not ctx.ex.which("pass"):
-            log.warn("codex-config: pass not configured — skipping CLICKUP_API_TOKEN")
-            return None
-        res = ctx.ex.run(["pass", "show", "clickup/api-token"])
-        token = res.stdout.strip()
-        if not res.ok or not token:
-            log.warn("codex-config: `pass show clickup/api-token` missing — skipping token")
-            return None
-        return token
+        return pass_line(ctx, "clickup/api-token", who="codex-config")
 
     def verify(self, ctx: Ctx) -> bool:
         path = self._config_path()

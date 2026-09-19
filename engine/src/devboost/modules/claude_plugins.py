@@ -9,8 +9,9 @@ from pathlib import Path
 from devboost.core import log
 from devboost.core.registry import register
 from devboost.model import Ctx, Module
+from devboost.modules._pass import pass_line
 from devboost.modules.claude_code import ClaudeCode
-from devboost.modules.optional import PassStore
+from devboost.modules.pass_store import PassStore
 from devboost.modules.secrets import Secrets
 from devboost.modules.shell import Dotfiles
 
@@ -57,8 +58,9 @@ class ClaudePlugins(Module):
     category = "cli"
     description = "Register Claude marketplaces + install enabled plugins; resolve CLICKUP token."
     # Secrets → ~/.git-credentials (private clickup-flow marketplace clone auth).
-    # PassStore → the GPG password store (CLICKUP token).
-    requires = (ClaudeCode, Dotfiles, Secrets, PassStore)
+    # PassStore is soft (after): the CLICKUP token is skipped until this device is approved.
+    requires = (ClaudeCode, Dotfiles, Secrets)
+    after = (PassStore,)
     profiles = ("claude",)
 
     def _settings_path(self) -> Path:
@@ -130,13 +132,8 @@ class ClaudePlugins(Module):
                 log.warn(f"claude-plugins: install {plugin} failed: {res.stderr.strip()}")
 
     def _resolve_clickup_token(self, ctx: Ctx) -> None:
-        if not ctx.ex.which("pass"):
-            log.warn("claude-plugins: pass not configured — skipping CLICKUP_API_TOKEN")
-            return
-        res = ctx.ex.run(["pass", "show", "clickup/api-token"])
-        token = res.stdout.strip()
-        if not res.ok or not token:
-            log.warn("claude-plugins: `pass show clickup/api-token` missing — skipping token")
+        token = pass_line(ctx, "clickup/api-token", who="claude-plugins")
+        if token is None:
             return
         # Claude Code reads `env` from the user-global ~/.claude/settings.json. There is NO
         # user-level settings.local.json (that name is project-scoped only), so the token must

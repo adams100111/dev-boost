@@ -137,3 +137,25 @@ def test_herdr_config_parses_and_sets_prefix() -> None:
     data = tomllib.loads(cfg.read_text(encoding="utf-8"))
     assert data["keys"]["prefix"] == "ctrl+b"
     assert "theme" in data
+
+
+def test_herdr_plugins_reads_telegram_from_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("DEVBOOST_HERDR_TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("DEVBOOST_HERDR_TELEGRAM_CHAT_ID", raising=False)
+    cfg_dir = tmp_path / "cfg"
+    ctx = _ctx(present={"pass"}, scripts={
+        "herdr": Result(0, stdout=str(cfg_dir)),
+        "pass": Result(0, stdout="telegram\ntoken: P-TOKEN\nchat_id: P-CHAT\n"),
+    })
+    HerdrPlugins()._configure_notify(ctx)
+    text = (cfg_dir / ".env").read_text(encoding="utf-8")
+    assert "TELEGRAM_BOT_TOKEN=P-TOKEN" in text and "TELEGRAM_CHAT_ID=P-CHAT" in text
+    assert ["pass", "show", "devboost/herdr-telegram"] in ctx.ex.calls  # type: ignore[attr-defined]
+
+
+def test_herdr_plugins_orders_after_pass_store() -> None:
+    from devboost.modules.pass_store import PassStore
+
+    assert HerdrPlugins.after == (PassStore,)
