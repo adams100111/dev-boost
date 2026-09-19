@@ -52,23 +52,39 @@ zsh is the shell on macOS (bash on Linux). The files are shared where they can b
 
 | File | What it does |
 |---|---|
-| `~/.zprofile` | login shells, including the shells GUI apps start: `brew shellenv`, mise shims, then `~/.zprofile.local` |
+| `~/.zprofile` | login shells, including the shells GUI apps start and `zsh -lc` launchers: `brew shellenv`, mise shims, `env.sh`, then `~/.zprofile.local` |
 | `~/.zshrc` | loads `~/.config/devboost/shell.zsh`, then `~/.zshrc.local` |
 | `~/.config/devboost/env.sh` | POSIX env shared with bash: PATH, `LANG`, `XDG_CONFIG_HOME`, `ANDROID_HOME`, `RIPGREP_CONFIG_PATH`, `EDITOR`/`VISUAL`, then a machine-local override hook (see below) |
 | `~/.config/devboost/aliases.sh` | `dev`, `expose`, `tsdev-sync`, `pw-*`, eza aliases — shared with bash |
 | `~/.config/devboost/shell.zsh` | history, completion, fzf → mise → starship → atuin → zoxide → direnv, then the plugins |
 | `~/.bash_profile` | for `bash -lc` launchers (MCP servers, scripts): `~/.profile` (if present), `env.sh`, `~/.bash_profile.local`, then `~/.bashrc` when interactive |
 
+**bash on macOS.** dev-boost does not manage `~/.bashrc` on macOS (it is Linux-only in
+`.chezmoiignore`), so an interactive bash reads **your own** `~/.bashrc`, if you have one —
+dev-boost's prompt, aliases and tool inits are zsh-only there. `bash -lc` launchers still
+get the shared `env.sh` through `~/.bash_profile`.
+
+**`ZDOTDIR`.** dev-boost writes `~/.zshrc` and `~/.zprofile` in your home directory. If you
+set `ZDOTDIR` (for example in `/etc/zshenv` or `~/.zshenv`), zsh reads the rc files from
+that directory instead and never loads dev-boost's (`devboost verify` checks `~/.zshrc`,
+so it does not notice). Unset
+`ZDOTDIR`, or have `$ZDOTDIR/.zshrc` and `$ZDOTDIR/.zprofile` source `~/.zshrc` and
+`~/.zprofile`.
+
 **Machine-local overrides.** `env.sh` ends by sourcing
 `~/.config/devboost/local.sh` if it exists — dev-boost never ships or manages this file;
 create it yourself for a one-off `PATH`/`EDITOR`/`VISUAL` tweak that shouldn't live in the
 repo. It runs last, so it wins over everything else `env.sh` sets.
 
-**Your old files are kept.** The first install **copies** (not moves — the original stays
-in place) a `~/.zshrc`, `~/.zprofile` or `~/.bash_profile` that dev-boost did not write to
-`<name>.pre-devboost`. It never overwrites an earlier backup; a later one becomes
-`.pre-devboost.1`, and so on. Copy any lines you still need into `~/.zshrc.local` or
-`~/.zprofile.local`, which dev-boost never touches.
+**Your old files are kept.** Before it writes `~/.zshrc`, `~/.zprofile` or
+`~/.bash_profile`, the `dotfiles` module **copies** (not moves — the original stays in
+place) the current file to `<name>.pre-devboost` when dev-boost did not write it, or when
+dev-boost wrote it but something has since changed it (an installer that appended a
+`PATH` line, for example — the rewrite would otherwise drop that line). It never
+overwrites an earlier backup; a later one becomes `.pre-devboost.1`, and so on, and a
+re-run makes no second copy of an identical file. Move the lines you still need into the
+matching `.local` file — `~/.zshrc.local`, `~/.zprofile.local` or `~/.bash_profile.local` —
+which dev-boost never touches.
 
 ## Terminal — Ghostty
 
@@ -103,7 +119,7 @@ adopt it, the run reports `ghostty` as present-unmanaged and leaves your copy al
 | `ulimit: … invalid argument` at shell start | cannot happen: `shell.zsh` falls back to `kern.maxfilesperproc` until `macos-limits` (M5) raises the limit |
 | `mosh`/ssh to Linux complains about `LC_CTYPE=UTF-8` | open a new shell. `env.sh` sets `LANG=en_US.UTF-8` and replaces a bare `LC_CTYPE=UTF-8` |
 | lazygit / fresh ignore `~/.config` | the shell sets `XDG_CONFIG_HOME`. An app started from the Dock does not read your shell, so start it from a terminal |
-| want your old shell back | `mv ~/.zshrc.pre-devboost ~/.zshrc` (then dev-boost will set it aside again on the next `dotfiles` run) |
+| want your old shell back | `mv ~/.zshrc.pre-devboost ~/.zshrc`. `devboost verify` then reports `zsh-config` as failed (your `~/.zshrc` is no longer dev-boost's), and `devboost install dotfiles --force` copies it aside again and puts dev-boost's back |
 
 ## Linux gate for this milestone
 
