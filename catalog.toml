@@ -76,9 +76,11 @@ ios_runtime = "27.0"
 min_macos = "26.6"
 
 [voxtype]
-# Voxtype (MIT) on Linux — upstream packages from docs/INSTALL.md. sha256 = the GitHub
-# release-asset digests (gh api repos/peteonrails/voxtype/releases/tags/v1.0.1).
-# macOS uses the peteonrails/voxtype Homebrew tap instead (brew verifies the cask).
+# Voxtype (MIT) — Linux: upstream packages from docs/INSTALL.md; macOS: the universal
+# release binary (the peteonrails/voxtype tap cask is stuck on 0.7.5, which reads its config
+# and models from ~/Library/Application Support). sha256 = the GitHub release-asset digests
+# (gh api repos/peteonrails/voxtype/releases/tags/v1.0.1); the macOS one was also checked
+# against SHA256SUMS-macos.txt and a local `shasum -a 256` of the download (2026-09-19).
 version = "1.0.1"
 
 [voxtype.assets.rpm-x86_64]
@@ -92,3 +94,7 @@ sha256 = "2308e762f9fd2986a2052c931388b13e7e1c74f067b6be25cacbe710546c4a0e"
 [voxtype.assets.bin-aarch64]
 url = "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-linux-aarch64-cpu"
 sha256 = "b5e31a85aaa952d1a78c12b8a16ba5cbdcd92eb31adc7d1a908f3c9d06edd4f1"
+
+[voxtype.assets.bin-macos-universal]
+url = "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-macos-universal"
+sha256 = "275df56b1e9463d8c8888d208bcfae4ed2ab4cb5aa0177dbfc6044d4b8d3ae78"

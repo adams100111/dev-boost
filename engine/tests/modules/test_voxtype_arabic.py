@@ -46,7 +46,8 @@ class ModelEx(RuleExecutor):
     ) -> Result:
         res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd,
                           interactive=interactive)
-        if list(argv[:3]) == ["voxtype", "setup", "--download"] and res.ok:
+        exe_ok = bool(argv) and argv[0] in {"voxtype", str(vox.bin_path())}
+        if exe_ok and list(argv[1:3]) == ["setup", "--download"] and res.ok:
             path = vox.model_file(argv[argv.index("--model") + 1])
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(FAKE_MODEL)
@@ -66,7 +67,7 @@ def test_macos_install_downloads_marks_reapplies_and_restarts(tmp_path: Path) ->
     vox.VoxtypeArabic().install(Ctx(os=MAC, ex=ex))
     assert vox.arabic_marker().is_file()
     assert ex.calls == [
-        ["voxtype", "setup", "--download", "--model", "large-v3-turbo", "--quiet"],
+        [str(vox.bin_path()), "setup", "--download", "--model", "large-v3-turbo", "--quiet"],
         ["chezmoi", "apply", "--force", "--parent-dirs",
          "--source", str(settings.root / "dotfiles"),
          "--destination", str(tmp_path),

@@ -56,9 +56,14 @@ def _write_bundle(version: str) -> None:
 
 @dataclass
 class VoxEx(RuleExecutor):
-    """What the real `voxtype` leaves behind: the model file, the app bundle, a version."""
+    """What the real `voxtype` leaves behind: the model file, the app bundle, a version.
+
+    ``installed`` models the pinned binary at ~/.local/bin/voxtype (macOS): `--version`
+    fails until an `install … <bin_path>` call has put it there.
+    """
 
     version: str = "1.0.1"
+    installed: bool = False
 
     def run(
         self,
@@ -73,14 +78,21 @@ class VoxEx(RuleExecutor):
         res = super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd,
                           interactive=interactive)
         args = list(argv)
-        if args[:3] == ["voxtype", "setup", "--download"] and res.ok:
-            name = args[args.index("--model") + 1]
+        if args and args[0] == "install" and args[-1] == str(vox.bin_path()) and res.ok:
+            self.installed = True
+        if not args or args[0] not in {"voxtype", str(vox.bin_path())}:
+            return res
+        rest = args[1:]
+        if rest[:2] == ["setup", "--download"] and res.ok:
+            name = rest[rest.index("--model") + 1]
             vox.model_file(name).parent.mkdir(parents=True, exist_ok=True)
             vox.model_file(name).write_bytes(_fake_model(name))
-        elif args == ["voxtype", "setup", "app-bundle"]:
+        elif rest == ["setup", "app-bundle"]:
             _write_bundle(self.version)
-        elif args == ["voxtype", "--version"]:
-            return Result(0, f"voxtype {self.version}\n")
+        elif rest == ["--version"]:
+            if args[0] == "voxtype" or self.installed:
+                return Result(0, f"voxtype {self.version}\n")
+            return Result(127, "", "no such file")
         return res
 
 
@@ -129,34 +141,68 @@ def test_the_real_pins_are_the_hugging_face_digests() -> None:
 
 # --- macOS ---------------------------------------------------------------------------------
 
+MAC_SHA = "275df56b1e9463d8c8888d208bcfae4ed2ab4cb5aa0177dbfc6044d4b8d3ae78"
 
-def test_macos_install_cask_model_then_app_bundle() -> None:
+
+def _vt(*args: str) -> list[str]:
+    return [str(vox.bin_path()), *args]
+
+
+def test_macos_installs_the_verified_binary_model_then_app_bundle(tmp_path: Path) -> None:
     ex = VoxEx()
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
-    assert ex.calls == [
-        ["brew", "install", "--cask", "-y", "--adopt", "peteonrails/voxtype/voxtype"],
-        ["voxtype", "setup", "--download", "--model", "small.en", "--quiet"],
-        ["voxtype", "setup", "app-bundle"],
+    script = _scripts(ex)[0]
+    assert "releases/download/v1.0.1/voxtype-1.0.1-macos-universal" in script
+    assert MAC_SHA in script
+    assert "shasum -a 256 -c -" in script
+    assert "--proto '=https'" in script
+    # the quarantine flag comes off only after the checksum line has passed
+    assert script.index("shasum") < script.index("xattr -d com.apple.quarantine")
+    install = next(c for c in ex.calls if c[0] == "install")
+    assert install[:3] == ["install", "-m", "0755"]
+    assert install[-1] == str(tmp_path / ".local" / "bin" / "voxtype")
+    assert not Path(install[-2]).parent.exists()  # the private download dir is gone
+    assert ex.calls[-2:] == [
+        _vt("setup", "--download", "--model", "small.en", "--quiet"),
+        _vt("setup", "app-bundle"),
     ]
+    assert vox.models_dir().is_dir()  # made first, so voxtype never falls back to ~/Library
 
 
-def test_macos_verify_needs_cask_model_and_a_current_bundle() -> None:
-    ctx = Ctx(os=MAC, ex=VoxEx())
+def test_the_macos_path_never_touches_homebrew() -> None:
+    ex = VoxEx()
+    vox.Voxtype().install(Ctx(os=MAC, ex=ex))
+    vox.Voxtype().verify(Ctx(os=MAC, ex=ex))
+    assert not [c for c in ex.calls if c[0] == "brew" or "peteonrails/voxtype/voxtype" in c]
+    assert not [c for c in ex.calls if c[0] == "sudo"]
+    assert vox.Voxtype.requires == ()
+    assert not getattr(vox.MacosVoxtype, "uses_brew", False)
+
+
+def test_macos_skips_the_download_when_the_pinned_version_is_installed() -> None:
+    ex = VoxEx(installed=True)
+    vox.Voxtype().install(Ctx(os=MAC, ex=ex))
+    assert _scripts(ex) == []
+
+
+def test_macos_verify_needs_binary_model_and_a_current_bundle() -> None:
+    ctx = Ctx(os=MAC, ex=VoxEx(installed=True))
     assert vox.Voxtype().verify(ctx) is False
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    _write_bundle("0.9.0")  # a copy of the binary from before `brew upgrade`
+    _write_bundle("0.9.0")  # a copy of an older binary
     assert vox.Voxtype().verify(ctx) is False
     _write_bundle("1.0.1")
     assert vox.Voxtype().verify(ctx) is True
+    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxEx(installed=True, version="0.7.5"))) \
+        is False
 
 
-def test_macos_verify_is_false_without_the_cask() -> None:
+def test_macos_verify_is_false_without_the_binary() -> None:
     _write_bundle("1.0.1")
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    ex = VoxEx(rules=[(("list", "--cask"), Result(1))])
-    assert vox.Voxtype().verify(Ctx(os=MAC, ex=ex)) is False
+    assert vox.Voxtype().verify(Ctx(os=MAC, ex=VoxEx())) is False
 
 
 def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
@@ -166,26 +212,32 @@ def test_macos_force_twice_has_no_duplicate_side_effects() -> None:
     vox.Voxtype().install(Ctx(os=MAC, ex=ex))
     for _ in range(2):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex, force=True))
-    assert ex.calls.count(["voxtype", "setup", "app-bundle"]) == 1
-    assert sum(c[:3] == ["voxtype", "setup", "--download"] for c in ex.calls) == 1
-    assert ex.calls.count(["brew", "upgrade", "--cask", vox.CASK]) == 2
-    assert sum(c[:3] == ["brew", "install", "--cask"] for c in ex.calls) == 1
-    assert not [c for c in ex.calls if c[0] in {"open", "osascript", "sudo"}]
+    assert ex.calls.count(_vt("setup", "app-bundle")) == 1
+    assert sum(c[1:3] == ["setup", "--download"] for c in ex.calls) == 1
+    assert len(_scripts(ex)) == 3  # --force re-fetches (and re-verifies) the binary
+    assert not [c for c in ex.calls if c[0] in {"open", "osascript", "sudo", "brew"}]
 
 
 def test_macos_force_rebuilds_a_stale_bundle() -> None:
     _write_bundle("0.9.0")
     vox.model_file("small.en").parent.mkdir(parents=True)
     vox.model_file("small.en").touch()
-    ex = VoxEx()
+    ex = VoxEx(installed=True)
     vox.Voxtype().install(Ctx(os=MAC, ex=ex, force=True))
-    assert ex.calls[-1] == ["voxtype", "setup", "app-bundle"]
+    assert ex.calls[-1] == _vt("setup", "app-bundle")
 
 
 def test_macos_app_bundle_failure_is_an_install_error() -> None:
     ex = VoxEx(rules=[(("app-bundle",), Result(1))])
     with pytest.raises(InstallError, match="app-bundle"):
         vox.Voxtype().install(Ctx(os=MAC, ex=ex))
+
+
+def test_macos_checksum_failure_installs_nothing() -> None:
+    ex = VoxEx(rules=[(("sh", "-c"), Result(1))])
+    with pytest.raises(InstallError, match="checksum"):
+        vox.Voxtype().install(Ctx(os=MAC, ex=ex))
+    assert not [c for c in ex.calls if c[0] == "install" or c[-1:] == ["app-bundle"]]
 
 
 # --- Linux ---------------------------------------------------------------------------------
@@ -236,7 +288,7 @@ def test_linux_aarch64_installs_the_raw_binary(tmp_path: Path) -> None:
     vox.Voxtype().install(Ctx(os=FEDORA_ARM, ex=ex))
     script = _scripts(ex)[0]
     assert "voxtype-1.0.1-linux-aarch64-cpu" in script
-    binary = next(c for c in ex.calls if c[:2] == ["install", "-Dm755"])
+    binary = next(c for c in ex.calls if c[:3] == ["install", "-m", "0755"])
     assert binary[-1] == str(tmp_path / ".local" / "bin" / "voxtype")
     assert not any(c[-1].endswith(("voxtype.rpm", "voxtype.deb")) for c in ex.calls)
 
@@ -313,5 +365,4 @@ def test_permissions_and_profile() -> None:
     assert {g.service for g in vox.Voxtype.tcc} == {"Microphone", "ListenEvent", "Accessibility"}
     assert {g.app for g in vox.Voxtype.tcc} == {"Voxtype"}
     assert vox.Voxtype.profiles == ("base",)
-    assert vox.MacosVoxtype.uses_brew is True
     assert vox.Voxtype.needs_sudo_on_macos is False  # M5-D5

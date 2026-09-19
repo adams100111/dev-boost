@@ -74,7 +74,7 @@ ctrl-alt-shift-semicolon = 'mode service'
 
 # Arabic dictation (devboost voxtype-arabic): press to start, press again to stop.
 # macOS Voxtype ignores `model_modifier`, so the secondary model gets its own key.
-ctrl-alt-d = 'exec-and-forget /opt/homebrew/bin/voxtype record toggle --model large-v3-turbo'
+ctrl-alt-d = 'exec-and-forget {{ .chezmoi.homeDir }}/.local/bin/voxtype record toggle --model large-v3-turbo'
 {{- end }}
 
 [mode.service.binding]

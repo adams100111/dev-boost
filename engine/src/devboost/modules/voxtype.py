@@ -1,10 +1,13 @@
 """voxtype — local push-to-talk dictation (MIT), on every OS (spec §2).
 
-macOS: the peteonrails tap cask, then upstream's `voxtype setup app-bundle`, which wraps
-the daemon in /Applications/Voxtype.app with a Login Item. Upstream warns that a plain
-launchd service never receives Microphone access (D14). Linux: the upstream RPM/DEB
-(pinned + hashed in catalog.toml), or the AUR on Arch, or the raw binary on aarch64, plus
-a systemd user service. Omarchy ships it through its own menu (provided_by).
+macOS: the pinned universal release binary (SHA-256 in catalog.toml) in ~/.local/bin, then
+upstream's `voxtype setup app-bundle`, which wraps the daemon in /Applications/Voxtype.app
+with a Login Item. Upstream warns that a plain launchd service never receives Microphone
+access (D14). Not the peteonrails tap cask: it is stuck on 0.7.5, which reads its config and
+models from ~/Library/Application Support, not the XDG paths the dotfiles write. Linux: the
+upstream RPM/DEB (pinned + hashed), or the AUR on Arch, or the raw binary on aarch64, plus a
+systemd user service. Omarchy ships it through its own menu (provided_by). No step needs
+Homebrew, and only the Linux package/group steps need root.
 
 Whisper models come from Hugging Face through `voxtype setup --download`, which checks
 only their size and magic bytes (upstream publishes no digest for them), so each model
@@ -21,9 +24,10 @@ import re
 import shlex
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Literal
 
 from devboost.core import log
 from devboost.core.errors import InstallError, NeedsUser
@@ -33,12 +37,8 @@ from devboost.core.settings import settings
 from devboost.exec.primitives import pkg
 from devboost.media.catalog import ReleaseAsset, voxtype_pin
 from devboost.model import Ctx, Module, TccGrant
-from devboost.modules.macos import Homebrew
 from devboost.modules.shell import Dotfiles
 
-CASK = "peteonrails/voxtype/voxtype"
-#: `brew list --cask` rejects a tap-qualified name (exit 1 even when installed).
-_CASK_SHORT = "voxtype"
 MODEL = "small.en"
 ARABIC_MODEL = "large-v3-turbo"
 BUNDLE_ID = "io.voxtype.daemon"
@@ -69,6 +69,16 @@ def _home() -> Path:
     return Path(os.environ["HOME"])
 
 
+def bin_path() -> Path:
+    """Where the pinned binary goes (the executor puts ~/.local/bin on PATH)."""
+    return _home() / ".local" / "bin" / "voxtype"
+
+
+def _exe(ctx: Ctx) -> str:
+    """macOS runs the pinned binary by path, so a leftover brew 0.7.5 can never shadow it."""
+    return str(bin_path()) if ctx.os.family == "macos" else "voxtype"
+
+
 def models_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or str(_home() / ".local" / "share")
     return Path(base) / "voxtype" / "models"
@@ -91,7 +101,10 @@ def download_model(ctx: Ctx, name: str) -> None:
     path = model_file(name)
     if path.exists():
         return
-    res = ctx.ex.run(["voxtype", "setup", "--download", "--model", name, "--quiet"])
+    # voxtype falls back to a legacy ~/Library/Application Support/voxtype when the XDG
+    # dir does not exist yet; creating it first keeps the models where model_file() looks.
+    models_dir().mkdir(parents=True, exist_ok=True)
+    res = ctx.ex.run([_exe(ctx), "setup", "--download", "--model", name, "--quiet"])
     if not res.ok:
         raise InstallError("voxtype", f"voxtype setup --download --model {name}", res.code)
     if not path.is_file():
@@ -106,7 +119,61 @@ def download_model(ctx: Ctx, name: str) -> None:
         raise InstallError("voxtype", f"model {name}: sha256 mismatch, file removed", 1)
 
 
+# --- verified downloads (both OSes) -------------------------------------------------------
+
+
+def _fetch_verified(ctx: Ctx, asset: ReleaseAsset, dest: Path) -> None:
+    """Download *asset* to *dest* and check its SHA-256, unprivileged.
+
+    A mismatch deletes the file and fails the `set -e` script, so nothing unverified is
+    ever installed. On macOS the quarantine flag is then removed from that verified file
+    only (curl sets none today; a proxy or wrapper might).
+    """
+    d, u, h = shlex.quote(str(dest)), shlex.quote(asset.url), shlex.quote(asset.sha256)
+    mac = ctx.os.family == "macos"
+    check = "shasum -a 256 -c -" if mac else "sha256sum -c -"
+    script = (
+        "set -e\n"
+        f"curl -fL --proto '=https' --retry 2 -o {d} {u}\n"
+        f"printf '%s  %s\\n' {h} {d} | {check} || {{ rm -f {d}; exit 1; }}\n"
+    )
+    if mac:
+        script += f"xattr -d com.apple.quarantine {d} 2>/dev/null || true\n"
+    res = ctx.ex.run(["sh", "-c", script])
+    if not res.ok:
+        raise InstallError("voxtype", "download or checksum verification failed", res.code)
+
+
+def _install_binary(ctx: Ctx, src: Path) -> None:
+    target = bin_path()
+    target.parent.mkdir(parents=True, exist_ok=True)  # BSD install has no -D
+    res = ctx.ex.run(["install", "-m", "0755", str(src), str(target)])
+    if not res.ok:
+        raise InstallError("voxtype", f"install {target}", res.code)
+
+
+def _with_verified(ctx: Ctx, key: str, name: str, use: Callable[[Path], None]) -> None:
+    """Fetch the pinned *key* asset into a private temp dir, verify it, hand it to *use*."""
+    tmp = Path(tempfile.mkdtemp(prefix="devboost-voxtype-"))  # 0700, removed below
+    try:
+        dest = tmp / name
+        _fetch_verified(ctx, voxtype_pin().assets[key], dest)
+        use(dest)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _install_pinned_binary(ctx: Ctx, key: str) -> None:
+    _with_verified(ctx, key, "voxtype", lambda src: _install_binary(ctx, src))
+
+
 # --- macOS ---------------------------------------------------------------------------------
+
+
+def _installed_version(ctx: Ctx) -> str | None:
+    res = ctx.ex.run([_exe(ctx), "--version"])
+    m = _VERSION_RE.search(res.stdout) if res.ok else None
+    return m.group(0) if m else None
 
 
 def _bundle_version() -> str | None:
@@ -121,63 +188,36 @@ def _bundle_version() -> str | None:
 def _bundle_current(ctx: Ctx) -> bool:
     """Voxtype.app exists and holds the installed version.
 
-    `setup app-bundle` COPIES the brew binary into the bundle, so after a `brew upgrade`
-    the Login Item keeps running the old one until the bundle is rebuilt.
+    `setup app-bundle` COPIES the binary into the bundle, so after an upgrade the Login
+    Item keeps running the old one until the bundle is rebuilt.
     """
     have = _bundle_version()
-    if have is None:
-        return False
-    res = ctx.ex.run(["voxtype", "--version"])
-    m = _VERSION_RE.search(res.stdout) if res.ok else None
-    return m is not None and m.group(0) == have
+    return have is not None and have == _installed_version(ctx)
 
 
 @dataclass(frozen=True)
 class MacosVoxtype:
-    #: Read by the Homebrew contract tests: this strategy installs through brew.
-    uses_brew: ClassVar[bool] = True
-
     def verify(self, ctx: Ctx) -> bool:
         return (
-            pkg.cask_installed(ctx, _CASK_SHORT)
+            _installed_version(ctx) == voxtype_pin().version
             and model_file(MODEL).exists()
             and _bundle_current(ctx)
         )
 
     def install(self, ctx: Ctx) -> None:
-        if ctx.force and pkg.cask_installed(ctx, _CASK_SHORT):
-            pkg.upgrade_cask(ctx, CASK)  # a no-op (exit 0) when already current
-        else:
-            pkg.install_cask(ctx, CASK)
+        if ctx.force or _installed_version(ctx) != voxtype_pin().version:
+            _install_pinned_binary(ctx, "bin-macos-universal")
         download_model(ctx, MODEL)
         # Only when missing or stale: the command also resets the Accessibility and Input
         # Monitoring grants, re-adds the Login Item and launches the app (M5-D6).
         if _bundle_current(ctx):
             return
-        res = ctx.ex.run(["voxtype", "setup", "app-bundle"])
+        res = ctx.ex.run([_exe(ctx), "setup", "app-bundle"])
         if not res.ok:
             raise InstallError("voxtype", "voxtype setup app-bundle", res.code)
 
 
 # --- Linux ---------------------------------------------------------------------------------
-
-
-def _fetch_verified(ctx: Ctx, asset: ReleaseAsset, dest: Path) -> None:
-    """Download *asset* to *dest* and check its SHA-256, unprivileged.
-
-    A mismatch deletes the file and fails the `set -e` script, so nothing unverified is
-    ever handed to the (root) package manager.
-    """
-    d, u, h = shlex.quote(str(dest)), shlex.quote(asset.url), shlex.quote(asset.sha256)
-    script = (
-        "set -e\n"
-        f"curl -fL --proto '=https' --retry 2 -o {d} {u}\n"
-        f"printf '%s  %s\\n' {h} {d} | sha256sum -c - "
-        f"|| {{ rm -f {d}; exit 1; }}\n"
-    )
-    res = ctx.ex.run(["sh", "-c", script])
-    if not res.ok:
-        raise InstallError("voxtype", "download or checksum verification failed", res.code)
 
 
 def _desktop_user() -> str | None:
@@ -215,27 +255,14 @@ class LinuxVoxtype:
         )
 
     def _binary(self, ctx: Ctx) -> None:
-        if ctx.os.arch != "aarch64" and self.kind == "aur":
-            pkg.install_aur(ctx, "voxtype-bin")  # maintained by the upstream author
-            return
-        pin = voxtype_pin()
         if ctx.os.arch == "aarch64":  # no RPM/DEB/AUR build for arm64 Linux
-            key, name = "bin-aarch64", "voxtype"
+            _install_pinned_binary(ctx, "bin-aarch64")
+        elif self.kind == "aur":
+            pkg.install_aur(ctx, "voxtype-bin")  # maintained by the upstream author
         else:
-            key, name = f"{self.kind}-x86_64", f"voxtype.{self.kind}"
-        tmp = Path(tempfile.mkdtemp(prefix="devboost-voxtype-"))
-        try:
-            dest = tmp / name
-            _fetch_verified(ctx, pin.assets[key], dest)
-            if name == "voxtype":
-                target = _home() / ".local" / "bin" / "voxtype"
-                res = ctx.ex.run(["install", "-Dm755", str(dest), str(target)])
-                if not res.ok:
-                    raise InstallError("voxtype", f"install {target}", res.code)
-            else:
-                pkg.install(ctx, str(dest))  # dnf/apt-get install -y <verified file>
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+            # dnf/apt-get install -y <verified file>: root sees only the checked package.
+            _with_verified(ctx, f"{self.kind}-x86_64", f"voxtype.{self.kind}",
+                           lambda path: pkg.install(ctx, str(path)))
 
     def install(self, ctx: Ctx) -> None:
         self._binary(ctx)
@@ -255,7 +282,7 @@ class Voxtype(Module):
     profiles = ("base",)
     provided_by = ("omarchy",)  # Omarchy: Install › AI › Dictation (voxtype-bin)
     gui = True
-    requires = (Homebrew,)  # dropped from Linux plans (families = macos)
+    # No Homebrew: macOS installs the pinned release binary itself.
     after = (Dotfiles,)  # the daemon should start with ~/.config/voxtype/config.toml in place
     tcc = (
         TccGrant("Microphone", "Voxtype"),
