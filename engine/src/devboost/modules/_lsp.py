@@ -4,25 +4,46 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
 from devboost.exec.primitives import mise
-from devboost.exec.resources import resource_path
+from devboost.exec.resources import resource_path, tsv_rows
 from devboost.model import Ctx, Module
+
+
+@dataclass(frozen=True)
+class ServerPin:
+    """One row of a bundled data/fresh/*.tsv: the in-repo pin for a language server."""
+
+    lang: str
+    cmd: str
+    spec: str
+    args: tuple[str, ...] = ()
+
+
+def read_pins(tsv_name: str) -> list[ServerPin]:
+    """Every server row (with its optional space-separated args) from data/fresh/<tsv_name>."""
+    pins: list[ServerPin] = []
+    for cols in tsv_rows("data", "fresh", tsv_name):
+        args = tuple(cols[3].split()) if len(cols) >= 4 else ()
+        pins.append(ServerPin(cols[0], cols[1], cols[2], args))
+    return pins
+
+
+def all_pins() -> list[ServerPin]:
+    """Pins from every bundled data/fresh/*.tsv — the single source of truth for versions."""
+    return [
+        pin
+        for tsv in sorted(resource_path("data", "fresh").glob("*.tsv"))
+        for pin in read_pins(tsv.name)
+    ]
 
 
 def read_servers(tsv_name: str) -> list[tuple[str, str, str]]:
     """(lang, fresh-cmd, mise-spec) rows from a bundled data/fresh/<tsv_name>."""
-    rows: list[tuple[str, str, str]] = []
-    text = resource_path("data", "fresh", tsv_name).read_text(encoding="utf-8")
-    for line in text.splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        cols = line.split("\t")
-        if len(cols) >= 3:
-            rows.append((cols[0], cols[1], cols[2]))
-    return rows
+    return [(p.lang, p.cmd, p.spec) for p in read_pins(tsv_name)]
 
 
 def fresh_config() -> Path:
