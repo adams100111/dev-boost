@@ -24,6 +24,7 @@ def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local" / "share"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".local" / "state"))
     monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+    monkeypatch.delenv("GNUPGHOME", raising=False)
 
 
 @pytest.fixture(autouse=True)
