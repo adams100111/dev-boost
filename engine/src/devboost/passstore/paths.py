@@ -9,6 +9,7 @@ import socket
 import sys
 from pathlib import Path
 
+from devboost.core.errors import ConfigError
 from devboost.core.selfupdate import is_frozen
 from devboost.core.userconfig import UserConfig, load_user_config
 
@@ -47,7 +48,10 @@ def sanitize_name(raw: str) -> str:
     """Lower-case, [a-z0-9-] only; device names are file names in the store."""
     name = re.sub(r"[^a-z0-9-]+", "-", raw.strip().lower()).strip("-")
     if not name:
-        raise ValueError(f"not a usable device name: {raw!r}")
+        raise ConfigError(
+            f"pass: {raw!r} is not a usable device name — fix `device_name` in "
+            "~/.config/devboost/config.toml, or pass a valid --name"
+        )
     return name[:63]
 
 

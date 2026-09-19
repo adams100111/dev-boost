@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core.errors import ConfigError
 from devboost.core.userconfig import UserConfig
 from devboost.passstore import paths
 
@@ -49,7 +50,7 @@ def test_device_name_default_and_config() -> None:
 
 
 def test_sanitize_rejects_empty() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError, match="device_name"):
         paths.sanitize_name("...")
 
 

@@ -62,6 +62,18 @@ def test_status_reports_enrollment(store: Store, monkeypatch: pytest.MonkeyPatch
     assert "desk (enrolled)" in res.output and FP_ME in res.output
 
 
+def test_status_bad_device_name_exits_cleanly(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = store.root.parent / "cfg" / "devboost" / "config.toml"
+    cfg.write_text('device_name = "!!!"\n', encoding="utf-8")
+    _use(monkeypatch)
+    res = runner.invoke(app, ["pass", "status"])
+    assert res.exit_code == 1
+    assert "Traceback" not in res.output
+    assert "device_name" in res.output
+
+
 def test_devices_lists_enrolled_and_pending(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
     store.write_record("pending", DeviceRecord(name="lap", fingerprint=FP_NEW, os="ubuntu"), ARMOR)
     _use(monkeypatch)

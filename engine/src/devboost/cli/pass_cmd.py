@@ -70,8 +70,11 @@ def status() -> None:
     """This device's enrollment, pending requests, rotation backlog and last sync."""
     ctx, store = _ctx(), _store()
     _need_store(store)
-    device = paths.device_name()
-    acc = enroll_flow.local_access(ctx, store, device)
+    try:
+        device = paths.device_name()
+        acc = enroll_flow.local_access(ctx, store, device)
+    except DevbootError as exc:
+        _fail(exc)
     name = acc.record.name if acc.record else device
     typer.echo(f"repo:      {paths.pass_repo()}")
     typer.echo(f"store:     {store.root}")
@@ -150,7 +153,11 @@ def sync_cmd(
         _need_store(store)
         typer.echo(sync_flow.resolve_guidance(ctx, store))
         return
-    res = sync_flow.run(ctx, store, paths.device_name(), push_only=push_only)
+    try:
+        device = paths.device_name()
+    except DevbootError as exc:
+        _fail(exc)
+    res = sync_flow.run(ctx, store, device, push_only=push_only)
     problem = res.status in ("conflict", "pull-failed", "push-failed", "no-store")
     if problem or not quiet:
         typer.echo(f"pass sync: {res.status}" + (f" — {res.detail}" if res.detail else ""))
@@ -173,6 +180,6 @@ def enroll_cmd(
     except NeedsUser as exc:
         typer.echo(f"{exc.reason}\nnext: {exc.how_to_fix}")
         return
-    except (DevbootError, ValueError) as exc:
+    except DevbootError as exc:
         _fail(exc)
     typer.echo(f"this device is enrolled as {acc.record.name if acc.record else device}")
