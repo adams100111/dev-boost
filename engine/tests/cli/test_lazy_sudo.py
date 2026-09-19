@@ -36,8 +36,10 @@ _NO_BREW: dict[tuple[str, ...], Result] = {("brew",): Result(127)}
 
 def test_only_the_foundation_modules_and_tailscale_need_sudo_on_macos() -> None:
     # tailscale: its cask is a .pkg, which brew installs with sudo (ruling C-R21).
+    # docker: Colima's socket LaunchDaemon is written with sudo (M4-D5); Docker itself
+    # decides per run whether that sudo is actually needed (Docker.sudo_needed).
     flagged = {name for name, cls in load().items() if cls.needs_sudo_on_macos}
-    assert flagged == {"xcode-clt", "homebrew", "rosetta", "tailscale"}
+    assert flagged == {"xcode-clt", "homebrew", "rosetta", "tailscale", "docker"}
     assert XcodeClt.needs_sudo_on_macos and Homebrew.needs_sudo_on_macos
     assert Rosetta.needs_sudo_on_macos
 

@@ -14,6 +14,7 @@ import typer
 from devboost import __version__
 from devboost.cli import accounts as _accounts
 from devboost.cli import devhygiene as dh
+from devboost.cli import docker_cmd as _docker_cmd
 from devboost.cli import host as plat
 from devboost.cli import lifecycle as lc
 from devboost.cli import pass_cmd as _pass
@@ -577,6 +578,7 @@ app.command(name="permissions")(_permissions)
 app.add_typer(_accounts.app, name="accounts")
 app.add_typer(_pass.app, name="pass")
 app.add_typer(_secrets_cmd.app, name="secrets")
+app.add_typer(_docker_cmd.app, name="docker")
 
 
 def main() -> None:

@@ -10,7 +10,7 @@ import json
 import re
 import shlex
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from devboost.core import log
 from devboost.core.errors import InstallError, NeedsUser, PresentUnmanaged, UnsupportedOS
@@ -312,6 +312,20 @@ class Brew:
     def cask_installed(self, ctx: Ctx, cask: str) -> bool:
         return self._brew(ctx, "list", "--cask", "--versions", cask).ok
 
+    def formula_linked(self, ctx: Ctx, formula: str) -> bool:
+        """True when the formula's keg is linked into the brew prefix (``linked_keg``).
+
+        Unknown counts as linked: a failed or unparsable ``brew info`` must not trigger a
+        `brew link --overwrite` that was never asked for.
+        """
+        res = self._brew(ctx, "info", "--json=v2", "--formula", formula)
+        if not res.ok:
+            return True
+        try:
+            return json.loads(res.stdout)["formulae"][0].get("linked_keg") is not None
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return True
+
     def upgrade(self, ctx: Ctx, *pkgs: str) -> None:
         if not pkgs:
             return
@@ -432,6 +446,13 @@ def cask_installed(ctx: Ctx, cask: str) -> bool:
     return Brew().cask_installed(ctx, cask)
 
 
+def formula_linked(ctx: Ctx, formula: str) -> bool:
+    """True when the brew formula is linked (always True off macOS; never raises)."""
+    if ctx.os.family != "macos":
+        return True
+    return Brew().formula_linked(ctx, formula)
+
+
 def upgrade(ctx: Ctx, *pkgs: str) -> None:
     """Upgrade formulae in place (`devboost install --update` on macOS)."""
     _brew_or_raise(ctx, "brew upgrade").upgrade(ctx, *pkgs)
@@ -447,6 +468,48 @@ def cask_auto_updates(ctx: Ctx, cask: str) -> bool:
     if ctx.os.family != "macos":
         return False
     return Brew().cask_auto_updates(ctx, cask)
+
+
+BrewServiceVerb = Literal["start", "stop", "restart"]
+
+
+def brew_services(ctx: Ctx, verb: BrewServiceVerb, formula: str) -> Result:
+    """`brew services <verb> <formula>` (macOS). The result is returned, not raised on:
+    stopping a service that is not running fails harmlessly, so the caller decides."""
+    return _brew_or_raise(ctx, "brew services")._brew(ctx, "services", verb, formula)
+
+
+def service_running(ctx: Ctx, formula: str) -> bool:
+    """True when Homebrew reports the formula's service running.
+
+    Reads ``brew services info --json`` — never a launchd label, which Homebrew 7 renamed
+    to ``sh.brew.<formula>`` (spec §0).
+    """
+    res = _brew_or_raise(ctx, "brew services")._brew(
+        ctx, "services", "info", "--json", formula
+    )
+    if not res.ok:
+        return False
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return False
+    entries = data if isinstance(data, list) else [data]
+    return any(
+        isinstance(e, dict) and e.get("name") == formula and e.get("running") is True
+        for e in entries
+    )
+
+
+def brew_link(ctx: Ctx, *formulae: str, overwrite: bool = False) -> Result:
+    """`brew link [--overwrite] <formulae>` — take a binary name back from a cask."""
+    args = ["link", *(["--overwrite"] if overwrite else []), *formulae]
+    return _brew_or_raise(ctx, "brew link")._brew(ctx, *args)
+
+
+def brew_unlink(ctx: Ctx, *formulae: str) -> Result:
+    """`brew unlink <formulae>` — free a binary name for a cask that ships its own."""
+    return _brew_or_raise(ctx, "brew unlink")._brew(ctx, "unlink", *formulae)
 
 
 #: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).

@@ -137,9 +137,10 @@ class _Gh(FakeExecutor):
         super().__init__(present={"gh", "git"})
         self.responses = responses
 
-    def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False):  # type: ignore[no-untyped-def]  # noqa: E501
+    def run(self, argv, *, sudo=False, stdin=None, env=None, cwd=None, interactive=False, timeout=None):  # type: ignore[no-untyped-def]  # noqa: E501
         super().run(
-            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
         )
         for prefix, result in self.responses.items():
             if " ".join(argv).startswith(prefix):

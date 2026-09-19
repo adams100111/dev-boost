@@ -31,6 +31,7 @@ class Scripted(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         default = super().run(
             argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive

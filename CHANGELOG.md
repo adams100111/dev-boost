@@ -7,7 +7,32 @@ git history and the GitHub release notes.
 
 ## [Unreleased]
 
+### Security
+- **browser-mcp is opt-in everywhere** — port 8931 runs code as you for any tailnet peer
+  that can reach it (`browser_run_code_unsafe`, no auth), so no profile installs it any more,
+  not even `remote`. Turn it on with `devboost install browser-mcp`, and restrict tcp:8931
+  with a Tailscale ACL (docs/remote-dev.md). On Linux the dotfiles still ship the systemd
+  `--user` unit but no longer enable it (the `default.target.wants/` link is gone); only the
+  `browser-mcp` module enables it. Machines set up earlier keep their old link until you run
+  `systemctl --user disable --now browser-mcp.service`. `devboost install browser-mcp`
+  prints the ACL requirement.
+- **browser-mcp security** — the Playwright MCP server is pinned to `@playwright/mcp@0.0.82`
+  everywhere (the `browser-mcp` launcher, the macOS LaunchAgent, `pw-mcp`, and the Claude
+  Code wiring in the `playwright` module); nothing starts `@latest`. The server's
+  `browser_run_code_unsafe` tool is RCE-equivalent and 0.0.82 has no flag to disable it, so
+  the docs now explain the port-8931 exposure and give a Tailscale ACL. `pw-mcp` refuses to
+  bind `0.0.0.0` when there is no tailnet IP and accepts its MagicDNS name as a host.
+
 ### Added
+- **Docker runtimes on macOS (M4)** — Colima (default), OrbStack and Docker Desktop behind
+  a common `DockerRuntime` protocol, plus `devboost docker use <runtime>` to switch between
+  them (snapshots ddev first, stops the others, re-verifies what depends on Docker). ddev,
+  Aspire and data-services now install on the Mac too. `aspire-gc`, `restic-backup`,
+  `restic-b2`, `obsidian-sync` and `browser-mcp` (new on macOS — a Playwright MCP server for
+  remote Claude Code sessions, opt-in) run as launchd agents, the macOS twin of the
+  Linux systemd `--user` timers. `devboost doctor` reports the selected Docker runtime's
+  health, with Apple M4/M5 and Rosetta-specific hints. `KNOWN_GAPS` is empty — M4 closes
+  the macOS catalog. See [docs/docker-runtimes.md](docs/docker-runtimes.md).
 - **macOS catalog (M3)** — `devboost install` on a Mac installs the workstation:
   `xcode-clt`, `homebrew`, `rosetta` modules; casks for the GUI apps; .NET 10 in `~/.dotnet`;
   Android SDK via the cmdline-tools cask; ddev (tap) + mkcert; the Tailscale app as a
@@ -49,6 +74,7 @@ git history and the GitHub release notes.
   `VISUAL="zed --wait"` in local GUI sessions. See [docs/zed.md](docs/zed.md).
 
 ### Changed
+- PyYAML is a new runtime dependency (Colima's `colima.yaml`).
 - herdr 0.7.5 → 0.9.1 on every OS; catalog pins are keyed `<os>-<arch>`.
 - `devboost install --update` on macOS upgrades Homebrew casks too, except apps that
   update themselves.
