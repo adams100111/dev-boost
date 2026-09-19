@@ -13,6 +13,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import age, config, flatpak, pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import Secrets, bundle_path, key_path
 
 _BUILD_PKGS_FEDORA = (
@@ -146,6 +147,7 @@ class Chezmoi(Module):
     category = "base"
     description = "Install the chezmoi dotfiles manager."
     profiles = ("base",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the brew formula; Linux keeps the upstream installer into ~/.local/bin. Not
     # self_updating, so `devboost install --update` leaves it alone on Linux; on macOS it
     # is brew-managed, so --update runs `brew upgrade chezmoi`.

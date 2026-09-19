@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -177,6 +177,17 @@ def _needs_sudo(
     return False
 
 
+def _added_dependencies(plan: list[PlannedModule], selected: Sequence[str]) -> list[str]:
+    """Modules the plan will run that the user did not ask for (their dependencies).
+
+    Read from the plan, not from the dependency closure: a dependency only another OS
+    needs (Homebrew under a brew-backed tool on Linux) is dropped by build_plan and is
+    not news to the user.
+    """
+    chosen = set(selected)
+    return [pm.name for pm in plan if pm.name not in chosen]
+
+
 def _run(
     tokens: list[str],
     root: Path,
@@ -191,11 +202,11 @@ def _run(
     modules, expanded = _resolve(tokens, root)
     selected = select_modules(expanded, modules, all_=all_, apps=apps or [])
     order = toposort(selected, modules)
-    extra = [n for n in order if n not in selected]
-    if extra:
-        log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
+    extra = _added_dependencies(plan, selected)
+    if extra:
+        log.info(f"+{len(extra)} required dependencies added: {', '.join(extra)}")
     if update:
         plan = _apply_update_filter(plan, modules, ctx.os)
         if not plan:

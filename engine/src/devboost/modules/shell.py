@@ -21,6 +21,7 @@ from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewCask, BrewFormula
 from devboost.modules.base import Chezmoi
 from devboost.modules.cli_tools import Atuin, Direnv, Zoxide
+from devboost.modules.macos import Homebrew
 
 _NF_VERSION = "v3.2.1"
 _NF_URL = (
@@ -163,6 +164,7 @@ class Starship(Module):
     category = "shell"
     description = "Cross-shell prompt."
     profiles = ("shell",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     per_os = OsMap(macos=BrewFormula("starship"))
 
     def verify(self, ctx: Ctx) -> bool:
@@ -205,6 +207,7 @@ class Wezterm(Module):
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the nightly cask (the last stable release is Feb 2024).
     per_os = OsMap(macos=BrewCask("wezterm@nightly"))
 
@@ -266,6 +269,7 @@ class Ghostty(Module):
     # routed through xdg-terminal-exec. Installing a second "default terminal" fights
     # the platform's theming and its terminal-launch chain.
     provided_by: ClassVar[tuple[str, ...]] = ("omarchy",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the cask is the app bundle (no CLI on PATH), so verify asks brew.
     per_os = OsMap(macos=BrewCask("ghostty"))
 
@@ -306,6 +310,7 @@ class NerdFonts(Module):
     # terminal, not here, and fontconfig may be absent (fc-list then fails verify). Skip it
     # on headless boxes (→ "skip nerd-fonts (headless)") rather than erroring.
     profiles = ("shell",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: the Homebrew font cask (tracks the latest Nerd Fonts; Linux pins v3.2.1).
     per_os = OsMap(macos=BrewCask("font-jetbrains-mono-nerd-font"))
 
@@ -491,6 +496,7 @@ class ZshPlugins(Module):
     # zsh is the interactive shell only on macOS (bash on Linux) — spec §2.
     families: ClassVar[tuple[str, ...]] = ("macos",)
     self_updating = True  # `devboost install --update` → brew upgrade
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     per_os = OsMap(macos=BrewFormula("zsh-autosuggestions", "zsh-syntax-highlighting"))
 
 

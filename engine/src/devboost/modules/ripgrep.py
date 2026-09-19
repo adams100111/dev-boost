@@ -7,6 +7,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import pkg
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
+from devboost.modules.macos import Homebrew
 
 
 @register
@@ -15,6 +16,7 @@ class Ripgrep(Module):
     category = "cli"
     description = "Fast recursive search (rg)."
     profiles = ("cli",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     per_os = OsMap(macos=BrewFormula("ripgrep"))
 
     def verify(self, ctx: Ctx) -> bool:

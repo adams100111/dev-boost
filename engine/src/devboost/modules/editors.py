@@ -12,6 +12,7 @@ from devboost.model import AptRepo, Ctx, DnfRepo, Module
 from devboost.modules import _zed
 from devboost.modules._brew import BrewFormula
 from devboost.modules._lsp import LspModule, all_pins, seed_base_config
+from devboost.modules.macos import Homebrew
 from devboost.modules.mise import Mise
 
 _MS_KEY = "https://packages.microsoft.com/keys/microsoft.asc"
@@ -122,6 +123,7 @@ class Fresh(Module):
     category = "editors"
     description = "The fresh terminal editor."
     profiles = ("editors",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: Homebrew's `fresh-editor` formula (the binary is still `fresh`).
     per_os = OsMap(macos=BrewFormula("fresh-editor"))
 

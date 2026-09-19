@@ -15,6 +15,7 @@ from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
 from devboost.modules._brew import BrewCask
 from devboost.modules.base import Flatpak
+from devboost.modules.macos import Homebrew
 from devboost.modules.secrets import Secrets
 from devboost.modules.ssh_setup import SshSetup
 
@@ -39,7 +40,7 @@ class FlatpakApp(Module):
     cask: ClassVar[str | None] = None
     category = "apps"
     gui = True
-    requires = (Flatpak,)
+    requires = (Flatpak, Homebrew)
     profiles = ("apps",)
 
     def _arch_name(self) -> str | None:

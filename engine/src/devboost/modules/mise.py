@@ -11,6 +11,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import config, mise
 from devboost.model import Ctx, Module
 from devboost.modules._brew import BrewFormula
+from devboost.modules.macos import Homebrew
 
 _NOTE_NVM = "# devboost: migrated nvm init to mise"
 _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
@@ -31,6 +32,7 @@ class Mise(Module):
     category = "base"
     description = "Install mise runtime version manager; migrate nvm/sdkman init blocks."
     profiles = ("base",)
+    requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
     # macOS: brew's formula. The nvm/sdkman migrations below edit ~/.bashrc blocks that
     # a Mac (zsh) does not have, so they are Linux-only.
     per_os = OsMap(macos=BrewFormula("mise"))
