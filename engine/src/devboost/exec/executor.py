@@ -11,6 +11,8 @@ from pathlib import Path
 from shutil import which as _which
 from typing import Protocol, runtime_checkable
 
+from devboost.exec import userpaths
+
 
 @dataclass(frozen=True)
 class Result:
@@ -50,18 +52,20 @@ def _prepend_mise_dirs(path: str, system: str | None = None) -> str:
     ``~/.dotnet/tools`` (where ``dotnet tool install -g`` puts aspire, csharp-ls, csharpier).
 
     On macOS a ``curl | bash`` run has no brew shellenv yet, so Homebrew's prefix is
-    added too — brew and everything it installs resolve without a new login shell.
+    added too — brew and everything it installs resolve without a new login shell — and so
+    is ``~/.dotnet``, where the dotnet-sdk module installs the SDK on macOS.
     """
     try:
         home = Path.home()
     except RuntimeError:
         return path
     prepend = [
-        str(home / ".local" / "share" / "mise" / "shims"),
+        str(userpaths.mise_shims(home)),
         str(home / ".local" / "bin"),
         str(home / ".dotnet" / "tools"),
     ]
     if (system or platform.system()) == "Darwin":
+        prepend.append(str(userpaths.dotnet_root(home)))
         prepend.extend(_HOMEBREW_DIRS)
     existing = path.split(os.pathsep) if path else []
     new_parts = [p for p in prepend if p not in existing]

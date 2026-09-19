@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from devboost.core import log
 from devboost.exec.primitives import config
 from devboost.exec.resources import resource_path, tsv_rows
+from devboost.exec.userpaths import mise_shims as mise_shims
 from devboost.model import Ctx
 
 if TYPE_CHECKING:  # runtime import would cycle: _lsp calls refresh_after_lsp
@@ -78,16 +79,6 @@ def _pick(data: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
 def read_lsp_map() -> list[tuple[str, str, str]]:
     """(zed-lsp-id, command, resolver) rows from the bundled data/zed/lsp-binaries.tsv."""
     return [(cols[0], cols[1], cols[2]) for cols in tsv_rows("data", "zed", "lsp-binaries.tsv")]
-
-
-def mise_shims(home: Path) -> Path:
-    """mise's shim dir, as mise resolves its data dir: $MISE_DATA_DIR, then
-    $XDG_DATA_HOME/mise, then ~/.local/share/mise (an empty variable counts as unset)."""
-    data = os.environ.get("MISE_DATA_DIR")
-    if data:
-        return Path(data) / "shims"
-    xdg = os.environ.get("XDG_DATA_HOME")
-    return (Path(xdg) if xdg else home / ".local" / "share") / "mise" / "shims"
 
 
 def lsp_binaries(pins: Sequence[ServerPin], home: Path) -> dict[str, Any]:
