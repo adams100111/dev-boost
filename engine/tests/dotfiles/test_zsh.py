@@ -1,5 +1,6 @@
 """zsh on macOS: env + aliases load, fzf before atuin, plugins last (highlighting, then
-autosuggestions), ~/.zshrc.local after everything; login files for zsh and `bash -lc`."""
+autosuggestions), ~/.zshrc.local after everything; ~/.zprofile for `zsh -l`. (`bash -lc` is in
+test_shell_split.py so hosts without zsh still cover it.)"""
 
 from __future__ import annotations
 
@@ -13,7 +14,6 @@ import pytest
 from .conftest import DOT, FRAGMENTS, MakeBin
 
 ZSH = shutil.which("zsh")
-BASH = shutil.which("bash") or "bash"
 pytestmark = pytest.mark.skipif(ZSH is None, reason="zsh not installed")
 
 
@@ -45,14 +45,10 @@ def test_rc_files_parse() -> None:
     for f in (FRAGMENTS / "shell.zsh", DOT / "dot_zshrc", DOT / "dot_zprofile"):
         res = subprocess.run([ZSH, "-n", str(f)], capture_output=True, text=True)
         assert res.returncode == 0, (f, res.stderr)
-    res = subprocess.run([BASH, "-n", str(DOT / "dot_bash_profile")], capture_output=True,
-                         text=True)
-    assert res.returncode == 0, res.stderr
 
 
 def test_every_managed_rc_file_carries_the_marker() -> None:
-    for f in (FRAGMENTS / "shell.zsh", DOT / "dot_zshrc", DOT / "dot_zprofile",
-              DOT / "dot_bash_profile"):
+    for f in (FRAGMENTS / "shell.zsh", DOT / "dot_zshrc", DOT / "dot_zprofile"):
         assert "devboost — managed by chezmoi" in f.read_text(encoding="utf-8"), f
 
 
@@ -61,6 +57,7 @@ def test_zshrc_loads_env_and_aliases_then_the_local_file(zsh_home: Path, bin_dir
                                            encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$LOCAL_SAW_DEV|$RIPGREP_CONFIG_PATH"')
     assert res.stdout.strip() == f"1|{zsh_home}/.config/ripgrep/ripgreprc", res.stderr
+    assert res.stderr == ""
 
 
 def test_fzf_loads_before_atuin_so_atuin_owns_ctrl_r(zsh_home: Path, bin_dir: Path,
@@ -69,6 +66,7 @@ def test_fzf_loads_before_atuin_so_atuin_owns_ctrl_r(zsh_home: Path, bin_dir: Pa
     make_bin("atuin", "echo 'typeset -g ATUIN_SAW_FZF=$+FZF_ZSH_INIT'")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$ATUIN_SAW_FZF"')
     assert res.stdout.strip() == "1", res.stderr
+    assert res.stderr == ""
 
 
 def test_plugins_load_last_highlighting_before_autosuggestions(
@@ -83,6 +81,7 @@ def test_plugins_load_last_highlighting_before_autosuggestions(
     au.write_text("typeset -g AS_AFTER_HL=$+HL_AFTER_ALIASES\n", encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$HL_AFTER_ALIASES|$AS_AFTER_HL"', brew=brew)
     assert res.stdout.strip() == "1|1", res.stderr
+    assert res.stderr == ""
 
 
 def test_history_completion_cache_and_open_files(zsh_home: Path, bin_dir: Path) -> None:
@@ -93,6 +92,7 @@ def test_history_completion_cache_and_open_files(zsh_home: Path, bin_dir: Path) 
     assert list((zsh_home / ".cache" / "zsh").glob("zcompdump-*")), "compinit dump not cached"
     if sys.platform == "darwin":
         assert int(lines[3]) > 256  # raised from macOS's default soft limit
+    assert res.stderr == ""
 
 
 def test_zprofile_sources_its_local_file(zsh_home: Path, bin_dir: Path) -> None:
@@ -101,16 +101,20 @@ def test_zprofile_sources_its_local_file(zsh_home: Path, bin_dir: Path) -> None:
                                               encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$ZPROFILE_LOCAL"', login=True)
     assert res.stdout.strip().splitlines()[-1] == "1", res.stderr
+    assert res.stderr == ""
 
 
-def test_bash_login_gets_the_shared_env(frag_home: Path, bin_dir: Path) -> None:
-    shutil.copy(DOT / "dot_bash_profile", frag_home / ".bash_profile")
-    res = subprocess.run(
-        [BASH, "-l", "-c", 'printf "%s" "$RIPGREP_CONFIG_PATH"'],
-        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(frag_home), "TERM": "dumb"},
-        capture_output=True, text=True, timeout=30,
-    )
-    assert res.stdout.endswith(f"{frag_home}/.config/ripgrep/ripgreprc"), res.stderr
+def test_zsh_login_gets_the_shared_env(zsh_home: Path, bin_dir: Path) -> None:
+    # `zsh -lc` launchers (MCP servers, GUI apps) never read ~/.zshrc; ~/.zprofile must
+    # give them env.sh like `bash -lc` gets it from ~/.bash_profile.
+    shutil.copy(DOT / "dot_zprofile", zsh_home / ".zprofile")
+    (zsh_home / ".local" / "bin").mkdir(parents=True)  # env.sh adds only existing dirs
+    res = _zsh(zsh_home, bin_dir,
+               'print -r -- "$RIPGREP_CONFIG_PATH|${path[(Ie)$HOME/.local/bin]}"', login=True)
+    rg, local_bin = res.stdout.strip().splitlines()[-1].split("|")
+    assert rg == f"{zsh_home}/.config/ripgrep/ripgreprc", res.stderr
+    assert local_bin != "0"  # ~/.local/bin is on PATH
+    assert res.stderr == ""
 
 
 @pytest.mark.skipif(not Path("/opt/homebrew/bin/brew").exists(), reason="Homebrew not installed")
@@ -122,3 +126,12 @@ def test_zprofile_puts_homebrew_on_path_for_login_shells(zsh_home: Path, bin_dir
     repo, path = res.stdout.strip().splitlines()[-1].split("|", 1)
     assert repo == "/opt/homebrew", res.stderr
     assert "/opt/homebrew/bin" in path.split(":")
+    assert res.stderr == ""
+
+
+def test_old_fzf_without_zsh_flag_is_skipped_quietly(zsh_home: Path, bin_dir: Path,
+                                                     make_bin: MakeBin) -> None:
+    make_bin("fzf", 'echo "unknown option: $1" >&2; exit 2')  # fzf < 0.48
+    res = _zsh(zsh_home, bin_dir, "print ok")
+    assert res.stdout.strip() == "ok"
+    assert res.stderr == ""

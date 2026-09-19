@@ -13,4 +13,7 @@ fi
 if (( $+commands[mise] )); then
   eval "$(mise activate zsh --shims)"
 fi
+# dev-boost's POSIX environment (PATH, XDG_CONFIG_HOME, EDITOR, …) for `zsh -lc`
+# launchers, which never read ~/.zshrc. Dedupe-safe: shell.zsh sources it again.
+[[ -r "${HOME}/.config/devboost/env.sh" ]] && source "${HOME}/.config/devboost/env.sh"
 [[ -r "${HOME}/.zprofile.local" ]] && source "${HOME}/.zprofile.local"

@@ -33,7 +33,8 @@ compinit -i -d "${_devboost_zcache}/zcompdump-${ZSH_VERSION}"
 # Tool initialisers. fzf goes FIRST so atuin (below) binds Ctrl-R last and owns it;
 # fzf keeps Ctrl-T (files) and Alt-C (cd).
 # ---------------------------------------------------------------------------
-(( $+commands[fzf] ))      && source <(fzf --zsh)
+# fzf >= 0.48 prints its own integration; an older fzf rejects --zsh, so skip it quietly.
+(( $+commands[fzf] ))      && _devboost_fzf=$(fzf --zsh 2>/dev/null) && eval "$_devboost_fzf"
 (( $+commands[mise] ))     && eval "$(mise activate zsh)"
 (( $+commands[starship] )) && eval "$(starship init zsh)"
 (( $+commands[atuin] ))    && eval "$(atuin init zsh)"
@@ -56,4 +57,4 @@ ulimit -n 524288 2>/dev/null ||
   source "${_devboost_brew}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 [[ -r "${_devboost_brew}/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] &&
   source "${_devboost_brew}/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
-unset _devboost_brew _devboost_zcache
+unset _devboost_brew _devboost_zcache _devboost_fzf
