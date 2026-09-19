@@ -12,20 +12,30 @@ from devboost.cli import host as plat
 from devboost.core import log, osinfo
 from devboost.core.errors import ConfigError, DevbootError, NeedsUser
 from devboost.core.settings import Settings
-from devboost.core.userconfig import parse_docker_runtime, selected_docker_runtime
+from devboost.core.userconfig import DockerRuntimeName, parse_docker_runtime
 from devboost.exec.executor import NoPromptSudoExecutor, RealExecutor
 from devboost.model import Ctx
-from devboost.modules._docker_switch import REQUIRED, switch_runtime
+from devboost.modules._docker_switch import (
+    REQUIRED,
+    SnapshotFailed,
+    saved_runtime,
+    sudo_needed,
+    switch_runtime,
+)
 
 app = typer.Typer(
     help="Docker runtime on macOS: colima (default) | orbstack | docker-desktop",
     no_args_is_help=True,
 )
 
-_WARNING = (
-    "Images, volumes and ddev databases live inside each runtime's VM — they do not "
-    "move to the new runtime."
-)
+_RESTORE = "  ddev: in each project, `ddev start` then `ddev snapshot restore --latest`"
+
+
+def _way_back(previous: DockerRuntimeName, *, snapshot: bool) -> None:
+    """The recovery hint after a switch that stopped half-way."""
+    typer.echo(f"  go back: devboost docker use {previous}  (also stops the half-started one)")
+    if snapshot:
+        typer.echo(_RESTORE)
 
 
 @app.command("use")
@@ -57,10 +67,14 @@ def use(
             f"DEVBOOST_DOCKER_RUNTIME={env} is set and overrides the saved choice — "
             f"unset it first; nothing was changed"
         )
-    previous = selected_docker_runtime()
+    previous = saved_runtime()
     ex = RealExecutor()
     ctx = Ctx(os=info, ex=ex)
-    log.warn(_WARNING)
+    if previous != target:
+        log.warn(
+            f"Images, volumes and ddev databases stay in {previous}'s VM — they do not move "
+            f"to {target}; `devboost docker use {previous}` brings them back."
+        )
     has_ddev = ex.which("ddev")
     if snapshot is None:
         unattended = yes or bool(os.environ.get("DEVBOOST_NONINTERACTIVE"))
@@ -70,8 +84,7 @@ def use(
                 "Snapshot every ddev project first (ddev snapshot --all)?", default=True
             )
         )
-    # Colima's socket LaunchDaemon (install and removal) is the only step that needs root.
-    sudo = "colima" in (previous, target)
+    sudo = sudo_needed(ctx, target)
     try:
         with plat.mac_session(ctx.os, dry_run=False, sudo=sudo) as sudo_held:
             if sudo and not sudo_held:
@@ -83,15 +96,23 @@ def use(
                 # tty (ruling C-R18).
                 ctx = replace(ctx, ex=NoPromptSudoExecutor(ctx.ex), no_sudo=True)
             report = switch_runtime(ctx, target, snapshot=snapshot)
+    except SnapshotFailed as exc:
+        log.error(str(exc))
+        typer.echo("  nothing was changed: fix ddev, or re-run with --no-snapshot")
+        raise typer.Exit(code=1) from exc
     except NeedsUser as exc:
         log.error(f"blocked: {exc.reason}")
         typer.echo(f"  fix: {exc.how_to_fix}")
-        typer.echo(f"  or go back: devboost docker use {previous}")
+        _way_back(previous, snapshot=snapshot)
         raise typer.Exit(code=1) from exc
-    except DevbootError as exc:
+    except (DevbootError, OSError) as exc:
         log.error(str(exc))
-        typer.echo(f"  go back: devboost docker use {previous}")
+        _way_back(previous, snapshot=snapshot)
         raise typer.Exit(code=1) from exc
+    except KeyboardInterrupt as exc:
+        log.error("docker: interrupted — the switch did not finish")
+        _way_back(previous, snapshot=snapshot)
+        raise typer.Exit(code=130) from exc
     for name, ok in report.checks:
         if ok:
             typer.echo(f"  ok    {name}")
@@ -100,7 +121,7 @@ def use(
         else:
             typer.echo(f"  --    {name}  (not set up — devboost install {name})")
     if snapshot:
-        typer.echo("  ddev: in each project, `ddev start` then `ddev snapshot restore --latest`")
+        typer.echo(_RESTORE)
     if not report.ok:
         raise typer.Exit(code=1)
     log.ok(f"docker runtime: {report.previous} → {report.target}")

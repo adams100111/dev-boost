@@ -14,7 +14,9 @@ from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.core.userconfig import set_user_value
 from devboost.exec.executor import FakeExecutor, NoPromptSudoExecutor
-from devboost.modules._docker_switch import SwitchReport
+from devboost.modules import _docker_switch as sw
+from devboost.modules._docker_switch import SnapshotFailed, SwitchReport
+from tests.modules.test_docker_switch import _Rt
 
 MAC = OsInfo("macos", "macos", "aarch64")
 runner = CliRunner()
@@ -42,7 +44,17 @@ def session(monkeypatch: pytest.MonkeyPatch) -> _Session:
 
 
 @pytest.fixture
-def on_mac(monkeypatch: pytest.MonkeyPatch, session: _Session) -> list[dict[str, Any]]:
+def need_sudo(monkeypatch: pytest.MonkeyPatch) -> dict[str, bool]:
+    """What `sudo_needed` answers (its own logic is tested in test_docker_switch)."""
+    state = {"sudo": True}
+    monkeypatch.setattr(docker_cmd, "sudo_needed", lambda ctx, target: state["sudo"])
+    return state
+
+
+@pytest.fixture
+def on_mac(
+    monkeypatch: pytest.MonkeyPatch, session: _Session, need_sudo: dict[str, bool]
+) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
     monkeypatch.setattr(osinfo, "detect", lambda *a, **k: MAC)
     monkeypatch.setattr(docker_cmd, "RealExecutor", lambda: FakeExecutor(present={"ddev"}))
@@ -123,17 +135,46 @@ def test_blocked_switch_prints_the_fix_and_the_way_back(
     assert "devboost docker use colima" in res.output
 
 
-def test_a_failed_step_prints_the_way_back(
+def test_a_failed_snapshot_says_nothing_changed_and_offers_no_way_back(
     on_mac: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def failed(ctx: Any, target: str, *, snapshot: bool) -> SwitchReport:
-        raise InstallError("ddev", "ddev snapshot --all", 1)
+        raise SnapshotFailed(1)
 
     monkeypatch.setattr(docker_cmd, "switch_runtime", failed)
     res = runner.invoke(app, ["docker", "use", "orbstack", "-y"])
     assert res.exit_code == 1
     assert "ddev snapshot --all" in res.output
-    assert "devboost docker use colima" in res.output
+    assert "nothing was changed" in res.output and "--no-snapshot" in res.output
+    assert "go back" not in res.output and "snapshot restore" not in res.output
+
+
+@pytest.mark.parametrize(
+    ("exc", "code"),
+    [
+        (InstallError("orbstack", "orb restart docker", 1), 1),
+        (OSError("disk full"), 1),
+        (KeyboardInterrupt(), 130),
+    ],
+)
+def test_a_failure_mid_switch_prints_the_way_back_and_the_restore_step(
+    on_mac: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+    exc: BaseException, code: int,
+) -> None:
+    def failed(ctx: Any, target: str, *, snapshot: bool) -> SwitchReport:
+        raise exc
+
+    monkeypatch.setattr(docker_cmd, "switch_runtime", failed)
+    res = runner.invoke(app, ["docker", "use", "orbstack", "-y"])
+    assert res.exit_code == code
+    assert "go back: devboost docker use colima" in res.output
+    assert "ddev snapshot restore --latest" in res.output
+
+
+def test_the_note_says_where_the_data_stays(on_mac: list[dict[str, Any]]) -> None:
+    res = runner.invoke(app, ["docker", "use", "orbstack", "-y"])
+    assert "stay in colima's VM" in res.output
+    assert "devboost docker use colima` brings them back" in res.output
 
 
 def test_failed_required_check_exits_1(
@@ -148,22 +189,12 @@ def test_failed_required_check_exits_1(
     assert "FAIL  docker" in res.output
 
 
-@pytest.mark.parametrize(
-    ("previous", "target", "sudo"),
-    [
-        (None, "orbstack", True),  # nothing saved: colima is the previous runtime
-        ("orbstack", "colima", True),
-        ("orbstack", "docker-desktop", False),
-        ("docker-desktop", "orbstack", False),
-    ],
-)
-def test_sudo_is_asked_only_when_colima_is_involved(
-    on_mac: list[dict[str, Any]], session: _Session,
-    previous: str | None, target: str, sudo: bool,
+@pytest.mark.parametrize("sudo", [True, False])
+def test_the_session_asks_for_sudo_only_when_the_switch_needs_it(
+    on_mac: list[dict[str, Any]], session: _Session, need_sudo: dict[str, bool], sudo: bool,
 ) -> None:
-    if previous is not None:
-        set_user_value("docker_runtime", previous)
-    res = runner.invoke(app, ["docker", "use", target, "-y"])
+    need_sudo["sudo"] = sudo
+    res = runner.invoke(app, ["docker", "use", "orbstack", "-y"])
     assert res.exit_code == 0, res.output
     assert session.sudo == [sudo]
     # Without the sudo session a stray sudo step fails fast (C-R18), it never prompts.
@@ -190,9 +221,24 @@ def test_a_conflicting_env_override_is_refused_before_anything_runs(
     assert on_mac == [] and session.sudo == []
 
 
-def test_a_matching_env_override_is_fine(
-    on_mac: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+def test_an_env_override_equal_to_the_target_still_stops_the_saved_runtime(
+    session: _Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Review I-1, end to end through the real switch: config.toml says colima (running),
+    the shell says DEVBOOST_DOCKER_RUNTIME=orbstack, and OrbStack's first launch blocks."""
+    set_user_value("docker_runtime", "colima")
     monkeypatch.setenv("DEVBOOST_DOCKER_RUNTIME", "orbstack")
+    monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
+    ex = FakeExecutor(present=set())
+    table = {"colima": _Rt("colima"), "orbstack": _Rt("orbstack", fail_start=True),
+             "docker-desktop": _Rt("docker-desktop", installed=False)}
+    monkeypatch.setattr(osinfo, "detect", lambda *a, **k: MAC)
+    monkeypatch.setattr(docker_cmd, "RealExecutor", lambda: ex)
+    monkeypatch.setattr(sw, "runtime_for", lambda name: table[name])
     res = runner.invoke(app, ["docker", "use", "orbstack", "-y"])
-    assert res.exit_code == 0, res.output
+    assert res.exit_code == 1
+    assert session.sudo == [True]  # colima's socket daemon comes down: it needs root
+    assert ex.calls[:3] == [["rt", "colima", "stop"], ["rt", "colima", "disable_autostart"],
+                            ["rt", "colima", "release_socket"]]
+    assert ["rt", "orbstack", "start"] in ex.calls
+    assert "go back: devboost docker use colima" in res.output
