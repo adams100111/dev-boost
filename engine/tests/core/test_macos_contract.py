@@ -70,7 +70,7 @@ def test_later_milestone_gaps_are_the_pending_modules() -> None:
         name: cls.per_os.macos.milestone for name, cls in load().items()
         if isinstance(cls.per_os.macos, MacosPending)
     }
-    assert pending == {n: m for n, m in KNOWN_GAPS.items() if m != "M3"}
+    assert pending == KNOWN_GAPS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -85,7 +85,8 @@ def _plan(profile: str, os_info: OsInfo, tmp_path: Path) -> list[PlannedModule]:
 
 
 def test_known_gaps_have_an_owner() -> None:
-    assert set(KNOWN_GAPS.values()) <= {"M4", "M5", "P2"}
+    # M3 closed the catalog: every gap left is the Docker runtime / launchd timers (C-R8a).
+    assert set(KNOWN_GAPS.values()) == {"M4"}
 
 
 def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:

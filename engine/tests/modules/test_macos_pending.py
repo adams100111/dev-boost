@@ -60,7 +60,10 @@ def test_linux_plans_are_unchanged(tmp_path: Path) -> None:
     assert {p.name: p.skip_reason for p in plan} == {n: None for n in names}
 
 
-def test_a_pending_module_blocks_what_requires_it(tmp_path: Path) -> None:
+def test_a_pending_module_blocks_what_requires_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
     modules = load()
     plan = build_plan(toposort(["data-services"], modules), modules, MAC,
                       gpu_marker=tmp_path / "x")
