@@ -1,5 +1,5 @@
 -- Leader-driven keymap. Leader = CTRL+Space (CTRL+A on macOS, which keeps Ctrl+Space for
--- input sources).
+-- input sources; there CTRL+A twice sends a literal CTRL+A, e.g. line start).
 --
 -- Panes
 --   LEADER v        split left/right
@@ -137,6 +137,8 @@ function M.apply(config)
   end
 
   if is_mac then
+    -- The leader is CTRL+A here: pressing it twice passes CTRL+A through to the shell.
+    table.insert(keys, { key = "a", mods = "LEADER|CTRL", action = act.SendKey({ key = "a", mods = "CTRL" }) })
     -- macOS: the Cmd twin of each CTRL+SHIFT binding (both work).
     table.insert(keys, { key = "D", mods = "SUPER|SHIFT", action = act.DetachDomain("CurrentPaneDomain") })
     table.insert(keys, { key = "f", mods = "SUPER", action = act.Search({ CaseInSensitiveString = "" }) })

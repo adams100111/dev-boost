@@ -43,6 +43,11 @@ def test_ghostty_macos(chezmoi_render: Render) -> None:
         if b.startswith("ctrl+shift+"):
             rest = b.removeprefix("ctrl+shift+")
             assert f"super+{rest}" in binds or f"super+shift+{rest}" in binds, b
+    # Ctrl+- is undo in zsh/readline: font size is Cmd-only on macOS.
+    triggers = [b.partition("=")[0] for b in binds]
+    for key in ("equal", "minus", "zero"):
+        assert f"ctrl+{key}" not in triggers, key
+        assert f"super+{key}" in triggers, key
 
 
 def test_ghostty_linux(chezmoi_render: Render) -> None:
@@ -50,6 +55,8 @@ def test_ghostty_linux(chezmoi_render: Render) -> None:
     assert not any(k.startswith("macos-") for k, _ in s)
     assert not any(b.startswith("super+") for b in _binds(s))
     assert ("window-decoration", "none") in s
+    triggers = [b.partition("=")[0] for b in _binds(s)]
+    assert {"ctrl+equal", "ctrl+minus", "ctrl+zero"} <= set(triggers)
 
 
 @pytest.mark.parametrize(("os_name", "distro"), [("darwin", "macos"), ("linux", "fedora")])
@@ -92,6 +99,9 @@ def test_wezterm_darwin_keys() -> None:
     assert '{ key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }' in keys
     assert "config.send_composed_key_when_left_alt_is_pressed = false" in keys
     assert 'mods = "SUPER|SHIFT", action = act.DetachDomain' in keys
+    # With Ctrl+A as the leader, pressing it twice still sends Ctrl+A (line start).
+    assert ('{ key = "a", mods = "LEADER|CTRL", action = act.SendKey({ key = "a", '
+            'mods = "CTRL" }) }') in keys
 
 
 @pytest.mark.skipif(shutil.which("luac") is None, reason="luac not installed")
