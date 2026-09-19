@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ import pytest
 from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor
+from devboost.exec.primitives import default_apps
 from devboost.model import Ctx
 
 _REAL_DETECT = osinfo.detect
@@ -26,6 +28,31 @@ def _tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MISE_DATA_DIR", raising=False)
     monkeypatch.delenv("GNUPGHOME", raising=False)
     monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+
+
+#: Every ``/Applications/*.app`` bundle a module probes for, as (module, attribute).
+#: ``tests/core/test_macos_contract.py`` fails if src grows one that is not listed here.
+HOST_APP_PATHS: tuple[tuple[str, str], ...] = (
+    ("devboost.modules.server", "_TS_APP"),
+    ("devboost.modules.editors", "_ZED_APP"),
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_apps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the host's real /Applications: every app-bundle constant points at a
+    path that does not exist. A test that needs the app present creates a bundle under
+    tmp_path and monkeypatches the constant to it (its monkeypatch runs after this one)."""
+    for name, attr in HOST_APP_PATHS:
+        module = importlib.import_module(name)
+        absent = tmp_path / "absent-apps" / getattr(module, attr).name
+        monkeypatch.setattr(module, attr, absent)
+
+
+@pytest.fixture(autouse=True)
+def _no_deferred_default_apps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test is a fresh process for default_apps: no deferral leaks between tests."""
+    monkeypatch.setattr(default_apps, "_deferred", {})
 
 
 @pytest.fixture(autouse=True)
