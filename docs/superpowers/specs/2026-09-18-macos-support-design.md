@@ -507,7 +507,8 @@ All via `FakeExecutor`; no real brew in CI.
   which runs **macOS 27** (public preview; GitHub now names macOS images by Xcode
   version) — as a non-blocking job until it leaves preview.
 - **E2E:** `scripts/vm-test-macos.sh` for **macOS 27 and 26** (tart: `tart clone
-  ghcr.io/cirruslabs/macos-<name>-base`, exact 27 image name confirmed at M6; `tart run --no-graphics`, ssh `admin@$(tart ip)`,
+  ghcr.io/cirruslabs/macos-golden-gate-base:latest` (27) / `ghcr.io/cirruslabs/macos-tahoe-base:latest`
+  (26); `tart run --no-graphics`, ssh `admin@$(tart ip)`,
   snapshot = clone of stopped VM; verbs `create/snapshot/revert/list/destroy`, mirroring
   `vm-test.sh`). Rehearse in tart, then run on the real Mac. Shared-shell changes also
   run Fedora + Ubuntu `vm-test` before merge.

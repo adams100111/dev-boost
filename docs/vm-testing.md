@@ -98,6 +98,86 @@ scripts/vm-test.sh destroy              # stop + undefine + delete its disk
 ```
 `--name` lets you run several VMs side by side; `--recreate` replaces an existing one.
 
+## 5. macOS (tart)
+
+Rehearses the `curl | bash` install in a throwaway Apple Silicon VM, on the Mac itself —
+`scripts/vm-test-macos.sh` (design §9.5). It drives the guest entirely through the Tart
+Guest Agent (`tart exec`); there is no sshpass or key setup. `--dry-run`, as the first
+flag, prints the exact `tart` argv instead of running it, so every example below is safe
+to preview without `tart` installed.
+
+**Install tart, then pull the base images:**
+```sh
+brew install cirruslabs/cli/tart
+tart pull ghcr.io/cirruslabs/macos-golden-gate-base:latest   # macOS 27 (primary)
+tart pull ghcr.io/cirruslabs/macos-tahoe-base:latest         # macOS 26 (supported)
+```
+
+**Every verb** (`--name` defaults to `devboost-mac<os>`; `create` requires `--os 27|26`,
+the rest default to 27):
+```sh
+scripts/vm-test-macos.sh create --os 27                  # tart clone + set cpu/memory/disk
+scripts/vm-test-macos.sh create --os 27 --recreate       # destroy the old one, then recreate
+scripts/vm-test-macos.sh snapshot clean --os 27          # stop, then clone -> devboost-mac27--clean
+scripts/vm-test-macos.sh revert clean --os 27            # stop, delete, restore the snapshot clone
+scripts/vm-test-macos.sh list                            # tart list
+scripts/vm-test-macos.sh shell --os 27                   # prints: ssh admin@$(tart ip devboost-mac27)  # password: admin
+scripts/vm-test-macos.sh run --os 27                     # boot, curl|bash the real release, smoke-assert.sh
+scripts/vm-test-macos.sh destroy --os 27                 # stop + tart delete
+```
+`run` boots the VM headless (`tart run --no-graphics`), waits on `tart ip --wait 120`, then
+runs the public one-liner (`curl … get.sh | bash -s -- macos`) followed by
+`scripts/smoke-assert.sh macos` inside the guest via `tart exec -i`, exiting with the guest
+command's exit code.
+
+**`--local DIR` — rehearse an unpublished build before tagging (D9):**
+```sh
+bash scripts/build-bundle.sh                    # writes dist/devboost-darwin-arm64 + checksums-darwin-arm64.txt
+scripts/vm-test-macos.sh run --local dist --os 27
+```
+Stages `get.sh`, `smoke-assert.sh` and `dist/`'s release files into a fresh `mktemp -d`
+(never `dist/` itself), shares it into the guest at `/Volumes/My Shared Files/dist`
+(`tart run --dir=dist:<path>`), and points the guest's `get.sh` at it with
+`DEVBOOST_RELEASE_BASE=file:///Volumes/My\ Shared\ Files/dist` — no network needed inside
+the guest. A raw `dist/` only carries `checksums-darwin-arm64.txt`; the staged copy is
+renamed to `checksums.txt`, the name `get.sh` / `self-update` verify against.
+
+**Credentials:** every tart macOS image logs in as **admin/admin** — `shell`'s hint
+(`ssh admin@$(tart ip <vm>)`) is printed only, never dialled automatically.
+
+**Screen Sharing is broken on the 27 image (V7).** `launchctl`-enabled Screen Sharing on
+`macos-golden-gate-base` has no TCC rights (cirruslabs/macos-image-templates#376), so it
+cannot drive or observe a GUI step. For a one-off GUI need, boot with graphics instead of
+headless (`tart run <vm>`, not this script's always-headless `run` verb) rather than
+reaching for VNC.
+
+**The only accepted non-green items in a macOS guest:**
+- **No nested virtualization** — a Colima VM (what `docker` / `data-services` / `ddev`
+  need) never starts inside a tart VM, so the Docker runtime fails to start. Expected, not
+  a regression.
+- **TCC grants need the GUI** — Full Disk Access, Screen Recording, and similar prompts
+  need someone to click "Allow," which an unattended `tart exec` run cannot do. Expect
+  those checks to fail here even though they'd pass on a real Mac with someone at the
+  keyboard.
+
+## 6. Linux smoke (CI)
+
+`.github/workflows/vm-smoke.yml`'s `linux-smoke` job (M6, D6) is the CI-native alternative
+to this doc's Fedora VM path, for a change that only needs to prove the shared shell files
+plus a couple of Linux-only install sources — not a full `devboost install full`. It runs
+`devboost install cli ghostty` then `scripts/smoke-assert.sh cli ghostty` as an
+unprivileged user on three legs — Fedora and Arch containers on the `ubuntu-24.04` runner
+(there is no Fedora/Arch tart image, V9), plus the `ubuntu-24.04` runner host itself (real
+systemd + snapd, which a container can't provide) — then confirms Ghostty came from its
+real per-distro source: the `scottames/ghostty` COPR (Fedora), the snap (Ubuntu), pacman
+(Arch). It runs `continue-on-error: true` (advisory) on `workflow_dispatch` and nightly,
+same as `kickstart-smoke` above.
+
+The **libvirt fallback** — actually booting Fedora/Ubuntu the way §§0–4 of this doc do —
+stays the documented manual path for anything `linux-smoke`'s containers can't probe (a
+real bootloader, a GNOME session, a full `devboost install full`): `scripts/vm-test.sh`
+from a Linux host, as above.
+
 ## Caveats (this is first-real-run territory)
 - The artifacts are unit-tested but **have not been booted on real hardware**. The Kickstart `%post`
   binary/secrets copy and the `%pre` disk auto-detect are implemented (2026-06-27 rebuild) but unproven

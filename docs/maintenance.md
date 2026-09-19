@@ -45,15 +45,38 @@ the package in place.
 6. `uv run pytest` (+ `mypy --strict` + ruff) green in `engine/`.
 
 ## Cutting a release
-The frozen `devboost-<arch>` binaries that `scripts/get.sh` installs come from a GitHub Release.
-Bump the version in **both** `engine/pyproject.toml` and `engine/src/devboost/__init__.py` (they must
-match — CI and the local script both guard this), then publish either way:
+The frozen binaries `scripts/get.sh` installs — `devboost-x86_64`, `devboost-aarch64` and
+`devboost-darwin-arm64` — come from a GitHub Release, alongside the two Linux-only Ventoy
+injection archives and **one shared `checksums.txt`** covering all five files. Bump the
+version in **both** `engine/pyproject.toml` and `engine/src/devboost/__init__.py` (they
+must match — CI and the local script both guard this).
 
-- **CI (multi-arch, recommended):** `git tag vX.Y.Z && git push origin vX.Y.Z` → `.github/workflows/release.yml`
-  builds x86_64 + aarch64 on native runners, assembles `checksums.txt`, and publishes the release.
-- **Local (`scripts/release.sh`):** builds the **host arch only** (PyInstaller can't cross-compile),
-  then creates/updates the `vX.Y.Z` release and regenerates `checksums.txt` from every binary on it.
-  Run it on an x86_64 box *and* an aarch64 box for a full release; `--dry-run` prints the steps.
+**Before tagging:** rehearse the macOS `curl | bash` path in a tart VM against your own
+unpublished build, so a broken install is caught before it ships, not after —
+`bash scripts/build-bundle.sh` then `scripts/vm-test-macos.sh run --local dist` (see
+[docs/vm-testing.md](vm-testing.md), "macOS (tart)", D9). This needs a Mac; if you're
+releasing from Linux, CI's `binary-compat` job below is the equivalent check.
+
+Publish either way:
+
+- **CI (multi-arch, recommended):** `git tag vX.Y.Z && git push origin vX.Y.Z` →
+  `.github/workflows/release.yml`:
+  1. `checks` — the full test suite on `ubuntu-22.04` **and** `macos-15`; everything below
+     needs this to pass first.
+  2. `binary` — builds (and, on macOS, ad-hoc-signs + `codesign --verify --strict`s) all
+     three binaries on their native runners (`ubuntu-22.04`, `ubuntu-24.04-arm`,
+     `macos-15`).
+  3. `binary-compat` — re-runs the **macos-15-built** `devboost-darwin-arm64` unmodified on
+     `macos-26` (blocking) and the `xcode-27` preview image (non-blocking): `--version`,
+     `list macos`, `codesign --verify --strict` again — proving the oldest-supported-macOS
+     build stays forward-compatible on the newer OSes it also targets.
+  4. `release` — collects all three binaries and both Ventoy archives (`x86_64`/`aarch64`
+     only — Darwin ships none), regenerates the single `checksums.txt`, and publishes all
+     six files to the release.
+- **Local (`scripts/release.sh`):** builds and uploads the **host arch only** (PyInstaller
+  can't cross-compile — run it once per arch: an x86_64 box, an aarch64 box, and a Mac, for
+  a full 3-arch release), then regenerates `checksums.txt` from every binary already on the
+  release. `--dry-run` prints the steps without running them.
 
 `get.sh` is anonymous `curl … | bash`, so its `releases/latest` only resolves when the **repo is public**.
 

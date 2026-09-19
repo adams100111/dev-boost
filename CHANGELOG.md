@@ -8,6 +8,23 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Added
+- **macOS delivery (M6)** — `curl … | bash` now works on a fresh Mac: `scripts/get.sh`
+  gained a Darwin path (Homebrew + CLT bootstrap, macOS-version gate, root refusal, HTTPS-
+  only fetch) that installs the frozen `devboost-darwin-arm64` binary — no clone, no
+  Ventoy archive. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it
+  (ad-hoc `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`).
+  `devboost self-update` resolves its release asset by `(os, arch)` and now **refuses to
+  downgrade** the running binary. CI gained a `macos-15` / `xcode-27` (preview,
+  non-blocking) matrix and a `binary-compat` job proving the macos-15-built binary also
+  runs on macos-26; the release workflow publishes all three binaries plus one shared
+  `checksums.txt`. `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway
+  tart VM (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished
+  build); `.github/workflows/vm-smoke.yml` gained an advisory `linux-smoke` job
+  (Fedora/Arch containers + the Ubuntu host) alongside the existing Kickstart smoke.
+  Root-owned files a root-run profile leaves behind under the demoting executor are now
+  reclaimed (`chown`ed back to the target user) after `devboost accounts bootstrap`, and
+  `bash-config` is no longer silently skipped on an unrecognized Linux distro (only macOS
+  drops it, `provided-by-macos`).
 - **macOS desktop (M5)** — `macos-defaults` with snapshot + `devboost revert
   macos-defaults [key…]`, open-files limit, firewall, Time Machine exclusions,
   Raycast/AeroSpace (+config)/AltTab/Thaw/MonitorControl/Keka/Stats/Quick Look, code files

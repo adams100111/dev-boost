@@ -132,6 +132,17 @@ Modules obtain a GitHub token from exactly one place — `_credentials.github_cr
 The first source that yields a complete set wins; callers never raise on failure, since
 `ssh-setup` and `obsidian-sync` treat `None` as "try again next run".
 
+**The keychain age key only ever touches disk transiently.** When the identity lives in
+the keychain (not a key file), `age_key()` materializes it as a `0600` `mkstemp` file
+(`tempfile.mkstemp(prefix="devboost-age-")`, in `modules/secrets.py`) for the duration of a
+single decrypt, then unlinks it in a `finally` block. A `SIGKILL` (or a power loss) between
+that write and the unlink can leave the file behind, in `$TMPDIR` — a per-user
+`/var/folders/…` directory on macOS. Risk is low: the file is `0600` (owner-only), and
+`$TMPDIR` itself is per-user. If you want to check for or clean one up:
+```sh
+find "$TMPDIR" -maxdepth 1 -name 'devboost-age-*' -user "$USER" -delete
+```
+
 ## Which tool holds what
 
 | Secret | Lives in | Why |

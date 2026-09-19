@@ -60,8 +60,19 @@ sudo devboost installer            # wizard: pick the USB, confirm the wipe
 `-- usb` also downloads the Ventoy injection archive, so `installer` works with no clone/build; it
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
 
-**macOS (Apple Silicon):** `devboost install` from a clone installs the workstation — see
-[docs/macos.md](docs/macos.md) (Docker in M4; `curl … | bash` in M6).
+**macOS (Apple Silicon):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- macos
+```
+
+Bootstraps Homebrew (and the Xcode Command Line Tools) if missing, downloads the matching
+`devboost-darwin-arm64` binary, verifies its SHA256, installs it onto PATH, and runs
+`devboost install macos`. Apple Silicon only (Intel is refused); macOS 27 Golden Gate and
+26 Tahoe are supported, 15 is best-effort. `curl … | bash` sets no quarantine attribute, so
+the binary just runs; a binary you instead fetch with a **browser** is quarantined by
+Gatekeeper — clear it first: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`.
+From a clone (or for what's not yet automated on macOS): see [docs/macos.md](docs/macos.md).
 
 Releases are published automatically on each `v*` tag; `/latest/` always tracks the newest.
 

@@ -2,24 +2,50 @@
 
 Apple Silicon Macs are a first-class dev-boost target (constitution v3.1.0, Principle VI).
 Design: `docs/superpowers/specs/2026-09-18-macos-support-design.md`. This page grows with
-each milestone. **Status: M3 — the workstation.** `devboost install` (the `macos` profile)
-installs the whole catalog; Docker and the scheduled jobs arrive in M4, the desktop layer
-in M5, `curl … | bash` in M6.
+each milestone. **Status: M1–M3, M5 and M6 complete.** `curl … | bash`
+(`scripts/get.sh`, M6) installs dev-boost itself with no clone and no Python;
+`devboost install` (the `macos` profile) then installs the whole catalog. Docker and the
+scheduled jobs still arrive via M4 (see "Not on macOS yet" below); the desktop layer is M5.
 
 - Desktop layer, iOS and extras (M5): see [macos-primer.md](macos-primer.md).
 
 ## Requirements
 
 - Apple Silicon (Intel is refused). macOS 27 Golden Gate or 26 Tahoe; 15 is best-effort.
-- To run from a clone (until M6's installer): the Command Line Tools for git
-  (`xcode-select --install`) and uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
-  dev-boost itself installs and maintains the CLT, Homebrew (analytics off) and Rosetta 2.
-- Run as your normal user, never with `sudo`: Homebrew refuses root. The password is
-  requested lazily: a run prompts once, only when a planned, pending module actually needs
-  sudo (`xcode-clt`, `homebrew`, `rosetta`, `tailscale`); a re-run where those are already
-  done never asks for your password.
+- Via `curl … | bash`: nothing to install first. `get.sh` bootstraps Homebrew itself when
+  it's missing — which also installs the Xcode Command Line Tools — after a single
+  `sudo -v` read from the tty (D4); a Homebrew that's already there is left alone.
+- To run from a clone instead: the Command Line Tools for git (`xcode-select --install`)
+  and uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Either way, dev-boost itself
+  installs and maintains the CLT, Homebrew (analytics off) and Rosetta 2.
+- Run as your normal user, never with `sudo` — `get.sh` refuses to run as root before any
+  download, and Homebrew itself refuses root too. The password is requested lazily: a run
+  prompts once, only when a planned, pending module actually needs sudo (`xcode-clt`,
+  `homebrew`, `rosetta`, `tailscale`); a re-run where those are already done never asks for
+  your password.
 
-## Install from a clone
+## Install
+
+**`curl | bash`** (recommended — no clone, no Python):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- macos
+```
+
+Detects Apple Silicon, downloads the matching `devboost-darwin-arm64` binary from the
+latest GitHub Release, verifies it against `checksums-darwin-arm64.txt`, installs it onto
+PATH (`~/.local/bin/devboost`), and runs `devboost install macos`. See
+[docs/credentials.md](credentials.md) for how the first run gets a GitHub token, and
+"Self-update" and "Troubleshooting" below.
+
+`DEVBOOST_RELEASE_BASE` overrides where `get.sh` fetches the binary and `checksums.txt`
+from (default: the latest GitHub Release) — it exists for rehearsing an unpublished build
+(see [docs/vm-testing.md](vm-testing.md), "macOS (tart)"; [docs/maintenance.md](maintenance.md)),
+not for everyday installs. A non-default base warns loudly, naming the host, because both
+the binary and the checksums that are supposed to vouch for it then come from the same,
+un-official place.
+
+**From a clone:**
 
 ```sh
 git clone https://github.com/adams100111/dev-boost ~/repos/dev-boost
@@ -31,6 +57,28 @@ uv run devboost install
 
 Open a new Ghostty window afterwards. The next run skips everything that is already
 installed.
+
+## Self-update
+
+`devboost self-update` resolves the same `(os, arch)` release asset `get.sh` does: on
+Apple Silicon that is `devboost-darwin-arm64` alone — no Ventoy archive is fetched or
+replaced, since the injection tarball is a Linux-only artifact `build-bundle.sh` never
+produces on Darwin. It downloads `checksums.txt` and the binary, verifies the SHA256
+before touching anything on disk, and **refuses to install a version older than the one
+currently running** (`refusing to downgrade <current> to <new> (latest release)`) — there
+is no flag to override that; reinstall an older release explicitly via `get.sh` if you
+ever need to go back. The swap itself is atomic (a temp file in the same directory, then
+an `os.replace`), and since the download comes from `urllib` — not a browser — the new
+binary carries no `com.apple.quarantine` attribute, so it keeps running with no Gatekeeper
+prompt; it keeps the same ad-hoc PyInstaller signature the original binary shipped with,
+since nothing here re-signs it.
+
+A minor, currently-harmless asymmetry: `devboost.core.selfupdate.release_asset()` maps
+*either* `arm64` or `aarch64` (case-insensitive) to `darwin-arm64`, while
+`build-bundle.sh`'s `bb_arch` and `release.sh`'s `rl_arch` only match a literal `Darwin/arm64`
+from `uname -m` — real Apple Silicon always reports `arm64` there, so this never actually
+triggers, but it's worth knowing if either script is ever run under something that reports
+`aarch64` instead (`get.sh`'s `gs_arch`, by contrast, already accepts both).
 
 ## What you get
 
@@ -177,17 +225,17 @@ to install — only `aspire-gc`, the orphaned-container GC timer, waits for M4.)
 | want your old shell back | `mv ~/.zshrc.pre-devboost ~/.zshrc`. `devboost verify` then reports `zsh-config` as failed (your `~/.zshrc` is no longer dev-boost's), and `devboost install dotfiles --force` copies it aside again and puts dev-boost's back |
 | csharp-ls / aspire: "You must install .NET" | open a new shell: env.sh exports DOTNET_ROOT=~/.dotnet |
 | herdr --remote from the Mac disconnects right away | herdr < 0.8 on either end — run devboost install on both machines (pin 0.9.1) |
+| Gatekeeper blocks `devboost-darwin-arm64` ("cannot be opened because the developer cannot be verified") | Only a **browser**-downloaded binary is quarantined — `curl \| bash` never sets `com.apple.quarantine`, so `get.sh` and `self-update` are unaffected. Clear it: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`, then `chmod +x` it. The binary carries PyInstaller's **ad-hoc** signature only — there is no Developer ID and no notarization, so a fresh Gatekeeper assessment (quarantined copy, first run) will still warn once even after the xattr is cleared, if you also right-click → Open instead of running it from a terminal. |
 
-## Linux gate for this milestone
+## Linux gate
 
-The shared shell files this milestone touches (`env.sh`, `aliases.sh`, `shell.bash`,
-`.chezmoiignore`, the tmux/starship scripts) are Linux-facing too. Since a Fedora/Ubuntu VM
-rehearsal (`scripts/vm-test.sh`) cannot run from this Mac (no libvirt), M2's Linux gate is
-CI (`ubuntu-22.04`) plus hermetic `chezmoi apply` tests for `("linux", "fedora")` and
-`("linux", "ubuntu")`. The real VM rehearsal moves to M6's CI matrix (`vm-smoke`).
-
-## Coming next
-
-M4 — Docker runtimes (Colima default) and launchd timers. M5 — desktop layer (defaults,
-AeroSpace, Raycast, default-apps, …) and the opt-in iOS profile. M6 — `curl … | bash` on a
-fresh Mac.
+The shared shell files (`env.sh`, `aliases.sh`, `shell.bash`, `.chezmoiignore`, the
+tmux/starship scripts) are Linux-facing too, but this doc is written and rehearsed from a
+Mac, which cannot run the Fedora/Ubuntu libvirt VM (`scripts/vm-test.sh`). Two gates cover
+it instead: CI (`ubuntu-22.04`) plus hermetic `chezmoi apply` tests for `("linux",
+"fedora")` and `("linux", "ubuntu")`; and `.github/workflows/vm-smoke.yml`'s
+`linux-smoke` job (M6) — Fedora and Arch containers plus the Ubuntu runner host itself,
+each running `devboost install cli ghostty` for real and then `scripts/smoke-assert.sh`
+against it, confirming Ghostty came from its real per-distro source (the `scottames/ghostty`
+COPR, the snap, or pacman). `linux-smoke` is advisory (`continue-on-error: true`) until its
+container-image dependencies (COPR, snap, pacman) prove stable across runs.
