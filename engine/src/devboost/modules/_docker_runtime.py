@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from devboost.core.errors import InstallError
-from devboost.core.userconfig import DockerRuntimeName
+from devboost.core.userconfig import DockerRuntimeName, selected_docker_runtime
 from devboost.model import Ctx
 
 # M4-D8: one Rosetta probe for the whole engine — M3's, re-exported (explicit `as` form).
@@ -180,3 +180,23 @@ _LICENSE_NOTES: dict[DockerRuntimeName, str] = {
 def license_note(name: DockerRuntimeName) -> str | None:
     """The commercial-use caveat for a non-default runtime (spec *Licensing*)."""
     return _LICENSE_NOTES.get(name)
+
+
+def runtime_for(name: DockerRuntimeName) -> DockerRuntime:
+    """The runtime implementation for ``name``."""
+    # Imported here: each runtime module imports this module's helpers.
+    from devboost.modules._docker_colima import Colima
+    from devboost.modules._docker_desktop import DockerDesktop
+    from devboost.modules._docker_orbstack import OrbStack
+
+    runtimes: dict[DockerRuntimeName, DockerRuntime] = {
+        "colima": Colima(),
+        "orbstack": OrbStack(),
+        "docker-desktop": DockerDesktop(),
+    }
+    return runtimes[name]
+
+
+def selected_runtime() -> DockerRuntime:
+    """The runtime chosen by env > config.toml > colima (spec §4)."""
+    return runtime_for(selected_docker_runtime())

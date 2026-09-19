@@ -1,17 +1,24 @@
-"""Docker — dependency of ddev. Official docker-ce on both OSes (Fedora via Docker's Fedora
-repo, replacing the conflicting podman-docker shim; Debian/Ubuntu via Docker's apt repo)."""
+"""Docker — dependency of ddev. Official docker-ce on Linux (Fedora via Docker's Fedora repo,
+Debian/Ubuntu via Docker's apt repo, Arch from [extra]). On macOS the engine runs in a
+switchable runtime — Colima by default, OrbStack or Docker Desktop on request (spec §4,
+``_docker_runtime``)."""
 
 from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
+from devboost.core import log
 from devboost.core.osinfo import OsMap
 from devboost.core.registry import register
 from devboost.exec.primitives import config, pkg, systemd
 from devboost.model import AptRepo, Ctx, Module
-from devboost.modules._pending import MacosPending
+from devboost.modules import _docker_colima
+from devboost.modules._docker_runtime import license_note, selected_runtime, use_context
+from devboost.modules.macos import Homebrew, Rosetta
 
 #: Docker's official engine package set on Debian/Ubuntu. `docker.io` (Ubuntu's own
 #: package) is deliberately NOT used — Docker's docs list it as a *conflicting*
@@ -42,8 +49,9 @@ def _invoking_user() -> str:
 
 
 # Docker CE on Fedora, per Docker's official docs (docs.docker.com/engine/install/fedora).
-# Fedora Workstation ships `podman-docker`, which CONFLICTS with docker-ce, so remove it first
-# (a deliberate choice to run real Docker consistently with the Ubuntu VPS). `config-manager
+# Fedora Workstation ships podman + toolbox, not docker; but a `podman-docker` shim, if the
+# user added one, CONFLICTS with docker-ce, so remove it first (harmless when absent). Real
+# Docker is a deliberate choice, consistent with the Ubuntu VPS. `config-manager
 # addrepo` is dnf5 (Fedora 41+); the `--add-repo` fallback covers older dnf4.
 _DOCKER_CE_FEDORA = (
     "set -e\n"
@@ -52,10 +60,35 @@ _DOCKER_CE_FEDORA = (
     " https://download.docker.com/linux/fedora/docker-ce.repo 2>/dev/null"
     " || dnf config-manager --add-repo"
     " https://download.docker.com/linux/fedora/docker-ce.repo\n"
-    "dnf -y remove podman-docker || true\n"  # the shim that conflicts with docker-ce
+    "dnf -y remove podman-docker || true\n"  # the optional shim that conflicts with docker-ce
     "dnf -y install docker-ce docker-ce-cli containerd.io"
     " docker-buildx-plugin docker-compose-plugin\n"
 )
+
+
+@dataclass(frozen=True)
+class _MacDocker:
+    """macOS: bring up the selected runtime — Colima unless configured otherwise (§4).
+
+    A runtime step that needs the user (Colima's home split, a root-owned docker config,
+    OrbStack's first launch) raises ``NeedsUser``; it propagates, so the run reports
+    ``blocked`` and nothing after that step runs.
+    """
+
+    uses_brew: ClassVar[bool] = True  # every runtime installs through brew (M4-D9)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return selected_runtime().verify(ctx)
+
+    def install(self, ctx: Ctx) -> None:
+        rt = selected_runtime()
+        note = license_note(rt.name)
+        if note:
+            log.warn(f"docker: {rt.name} — {note}")
+        rt.install(ctx)
+        rt.configure(ctx)
+        rt.start(ctx)
+        use_context(ctx, rt.context_name)
 
 
 @register
@@ -64,15 +97,16 @@ class Docker(Module):
     category = "base"
     description = "Container engine (daemon enabled; invoking user added to docker group)."
     profiles = ("base",)
-    # macOS: a switchable runtime (Colima default) arrives in M4 (spec §4).
-    per_os = OsMap(macos=MacosPending(
-        "M4", "for now: `brew install colima docker docker-compose && colima start`"
-    ))
+    requires = (Homebrew,)  # families=("macos",): dropped from Linux plans (spec §1)
+    after = (Rosetta,)  # --vz-rosetta needs Rosetta when both are in the plan (§0)
+    per_os = OsMap(macos=_MacDocker())
+    # Colima's socket LaunchDaemon (D13) is written with sudo; see sudo_needed (M4-D5).
+    needs_sudo_on_macos: ClassVar[bool] = True
 
     def verify(self, ctx: Ctx) -> bool:
         if (s := self.os_strategy(ctx)) is not None:
             return s.verify(ctx)
-        # docker-ce daemon on BOTH Fedora and Debian. On Fedora, the podman-docker shim provides
+        # docker-ce daemon on BOTH Fedora and Debian. On Fedora, a podman-docker shim provides
         # a `docker` command but no daemon — is-enabled(docker.service) is what proves a real
         # engine, so a shim-only box correctly verifies False and gets docker-ce installed.
         if not ctx.ex.which("docker"):
@@ -86,12 +120,22 @@ class Docker(Module):
                 return False
         return True
 
+    def sudo_needed(self, ctx: Ctx) -> bool:
+        if ctx.os.family != "macos":
+            return super().sudo_needed(ctx)
+        # Read-only. Only Colima runs sudo, and only to (re)write its socket LaunchDaemon;
+        # OrbStack's and Docker Desktop's casks install without a password. --force re-runs
+        # Colima's configure, so it asks up front rather than risk a failing `sudo -n`.
+        if selected_runtime().name != "colima":
+            return False
+        return ctx.force or not _docker_colima.socket_daemon_current(ctx)
+
     def install(self, ctx: Ctx) -> None:
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
             return
         # docker-ce on both OSes (one engine, consistent with the VPS). `which("dockerd")`
-        # distinguishes a real engine already installed from Fedora's podman-docker shim, so the
+        # distinguishes a real engine already installed from a podman-docker shim, so the
         # repo setup + install runs only when there's no daemon yet.
         if not ctx.ex.which("dockerd"):
             if ctx.os.family == "debian":
@@ -119,9 +163,24 @@ def _daemon_json() -> str:
 #: dev box (build cache reached tens of GB in the field). Merged into daemon.json so it composes
 #: with other keys — notably the ``runtimes`` block ``nvidia-ctk runtime configure`` adds on
 #: NVIDIA hosts — rather than clobbering them.
-_BUILDER_GC: dict[str, object] = {
+BUILDER_GC: dict[str, object] = {
     "builder": {"gc": {"enabled": True, "defaultKeepStorage": "20GB"}},
 }
+
+
+@dataclass(frozen=True)
+class _MacBuildGc:
+    """macOS: the same cache cap, in the selected runtime's daemon config (plan D2)."""
+
+    uses_brew: ClassVar[bool] = True  # M4-D9 (Homebrew arrives through Docker)
+
+    def verify(self, ctx: Ctx) -> bool:
+        return selected_runtime().daemon_config_has(BUILDER_GC)
+
+    def install(self, ctx: Ctx) -> None:
+        rt = selected_runtime()
+        if rt.merge_daemon_config(ctx, BUILDER_GC):
+            rt.restart_engine(ctx)
 
 
 @register
@@ -131,9 +190,7 @@ class DockerBuildCacheGc(Module):
     description = "Cap Docker's build cache (daemon.json builder.gc) so it can't fill the disk."
     requires = (Docker,)
     profiles = ("base",)
-    per_os = OsMap(macos=MacosPending(
-        "M4", "set builder.gc in the runtime's docker config (Colima: `colima start --edit`)"
-    ))
+    per_os = OsMap(macos=_MacBuildGc())
 
     def verify(self, ctx: Ctx) -> bool:
         if (s := self.os_strategy(ctx)) is not None:
@@ -155,5 +212,5 @@ class DockerBuildCacheGc(Module):
             return
         # Read-modify-write merge preserves any existing daemon.json keys (e.g. the NVIDIA
         # runtime). Restart only when the file actually changed, so re-runs are no-ops.
-        if config.json_merge(ctx, _daemon_json(), _BUILDER_GC):
+        if config.json_merge(ctx, _daemon_json(), BUILDER_GC):
             ctx.ex.run(["systemctl", "restart", "docker.service"], sudo=True)
