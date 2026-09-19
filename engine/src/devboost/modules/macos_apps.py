@@ -139,3 +139,94 @@ class Quicklook(Module):
     requires = (Homebrew,)
     per_os = OsMap(macos=_QuickLookInstall())
 
+
+# --- macos-extras (opt-in) ----------------------------------------------------------------
+# Licences checked 2026-09-19 (D3-D5): all free for work use.
+
+_EXTRAS = ("macos-extras",)
+
+
+@register
+class Maccy(CaskApp):
+    name = "maccy"
+    category = "macos-extras"
+    description = "Maccy — clipboard history (MIT)."
+    profiles = _EXTRAS
+    cask = "maccy"
+    launch = "Maccy"
+    tcc = (TccGrant("Accessibility", "Maccy"),)
+
+
+@register
+class OllamaApp(CaskApp):
+    name = "ollama-app"
+    category = "macos-extras"
+    description = "Ollama — run local LLMs (MIT)."
+    profiles = _EXTRAS
+    cask = "ollama-app"
+
+
+@register
+class LmStudio(CaskApp):
+    name = "lm-studio"
+    category = "macos-extras"
+    description = "LM Studio — local LLM app (free for work use since 2025-07)."
+    profiles = _EXTRAS
+    cask = "lm-studio"
+
+
+@register
+class Pearcleaner(CaskApp):
+    name = "pearcleaner"
+    category = "macos-extras"
+    description = "Pearcleaner — app uninstaller (Apache-2.0 + Commons Clause)."
+    profiles = _EXTRAS
+    cask = "pearcleaner"
+
+
+@register
+class Keycastr(CaskApp):
+    name = "keycastr"
+    category = "macos-extras"
+    description = "KeyCastr — show keystrokes on screen for demos (BSD-3-Clause)."
+    profiles = _EXTRAS
+    cask = "keycastr"
+    tcc = (TccGrant("ListenEvent", "KeyCastr"), TccGrant("Accessibility", "KeyCastr"))
+
+
+@register
+class Linearmouse(CaskApp):
+    name = "linearmouse"
+    category = "macos-extras"
+    description = "LinearMouse — per-device mouse/trackpad tuning (MIT)."
+    profiles = _EXTRAS
+    cask = "linearmouse"
+    launch = "LinearMouse"
+    tcc = (TccGrant("Accessibility", "LinearMouse"),)
+
+
+@register
+class AndroidStudio(CaskApp):
+    name = "android-studio"
+    category = "macos-extras"
+    description = "Android Studio (Apache-2.0 + Google SDK terms)."
+    profiles = _EXTRAS
+    cask = "android-studio"
+
+
+@register
+class ExpoOrbit(CaskApp):
+    name = "expo-orbit"
+    category = "macos-extras"
+    description = "Expo Orbit — launch builds on simulators/emulators from the menu bar (MIT)."
+    profiles = _EXTRAS
+    cask = "expo-orbit"
+
+
+@register
+class Herd(CaskApp):
+    name = "herd"
+    category = "macos-extras"
+    description = "Laravel Herd — native PHP/Laravel environment (free tier; Pro optional)."
+    profiles = _EXTRAS
+    cask = "herd"
