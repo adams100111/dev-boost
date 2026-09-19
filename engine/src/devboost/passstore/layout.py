@@ -82,6 +82,10 @@ class Store:
         out = [self.record(kind, p.stem) for p in sorted(d.glob("*.json"))]
         return [r for r in out if r is not None]
 
+    def revoked_fingerprints(self) -> set[str]:
+        """Fingerprints of every revoked device (upper-case): they never come back (I1)."""
+        return {r.fingerprint.upper() for r in self.records("revoked")}
+
     def write_record(self, kind: Kind, rec: DeviceRecord, armored: str) -> None:
         path = self.record_path(kind, rec.name)
         path.parent.mkdir(parents=True, exist_ok=True)

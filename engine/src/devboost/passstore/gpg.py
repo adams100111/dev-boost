@@ -144,3 +144,8 @@ def import_trusted(ctx: Ctx, path: Path, fp: str) -> None:
     """Import a device public key and trust it ultimately (all keys are the user's own)."""
     _must(_gpg(ctx, "--import", str(path)), f"gpg --import {path}")
     _must(_gpg(ctx, "--import-ownertrust", stdin=f"{fp}:6:\n"), "gpg --import-ownertrust")
+
+
+def delete_public_key(ctx: Ctx, fp: str) -> Result:
+    """Drop a (revoked) device's public key from this keyring; the caller decides on failure."""
+    return _gpg(ctx, "--yes", "--delete-keys", fp)

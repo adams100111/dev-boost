@@ -101,6 +101,10 @@ def _checked_request(ctx: Ctx, store: Store, req: DeviceRecord,
         raise ConfigError(f"pass: refusing request {name!r} — a device name must not contain "
                           "a path separator")
     fp = req.fingerprint.upper()
+    if fp in store.revoked_fingerprints():  # I1: a revoked key never comes back, any name
+        raise ConfigError(f"pass: refusing {name!r} — its key …{fp[-16:]} was revoked; the "
+                          "device must enroll with a fresh key: devboost pass enroll "
+                          "--name <new-name>")
     kinds: tuple[Kind, ...] = ("devices", "revoked")
     for kind in kinds:  # D17: a request must never take over a registered name
         other = store.record(kind, name)

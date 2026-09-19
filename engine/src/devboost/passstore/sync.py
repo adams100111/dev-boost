@@ -21,7 +21,7 @@ from devboost.core import log
 from devboost.core.errors import DevbootError, UnsupportedOS
 from devboost.exec.primitives import systemd
 from devboost.model import Ctx
-from devboost.passstore import enroll, git, notify
+from devboost.passstore import enroll, git, gpg, notify
 from devboost.passstore.layout import Store, now_iso
 from devboost.passstore.paths import state_dir
 
@@ -190,6 +190,25 @@ def _notify_pending(ctx: Ctx, store: Store, device: str, state: _State) -> None:
         state.notified.append(key)
 
 
+def _forget_revoked(ctx: Ctx, store: Store) -> None:
+    """Delete revoked devices' public keys still in this keyring (I1). Only keys present are
+    deleted, so this is a no-op once done; failures are logged, never raised."""
+    revoked = store.revoked_fingerprints()
+    if not revoked:
+        return
+    try:
+        present = gpg.public_fingerprints(ctx) & revoked
+    except DevbootError as exc:
+        _log(f"listing public keys failed: {exc}")
+        return
+    for fp in sorted(present):
+        res = gpg.delete_public_key(ctx, fp)
+        if res.ok:
+            _log(f"deleted revoked key {fp}")
+        else:
+            _log(f"deleting revoked key {fp} failed (exit {res.code})")
+
+
 def _pull(ctx: Ctx, store: Store, state: _State) -> SyncResult | None:
     """Pull with rebase; a failure result, or None when the pull succeeded."""
     res = git.pull(ctx, store.root)
@@ -248,6 +267,7 @@ def _sync(ctx: Ctx, store: Store, device: str, state: _State, push_only: bool) -
             enroll.import_device_keys(ctx, store)
         except DevbootError as exc:
             _log(f"importing device keys failed: {exc}")
+        _forget_revoked(ctx, store)
         _notify_pending(ctx, store, device, state)
     state.last_sync = now_iso()
     return SyncResult("ok")

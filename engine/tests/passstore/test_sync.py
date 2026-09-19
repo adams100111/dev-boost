@@ -282,3 +282,33 @@ def test_unreadable_state_does_not_raise(tmp_path: Path) -> None:
 def test_sync_survives_a_failing_gpg(tmp_path: Path) -> None:
     ex = _ex((("--list-secret-keys",), Result(2)), (("--list-keys",), Result(2)))
     assert sync.run(_ctx(ex), _store(tmp_path), "desk").status == "ok"
+
+
+FP_GONE = "C" * 40
+
+
+def _with_revoked(tmp_path: Path) -> Store:
+    s = _store(tmp_path)
+    s.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_GONE, os="fedora"), "K")
+    s.move("devices", "revoked", "lap")
+    return s
+
+
+def test_sync_deletes_revoked_public_keys_still_in_the_keyring(tmp_path: Path) -> None:
+    s = _with_revoked(tmp_path)
+    ex = _ex((("--list-keys",), Result(0, colons("pub", FP_ME) + colons("pub", FP_GONE))))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    delete = ["gpg", "--batch", "--yes", "--delete-keys", FP_GONE]
+    assert delete in ex.calls
+    gone = _ex((("--list-keys",), Result(0, colons("pub", FP_ME))))  # already deleted
+    sync.run(_ctx(gone), s, "desk")
+    assert delete not in gone.calls
+
+
+def test_failed_revoked_key_delete_is_logged_not_raised(tmp_path: Path) -> None:
+    s = _with_revoked(tmp_path)
+    ex = _ex((("--delete-keys",), Result(2)),
+             (("--list-keys",), Result(0, colons("pub", FP_GONE))))
+    assert sync.run(_ctx(ex), s, "desk").status == "ok"
+    log = (tmp_path / "state" / "devboost" / "pass-sync.log").read_text(encoding="utf-8")
+    assert FP_GONE in log

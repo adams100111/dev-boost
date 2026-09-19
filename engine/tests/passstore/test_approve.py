@@ -350,3 +350,16 @@ def test_revoke_with_malformed_rotation_json_changes_nothing(tmp_path: Path) -> 
     with pytest.raises(ConfigError, match="rotation.json"):
         approve.revoke(_ctx(ex), s, "desk", "lap", lambda r: True)
     assert _no_pass_init(ex) and s.record("devices", "lap") is not None
+
+
+def test_approve_refuses_a_revoked_key_under_any_name(tmp_path: Path) -> None:
+    """I1: a revoked device must not come back by re-requesting under a fresh name."""
+    s = _store(tmp_path, [FP_ME])
+    s.write_record("devices", DeviceRecord(name="old", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    s.move("devices", "revoked", "old")
+    s.write_record("pending", DeviceRecord(name="fresh", fingerprint=FP_NEW.lower(), os="x"),
+                   ARMOR)
+    ex = _ex()
+    with pytest.raises(ConfigError, match="revoked"):
+        approve.approve(_ctx(ex), s, "desk", "fresh", lambda r: True)
+    assert _no_pass_init(ex) and s.record("devices", "fresh") is None

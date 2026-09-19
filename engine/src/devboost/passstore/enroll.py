@@ -110,14 +110,28 @@ def publish(ctx: Ctx, store: Store, message: str) -> None:
 
 
 def _name_free(store: Store, name: str, fp: str | None) -> None:
-    """Refuse *name* if a record under it belongs to another key (fp None: no key yet)."""
+    """Refuse to file *name* for key *fp* (None: no key yet) when the name belongs to another
+    key, the key was revoked (I1), or the key is registered under another name."""
     kinds: tuple[Kind, ...] = ("devices", "pending")
     for kind in kinds:
         rec = store.record(kind, name)
-        if rec is not None and rec.fingerprint != fp:
+        if rec is not None and rec.fingerprint.upper() != (fp or "").upper():
             raise ConfigError(f"pass: device name {name!r} is already used by key "
                               f"…{rec.fingerprint[-16:]} — choose another: "
                               "devboost pass enroll --name <name>")
+    if fp is None:
+        return
+    if fp.upper() in store.revoked_fingerprints():
+        raise ConfigError(f"pass: key …{fp[-16:]} was revoked and can never be enrolled again "
+                          "— enroll under a new name to generate a fresh key: "
+                          "devboost pass enroll --name <new-name>")
+    for kind in kinds:
+        other = next((r for r in store.records(kind)
+                      if r.fingerprint.upper() == fp.upper() and r.name != name), None)
+        if other is not None:
+            raise ConfigError(f"pass: key …{fp[-16:]} is already registered as {other.name!r} "
+                              f"({kind}) — use that name: devboost pass enroll --name "
+                              f"{other.name}")
 
 
 def _register(ctx: Ctx, store: Store, kind: Kind, name: str, fp: str,
@@ -191,8 +205,13 @@ def import_device_keys(ctx: Ctx, store: Store) -> list[str]:
     """Import + trust every registered device key we lack, if its file and .gpg-id agree."""
     have = gpg.public_fingerprints(ctx)
     imported: list[str] = []
+    revoked = store.revoked_fingerprints()
     for rec in store.records("devices"):
         if rec.fingerprint in have:
+            continue
+        if rec.fingerprint.upper() in revoked:
+            log.warn(f"pass: {rec.name}'s key …{rec.fingerprint[-16:]} was revoked — "
+                     "not imported")
             continue
         path = store.key_path("devices", rec.name)
         try:

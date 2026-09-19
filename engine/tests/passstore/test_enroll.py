@@ -257,3 +257,38 @@ def test_import_device_keys_skips_an_unreadable_key_file(tmp_path: Path) -> None
         (("--show-keys",), Result(0, colons("pub", FP_OLD))),
     ])
     assert enroll.import_device_keys(_ctx(ex), store) == ["b"]
+
+
+def _revoked(store: Store, name: str, fp: str) -> None:
+    store.write_record("devices", DeviceRecord(name=name, fingerprint=fp, os="fedora"), ARMOR)
+    store.move("devices", "revoked", name)
+
+
+def test_import_device_keys_skips_revoked_fingerprints(tmp_path: Path) -> None:
+    store = _store(tmp_path, gpg_id=f"{FP_OLD}\n{FP_NEW}")
+    _revoked(store, "old", FP_NEW)
+    store.write_record("devices", DeviceRecord(name="again", fingerprint=FP_NEW, os="x"), ARMOR)
+    ex = RuleExecutor(rules=[(("--show-keys",), Result(0, colons("pub", FP_NEW)))])
+    assert enroll.import_device_keys(_ctx(ex), store) == []
+    assert not any("--import" in c for c in ex.calls)
+
+
+def test_request_with_a_revoked_key_is_refused(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _revoked(store, "lap-old", FP_NEW)
+    ex = _ex(colons("sec", FP_NEW, UID_NEW))
+    with pytest.raises(ConfigError, match="revoked") as err:
+        enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    assert "--name" in str(err.value)
+    assert store.record("pending", "lap") is None
+    assert not any("commit" in c for c in ex.calls)
+
+
+def test_adopt_refuses_a_key_registered_under_another_name(tmp_path: Path) -> None:
+    """Minor (a): one key, one device name."""
+    store = _store(tmp_path)  # root .gpg-id lists FP_OLD
+    store.write_record("pending", DeviceRecord(name="old", fingerprint=FP_OLD, os="x"), ARMOR)
+    ex = _ex(colons("sec", FP_OLD, "Me <me@x>"))
+    with pytest.raises(ConfigError, match="'old'"):
+        enroll.ensure_access(_ctx(ex), store, "desk", interactive=False)
+    assert store.record("devices", "desk") is None
