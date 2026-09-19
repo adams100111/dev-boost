@@ -61,6 +61,8 @@ git history and the GitHub release notes.
   to is copied to `*.pre-devboost` before `chezmoi apply --force` (it used to lose those
   lines silently); a retried run makes no duplicate copy. `zsh-config` verify no longer
   crashes on a non-UTF-8 `~/.zshrc`.
+- `zsh -i -c` without a terminal (an editor capturing the env) no longer prints
+  `can't change option: zle`: the fzf and atuin key bindings load only on a tty.
 
 ### Removed
 - `DEVBOOST_PASS_GPG_ID` — an empty store is now initialised by its first device

@@ -33,11 +33,19 @@ compinit -i -d "${_devboost_zcache}/zcompdump-${ZSH_VERSION}"
 # Tool initialisers. fzf goes FIRST so atuin (below) binds Ctrl-R last and owns it;
 # fzf keeps Ctrl-T (files) and Alt-C (cd).
 # ---------------------------------------------------------------------------
-# fzf >= 0.48 prints its own integration; an older fzf rejects --zsh, so skip it quietly.
-(( $+commands[fzf] ))      && _devboost_fzf=$(fzf --zsh 2>/dev/null) && eval "$_devboost_fzf"
+# fzf and atuin are key bindings (zle widgets, bindkey), so they load only where the line
+# editor can run: an interactive shell on a terminal. `zsh -i -c` with no tty (an editor
+# capturing the env) reports zle "on" but cannot toggle it, and fzf's script then printed
+# "can't change option: zle".
+if [[ -o zle && -t 0 ]]; then
+  # fzf >= 0.48 prints its own integration; an older fzf rejects --zsh: skip it quietly.
+  (( $+commands[fzf] )) && _devboost_fzf=$(fzf --zsh 2>/dev/null) && eval "$_devboost_fzf"
+fi
 (( $+commands[mise] ))     && eval "$(mise activate zsh)"
 (( $+commands[starship] )) && eval "$(starship init zsh)"
-(( $+commands[atuin] ))    && eval "$(atuin init zsh)"
+if [[ -o zle && -t 0 ]]; then
+  (( $+commands[atuin] ))  && eval "$(atuin init zsh)"
+fi
 (( $+commands[zoxide] ))   && eval "$(zoxide init zsh)"
 (( $+commands[direnv] ))   && eval "$(direnv hook zsh)"
 

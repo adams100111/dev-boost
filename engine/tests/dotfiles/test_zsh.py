@@ -4,6 +4,7 @@ test_shell_split.py so hosts without zsh still cover it.)"""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,8 @@ pytestmark = pytest.mark.skipif(ZSH is None, reason="zsh not installed")
 
 
 def _zsh(home: Path, bin_dir: Path, script: str, *, brew: Path | None = None,
-         login: bool = False) -> subprocess.CompletedProcess[str]:
+         login: bool = False, tty: bool = False) -> subprocess.CompletedProcess[str]:
+    """Run zsh -i/-l -c; stdin is /dev/null unless *tty* (then a pty, as in a terminal)."""
     assert ZSH is not None
     env = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -29,8 +31,16 @@ def _zsh(home: Path, bin_dir: Path, script: str, *, brew: Path | None = None,
         "HOMEBREW_PREFIX": str(brew or home / "no-brew"),
     }
     flag = "-l" if login else "-i"
-    return subprocess.run([ZSH, flag, "-c", script], env=env, capture_output=True, text=True,
-                          timeout=30)
+    if not tty:
+        return subprocess.run([ZSH, flag, "-c", script], env=env, capture_output=True,
+                              text=True, timeout=30, stdin=subprocess.DEVNULL)
+    leader, follower = os.openpty()
+    try:
+        return subprocess.run([ZSH, flag, "-c", script], env=env, capture_output=True,
+                              text=True, timeout=30, stdin=follower)
+    finally:
+        os.close(leader)
+        os.close(follower)
 
 
 @pytest.fixture
@@ -64,8 +74,22 @@ def test_fzf_loads_before_atuin_so_atuin_owns_ctrl_r(zsh_home: Path, bin_dir: Pa
                                                     make_bin: MakeBin) -> None:
     make_bin("fzf", "[ \"$1\" = --zsh ] && echo 'typeset -g FZF_ZSH_INIT=1'")
     make_bin("atuin", "echo 'typeset -g ATUIN_SAW_FZF=$+FZF_ZSH_INIT'")
-    res = _zsh(zsh_home, bin_dir, 'print -r -- "$ATUIN_SAW_FZF"')
+    # Under a terminal: the key-binding inits load only where zle can run.
+    res = _zsh(zsh_home, bin_dir, 'print -r -- "$ATUIN_SAW_FZF"', tty=True)
     assert res.stdout.strip() == "1", res.stderr
+    assert res.stderr == ""
+
+
+def test_interactive_zsh_without_a_tty_prints_no_zle_errors(
+    zsh_home: Path, bin_dir: Path, make_bin: MakeBin
+) -> None:
+    # An editor capturing the env runs `zsh -i -c env` with no terminal. zle reports "on"
+    # there but cannot be toggled, so fzf's key-binding script (which restores options,
+    # zle included) printed "can't change option: zle". Stubs reproduce that.
+    make_bin("fzf", "[ \"$1\" = --zsh ] && echo 'setopt zle; typeset -g FZF_ZSH_INIT=1'")
+    make_bin("atuin", "echo 'setopt zle; typeset -g ATUIN_INIT=1'")
+    res = _zsh(zsh_home, bin_dir, 'print -r -- "ok|$FZF_ZSH_INIT|$ATUIN_INIT"')
+    assert res.stdout.strip() == "ok||", res.stderr
     assert res.stderr == ""
 
 
