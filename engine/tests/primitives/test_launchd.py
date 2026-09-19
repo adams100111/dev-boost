@@ -97,6 +97,7 @@ def test_system_daemon_writes_via_sudo_and_bootstraps_system_domain(home: Path) 
             env: Mapping[str, str] | None = None,
             cwd: Path | None = None,
             interactive: bool = False,
+            timeout: float | None = None,
         ) -> Result:
             calls.append((["sudo"] if sudo else []) + list(argv))
             return Result(1) if argv[:2] == ["launchctl", "print"] else Result(0)
@@ -210,3 +211,28 @@ def test_remove_daemon_bootouts_and_deletes_with_sudo(home: Path) -> None:
         ["sudo", "launchctl", "bootout", "system/dev.devboost.docker-sock"],
         ["sudo", "rm", "-f", str(home / "LaunchDaemons" / "dev.devboost.docker-sock.plist")],
     ]
+
+
+def test_remove_daemon_raises_when_the_privileged_delete_fails(home: Path) -> None:
+    ex = FakeExecutor(scripts={"rm": Result(1, stderr="sudo: a password is required")})
+    with pytest.raises(InstallError, match="rm -f"):
+        launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")
+
+
+def test_remove_daemon_ignores_a_bootout_of_an_unloaded_job(home: Path) -> None:
+    ex = FakeExecutor(scripts={"launchctl": Result(113)})
+    launchd.remove_daemon(Ctx(os=MAC, ex=ex), "dev.devboost.docker-sock")  # no raise
+
+
+@pytest.mark.parametrize(
+    "bad", ["../evil", "dev.devboost.x/../../etc", "a b", "", "-rf", "dev.devboost.x\n"]
+)
+def test_labels_are_validated_before_any_path_is_built(home: Path, bad: str) -> None:
+    ctx = Ctx(os=MAC, ex=FakeExecutor())
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.remove_daemon(ctx, bad)
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.system_daemon(ctx, bad, ["/bin/echo"])
+    with pytest.raises(ValueError, match="launchd label"):
+        launchd.agent_plist(bad)
+    assert ctx.ex.calls == []  # type: ignore[attr-defined]
