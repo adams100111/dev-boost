@@ -88,7 +88,8 @@ def profiles_file(tmp_path: Path) -> Path:
         'brain-tools = ["herdr","herdr-plugins"]\n'
         'omarchy = ["omarchy-update-hook"]\n'
         'orca = ["orca-ide"]\n'
-        'orca-box = ["orca-ide","orca-serve"]\n',
+        'orca-box = ["orca-ide","orca-serve"]\n'
+        'macos = ["ripgrep"]\n',
         encoding="utf-8",
     )
     return p
