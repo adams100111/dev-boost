@@ -23,6 +23,7 @@ from devboost.cli.permissions import permissions as _permissions
 from devboost.cli.selection import select_modules
 from devboost.core import log, osinfo
 from devboost.core.graph import toposort
+from devboost.core.osinfo import OsInfo
 from devboost.core.plan import PlannedModule, build_plan
 from devboost.core.profiles import expand, load_profiles
 from devboost.core.registry import load, validate_profiles
@@ -112,16 +113,42 @@ def _apply_offline_filter(
     ]
 
 
+def _brew_managed_on_macos(cls: type[Module]) -> bool:
+    """True when a module's whole macOS install is one Homebrew formula or cask.
+
+    `brew upgrade` is safe for all of these; custom macOS strategies (the Android SDK,
+    Tailscale, …) are provisioning steps and stay out of `--update`, as on Linux.
+    """
+    from devboost.modules._brew import BrewCask, BrewFormula
+    from devboost.modules._pkgmodule import PackageModule
+    from devboost.modules.apps import FlatpakApp
+
+    if issubclass(cls, FlatpakApp):
+        return cls.cask is not None
+    if issubclass(cls, PackageModule):
+        return True
+    return isinstance(cls.per_os.macos, (BrewFormula, BrewCask))
+
+
 def _apply_update_filter(
     plan: list[PlannedModule],
     modules: Mapping[str, type[Module]],
+    os_info: OsInfo | None = None,
 ) -> list[PlannedModule]:
     """Keep only self-updating modules (single-package/binary tools safe to force-refresh).
 
     Non-self-updating modules are dropped from the plan entirely — `--update` must not
-    install a heavy provisioning module, only refresh the CLI tools.
+    install a heavy provisioning module, only refresh the CLI tools. On macOS every module
+    that is exactly a Homebrew formula or cask is refreshed too (casks that update
+    themselves are skipped by BrewCask).
     """
-    return [pm for pm in plan if modules[pm.name].self_updating]
+    on_mac = os_info is not None and os_info.family == "macos"
+    return [
+        pm
+        for pm in plan
+        if modules[pm.name].self_updating
+        or (on_mac and _brew_managed_on_macos(modules[pm.name]))
+    ]
 
 
 def _run(
@@ -144,7 +171,7 @@ def _run(
     ctx = Ctx(os=osinfo.detect(), ex=RealExecutor(), force=force, dry_run=dry_run)
     plan = build_plan(order, modules, ctx.os)
     if update:
-        plan = _apply_update_filter(plan, modules)
+        plan = _apply_update_filter(plan, modules, ctx.os)
         if not plan:
             log.info("no self-updating tools in selection")
         ctx = Ctx(os=ctx.os, ex=ctx.ex, force=True, dry_run=dry_run)  # force-refresh the kept tools

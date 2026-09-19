@@ -6,6 +6,7 @@ Dnf (Fedora), Apt (Debian/Ubuntu) and Pacman (Arch/Omarchy) are implemented.
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 from typing import Protocol, runtime_checkable
@@ -255,6 +256,23 @@ class Brew:
         if not res.ok:
             raise InstallError("brew", f"brew upgrade --formula {' '.join(pkgs)}", res.code)
 
+    def upgrade_cask(self, ctx: Ctx, *casks: str) -> None:
+        if not casks:
+            return
+        res = self._brew(ctx, "upgrade", "--cask", *casks)
+        if not res.ok:
+            raise InstallError("brew", f"brew upgrade --cask {' '.join(casks)}", res.code)
+
+    def cask_auto_updates(self, ctx: Ctx, cask: str) -> bool:
+        """True when the cask declares ``auto_updates`` (the app updates itself)."""
+        res = self._brew(ctx, "info", "--json=v2", "--cask", cask)
+        if not res.ok:
+            return False
+        try:
+            return bool(json.loads(res.stdout)["casks"][0].get("auto_updates"))
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return False
+
     def add_repo(self, ctx: Ctx, repo: Repo) -> None:
         if not isinstance(repo, BrewTap):
             raise TypeError(f"Brew.add_repo expects BrewTap, got {type(repo).__name__}")
@@ -349,6 +367,18 @@ def cask_installed(ctx: Ctx, cask: str) -> bool:
 def upgrade(ctx: Ctx, *pkgs: str) -> None:
     """Upgrade formulae in place (`devboost install --update` on macOS)."""
     _brew_or_raise(ctx, "brew upgrade").upgrade(ctx, *pkgs)
+
+
+def upgrade_cask(ctx: Ctx, *casks: str) -> None:
+    """Upgrade casks in place (`devboost install --update` on macOS)."""
+    _brew_or_raise(ctx, "brew upgrade --cask").upgrade_cask(ctx, *casks)
+
+
+def cask_auto_updates(ctx: Ctx, cask: str) -> bool:
+    """True when the cask updates itself; always False off macOS (never raises)."""
+    if ctx.os.family != "macos":
+        return False
+    return Brew().cask_auto_updates(ctx, cask)
 
 
 #: Seconds apt waits for a held dpkg/apt lock before giving up (drop-in below).

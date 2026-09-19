@@ -39,12 +39,11 @@ installed.
 Tools come from Homebrew, never `which`: macOS ships old copies of git, curl and bash that
 would otherwise look installed.
 
-`devboost install --update` on macOS today upgrades (`brew upgrade`) only these
-formulae: atuin, bash, bat, btop, coreutils, delta, direnv, duf, dust, eza, fastfetch, fd,
-fzf, gh, git, jq, lazygit, sd, tealdeer, tmux, wget, yq, zoxide and zsh-plugins. It does
-**not** yet upgrade chezmoi, mise, ripgrep, starship or fresh — run
-`brew upgrade chezmoi mise ripgrep starship fresh-editor` for those; an OS-aware `--update`
-that covers them is planned for M3. Casks such as Ghostty update themselves.
+`devboost install --update` on macOS upgrades every module whose macOS install is one
+Homebrew formula or cask: `brew upgrade` for formulae (chezmoi, mise, ripgrep, starship and
+fresh included) and `brew upgrade --cask` for casks. Casks that update themselves (brew's
+`auto_updates`, such as Ghostty) are left alone. Modules with their own macOS install steps
+are not part of `--update`, as on Linux.
 
 ## Shell
 

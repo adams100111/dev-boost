@@ -13,6 +13,7 @@ from devboost.core.registry import register
 from devboost.exec.primitives import flatpak, github, pkg, systemd
 from devboost.model import Ctx, Module
 from devboost.modules import _credentials as creds_src
+from devboost.modules._brew import BrewCask
 from devboost.modules.base import Flatpak
 from devboost.modules.secrets import Secrets
 from devboost.modules.ssh_setup import SshSetup
@@ -46,7 +47,7 @@ class FlatpakApp(Module):
 
     def verify(self, ctx: Ctx) -> bool:
         if ctx.os.family == "macos":
-            return self.cask is not None and pkg.cask_installed(ctx, self.cask)
+            return self.cask is not None and BrewCask(self.cask).verify(ctx)
         if ctx.os.family == "arch":
             name = self._arch_name()
             return name is not None and pkg.installed(ctx, name)
@@ -56,7 +57,7 @@ class FlatpakApp(Module):
         if ctx.os.family == "macos":
             if self.cask is None:
                 raise UnsupportedOS(f"{self.name}: no macOS cask declared (set cask)")
-            pkg.install_cask(ctx, self.cask)
+            BrewCask(self.cask).install(ctx)
             return
         if ctx.os.family == "arch":
             if self.arch_pkg is not None:
