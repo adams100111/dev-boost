@@ -12,7 +12,11 @@ jobs:
   # binary. Run them here too, and make everything downstream need them, so a tag can never
   # publish a tree that would fail CI.
   checks:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: engine
@@ -24,7 +28,7 @@ jobs:
       - run: uv sync
       - run: uv run ruff check
       - run: uv run mypy
-      - run: uv run pytest -q
+      - run: uv run pytest -n 4
 
   binary:
     needs: [checks]
@@ -36,14 +40,16 @@ jobs:
             arch: x86_64
           - runner: ubuntu-24.04-arm
             arch: aarch64
+          - runner: macos-15
+            arch: darwin-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - name: Check tag matches version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pyproject="$(grep -m1 -oP '^version = "\K[^"]+' engine/pyproject.toml)"
-          init="$(grep -m1 -oP '^__version__ = "\K[^"]+' engine/src/devboost/__init__.py)"
+          pyproject="$(sed -nE 's/^version = "([^"]+)".*/\1/p' engine/pyproject.toml | head -n1)"
+          init="$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' engine/src/devboost/__init__.py | head -n1)"
           echo "tag=${tag}  pyproject=${pyproject}  __version__=${init}"
           if [ "${tag}" != "${pyproject}" ] || [ "${tag}" != "${init}" ]; then
             echo "::error::tag v${tag} must match pyproject (${pyproject}) and __version__ (${init})"
@@ -56,12 +62,36 @@ jobs:
         with:
           name: devboost-${{ matrix.arch }}
           path: |
-            dist/devboost-${{ matrix.arch }}
-            dist/devboost-${{ matrix.arch }}.tar.gz
+            dist/devboost-${{ matrix.arch }}*
             dist/checksums-${{ matrix.arch }}.txt
 
-  release:
+  # The binary job builds and ad-hoc-signs the Darwin binary on macos-15 (the oldest
+  # supported macOS, so the frozen bundle stays forward-compatible). This job proves that
+  # same macos-15-built binary also runs, unmodified, on the newer macOS the M6 spec
+  # targets — macos-26 (blocking) and the xcode-27 preview image (non-blocking, since
+  # Preview images can change without notice).
+  binary-compat:
     needs: [binary]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, xcode-27]
+    continue-on-error: ${{ matrix.os == 'xcode-27' }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: devboost-darwin-arm64
+          path: dist
+      - name: Verify the macos-15-built binary runs here
+        run: |
+          chmod +x dist/devboost-darwin-arm64
+          ./dist/devboost-darwin-arm64 --version
+          ./dist/devboost-darwin-arm64 list macos
+          codesign --verify --strict dist/devboost-darwin-arm64
+
+  release:
+    needs: [binary, binary-compat]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v8
@@ -72,9 +102,10 @@ jobs:
           mkdir -p out
           cp artifacts/devboost-x86_64/devboost-x86_64 out/
           cp artifacts/devboost-aarch64/devboost-aarch64 out/
+          cp artifacts/devboost-darwin-arm64/devboost-darwin-arm64 out/
           cp artifacts/devboost-x86_64/devboost-x86_64.tar.gz out/     # Ventoy injection (x86_64)
           cp artifacts/devboost-aarch64/devboost-aarch64.tar.gz out/   # Ventoy injection (aarch64)
-          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 \
+          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-darwin-arm64 \
               devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
       - name: Publish release
         uses: softprops/action-gh-release@v3
@@ -82,6 +113,7 @@ jobs:
           files: |
             out/devboost-x86_64
             out/devboost-aarch64
+            out/devboost-darwin-arm64
             out/devboost-x86_64.tar.gz
             out/devboost-aarch64.tar.gz
             out/checksums.txt
