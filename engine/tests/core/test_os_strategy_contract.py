@@ -11,6 +11,8 @@ strategy's, using only the tools listed for it.
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -71,7 +73,15 @@ def test_there_are_modules_to_check() -> None:
 
 
 def _calls(fn: Callable[[Ctx], object], ctx_os: OsInfo) -> list[list[str]]:
-    """What ``fn`` ran, ending with how it stopped if it raised."""
+    """What ``fn`` ran, ending with how it stopped if it raised.
+
+    Each call starts from the same empty HOME (same path, so argv stays comparable): a
+    stateful strategy, such as a launchd writer that skips an already-loaded job, must not
+    see what the previous call left behind.
+    """
+    home = Path(os.environ["HOME"])
+    shutil.rmtree(home)
+    home.mkdir()
     ex = FakeExecutor()
     try:
         fn(Ctx(os=ctx_os, ex=ex))
