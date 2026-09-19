@@ -21,6 +21,15 @@ _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
 # binary in ~/.local/bin (on the executor's PATH), so verify (`which mise`) succeeds.
 _MISE_INSTALL = "curl https://mise.run | sh"
 
+#: rc files nvm/sdkman may have written `# BEGIN ...` / `# END ...` blocks into, per OS
+#: family (Z2 ruling R2). macOS: M2 leaves ~/.zshrc.local, ~/.zprofile.local and
+#: ~/.bash_profile.local to the user — ~/.zshrc / ~/.zprofile are chezmoi-managed, and
+#: their drifted copies go to .pre-devboost. Every other family (Linux) keeps ~/.bashrc.
+_RC_FILES: dict[str, tuple[str, ...]] = {
+    "macos": (".zshrc.local", ".zprofile.local", ".bash_profile.local"),
+}
+_RC_FILES_DEFAULT: tuple[str, ...] = (".bashrc",)
+
 
 def _home() -> Path:
     return Path(os.environ["HOME"])
@@ -33,8 +42,7 @@ class Mise(Module):
     description = "Install mise runtime version manager; migrate nvm/sdkman init blocks."
     profiles = ("base",)
     requires = (Homebrew,)  # macOS installs through brew (per_os); dropped on Linux
-    # macOS: brew's formula. The nvm/sdkman migrations below edit ~/.bashrc blocks that
-    # a Mac (zsh) does not have, so they are Linux-only.
+    # macOS: brew's formula, then the same nvm/sdkman migration below (rc files by OS).
     per_os = OsMap(macos=BrewFormula("mise"))
 
     def verify(self, ctx: Ctx) -> bool:
@@ -45,13 +53,14 @@ class Mise(Module):
     def install(self, ctx: Ctx) -> None:
         if (s := self.os_strategy(ctx)) is not None:
             s.install(ctx)
-            return
-        if ctx.os.family == "debian":
-            self._cleanup_legacy_apt_source(ctx)
-        if not ctx.ex.which("mise"):
-            # Official cross-distro installer → ~/.local/bin (on PATH), no root. mise is not
-            # in Fedora's default repos (`dnf install mise` fails), so use the script on every OS.
-            ctx.ex.run(["sh", "-c", _MISE_INSTALL])
+        else:
+            if ctx.os.family == "debian":
+                self._cleanup_legacy_apt_source(ctx)
+            if not ctx.ex.which("mise"):
+                # Official cross-distro installer → ~/.local/bin (on PATH), no root. mise
+                # is not in Fedora's default repos (`dnf install mise` fails), so use the
+                # script on every OS.
+                ctx.ex.run(["sh", "-c", _MISE_INSTALL])
         self._migrate_nvm(ctx)
         self._migrate_sdkman(ctx)
 
@@ -91,13 +100,19 @@ class Mise(Module):
             if ver and ver != "current":
                 mise.use_global(ctx, f"java@{ver}")
 
+    def _rc_files(self, ctx: Ctx) -> tuple[Path, ...]:
+        names = _RC_FILES.get(ctx.os.family, _RC_FILES_DEFAULT)
+        return tuple(_home() / name for name in names)
+
     def _comment_out(self, ctx: Ctx, begin: str, end: str, note: str) -> None:
-        bashrc = _home() / ".bashrc"
-        if not bashrc.exists():
-            return
-        text = bashrc.read_text(encoding="utf-8")
-        if begin not in text or note in text:
-            if note in text:
-                log.skip(f"mise: {begin} block already migrated")
-            return
-        bashrc.write_text(config.comment_block(text, begin, end) + note + "\n", encoding="utf-8")
+        for rc in self._rc_files(ctx):
+            if not rc.exists():
+                continue
+            text = rc.read_text(encoding="utf-8")
+            if begin not in text or note in text:
+                if note in text:
+                    log.skip(f"mise: {begin} block already migrated in {rc.name}")
+                continue
+            rc.write_text(
+                config.comment_block(text, begin, end) + note + "\n", encoding="utf-8"
+            )
