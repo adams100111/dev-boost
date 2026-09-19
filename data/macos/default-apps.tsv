@@ -1,0 +1,27 @@
+# macOS default apps — which app opens a file type (exec/primitives/default_apps.py).
+# TAB-separated: extension <TAB> app bundle id. macOS 26.4+ asks the user to confirm each
+# change, one dialog per UTI (extensions that share a UTI share one), once — dev-boost
+# records what it asked in ~/.local/state/devboost/default-apps.json and never asks again.
+# Z2 ships the Zed rows (code/text files a developer double-clicks); M5's `default-apps`
+# module adds the other apps' rows. `.ts` is also MPEG transport-stream video on macOS;
+# on a dev box TypeScript wins.
+md	dev.zed.Zed
+txt	dev.zed.Zed
+log	dev.zed.Zed
+json	dev.zed.Zed
+yaml	dev.zed.Zed
+yml	dev.zed.Zed
+toml	dev.zed.Zed
+sh	dev.zed.Zed
+zsh	dev.zed.Zed
+py	dev.zed.Zed
+js	dev.zed.Zed
+mjs	dev.zed.Zed
+jsx	dev.zed.Zed
+ts	dev.zed.Zed
+tsx	dev.zed.Zed
+php	dev.zed.Zed
+cs	dev.zed.Zed
+css	dev.zed.Zed
+scss	dev.zed.Zed
+sql	dev.zed.Zed

@@ -320,6 +320,17 @@ class Glow(PackageModule):
 
 
 @register
+class Utiluti(PackageModule):
+    name = "utiluti"
+    category = "cli"
+    description = "utiluti — sets which app opens a file type (macOS default apps)."
+    # Pulled in by modules that set default apps (Zed; M5's default-apps). macOS only.
+    families: ClassVar[tuple[str, ...]] = ("macos",)
+    cmd = "utiluti"
+    fedora_pkg = "utiluti"  # never used: the module only exists on macOS
+
+
+@register
 class Bash(PackageModule):
     name = "bash"
     category = "shell"
