@@ -21,7 +21,6 @@ from devboost.core.osinfo import OsInfo
 from devboost.core.registry import load
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx, Installer, Module
-from devboost.modules import editors, server
 from devboost.modules._brew import BrewCask, BrewFormula
 
 _OS: dict[str, OsInfo] = {
@@ -33,14 +32,18 @@ _OS: dict[str, OsInfo] = {
 
 #: Modules whose own install finishes its strategy's work with extra steps (Zed writes its
 #: config and default-app handlers after the cask). The strategy's calls must be a prefix
-#: of the module's, and the extra calls may use only these tools.
-_EXTENDS: dict[str, set[str]] = {"zed": {"brew", "utiluti"}}
+#: of the module's; the extra calls may use only the listed tools, and may end (only as
+#: the last entry) in NeedsUser or in one of the listed exception types. Under a bare
+#: FakeExecutor Zed stops at "utiluti not found", an InstallError.
+_EXTENDS: dict[str, tuple[set[str], set[str]]] = {
+    "zed": ({"brew", "utiluti"}, {"InstallError"}),
+}
 _NEEDS_USER = "<needs-user>"
 _RAISED = "<raised>"
-#: How a strategy ends that an _EXTENDS module may carry on past: Zed configures a
-#: hand-installed Zed.app brew cannot adopt (ruling R6).
-_CARRIED_ON = [_RAISED, "PresentUnmanaged"]
-
+_MARKERS = {_NEEDS_USER, _RAISED}
+#: How much of an exception's message is compared (with its type name): enough to tell
+#: two failures of one type apart, short enough to leave out per-run paths.
+_MSG_PREFIX = 40
 
 def _own_install_or_verify_with_per_os() -> list[tuple[str, type[Module]]]:
     return [
@@ -75,7 +78,7 @@ def _calls(fn: Callable[[Ctx], object], ctx_os: OsInfo) -> list[list[str]]:
     except NeedsUser as e:
         ex.calls.append([_NEEDS_USER, e.reason])
     except Exception as e:  # any other outcome is compared, not a crash of this test
-        ex.calls.append([_RAISED, type(e).__name__])
+        ex.calls.append([_RAISED, type(e).__name__, str(e)[:_MSG_PREFIX]])
     return ex.calls
 
 
@@ -86,9 +89,6 @@ def test_install_and_verify_hand_off_to_the_declared_strategy(
     name: str, cls: type[Module], key: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("DEVBOOST_NONINTERACTIVE", "1")  # nobody at the terminal
-    # Hermetic: the host's own /Applications/Tailscale.app must not change the outcome.
-    monkeypatch.setattr(server, "_TS_APP", tmp_path / "absent" / "Tailscale.app")
-    monkeypatch.setattr(editors, "_ZED_APP", tmp_path / "absent" / "Zed.app")
     os_info = _OS[key]
     strategy = getattr(cls.per_os, key)
     assert isinstance(strategy, Installer)
@@ -98,15 +98,19 @@ def test_install_and_verify_hand_off_to_the_declared_strategy(
     verify = _calls(cls().verify, os_info)
     want_install = _calls(strategy.install, os_info)
     if name in _EXTENDS:
-        if want_install[-1:] == [_CARRIED_ON]:
-            want_install = want_install[:-1]
+        tools, may_raise = _EXTENDS[name]
         assert install[: len(want_install)] == want_install, name
-        extra = {c[0] for c in install[len(want_install):]} - {_NEEDS_USER, _RAISED}
-        assert extra <= _EXTENDS[name], f"{name} adds {sorted(extra)}"
+        extra = install[len(want_install):]
+        tail = extra.pop() if extra and extra[-1][0] in _MARKERS else None
+        assert not [c for c in extra if c[0] in _MARKERS], f"{name}: a marker before the end"
+        added = {c[0] for c in extra} - tools
+        assert not added, f"{name} adds {sorted(added)}"
+        if tail is not None and tail[0] == _RAISED:
+            assert tail[1] in may_raise, f"{name} ends in {tail[1]}: {tail[2]}"
     else:
         assert install == want_install, name
     assert verify == _calls(strategy.verify, os_info), name
     if key == "macos" and isinstance(strategy, BrewFormula | BrewCask):
         argv0 = {c[0] for c in install + verify}
-        allowed = _EXTENDS.get(name, {"brew"})
-        assert argv0 <= allowed | {_NEEDS_USER, _RAISED}, f"{name} runs {sorted(argv0)} on macOS"
+        allowed = _EXTENDS[name][0] if name in _EXTENDS else {"brew"}
+        assert argv0 <= allowed | _MARKERS, f"{name} runs {sorted(argv0)} on macOS"

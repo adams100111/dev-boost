@@ -8,6 +8,8 @@ arrive with its macOS answer; the map must be empty by the end of M5 (§9).
 
 from __future__ import annotations
 
+import importlib
+import re
 from pathlib import Path
 
 from devboost.core.graph import toposort
@@ -19,6 +21,7 @@ from devboost.model import Module
 from devboost.modules._pending import MacosPending
 from devboost.modules._pkgmodule import PackageModule
 from devboost.modules.apps import FlatpakApp
+from tests.conftest import HOST_APP_PATHS
 
 KNOWN_GAPS: dict[str, str] = {
     "aspire-gc": "M4",
@@ -123,3 +126,33 @@ def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> N
     assert not {n: r for n, r in reasons.items() if r is not None}
     assert "bash-config" in reasons and "ghostty" in reasons
     assert not {"zsh-config", "zsh-plugins", "bash"} & set(reasons)
+
+
+# --- hermeticity: no test reads the host's /Applications ------------------------------
+
+_SRC = Path(__file__).resolve().parents[2] / "src"
+_APP_CONST = re.compile(
+    r'^(\w+)\s*(?::[^=\n]*)?=\s*Path\(\s*"/Applications/[^"]+\.app"\s*\)', re.M
+)
+
+
+def _app_constants_in_src() -> set[tuple[str, str]]:
+    found: set[tuple[str, str]] = set()
+    for py in _SRC.rglob("*.py"):
+        module = ".".join(py.relative_to(_SRC).with_suffix("").parts)
+        found |= {(module, m) for m in _APP_CONST.findall(py.read_text(encoding="utf-8"))}
+    return found
+
+
+def test_every_app_bundle_constant_is_neutralised_in_tests() -> None:
+    # B2 review: a new `/Applications/*.app` probe must be added to conftest's
+    # HOST_APP_PATHS, or the suite would silently depend on what this Mac has installed.
+    found = _app_constants_in_src()
+    assert found, "the scan found nothing: the pattern no longer matches the sources"
+    assert found == set(HOST_APP_PATHS)
+
+
+def test_the_app_bundle_constants_point_nowhere(tmp_path: Path) -> None:
+    for name, attr in HOST_APP_PATHS:
+        path = getattr(importlib.import_module(name), attr)
+        assert path.is_relative_to(tmp_path) and not path.exists(), (name, attr)

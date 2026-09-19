@@ -22,12 +22,6 @@ MAC = OsInfo("macos", "macos", "aarch64", version_id="27.0")
 APP_BIN = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
 
-@pytest.fixture(autouse=True)
-def _no_host_tailscale_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Hermetic: the host's own /Applications/Tailscale.app must not change the outcome.
-    monkeypatch.setattr(server, "_TS_APP", tmp_path / "absent" / "Tailscale.app")
-
-
 def _no_brew_formulae(caroot: Path) -> Scripted:
     return Scripted(answers={
         ("brew", "list"): Result(1),
