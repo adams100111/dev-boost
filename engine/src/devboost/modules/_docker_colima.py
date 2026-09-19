@@ -12,6 +12,7 @@ docs/docker-runtimes.md).
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,7 @@ from typing import Any
 import yaml
 
 from devboost.core import log
-from devboost.core.errors import ConfigError, InstallError
+from devboost.core.errors import ConfigError, InstallError, NeedsUser
 from devboost.core.userconfig import DockerRuntimeName
 from devboost.exec.primitives import config, launchd, pkg
 from devboost.model import Ctx
@@ -58,19 +59,47 @@ def colima_home() -> Path:
     return dot
 
 
-def ensure_colima_home() -> Path:
-    """Create the XDG config dir before Colima's first run, unless one already exists.
+def service_colima_home() -> Path:
+    """The dir Colima resolves under ``brew services``: launchd starts it with neither
+    XDG_CONFIG_HOME nor COLIMA_HOME, so only ``~/.colima`` and ``~/.config/colima`` count."""
+    home = Path(os.environ["HOME"])
+    dot = home / ".colima"
+    if dot.exists():
+        return dot
+    default_xdg = home / ".config" / "colima"
+    return default_xdg if default_xdg.exists() else dot
 
-    Shells export XDG_CONFIG_HOME (env.sh) but ``brew services`` starts Colima from launchd
-    without it; with ``~/.config/colima`` present both resolve to it (plan D10).
+
+def ensure_colima_home() -> Path:
+    """Pin one Colima home that this shell and ``brew services`` both resolve (plan D10).
+
+    Shells export XDG_CONFIG_HOME (env.sh) but launchd does not, so a fresh Mac gets
+    ``~/.config/colima``, which both sides then find. A custom XDG_CONFIG_HOME or a
+    COLIMA_HOME would split them (two VMs), so there the home is ``~/.colima``, which Colima
+    picks first everywhere. An existing split cannot be fixed without moving a VM: that is
+    ``NeedsUser``.
     """
     home = Path(os.environ["HOME"])
-    explicit = os.environ.get("COLIMA_HOME")
-    if (explicit and Path(explicit).exists()) or (home / ".colima").exists():
-        return colima_home()
+    dot = home / ".colima"
+    default_xdg = home / ".config" / "colima"
+    explicit = os.environ.get("COLIMA_HOME", "")
     xdg = os.environ.get("XDG_CONFIG_HOME", "")
-    ((Path(xdg) if xdg else home / ".config") / "colima").mkdir(parents=True, exist_ok=True)
-    return colima_home()
+    shell_xdg = (Path(xdg) if xdg else home / ".config") / "colima"
+    if not dot.exists() and not (explicit and Path(explicit).exists()):
+        if explicit or shell_xdg != default_xdg:
+            if not shell_xdg.exists() and not default_xdg.exists():
+                dot.mkdir(parents=True)
+        elif not default_xdg.exists():
+            default_xdg.mkdir(parents=True)
+    shell, service = colima_home(), service_colima_home()
+    if shell != service:
+        raise NeedsUser(
+            f"Colima would use {shell} from your shell but {service} under brew services "
+            "(launchd sets neither XDG_CONFIG_HOME nor COLIMA_HOME)",
+            f"move the VM there (`colima stop; mv '{shell}' '{dot}'`) or unset COLIMA_HOME, "
+            "then re-run",
+        )
+    return shell
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -89,7 +118,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def socket_daemon_args() -> list[str]:
     """The socket LaunchDaemon's ProgramArguments: link Colima's socket to DOCKER_SOCK."""
-    return ["/bin/ln", "-sf", str(colima_home() / "default" / "docker.sock"), str(DOCKER_SOCK)]
+    # -h: never follow an existing link at DOCKER_SOCK (root must not write through it).
+    return ["/bin/ln", "-shf", str(colima_home() / "default" / "docker.sock"), str(DOCKER_SOCK)]
 
 
 def socket_daemon_current(ctx: Ctx) -> bool:
@@ -133,7 +163,10 @@ class Colima:
         if pkg.cask_installed(ctx, "docker-desktop"):
             # Docker Desktop's cask links its own docker/docker-compose into the brew
             # prefix (plan D14); take the names back for the formulae.
-            pkg.brew_link(ctx, "docker", "docker-compose", overwrite=True)
+            res = pkg.brew_link(ctx, "docker", "docker-compose", overwrite=True)
+            if not res.ok:
+                log.warn("colima: `brew link --overwrite docker docker-compose` failed; "
+                         "`docker` may still be Docker Desktop's CLI")
         self._cli_plugins(ctx)
 
     def _cli_plugins(self, ctx: Ctx) -> None:
@@ -141,6 +174,14 @@ class Colima:
         dirs = read_json(path).get("cliPluginsExtraDirs")
         current = [d for d in dirs if isinstance(d, str)] if isinstance(dirs, list) else []
         if CLI_PLUGINS_DIR not in current:
+            probe = path if path.exists() else next(a for a in path.parents if a.exists())
+            if not os.access(probe, os.W_OK):
+                # e.g. root-owned after a `sudo docker login`: never write a user file as root.
+                raise NeedsUser(
+                    f"{probe} is not writable by you, so compose/buildx cannot be registered "
+                    f"in {path}",
+                    f"sudo chown -R \"$USER\" '{probe}', then re-run",
+                )
             config.json_merge(
                 ctx, str(path), {"cliPluginsExtraDirs": [*current, CLI_PLUGINS_DIR]}
             )
@@ -169,7 +210,9 @@ class Colima:
             res = ctx.ex.run(argv)
             if not res.ok:
                 raise InstallError("colima", " ".join(argv), res.code)
-            ctx.ex.run(["colima", "stop"])
+            if not ctx.ex.run(["colima", "stop"]).ok:
+                log.warn("colima: `colima stop` failed after the first start; run it by hand "
+                         "so brew services can own the VM")
         # macOS empties /var/run at boot, so the link is re-made by a root daemon (D13).
         launchd.system_daemon(ctx, SOCKET_LABEL, socket_daemon_args(), run_at_load=True)
 
@@ -188,7 +231,10 @@ class Colima:
         pkg.brew_services(ctx, "stop", "colima")  # also unregisters the login agent
 
     def release_socket(self, ctx: Ctx) -> None:
-        launchd.remove_daemon(ctx, SOCKET_LABEL)
+        # Least privilege: no sudo at all when the daemon was never installed.
+        plist = launchd.DAEMONS_DIR / f"{SOCKET_LABEL}.plist"
+        if plist.exists() or launchd.daemon_loaded(ctx, SOCKET_LABEL):
+            launchd.remove_daemon(ctx, SOCKET_LABEL)
         if DOCKER_SOCK.is_symlink() and Path(os.readlink(DOCKER_SOCK)) == self.socket_path():
             ctx.ex.run(["rm", "-f", str(DOCKER_SOCK)], sudo=True)
 
@@ -202,7 +248,17 @@ class Colima:
             return False
         data["docker"] = merged
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        # Atomic: a crash mid-write must not leave Colima an empty colima.yaml.
+        mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".colima.yaml.")
+        try:
+            os.fchmod(fd, mode)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(yaml.safe_dump(data, sort_keys=False))
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
         return True
 
     def daemon_config_has(self, patch: Mapping[str, Any]) -> bool:
