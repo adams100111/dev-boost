@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from devboost.core import log
 from devboost.core.errors import ConfigError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import Result
@@ -71,7 +72,8 @@ def test_adopt_registers_existing_key_without_approval(tmp_path: Path) -> None:
     rec = store.record("devices", "desk")
     assert rec is not None and rec.fingerprint == FP_OLD and rec.enrolled_at
     git_c = ["git", "-C", str(store.root)]
-    assert [*git_c, "commit", "--quiet", "-m", "devboost: adopt desk"] in ex.calls
+    assert [*git_c, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m",
+            "devboost: adopt desk"] in ex.calls
     assert [*git_c, "push", "--quiet", "--set-upstream", "origin", "HEAD"] in ex.calls
 
 
@@ -136,6 +138,8 @@ def test_ensure_clone_needs_gh_when_unauthenticated(tmp_path: Path) -> None:
         enroll.ensure_clone(_ctx(ex), store, "me/store")
     assert ex.calls[0] == ["git", "clone", "--quiet", "https://github.com/me/store.git",
                            str(store.root)]
+    assert ex.envs[0]["GIT_TERMINAL_PROMPT"] == "0"  # fail fast, never block on a prompt
+    assert ex.envs[0]["GIT_ASKPASS"] == "" and ex.envs[0]["SSH_ASKPASS"] == ""
 
 
 def test_ensure_clone_config_error_when_authenticated(tmp_path: Path) -> None:
@@ -175,3 +179,63 @@ def test_is_workstation_only_for_whole_store_enrolled_devices() -> None:
     assert not enroll.is_workstation(enroll.Access("enrolled", key, scoped))
     for state in ("no-store", "genesis", "pending", "new"):
         assert not enroll.is_workstation(enroll.Access(state, key, whole))
+
+
+def test_email_in_gpg_id_never_grants_access_or_adoption(tmp_path: Path) -> None:
+    store = _store(tmp_path, gpg_id="ada@example.com")  # UID_NEW carries this email
+    ex = _ex(colons("sec", FP_NEW, UID_NEW))
+    assert enroll.local_access(_ctx(ex), store, "lap").state == "new"
+    with pytest.raises(NeedsUser) as err:
+        enroll.ensure_access(_ctx(ex), store, "lap", interactive=False)
+    assert err.value.how_to_fix == "devboost pass approve lap"  # a request, not an adoption
+    assert store.record("devices", "lap") is None
+    assert store.record("pending", "lap") is not None
+
+
+def test_import_rejects_email_only_listing(tmp_path: Path) -> None:
+    store = _store(tmp_path, gpg_id="ada@example.com")
+    store.write_record("devices", DeviceRecord(name="a", fingerprint=FP_NEW, os="fedora"), ARMOR)
+    ex = RuleExecutor(rules=[(("--show-keys",), Result(0, colons("pub", FP_NEW, UID_NEW)))])
+    assert enroll.import_device_keys(_ctx(ex), store) == []
+    assert not any("--import" in c for c in ex.calls)
+
+
+def test_adopt_ignores_local_key_not_in_gpg_id(tmp_path: Path) -> None:
+    store = _store(tmp_path)  # .gpg-id lists FP_OLD only
+    ex = _ex(colons("sec", FP_NEW, "Me <me@x>"))  # unrelated personal key
+    with pytest.raises(NeedsUser, match="devboost pass enroll"):
+        enroll.ensure_access(_ctx(ex), store, "desk", interactive=False)
+    assert store.record("devices", "desk") is None and store.record("pending", "desk") is None
+    assert not any("commit" in c for c in ex.calls)
+
+
+def test_unattended_genesis_without_key_needs_user(tmp_path: Path) -> None:
+    ex = _ex("")
+    with pytest.raises(NeedsUser, match="devboost pass enroll"):
+        enroll.ensure_access(_ctx(ex), _store(tmp_path, None), "lap", interactive=False)
+    assert not any(c[:2] == ["pass", "init"] or "--quick-gen-key" in c for c in ex.calls)
+
+
+def test_failed_push_only_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    warned: list[str] = []
+    monkeypatch.setattr(log, "warn", warned.append)
+    store = _store(tmp_path)
+    ex = _ex(colons("sec", FP_OLD, "Me <me@x>"), (("push",), Result(1)))
+    assert enroll.ensure_access(_ctx(ex), store, "desk", interactive=False).state == "enrolled"
+    assert len(warned) == 1 and "push failed" in warned[0]
+
+
+def test_taken_name_refused_before_generating_a_key(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.write_record("devices", DeviceRecord(name="lap", fingerprint=FP_OLD, os="fedora"), ARMOR)
+    ex = _ex("")  # no local key: a new one would be generated
+    with pytest.raises(ConfigError, match="already used"):
+        enroll.ensure_access(_ctx(ex), store, "lap", interactive=True)
+    assert not any("--quick-gen-key" in c for c in ex.calls)
+
+
+def test_ensure_clone_refuses_a_file_path(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    root.write_text("x", encoding="utf-8")
+    with pytest.raises(ConfigError, match="not a git clone"):
+        enroll.ensure_clone(_ctx(RuleExecutor()), Store(root), "me/store")

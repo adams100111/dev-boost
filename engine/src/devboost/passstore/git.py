@@ -11,9 +11,15 @@ from devboost.model import Ctx
 #: Our own commits/pushes must not re-trigger the post-commit hook (D10).
 NO_HOOK_ENV: dict[str, str] = {"DEVBOOST_PASS_HOOK": "off"}
 
+#: Network ops never prompt (D2): a missing credential fails fast instead of blocking on a
+#: username prompt, so the caller can report NeedsUser("gh auth login").
+NET_ENV: dict[str, str] = {
+    **NO_HOOK_ENV, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": "",
+}
 
-def _git(ctx: Ctx, store: Path, *args: str) -> Result:
-    return ctx.ex.run(["git", "-C", str(store), *args], env=NO_HOOK_ENV)
+
+def _git(ctx: Ctx, store: Path, *args: str, env: dict[str, str] = NO_HOOK_ENV) -> Result:
+    return ctx.ex.run(["git", "-C", str(store), *args], env=env)
 
 
 def _lines(res: Result) -> list[str]:
@@ -21,15 +27,15 @@ def _lines(res: Result) -> list[str]:
 
 
 def clone(ctx: Ctx, url: str, dest: Path) -> Result:
-    return ctx.ex.run(["git", "clone", "--quiet", url, str(dest)], env=NO_HOOK_ENV)
+    return ctx.ex.run(["git", "clone", "--quiet", url, str(dest)], env=NET_ENV)
 
 
 def pull(ctx: Ctx, store: Path) -> Result:
-    return _git(ctx, store, "pull", "--rebase", "--autostash", "--quiet")
+    return _git(ctx, store, "pull", "--rebase", "--autostash", "--quiet", env=NET_ENV)
 
 
 def push(ctx: Ctx, store: Path) -> Result:
-    return _git(ctx, store, "push", "--quiet", "--set-upstream", "origin", "HEAD")
+    return _git(ctx, store, "push", "--quiet", "--set-upstream", "origin", "HEAD", env=NET_ENV)
 
 
 def conflicted(ctx: Ctx, store: Path) -> list[str]:
@@ -44,7 +50,8 @@ def commit(ctx: Ctx, store: Path, message: str) -> bool:
     _git(ctx, store, "add", "-A")
     if _git(ctx, store, "diff", "--cached", "--quiet").ok:
         return False
-    res = _git(ctx, store, "commit", "--quiet", "-m", message)
+    # Never sign: a global commit.gpgsign would pop pinentry in an unattended run (D6).
+    res = _git(ctx, store, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", message)
     if not res.ok:
         raise InstallError("pass-store", f"git commit -m {message!r}", res.code)
     return True

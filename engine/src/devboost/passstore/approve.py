@@ -46,8 +46,7 @@ def _require_workstation(ctx: Ctx, store: Store, device: str) -> enroll.Access:
 
 
 def _with(ids: list[str], fp: str) -> list[str]:
-    key = KeyInfo(fp, ())
-    return ids if any(gpg.matches(t, key) for t in ids) else [*ids, fp]
+    return ids if any(gpg.matches_fingerprint(t, fp) for t in ids) else [*ids, fp]
 
 
 def _pass_init(ctx: Ctx, store: Store, ids: list[str], folder: str = "") -> None:
@@ -107,7 +106,7 @@ def approve(
 def rotation_entries(ctx: Ctx, store: Store, key: KeyInfo,
                      scope: list[str] | None) -> list[str]:
     """Entries the key could decrypt at any point (D9) — git history keeps them readable."""
-    token = next((t for t in store.gpg_ids() if gpg.matches(t, key)), None)
+    token = next((t for t in store.gpg_ids() if gpg.matches_fingerprint(t, key.fingerprint)), None)
     start = git.first_commit_with(ctx, store.root, token) if token and not scope else None
     if start:
         files = set(git.files_at(ctx, store.root, start)) | set(
@@ -127,7 +126,7 @@ def _subfolders_listing(store: Store, key: KeyInfo) -> list[str]:
         rel = p.parent.relative_to(store.root)
         if rel.parts and rel.parts[0] not in (".git", ".devboost"):
             folder = rel.as_posix()
-            if any(gpg.matches(t, key) for t in store.gpg_ids(folder)):
+            if any(gpg.matches_fingerprint(t, key.fingerprint) for t in store.gpg_ids(folder)):
                 out.append(folder)
     return out
 
@@ -147,11 +146,11 @@ def revoke(ctx: Ctx, store: Store, device: str, name: str,
     key = KeyInfo(rec.fingerprint, ())
     entries = rotation_entries(ctx, store, key, rec.scope)
     root = store.gpg_ids()
-    remaining = [t for t in root if not gpg.matches(t, key)]
+    remaining = [t for t in root if not gpg.matches_fingerprint(t, key.fingerprint)]
     if len(remaining) != len(root):
         _pass_init(ctx, store, remaining)
     for folder in _subfolders_listing(store, key):
-        left = [t for t in store.gpg_ids(folder) if not gpg.matches(t, key)]
+        left = [t for t in store.gpg_ids(folder) if not gpg.matches_fingerprint(t, key.fingerprint)]
         # Nothing folder-specific left → drop its .gpg-id so it inherits the root set again.
         _pass_init(ctx, store, left if left and left != remaining else [""], folder)
     entry = RotationEntry(device=name, fingerprint=rec.fingerprint, revoked_at=now_iso(),

@@ -34,14 +34,13 @@ def test_parse_colons_unescapes_uid() -> None:
     assert gpg.parse_colons(out, "sec") == [KeyInfo(FP_A, (UID,))]
 
 
-def test_matches_fingerprint_keyid_0x_and_email() -> None:
-    key = KeyInfo(FP_A, (UID,))
-    assert gpg.matches(FP_A.lower(), key)
-    assert gpg.matches("0x" + FP_A[-16:], key)
-    assert gpg.matches("ada@example.com", key)
-    assert not gpg.matches(FP_B, key)
-    assert not gpg.matches("", key)
-    assert not gpg.matches("994F", key)  # too short to be a key id
+def test_matches_fingerprint_and_keyid_but_never_email() -> None:
+    assert gpg.matches_fingerprint(FP_A.lower(), FP_A)
+    assert gpg.matches_fingerprint("0x" + FP_A[-16:], FP_A)
+    assert not gpg.matches_fingerprint("ada@example.com", FP_A)  # D4: uids are forgeable
+    assert not gpg.matches_fingerprint(FP_B, FP_A)
+    assert not gpg.matches_fingerprint("", FP_A)
+    assert not gpg.matches_fingerprint("994F", FP_A)  # too short to be a key id
 
 
 def test_device_uid_and_device_key() -> None:

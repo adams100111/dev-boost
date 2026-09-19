@@ -85,15 +85,14 @@ def device_key(keys: Sequence[KeyInfo], device: str) -> KeyInfo | None:
     return next((k for k in keys if any(tag in u for u in k.uids)), None)
 
 
-def matches(token: str, key: KeyInfo) -> bool:
-    """Does a `.gpg-id` token name this key? fpr / long key id (suffix, 0x ok) or email."""
-    t = token.strip()
-    if not t:
-        return False
-    if "@" in t:
-        return any(f"<{t}>" in u or u == t for u in key.uids)
-    t = t.upper().removeprefix("0X")
-    return bool(_HEX.match(t)) and key.fingerprint.upper().endswith(t)
+def matches_fingerprint(token: str, fp: str) -> bool:
+    """Does a `.gpg-id` token name the key *fp*? Full fpr or long key id (suffix, 0x ok).
+
+    Emails deliberately never match (D4): any key can carry any uid, so an email in
+    `.gpg-id` must not grant access to — or ultimate trust in — a key nobody approved.
+    """
+    t = token.strip().upper().removeprefix("0X")
+    return bool(_HEX.match(t)) and fp.upper().endswith(t)
 
 
 def _loopback(passphrase: str | None) -> list[str]:

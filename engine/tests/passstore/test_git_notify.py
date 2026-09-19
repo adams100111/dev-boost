@@ -20,24 +20,37 @@ def _ctx(ex: RuleExecutor, os_: OsInfo = FEDORA) -> Ctx:
     return Ctx(os=os_, ex=ex)
 
 
-def test_every_git_call_disables_the_hook() -> None:
+NET = {"DEVBOOST_PASS_HOOK": "off", "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "",
+       "SSH_ASKPASS": ""}
+
+
+def test_network_git_calls_disable_the_hook_and_never_prompt() -> None:
     ex = RuleExecutor()
+    git.clone(_ctx(ex), "https://github.com/me/s.git", S)
     git.pull(_ctx(ex), S)
     git.push(_ctx(ex), S)
     assert ex.calls == [
+        ["git", "clone", "--quiet", "https://github.com/me/s.git", "/s"],
         ["git", "-C", "/s", "pull", "--rebase", "--autostash", "--quiet"],
         ["git", "-C", "/s", "push", "--quiet", "--set-upstream", "origin", "HEAD"],
     ]
-    assert all(e == {"DEVBOOST_PASS_HOOK": "off"} for e in ex.envs)
+    assert ex.envs == [NET, NET, NET]
+
+
+def test_local_git_calls_disable_the_hook() -> None:
+    ex = RuleExecutor(rules=[(("diff", "--cached"), Result(1))])
+    git.commit(_ctx(ex), S, "m")
+    assert ex.envs and all(e == {"DEVBOOST_PASS_HOOK": "off"} for e in ex.envs)
 
 
 def test_commit_only_when_staged() -> None:
     ex = RuleExecutor()  # `diff --cached --quiet` exits 0 → nothing staged
     assert git.commit(_ctx(ex), S, "m") is False
-    assert ["git", "-C", "/s", "commit", "--quiet", "-m", "m"] not in ex.calls
+    assert not any("commit" in c for c in ex.calls)
     ex2 = RuleExecutor(rules=[(("diff", "--cached"), Result(1))])
     assert git.commit(_ctx(ex2), S, "devboost: x") is True
-    assert ex2.calls[-1] == ["git", "-C", "/s", "commit", "--quiet", "-m", "devboost: x"]
+    assert ex2.calls[-1] == ["git", "-C", "/s", "-c", "commit.gpgsign=false",  # D6: no pinentry
+                             "commit", "--quiet", "-m", "devboost: x"]
 
 
 def test_commit_failure_raises() -> None:

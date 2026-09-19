@@ -53,7 +53,10 @@ def pass_env(store: Store) -> dict[str, str]:
 
 
 def has_access(store: Store, key: KeyInfo, scope: list[str] | None) -> bool:
-    return any(any(gpg.matches(t, key) for t in store.gpg_ids(f)) for f in (scope or [""]))
+    return any(
+        any(gpg.matches_fingerprint(t, key.fingerprint) for t in store.gpg_ids(f))
+        for f in (scope or [""])
+    )
 
 
 def local_access(ctx: Ctx, store: Store, device: str) -> Access:
@@ -85,7 +88,7 @@ def is_workstation(acc: Access) -> bool:
 def ensure_clone(ctx: Ctx, store: Store, repo: str) -> None:
     if store.is_clone():
         return
-    if store.root.exists() and any(store.root.iterdir()):
+    if store.root.exists() and (not store.root.is_dir() or any(store.root.iterdir())):
         raise ConfigError(f"pass-store: {store.root} exists but is not a git clone — move it "
                           "aside and re-run")
     res = git.clone(ctx, clone_url(repo), store.root)
@@ -105,7 +108,8 @@ def publish(ctx: Ctx, store: Store, message: str) -> None:
             log.warn(f"pass: push failed (exit {res.code}) — the sync timer will retry")
 
 
-def _name_free(store: Store, name: str, fp: str) -> None:
+def _name_free(store: Store, name: str, fp: str | None) -> None:
+    """Refuse *name* if a record under it belongs to another key (fp None: no key yet)."""
     kinds: tuple[Kind, ...] = ("devices", "pending")
     for kind in kinds:
         rec = store.record(kind, name)
@@ -162,6 +166,7 @@ def ensure_access(
                         f"devboost pass approve {acc.record.name}")
     if acc.state == "genesis":
         _no_key(interactive, acc.key, "the pass store is empty and this device has no key yet")
+        _name_free(store, device, acc.key.fingerprint if acc.key else None)
         fp = _device_fp(ctx, acc.key, device, passphrase)
         res = ctx.ex.run(["pass", "init", fp], env=pass_env(store))
         if not res.ok:
@@ -171,6 +176,7 @@ def ensure_access(
         return local_access(ctx, store, device)
     # new device: request access, then wait for an enrolled device to approve
     _no_key(interactive, acc.key, "this device has no pass key yet")
+    _name_free(store, device, acc.key.fingerprint if acc.key else None)  # before any keygen
     fp = _device_fp(ctx, acc.key, device, passphrase)
     rec = _register(ctx, store, "pending", device, fp, scope)
     publish(ctx, store, f"devboost: request enrollment for {device}")

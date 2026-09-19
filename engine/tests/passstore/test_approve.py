@@ -67,7 +67,8 @@ def test_approve_workstation_reencrypts_to_n_plus_one(tmp_path: Path) -> None:
     rec = s.record("devices", "lap")
     assert rec is not None and rec.enrolled_at and s.record("pending", "lap") is None
     assert s.key_path("devices", "lap").exists()
-    assert ["git", "-C", root, "commit", "--quiet", "-m", "devboost: enroll lap"] in ex.calls
+    assert ["git", "-C", root, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m",
+            "devboost: enroll lap"] in ex.calls
 
 
 def test_approve_refuses_mismatched_key_file(tmp_path: Path) -> None:
@@ -138,7 +139,8 @@ def test_revoke_workstation_reencrypts_moves_and_lists_rotation(tmp_path: Path) 
     assert ["pass", "init", FP_ME] in ex.calls
     assert s.record("devices", "lap") is None and s.record("revoked", "lap") is not None
     assert s.rotation() == [entry]
-    assert ["git", "-C", str(s.root), "commit", "--quiet", "-m", "devboost: revoke lap"] in ex.calls
+    assert ["git", "-C", str(s.root), "-c", "commit.gpgsign=false", "commit", "--quiet", "-m",
+            "devboost: revoke lap"] in ex.calls
 
 
 def test_revoke_refuses_this_device(tmp_path: Path) -> None:
