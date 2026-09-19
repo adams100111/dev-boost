@@ -22,9 +22,11 @@ omarchy = ["base","cli","shell","editors","python","web","laravel","dotnet","dat
            "omarchy-update-hook"]
 orca = ["orca-ide"]
 orca-box = ["orca-ide","orca-serve"]
-# macOS workstation default (`devboost install` on a Mac). M1 seeds it with the
-# portable `terminal` set; M3 expands it to the full Mac workstation (spec §2 Profiles).
-macos = ["terminal", "pass", "pass-store"]
+# macOS workstation default (`devboost install` on a Mac) — spec §2 Profiles. Linux-only
+# members fall out via `families`; macOS-provided ones report provided-by-macos. M5
+# appends "macos-desktop"; the Docker runtime and launchd timers report blocked until M4.
+macos = ["base","cli","shell","editors","python","web","laravel","dotnet","data",
+         "devops","react-native","apps","dev-hygiene","remote","claude","codex","pi"]
 base = ["xcode-clt","homebrew","rosetta",
         "secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",

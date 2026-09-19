@@ -1,10 +1,9 @@
 """Every module must have a macOS answer: installable, dropped, provided, or a known gap.
 
-KNOWN_GAPS maps each module with no macOS path yet to the milestone that brings it.
-M2 cleared the `terminal` set (the `macos` profile); M3's later tasks delete their "M3"
-names as they land. "M4" names are declared `MacosPending` (Docker runtime, launchd
-timers): designed, reported `blocked` on a Mac, but still gaps. The map must be empty by
-the end of M5 (spec §9).
+KNOWN_GAPS maps each module with no macOS path yet to the milestone that brings it
+(spec §11). M2 cleared the terminal set and M3 the catalog; what is left is the Docker
+runtime and the launchd timers (M4, each declared `MacosPending`). A new module must
+arrive with its macOS answer; the map must be empty by the end of M5 (§9).
 """
 
 from __future__ import annotations
@@ -85,16 +84,37 @@ def _plan(profile: str, os_info: OsInfo, tmp_path: Path) -> list[PlannedModule]:
     return build_plan(toposort(names, modules), modules, os_info, gpu_marker=tmp_path / "none")
 
 
-def test_the_macos_profile_plans_cleanly_on_a_mac(tmp_path: Path) -> None:
+def test_known_gaps_have_an_owner() -> None:
+    assert set(KNOWN_GAPS.values()) <= {"M4", "M5", "P2"}
+
+
+def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:
     modules = load()
     reasons = {p.name: p.skip_reason for p in _plan("macos", MAC, tmp_path)}
-    assert not sorted(n for n in reasons if not resolvable_on_macos(modules[n]))
+    gaps = {n for n in reasons if not resolvable_on_macos(modules[n])}
+    assert gaps <= set(KNOWN_GAPS), sorted(gaps - set(KNOWN_GAPS))
     assert not [n for n, r in reasons.items() if r == "unsupported-os"]
-    for want in ("ghostty", "zsh-config", "zsh-plugins", "bash", "dotfiles", "starship",
-                 "nerd-fonts", "fresh", "claude-statusline"):
+    for want in (
+        "xcode-clt", "homebrew", "rosetta", "zed", "fresh", "herdr", "herdr-plugins", "glow",
+        "dotnet-sdk", "aspire", "android-sdk", "expo", "ddev", "uv", "web-runtimes",
+        "tailscale", "mosh", "obsidian", "bruno", "claude-code", "codex-code", "pi-harness",
+        "ghostty", "zsh-config", "dotfiles", "pass", "pass-store", "utiluti",
+    ):
         assert reasons.get(want, "missing") is None, want
-    assert reasons["curl"] == reasons["unzip"] == "provided-by-macos"
-    assert "bash-config" not in reasons and "wezterm" not in reasons
+    assert reasons["flameshot"] == reasons["curl"] == "provided-by-macos"
+    for gone in ("gearlever", "rpmfusion", "flatpak", "bash-config", "wezterm"):
+        assert gone not in reasons, gone
+
+
+def test_the_macos_profile_covers_the_terminal_set(tmp_path: Path) -> None:
+    mac = {p.name for p in _plan("macos", MAC, tmp_path)}
+    assert {p.name for p in _plan("terminal", MAC, tmp_path)} <= mac
+
+
+def test_the_linux_workstation_gains_only_glow_and_herdr_plugins(tmp_path: Path) -> None:
+    names = {p.name for p in _plan("full", FEDORA, tmp_path)}
+    assert {"glow", "herdr-plugins"} <= names
+    assert not {"xcode-clt", "homebrew", "rosetta", "utiluti", "zsh-config"} & names
 
 
 def test_the_terminal_profile_still_plans_cleanly_on_fedora(tmp_path: Path) -> None:
