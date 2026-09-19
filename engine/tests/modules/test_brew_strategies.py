@@ -33,8 +33,12 @@ class _Listed(FakeExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
-        super().run(argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive)
+        super().run(
+            argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive,
+            timeout=timeout,
+        )
         if list(argv[:2]) == ["brew", "list"]:
             return Result(0) if argv[-1] in self.installed else Result(1)
         return Result(0)

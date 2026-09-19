@@ -58,6 +58,7 @@ class _DeviceEx(RealExecutor):
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
         interactive: bool = False,
+        timeout: float | None = None,
     ) -> Result:
         merged = {
             "HOME": str(self.home),

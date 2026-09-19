@@ -27,6 +27,9 @@ from devboost.modules.macos import rosetta_supported as rosetta_supported
 _GIB = 1024**3
 #: Seconds to wait for a freshly started engine (a first Colima boot takes ~1 min).
 ENGINE_TIMEOUT = 180.0
+#: Seconds one ``docker info`` probe may take. A socket that accepts but never answers
+#: (Docker Desktop's backend starting, a stale forward) must not hang the install.
+PROBE_TIMEOUT = 10.0
 
 #: Test seams — a unit test never sleeps.
 _sleep: Callable[[float], None] = time.sleep
@@ -96,9 +99,11 @@ def use_context(ctx: Ctx, name: str) -> None:
         raise InstallError("docker", f"docker context use {name}", res.code)
 
 
-def engine_up(ctx: Ctx, context: str) -> bool:
+def engine_up(ctx: Ctx, context: str, *, timeout: float = PROBE_TIMEOUT) -> bool:
+    """The engine behind ``context`` answers within ``timeout`` seconds."""
     return ctx.ex.run(
-        ["docker", "--context", context, "info", "--format", "{{.ServerVersion}}"]
+        ["docker", "--context", context, "info", "--format", "{{.ServerVersion}}"],
+        timeout=timeout,
     ).ok
 
 
@@ -110,9 +115,15 @@ def engine_verified(ctx: Ctx, context: str) -> bool:
 def wait_for_engine(
     ctx: Ctx, context: str, *, timeout: float = ENGINE_TIMEOUT, interval: float = 3.0
 ) -> None:
-    """Poll ``docker info`` until the engine answers, or raise after ``timeout`` s."""
+    """Poll ``docker info`` until the engine answers, or raise after ``timeout`` s.
+
+    Each probe is bounded by the time left (at most ``PROBE_TIMEOUT``, at least 1 s), so
+    a hung ``docker info`` cannot outlive the deadline by more than a second.
+    """
     deadline = _clock() + timeout
-    while not engine_up(ctx, context):
+    while not engine_up(
+        ctx, context, timeout=max(1.0, min(PROBE_TIMEOUT, deadline - _clock()))
+    ):
         if _clock() >= deadline:
             raise InstallError("docker", f"docker --context {context} info", 1)
         _sleep(interval)
