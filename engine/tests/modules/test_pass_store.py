@@ -184,13 +184,29 @@ def test_pending_device_blocks_with_approve_command(tmp_path: Path) -> None:
     assert err.value.how_to_fix == "devboost pass approve desk"
 
 
-def test_missing_store_clones_default_repo_or_asks_for_gh(tmp_path: Path) -> None:
+def test_missing_store_clones_the_configured_repo_or_asks_for_gh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVBOOST_PASS_REPO", "someone/their-store")
     ex = RuleExecutor(rules=[(("clone",), Result(128))])
     with pytest.raises(NeedsUser, match="gh auth login"):
         PassStore().install(Ctx(os=FEDORA, ex=ex))
     assert ex.calls[0] == ["git", "clone", "--quiet",
-                           "https://github.com/adams100111/password-store.git",
+                           "https://github.com/someone/their-store.git",
                            str(tmp_path / "store")]
+
+
+def test_missing_store_and_no_repo_configured_is_blocked_not_a_failed_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing to clone FROM is a step for the user, not a broken run — and dev-boost must
+    not invent a repo to try."""
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    ex = RuleExecutor()
+    with pytest.raises(NeedsUser, match="no pass store repo is configured") as err:
+        PassStore().install(Ctx(os=FEDORA, ex=ex))
+    assert "DEVBOOST_PASS_REPO" in err.value.how_to_fix
+    assert not [c for c in ex.calls if c[:2] == ["git", "clone"]]
 
 
 # --- profiles + ordering ----------------------------------------------------------------

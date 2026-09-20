@@ -20,7 +20,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from devboost.core.errors import ConfigError
 from devboost.core.settings import Settings
 
-DEFAULT_PASS_REPO = "adams100111/password-store"
+#: No default: a pass store is personal, and shipping one person's repo as the
+#: fallback makes every other install try to clone a repo it cannot read. Unset
+#: means "discover it from an existing clone, else ask" (passstore.paths.pass_repo).
 
 DockerRuntimeName = Literal["colima", "orbstack", "docker-desktop"]
 DOCKER_RUNTIMES: tuple[DockerRuntimeName, ...] = ("colima", "orbstack", "docker-desktop")
@@ -31,7 +33,7 @@ _RUNTIME_BY_NAME: dict[str, DockerRuntimeName] = {n: n for n in DOCKER_RUNTIMES}
 class UserConfig(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    pass_repo: str = DEFAULT_PASS_REPO
+    pass_repo: str | None = None
     device_name: str | None = None
     docker_runtime: DockerRuntimeName | None = None
 

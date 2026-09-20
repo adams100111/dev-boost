@@ -9,6 +9,7 @@ import getpass
 import os
 import socket
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from devboost.core import log
@@ -16,6 +17,7 @@ from devboost.core.errors import ConfigError, InstallError, NeedsUser
 from devboost.model import Ctx
 from devboost.modules import _credentials as creds_src
 from devboost.passstore import git, gpg, notify
+from devboost.passstore import paths as paths_mod
 from devboost.passstore.gpg import KeyInfo
 from devboost.passstore.layout import DeviceRecord, Kind, Store, now_iso
 from devboost.passstore.paths import clone_url
@@ -90,13 +92,23 @@ def is_workstation(acc: Access) -> bool:
     return acc.state == "enrolled" and not (acc.record is not None and acc.record.scope)
 
 
-def ensure_clone(ctx: Ctx, store: Store, repo: str) -> None:
+def ensure_clone(ctx: Ctx, store: Store, repo: str | None) -> None:
     if store.is_clone():
         return
     if store.root.exists() and (not store.root.is_dir() or any(store.root.iterdir())):
         # A real, non-empty directory already sits there — likely the user's actual data.
         # Never move/delete it ourselves: this is a human decision, so block, don't fail.
-        raise NeedsUser(f"{store.root} exists but is not a git clone", "move it aside and re-run")
+        # `pass adopt` is that decision made explicitly: it backs the directory up first.
+        raise NeedsUser(
+            f"{store.root} exists but is not a git clone",
+            "`devboost pass adopt` moves it to <store>.pre-devboost, clones your repo in "
+            "its place, and reports which entries differ — nothing is deleted. Or move "
+            "the directory aside yourself and re-run.",
+        )
+    if repo is None:
+        # Nothing to clone FROM. Blocked, not failed: naming the repo is a step for the
+        # user, and there is no sensible default (paths.pass_repo).
+        raise NeedsUser("no pass store repo is configured", paths_mod.NO_PASS_REPO_FIX)
     res = git.clone(ctx, clone_url(repo), store.root)
     if res.ok:
         return
@@ -105,6 +117,66 @@ def ensure_clone(ctx: Ctx, store: Store, repo: str) -> None:
                         "gh auth login, then re-run devboost install")
     raise ConfigError(f"pass-store: cloning {repo} failed (exit {res.code}) — check pass_repo "
                       "in ~/.config/devboost/config.toml / DEVBOOST_PASS_REPO and your access")
+
+
+def entry_names(root: Path) -> set[str]:
+    """Every `pass` entry under *root*, by name. Names only — nothing is decrypted."""
+    if not root.is_dir():
+        return set()
+    return {
+        str(p.relative_to(root).with_suffix("")).replace(os.sep, "/")
+        for p in root.rglob("*.gpg")
+        if ".git" not in p.parts
+    }
+
+
+@dataclass(frozen=True)
+class Adoption:
+    """What `pass adopt` did, so the caller can report it without re-deriving anything."""
+
+    backup: Path
+    only_local: tuple[str, ...]
+    only_remote: tuple[str, ...]
+    shared: int
+
+
+def adopt(ctx: Ctx, store: Store, repo: str | None) -> Adoption:
+    """Move an existing non-clone store aside, clone *repo* in its place, and compare.
+
+    The directory is MOVED, never deleted: if anything was only in the old copy, it is
+    still on disk and the report names it. Comparison is by entry name only — telling
+    whether two encrypted files hold the same secret would mean decrypting both, and GPG
+    ciphertext differs every time even for identical plaintext.
+    """
+    if store.is_clone():
+        raise ConfigError(f"pass adopt: {store.root} is already a clone — nothing to adopt")
+    if repo is None:
+        raise NeedsUser("no pass store repo is configured", paths_mod.NO_PASS_REPO_FIX)
+    if not store.root.is_dir():
+        raise ConfigError(f"pass adopt: nothing at {store.root} to adopt")
+
+    before = entry_names(store.root)
+    backup = store.root.with_name(store.root.name + ".pre-devboost")
+    n = 1
+    while backup.exists():
+        n += 1
+        backup = store.root.with_name(f"{store.root.name}.pre-devboost.{n}")
+    store.root.rename(backup)
+
+    res = git.clone(ctx, clone_url(repo), store.root)
+    if not res.ok:
+        backup.rename(store.root)  # put the user's data back before reporting failure
+        raise ConfigError(
+            f"pass adopt: cloning {repo} failed (exit {res.code}) — your store was put back "
+            f"at {store.root}, nothing was lost"
+        )
+    after = entry_names(store.root)
+    return Adoption(
+        backup=backup,
+        only_local=tuple(sorted(before - after)),
+        only_remote=tuple(sorted(after - before)),
+        shared=len(before & after),
+    )
 
 
 def publish(ctx: Ctx, store: Store, message: str) -> None:

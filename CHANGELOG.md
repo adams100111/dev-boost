@@ -5,6 +5,29 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [Unreleased]
+
+### Changed
+- **dev-boost no longer defaults to its author's private repos.** `pass_repo` defaulted to
+  `adams100111/password-store` and the Pi harness to the **private**
+  `adams100111/agent-harness`, so anyone else installing dev-boost tried to clone repos
+  they cannot read, and got a failed clone instead of an explanation.
+  - `pass_repo` now resolves: `DEVBOOST_PASS_REPO` → `pass_repo` in
+    `~/.config/devboost/config.toml` → **the `origin` of an existing store clone** → else
+    `blocked`, naming both ways to set it. A machine that already has the store needs no
+    configuration at all.
+  - `pi-harness` requires `DEVBOOST_HARNESS_REPO`; unset is reported `blocked` with the
+    fix, and a full git URL (`git@…`, `https://…`) is now used as given rather than being
+    forced under `github.com/`.
+
+### Added
+- **`devboost pass adopt`** — for a `~/.password-store` that exists but is not a git
+  clone, which previously just said "move it aside and re-run". It moves the directory to
+  `<store>.pre-devboost` (never deletes), clones your repo in its place, and reports which
+  entries were only in the old copy, which are new from the repo, and how many match.
+  Comparison is by entry name only: nothing is decrypted, and GPG ciphertext differs every
+  time even for identical plaintext, so contents cannot be compared without the passphrase.
+
 ## [1.1.2] — 2026-09-20
 
 ### Fixed
