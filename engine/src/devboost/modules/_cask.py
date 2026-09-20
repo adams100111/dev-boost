@@ -13,6 +13,7 @@ from typing import ClassVar
 from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.macver import macos_version
 from devboost.core.osinfo import OsInfo, OsMap
+from devboost.exec.primitives import macdefaults
 from devboost.model import Ctx, Module, TccGrant
 from devboost.modules._brew import BrewCask
 from devboost.modules._credentials import is_interactive
@@ -50,6 +51,17 @@ class CaskInstall:
     tcc: tuple[TccGrant, ...] = field(default=(), compare=False, repr=False)
     #: The registered module name, for the `devboost permissions --confirm <name>` hint.
     module_name: str = field(default="", compare=False, repr=False)
+    #: Open the app even on an unattended run. Default False: `open` is a surprising side
+    #: effect mid-install. True only for apps whose whole purpose is to be *running* — a
+    #: menu-bar monitor installed but never started shows the user nothing at all.
+    #: Excluded from equality/repr, like `tcc`, to keep the two-positional-field contract.
+    launch_unattended: bool = field(default=False, compare=False, repr=False)
+    #: Defaults domain the app reads its own settings from, e.g. "eu.exelban.Stats".
+    defaults_domain: str = field(default="", compare=False, repr=False)
+    #: (key, value) pairs seeded into `defaults_domain` right after the cask lands and
+    #: before the app is ever opened. Only keys that are ABSENT are written, so a setting
+    #: the user later changes in the app's own UI is never undone by a later run.
+    defaults_seed: tuple[tuple[str, bool], ...] = field(default=(), compare=False, repr=False)
 
     #: Read by the macOS contract test: a module using this strategy must require Homebrew.
     uses_brew: ClassVar[bool] = True
@@ -59,6 +71,12 @@ class CaskInstall:
 
     def verify(self, ctx: Ctx) -> bool:
         return self._brew_cask().verify(ctx)
+
+    def _seed_defaults(self, ctx: Ctx) -> None:
+        """Write the seeded keys the domain does not already carry."""
+        for key, on in self.defaults_seed:
+            if macdefaults.read(ctx, self.defaults_domain, key) is None:
+                macdefaults.write(ctx, self.defaults_domain, key, macdefaults.Value("bool", on))
 
     def install(self, ctx: Ctx) -> None:
         already = self.verify(ctx)
@@ -72,6 +90,10 @@ class CaskInstall:
             if not result.ok:
                 raise InstallError("brew", f"brew trust --cask {self.cask}", result.code)
         self._brew_cask().install(ctx)
+        # Before the `already`/launch returns below: an app that reads its settings once
+        # at startup must be seeded while it is not running, and seeding is idempotent
+        # (absent keys only), so it is safe on a re-run of an already-present cask.
+        self._seed_defaults(ctx)
         if already or self.launch is None:
             return
         if not is_interactive():
@@ -81,7 +103,8 @@ class CaskInstall:
                     f"open {self.launch} once and grant its permissions, then "
                     f"`devboost permissions --confirm {self.module_name}`",
                 )
-            return
+            if not self.launch_unattended:
+                return
         ctx.ex.run(["open", "-g", "-a", self.launch])
 
 
@@ -90,6 +113,9 @@ class CaskApp(Module):
 
     cask: ClassVar[str]
     launch: ClassVar[str | None] = None
+    launch_unattended: ClassVar[bool] = False
+    defaults_domain: ClassVar[str] = ""
+    defaults_seed: ClassVar[tuple[tuple[str, bool], ...]] = ()
     min_macos: ClassVar[tuple[int, int] | None] = None
     max_macos: ClassVar[tuple[int, int] | None] = None
     families = ("macos",)
@@ -100,7 +126,15 @@ class CaskApp(Module):
         super().__init_subclass__(**kwargs)
         if "cask" in cls.__dict__:
             cls.per_os = OsMap(
-                macos=CaskInstall(cls.cask, cls.launch, tcc=cls.tcc, module_name=cls.name)
+                macos=CaskInstall(
+                    cls.cask,
+                    cls.launch,
+                    tcc=cls.tcc,
+                    module_name=cls.name,
+                    launch_unattended=cls.launch_unattended,
+                    defaults_domain=cls.defaults_domain,
+                    defaults_seed=cls.defaults_seed,
+                )
             )
 
     @classmethod
