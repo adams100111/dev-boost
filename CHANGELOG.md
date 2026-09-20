@@ -28,6 +28,19 @@ git history and the GitHub release notes.
   Comparison is by entry name only: nothing is decrypted, and GPG ciphertext differs every
   time even for identical plaintext, so contents cannot be compared without the passphrase.
 
+### Fixed
+- **`ssh-setup` trusts GitHub's host keys** — a fresh machine has no `github.com` entry in
+  `~/.ssh/known_hosts`, so the first `git clone git@github.com:…` fails with *"Host key
+  verification failed"*, which reads like a credentials problem and is not one. Seen on a
+  real Mac: two keys loaded in the agent, `gh` authenticated, every SSH clone refused.
+  dev-boost now seeds the keys **GitHub publishes at `api.github.com/meta`**, fetched over
+  TLS so they are authenticated by GitHub's certificate — unlike `ssh-keyscan github.com`,
+  which asks the very server it is trying to authenticate. A `github.com` entry you already
+  have (pinned or hashed) is never touched, and with no network the install carries on and
+  the next run retries. `verify` deliberately does not check the entry: it would make a
+  machine that cannot reach `api.github.com` report a broken install for something that
+  is hygiene, and `install` is idempotent, so a re-run repairs a machine that predates it.
+
 ## [1.1.2] — 2026-09-20
 
 ### Fixed
