@@ -250,11 +250,17 @@ gs_on_signal() {
 }
 
 gs_main() {
-  local os arch tmp profiles bindir link rc
+  local os arch tmp profiles bindir link rc first
   gs_check_base || return 1
   os="$(gs_os)" || return 1
 
-  if [ "$#" -eq 0 ]; then profiles=(terminal); else profiles=("$@"); fi
+  # No profile named => let the ENGINE pick the default for this OS (macOS -> `macos`,
+  # Omarchy -> `omarchy`, otherwise `full`). `devboost install` already encodes that map;
+  # hardcoding a second answer here is how `curl | bash` on a Mac ended up installing
+  # `terminal` while `devboost install` on the same machine installed `macos`.
+  # `profiles` may be empty, so it is never expanded unguarded (bash 3.2 + `set -u`).
+  profiles=("$@")
+  first="${1:-}"
 
   # Every macOS refusal fires before any network call or any change to HOME.
   if [ "$os" = darwin ]; then
@@ -262,7 +268,7 @@ gs_main() {
       gs_err "don't run this as root on macOS — Homebrew refuses root. Run it as your user."
       return 1
     fi
-    if [ "${profiles[0]}" = "usb" ]; then
+    if [ "$first" = "usb" ]; then
       gs_err "the USB builder is Linux-only"
       return 1
     fi
@@ -360,7 +366,7 @@ gs_main() {
 
   # `usb`/`none` => install the builder only; do NOT configure this machine.
   # (On Darwin `usb` was already refused, before any download.)
-  if [ "${profiles[0]}" = "usb" ] || [ "${profiles[0]}" = "none" ]; then
+  if [ "$first" = "usb" ] || [ "$first" = "none" ]; then
     if [ "$os" = darwin ]; then
       gs_err "devboost installed. Configure this machine with:  devboost install terminal"
       return 0
@@ -369,11 +375,21 @@ gs_main() {
     gs_err "build a bootable USB on this machine:  sudo devboost installer"
     return 0
   fi
-  gs_err "running: devboost install ${profiles[*]}"
+  if [ "$#" -eq 0 ]; then
+    gs_err "running: devboost install   (default profile for this OS)"
+  else
+    gs_err "running: devboost install ${profiles[*]}"
+  fi
   # Under `curl … | bash` stdin is the script itself, so any prompt would read the script.
   # On macOS, read the install's stdin from the tty instead (when there is one).
   if [ "$os" = darwin ] && [ ! -t 0 ] && ( : <"$GS_TTY" ) 2>/dev/null; then
+    if [ "$#" -eq 0 ]; then
+      exec "${GS_PREFIX}/bin/devboost" install <"$GS_TTY"
+    fi
     exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}" <"$GS_TTY"
+  fi
+  if [ "$#" -eq 0 ]; then
+    exec "${GS_PREFIX}/bin/devboost" install
   fi
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }

@@ -39,6 +39,9 @@ _OS: dict[str, OsInfo] = {
 #: FakeExecutor Zed stops at "utiluti not found", an InstallError.
 _EXTENDS: dict[str, tuple[set[str], set[str]]] = {
     "zed": ({"brew", "utiluti"}, {"InstallError"}),
+    # mise points itself at `gh` for GitHub tokens after the formula lands, so tool
+    # installs are not capped at 60 requests/hour per IP.
+    "mise": ({"brew", "mise"}, set()),
 }
 _NEEDS_USER = "<needs-user>"
 _RAISED = "<raised>"

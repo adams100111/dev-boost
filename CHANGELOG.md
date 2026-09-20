@@ -5,6 +5,33 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [Unreleased]
+
+### Changed
+- **`curl … | bash` picks the profile for the OS it is running on** — with no profile
+  named it now runs plain `devboost install` and lets the engine choose, which is what
+  `devboost install` on the same machine already did (`macos` on a Mac, `omarchy` on
+  Omarchy, `full` otherwise). `get.sh` had hardcoded `terminal` since the original
+  bootstrap, written before macOS support existed, so a Mac had to be told `macos`
+  explicitly to get the profile the engine would have chosen anyway. Naming profiles
+  still works and still wins. **On other Linux the no-argument default therefore moves
+  from `terminal` to `full`** — name `terminal` explicitly to keep the smaller set.
+
+### Fixed
+- **mise no longer runs into GitHub's rate limit** — unauthenticated, GitHub allows 60 API
+  requests per hour **per IP**, and a `base` install resolves seven GitHub-backed tools
+  (marksman, taplo, k9s, helm, kubectl, opentofu, tofu-ls). Anything else on the same IP
+  shares that budget — a second machine, CI, an office NAT — and past the limit GitHub
+  answers 403, so the tools fail to install. A clean-VM rehearsal hit exactly this and
+  reported only `error devops-lsp: verify failed after install`, with the 403, the reset
+  time and the remedy all swallowed. `devboost install mise` now sets mise's
+  `github.credential_command` to `gh auth token`, lifting the limit to 5000/hour. `gh` is
+  already in the `cli` profile and authenticated per user; mise runs the command on demand,
+  so no token is written to disk or exported into the environment, and a credential command
+  you set yourself is left alone. Where `gh` is missing or logged out the command simply
+  fails and mise falls back to unauthenticated requests, exactly as before.
+  See docs/architecture.md "GitHub rate limits".
+
 ## [1.1.0] — 2026-09-20
 
 ### Changed

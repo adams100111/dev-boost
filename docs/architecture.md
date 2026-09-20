@@ -63,6 +63,42 @@ Kickstart `%post`.
 Design: `docs/superpowers/specs/2026-06-26-python-engine-migration-design.md` (the bash→Python
 migration); spec `specs/014-python-engine-core/`.
 
+## GitHub rate limits
+
+Several pinned tools come from GitHub releases: mise resolves seven of them through the
+GitHub API (marksman, taplo, k9s, helm, kubectl, opentofu, tofu-ls), and `get.sh` fetches
+the devboost binary from a release.
+
+**Unauthenticated, GitHub allows 60 API requests per hour per IP** — not per machine. A
+single install stays well inside that, but the budget is shared by everything behind the
+same address: a second machine, a CI runner, an office or VPN NAT, or simply installing
+twice in an hour. Past the limit GitHub answers `403`, and the affected tools fail to
+install.
+
+dev-boost therefore points mise at `gh` for its tokens:
+
+```toml
+# ~/.config/mise/config.toml, written by `devboost install mise`
+[settings.github]
+credential_command = 'gh auth token --hostname "$MISE_CREDENTIAL_HOST"'
+```
+
+- **Why a credential command** rather than `GITHUB_TOKEN`: mise runs it on demand, so no
+  token is written to a config file or exported into every process's environment. It is
+  also per host — `$MISE_CREDENTIAL_HOST` expands to whichever host mise is asking about,
+  so a GitHub Enterprise host gets that host's token.
+- **`gh` is already part of the `cli` profile** and is authenticated per user, which lifts
+  the limit to 5000 requests/hour.
+- **It degrades quietly.** If `gh` is missing or logged out the command fails and mise
+  falls back to unauthenticated requests — the previous behaviour, never an error.
+- **Your own choice wins.** A `credential_command` already set (a work PAT, an Enterprise
+  host) is never overwritten.
+- `github.credential_command` is one of mise's `global_only` settings: it is honoured in
+  the global `~/.config/mise/config.toml` and ignored in a project `mise.toml`.
+
+To check what a machine is using: `mise settings get github.credential_command`, and
+`gh auth status` for the token behind it.
+
 ## Principles (constitution v3.0.1)
 
 Engine+Data separation (typed Python) · Idempotent & verify-guarded · Reproducible (pinned, repo is

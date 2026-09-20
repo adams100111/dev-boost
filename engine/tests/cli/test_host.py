@@ -69,6 +69,18 @@ def test_default_profile_on_macos() -> None:
     assert default_profile(MAC) == "macos"
 
 
+def test_install_help_names_every_default_it_actually_uses() -> None:
+    """`devboost install --help` said "default: `full`; `omarchy` on Omarchy" long after
+    macOS was added to the map, so a Mac was told the wrong answer by its own binary.
+    Pin the text to the map rather than to a copy of it."""
+    from devboost.cli.app import _DEFAULT_PROFILE, install
+
+    help_text = install.__doc__ or ""
+    for distro, profile in _DEFAULT_PROFILE.items():
+        assert profile in help_text, f"{distro} -> {profile} missing from install --help"
+    assert "full" in help_text  # the fallback
+
+
 def test_sudo_keepalive_reports_whether_sudo_was_granted() -> None:
     with plat.SudoKeepalive(run=lambda argv: 1, interval=10) as denied:
         assert denied.granted is False

@@ -36,7 +36,11 @@ def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_installs_the_formula_on_macos(cls: type[Module], formula: str) -> None:
     ex = FakeExecutor()
     cls().install(Ctx(os=MAC, ex=ex))
-    assert ex.calls == [["brew", "install", "--formula", "-y", formula]]
+    # mise also points itself at `gh` for GitHub tokens (see test_mise_github_token.py);
+    # the formula install is still the first thing every one of these does.
+    assert ex.calls[0] == ["brew", "install", "--formula", "-y", formula]
+    if cls is not Mise:
+        assert ex.calls == [["brew", "install", "--formula", "-y", formula]]
 
 
 @pytest.mark.parametrize(("cls", "formula"), CASES)

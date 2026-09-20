@@ -40,7 +40,7 @@ shippable artifact for fresh machines.)
 ## Install (any OS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash
 ```
 
 Detects your architecture, downloads the matching frozen `devboost` binary from the latest GitHub Release,
