@@ -8,6 +8,24 @@ git history and the GitHub release notes.
 ## [Unreleased]
 
 ### Changed
+- **Plugin marketplaces no longer ship a private repo.** `claude-plugins` and
+  `codex-plugins` registered `adams100111/clickup-flow`, which is **private**, so every
+  other install tried to register a marketplace it cannot read — and then reached into
+  `pass` for a `clickup/api-token` that was never theirs. The shipped list is now entirely
+  public, and personal or private marketplaces go in the user config:
+
+  ```toml
+  # ~/.config/devboost/config.toml
+  extra_marketplaces = { clickup-flow-marketplace = "adams100111/clickup-flow" }
+  extra_plugins = ["clickup-flow@clickup-flow-marketplace"]
+  ```
+
+  Yours win a name clash with a shipped one, so a fork can replace an upstream
+  marketplace. The `CLICKUP_API_TOKEN` lookup now runs only when that plugin is actually
+  enabled. `qa-e2e-pilot` and `wave-pilot` stay in the defaults: they share an owner but
+  are public, and the rule is "reachable by everyone", not "not this person's".
+
+### Changed
 - **dev-boost no longer defaults to its author's private repos.** `pass_repo` defaulted to
   `adams100111/password-store` and the Pi harness to the **private**
   `adams100111/agent-harness`, so anyone else installing dev-boost tried to clone repos
