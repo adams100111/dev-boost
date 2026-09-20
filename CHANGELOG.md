@@ -7,6 +7,16 @@ git history and the GitHub release notes.
 
 ## [Unreleased]
 
+### Changed
+- **`curl … | bash` picks the profile for the OS it is running on** — with no profile
+  named it now runs plain `devboost install` and lets the engine choose, which is what
+  `devboost install` on the same machine already did (`macos` on a Mac, `omarchy` on
+  Omarchy, `full` otherwise). `get.sh` had hardcoded `terminal` since the original
+  bootstrap, written before macOS support existed, so a Mac had to be told `macos`
+  explicitly to get the profile the engine would have chosen anyway. Naming profiles
+  still works and still wins. **On other Linux the no-argument default therefore moves
+  from `terminal` to `full`** — name `terminal` explicitly to keep the smaller set.
+
 ### Fixed
 - **mise no longer runs into GitHub's rate limit** — unauthenticated, GitHub allows 60 API
   requests per hour **per IP**, and a `base` install resolves seven GitHub-backed tools

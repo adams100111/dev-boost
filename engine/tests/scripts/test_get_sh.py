@@ -286,7 +286,9 @@ def test_linux_x86_64_flow_unchanged(stub_path: StubPath, tmp_path: Path) -> Non
         f"{DEFAULT_BASE}/devboost-x86_64",
         f"{DEFAULT_BASE}/devboost-x86_64.tar.gz",
     ]
-    assert h.exec_lines()[0] == "args=install terminal"
+    # No profile named: get.sh hands the choice to the engine, whose `default_profile`
+    # already maps macOS -> `macos` and Omarchy -> `omarchy`.
+    assert h.exec_lines()[0] == "args=install"
     assert h.installed.is_file()
     assert (h.installed.parent / "devboost-x86_64.tar.gz").is_file()
     assert h.link.is_symlink()
@@ -316,7 +318,9 @@ def test_darwin_arm64_fetches_binary_only(stub_path: StubPath, tmp_path: Path) -
     assert h.installed.is_file()
     assert h.link.is_symlink()
     assert list(h.installed.parent.iterdir()) == [h.installed]
-    assert h.exec_lines()[0] == "args=install terminal"
+    # No profile named: get.sh hands the choice to the engine, whose `default_profile`
+    # already maps macOS -> `macos` and Omarchy -> `omarchy`.
+    assert h.exec_lines()[0] == "args=install"
 
 
 ROSETTA_MSG = (
@@ -539,6 +543,29 @@ def test_release_base_override(stub_path: StubPath, tmp_path: Path) -> None:
     assert h.urls() == ["file:///x/checksums.txt", "file:///x/devboost-darwin-arm64"]
 
 
+def test_explicit_profiles_are_passed_through_verbatim(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """Naming profiles still wins — delegation only covers the no-argument case."""
+    h = _make_harness(stub_path, tmp_path, system="Darwin", machine="arm64")
+    proc = _run_get_sh(h, "terminal", "devtools")
+    assert proc.returncode == 0, _stderr(proc)
+    assert h.exec_lines()[0] == "args=install terminal devtools"
+
+
+def test_no_argument_never_expands_an_empty_array(
+    stub_path: StubPath, tmp_path: Path
+) -> None:
+    """`usb`/`none` are read from $1, not profiles[0]: with no argument that array is
+    empty, and bash 3.2 under `set -u` aborts on an unguarded expansion of one. A clean
+    run with no profile proves the guard holds."""
+    h = _make_harness(stub_path, tmp_path, system="Darwin", machine="arm64")
+    proc = _run_get_sh(h)
+    assert proc.returncode == 0, _stderr(proc)
+    assert "unbound variable" not in _stderr(proc)
+    assert h.exec_lines()[0] == "args=install"
+
+
 def test_file_base_with_a_space_works_with_real_curl(stub_path: StubPath, tmp_path: Path) -> None:
     """The D9 rehearsal serves the release from `/Volumes/My Shared Files/dist`. With the
     REAL curl (unstubbed), a percent-encoded file:// base with a space fetches, verifies
@@ -552,7 +579,9 @@ def test_file_base_with_a_space_works_with_real_curl(stub_path: StubPath, tmp_pa
     proc = _run_get_sh(h)
     assert proc.returncode == 0, _stderr(proc)
     assert h.installed.is_file()
-    assert h.exec_lines()[0] == "args=install terminal"
+    # No profile named: get.sh hands the choice to the engine, whose `default_profile`
+    # already maps macOS -> `macos` and Omarchy -> `omarchy`.
+    assert h.exec_lines()[0] == "args=install"
 
 
 def test_release_base_must_not_be_plain_http(stub_path: StubPath, tmp_path: Path) -> None:
