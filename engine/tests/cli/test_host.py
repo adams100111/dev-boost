@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from devboost.cli import host as plat
@@ -31,13 +32,19 @@ def test_pass_is_allowed_on_macos() -> None:
 
 def test_sudo_keepalive_validates_then_refreshes() -> None:
     seen: list[list[str]] = []
+    refreshed = threading.Event()
 
     def _record(argv: list[str]) -> int:
         seen.append(argv)
+        if argv == ["sudo", "-n", "-v"]:
+            refreshed.set()
         return 0
 
     with plat.SudoKeepalive(run=_record, interval=0.01):
-        time.sleep(0.05)
+        # Wait for the refresh to happen rather than sleeping a fixed span and hoping.
+        # A loaded CI runner can leave the keepalive thread unscheduled well past 50ms,
+        # which failed this test on xcode-27 while the same commit passed on macos-15.
+        assert refreshed.wait(timeout=5), f"no refresh within 5s (saw {seen})"
     assert seen[0] == ["sudo", "-v"]
     assert ["sudo", "-n", "-v"] in seen[1:]
     count = len(seen)
