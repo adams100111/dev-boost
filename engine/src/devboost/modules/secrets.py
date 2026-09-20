@@ -172,7 +172,7 @@ class Secrets(Module):
         # reported as blocked with the exact fix, not a failure of the run.
         raise NeedsUser(
             f"no secrets bundle, and {gh_problem}",
-            creds_src.no_credentials_help(gh_problem),
+            creds_src.no_credentials_fix(),
         )
 
     def install(self, ctx: Ctx) -> None:

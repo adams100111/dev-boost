@@ -302,6 +302,11 @@ def resolve_interactively(ctx: Ctx, existing: Credentials | None = None) -> Cred
 NO_GH = "no authenticated GitHub CLI to fall back on"
 
 
+def no_credentials_fix() -> str:
+    """The `how_to_fix` half of the blocked report: the options, without repeating the reason."""
+    return NO_CREDENTIALS_OPTIONS
+
+
 def no_credentials_help(gh_problem: str = NO_GH) -> str:
     """The error for a run with no bundle and no usable gh; *gh_problem* says why gh failed."""
     return (
@@ -317,3 +322,5 @@ def no_credentials_help(gh_problem: str = NO_GH) -> str:
 
 
 NO_CREDENTIALS_HELP = no_credentials_help()
+#: the options half alone — what a blocked report shows after the reason.
+NO_CREDENTIALS_OPTIONS = NO_CREDENTIALS_HELP.split(".\n", 1)[1].lstrip("\n")
