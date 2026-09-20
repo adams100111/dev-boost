@@ -15,9 +15,20 @@ def _ctx(**kw: object) -> Ctx:
     return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
-def test_clickup_marketplace_is_github_source() -> None:
-    assert CODEX_MARKETPLACES["clickup-flow-marketplace"] == "adams100111/clickup-flow"
+def test_every_shipped_marketplace_is_public_and_not_a_local_path() -> None:
+    """Shipping the private clickup-flow marketplace made every other install try to
+    register a repo it cannot read. Private ones go in `extra_marketplaces`."""
     assert not any(v.startswith("/") for v in CODEX_MARKETPLACES.values())  # no local paths
+    assert "adams100111/clickup-flow" not in set(CODEX_MARKETPLACES.values())
+
+
+def test_a_users_own_marketplace_is_merged_in() -> None:
+    from devboost.core.userconfig import UserConfig
+    from devboost.modules.codex_plugins import codex_marketplaces
+
+    cfg = UserConfig(extra_marketplaces={"mine": "someone/their-market"})
+    assert codex_marketplaces(cfg)["mine"] == "someone/their-market"
+    assert set(CODEX_MARKETPLACES) <= set(codex_marketplaces(cfg))
 
 
 def test_install_adds_missing_marketplaces_and_plugins() -> None:
@@ -31,8 +42,10 @@ def test_install_adds_missing_marketplaces_and_plugins() -> None:
     )
     CodexPlugins().install(ctx)
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
-    assert any("plugin marketplace add adams100111/clickup-flow" in j for j in joined)
-    assert any("plugin add clickup-flow@clickup-flow-marketplace" in j for j in joined)
+    assert any("plugin marketplace add zoom/skills" in j or
+               "plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill" in j
+               for j in joined)
+    assert any("plugin add ui-ux-pro-max@ui-ux-pro-max-skill" in j for j in joined)
     # superpowers already installed → not re-added
     assert not any("plugin add superpowers@" in j for j in joined)
 

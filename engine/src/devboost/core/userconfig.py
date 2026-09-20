@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import tomli_w
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from devboost.core.errors import ConfigError
 from devboost.core.settings import Settings
@@ -34,6 +34,12 @@ class UserConfig(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     pass_repo: str | None = None
+    #: Extra Claude/Codex plugin marketplaces: name -> "owner/repo". Anything private or
+    #: personal belongs here, never in the shipped defaults — those must be reachable by
+    #: everyone who installs dev-boost.
+    extra_marketplaces: dict[str, str] = Field(default_factory=dict)
+    #: Extra plugins to enable, each "plugin@marketplace".
+    extra_plugins: tuple[str, ...] = ()
     device_name: str | None = None
     docker_runtime: DockerRuntimeName | None = None
 

@@ -80,3 +80,17 @@ no API keys in Zed's settings. Details: [zed](zed.md).
 | Codex | sign in to `codex` |
 | Pi | `pi /login` |
 | Orca | pair with the `orca://pair?code=…` from the desktop app or the `orca-serve` journal |
+
+## Adding your own plugin marketplaces
+
+The marketplaces dev-boost ships are all public, so every install can register them. Your
+own — private ones included — go in `~/.config/devboost/config.toml`:
+
+```toml
+extra_marketplaces = { my-market = "owner/repo" }
+extra_plugins = ["my-plugin@my-market"]
+```
+
+Both Claude and Codex read the same two keys. A name that matches a shipped marketplace
+replaces it, so you can point one at your own fork. A private repo needs git credentials,
+which the `secrets` module sets up.

@@ -7,8 +7,9 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
+from devboost.core.userconfig import UserConfig, load_user_config
 from devboost.model import Ctx, Module
-from devboost.modules.claude_plugins import ENABLED_PLUGINS
+from devboost.modules.claude_plugins import enabled_plugins
 from devboost.modules.codex_code import CodexCode
 from devboost.modules.secrets import Secrets
 
@@ -18,8 +19,15 @@ CODEX_MARKETPLACES: dict[str, str] = {
     "qa-e2e-pilot": "adams100111/qa-e2e-pilot",
     "wave-pilot": "adams100111/wave-pilot",
     "ui-ux-pro-max-skill": "nextlevelbuilder/ui-ux-pro-max-skill",
-    "clickup-flow-marketplace": "adams100111/clickup-flow",
 }
+#: Every shipped marketplace above is PUBLIC; private or personal ones go in
+#: `extra_marketplaces` in ~/.config/devboost/config.toml (see claude_plugins).
+
+
+def codex_marketplaces(cfg: UserConfig | None = None) -> dict[str, str]:
+    """Shipped marketplaces plus the user's own, theirs winning on a name clash."""
+    conf = cfg if cfg is not None else load_user_config()
+    return {**CODEX_MARKETPLACES, **conf.extra_marketplaces}
 
 
 @register
@@ -27,7 +35,8 @@ class CodexPlugins(Module):
     name = "codex-plugins"
     category = "cli"
     description = "Register Codex marketplaces + install enabled plugins."
-    requires = (CodexCode, Secrets)  # Secrets → git creds for the private clickup-flow marketplace
+    # Secrets → git credentials, for anyone whose `extra_marketplaces` are private.
+    requires = (CodexCode, Secrets)
     profiles = ("codex",)
     portable: ClassVar[bool] = True  # only drives the codex CLI
 
@@ -61,14 +70,14 @@ class CodexPlugins(Module):
         if not ctx.ex.which("codex"):
             return False
         installed = self._installed_plugins(ctx)
-        return all(p.split("@", 1)[0] in installed for p in ENABLED_PLUGINS)
+        return all(p.split("@", 1)[0] in installed for p in enabled_plugins())
 
     def install(self, ctx: Ctx) -> None:
         if not ctx.ex.which("codex"):
             log.warn("codex-plugins: codex CLI not found — skipping")
             return
         markets = self._installed_marketplaces(ctx)
-        for name, source in CODEX_MARKETPLACES.items():
+        for name, source in codex_marketplaces().items():
             if name in markets:
                 log.skip(f"codex-plugins: marketplace {name} already configured")
                 continue
@@ -76,7 +85,7 @@ class CodexPlugins(Module):
             if not res.ok:
                 log.warn(f"codex-plugins: marketplace add {source} failed: {res.stderr.strip()}")
         installed = self._installed_plugins(ctx)
-        for plugin in ENABLED_PLUGINS:
+        for plugin in enabled_plugins():
             if plugin.split("@", 1)[0] in installed:
                 log.skip(f"codex-plugins: {plugin} already installed")
                 continue

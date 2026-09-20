@@ -6,9 +6,16 @@ from pathlib import Path
 import pytest
 
 from devboost.core.osinfo import OsInfo
+from devboost.core.userconfig import UserConfig
 from devboost.exec.executor import FakeExecutor
 from devboost.model import Ctx
-from devboost.modules.claude_plugins import ENABLED_PLUGINS, MARKETPLACES, ClaudePlugins
+from devboost.modules.claude_plugins import (
+    ENABLED_PLUGINS,
+    MARKETPLACES,
+    ClaudePlugins,
+    enabled_plugins,
+    marketplaces,
+)
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
 
@@ -17,10 +24,41 @@ def _ctx(**kw: object) -> Ctx:
     return Ctx(os=FEDORA, ex=FakeExecutor(**kw))  # type: ignore[arg-type]
 
 
-def test_clickup_marketplace_is_github_not_directory() -> None:
-    src = MARKETPLACES["clickup-flow-marketplace"]
-    assert src == {"source": "github", "repo": "adams100111/clickup-flow"}
+def _enable_clickup(home: Path) -> None:
+    """Opt in to the (private) clickup-flow plugin the way a user would."""
+    cfg = home / ".config" / "devboost" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        'extra_marketplaces = { clickup-flow-marketplace = "adams100111/clickup-flow" }\n'
+        'extra_plugins = ["clickup-flow@clickup-flow-marketplace"]\n',
+        encoding="utf-8",
+    )
+
+
+def test_every_shipped_marketplace_is_public_and_not_a_local_directory() -> None:
+    """A private or personal marketplace in the shipped list makes every OTHER install try
+    to register a repo it cannot read. Those belong in `extra_marketplaces`."""
     assert not any(v.get("source") == "directory" for v in MARKETPLACES.values())
+    shipped = {v["repo"] for v in MARKETPLACES.values()}
+    # clickup-flow is private: shipping it meant every other install tried to register a
+    # repo it cannot read. qa-e2e-pilot and wave-pilot share an owner but are public, so
+    # they stay — the rule is "reachable by everyone", not "not this person's".
+    assert "adams100111/clickup-flow" not in shipped
+
+
+def test_a_users_own_marketplace_and_plugin_are_merged_in() -> None:
+    cfg = UserConfig(
+        extra_marketplaces={"mine": "someone/their-market"},
+        extra_plugins=("thing@mine",),
+    )
+    assert marketplaces(cfg)["mine"] == {"source": "github", "repo": "someone/their-market"}
+    assert enabled_plugins(cfg)[-1] == "thing@mine"
+    assert set(ENABLED_PLUGINS) <= set(enabled_plugins(cfg))
+
+
+def test_a_users_marketplace_wins_a_name_clash() -> None:
+    cfg = UserConfig(extra_marketplaces={"zoom-skills": "me/fork"})
+    assert marketplaces(cfg)["zoom-skills"]["repo"] == "me/fork"
 
 
 def test_merge_preserves_existing_and_adds_keys(
@@ -35,9 +73,9 @@ def test_merge_preserves_existing_and_adds_keys(
 
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["theme"] == "dark"  # preserved
-    clickup = data["extraKnownMarketplaces"]["clickup-flow-marketplace"]
-    assert clickup["source"]["source"] == "github"  # schema nests source: {source, repo}
-    assert clickup["source"]["repo"] == "adams100111/clickup-flow"
+    zoom = data["extraKnownMarketplaces"]["zoom-skills"]
+    assert zoom["source"]["source"] == "github"  # schema nests source: {source, repo}
+    assert zoom["source"]["repo"] == "zoom/skills"
     for plugin in ENABLED_PLUGINS:
         assert data["enabledPlugins"][plugin] is True
 
@@ -72,7 +110,7 @@ def test_install_plugins_adds_only_missing(
     joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
     install_calls = [j for j in joined if "plugin install" in j]
     assert any(
-        "clickup-flow@clickup-flow-marketplace" in j and "--yes" in j for j in install_calls
+        "ui-ux-pro-max@ui-ux-pro-max-skill" in j and "--yes" in j for j in install_calls
     )
     assert not any("superpowers@claude-plugins-official" in j for j in install_calls)
 
@@ -96,6 +134,7 @@ def test_clickup_token_written_to_settings_json_preserving_existing(
     settings.parent.mkdir(parents=True)
     # pre-existing settings (e.g. from _merge_settings) must be preserved
     settings.write_text(json.dumps({"theme": "dark", "env": {"OTHER": "keep"}}), encoding="utf-8")
+    _enable_clickup(tmp_path)
     ctx = _ctx(present={"pass"}, scripts={"pass": Result(0, stdout="pk_secret_123\n")})
     ClaudePlugins()._resolve_clickup_token(ctx)
 

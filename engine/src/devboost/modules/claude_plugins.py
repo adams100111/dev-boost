@@ -9,6 +9,7 @@ from typing import ClassVar
 
 from devboost.core import log
 from devboost.core.registry import register
+from devboost.core.userconfig import UserConfig, load_user_config
 from devboost.model import Ctx, Module
 from devboost.modules._pass import pass_line
 from devboost.modules.claude_code import ClaudeCode
@@ -23,9 +24,10 @@ MARKETPLACES: dict[str, dict[str, str]] = {
     "ui-ux-pro-max-skill": {"source": "github", "repo": "nextlevelbuilder/ui-ux-pro-max-skill"},
     "aspire-skills": {"source": "github", "repo": "microsoft/aspire-skills"},
     "zoom-skills": {"source": "github", "repo": "zoom/skills"},
-    # was a machine-local `directory` source — converted to the private github repo for portability
-    "clickup-flow-marketplace": {"source": "github", "repo": "adams100111/clickup-flow"},
 }
+#: Every shipped marketplace above is PUBLIC. A private or personal one belongs in
+#: `extra_marketplaces` in ~/.config/devboost/config.toml: shipping one here makes every
+#: other install try to register a repo it cannot read.
 
 ENABLED_PLUGINS: tuple[str, ...] = (
     "claude-md-management@claude-plugins-official",
@@ -45,8 +47,26 @@ ENABLED_PLUGINS: tuple[str, ...] = (
     "qa-e2e-pilot@qa-e2e-pilot",
     "wave-pilot@wave-pilot",
     "ui-ux-pro-max@ui-ux-pro-max-skill",
-    "clickup-flow@clickup-flow-marketplace",
 )
+
+#: The plugin whose CLICKUP token we resolve, when it is enabled at all.
+_CLICKUP_PLUGIN = "clickup-flow"
+
+
+def marketplaces(cfg: UserConfig | None = None) -> dict[str, dict[str, str]]:
+    """Shipped marketplaces plus the user's own, theirs winning on a name clash."""
+    conf = cfg if cfg is not None else load_user_config()
+    extra = {n: {"source": "github", "repo": r} for n, r in conf.extra_marketplaces.items()}
+    return {**MARKETPLACES, **extra}
+
+
+def enabled_plugins(cfg: UserConfig | None = None) -> tuple[str, ...]:
+    """Shipped plugins plus the user's own, in that order and without duplicates."""
+    conf = cfg if cfg is not None else load_user_config()
+    seen: dict[str, None] = dict.fromkeys(ENABLED_PLUGINS)
+    for plugin in conf.extra_plugins:
+        seen.setdefault(plugin, None)
+    return tuple(seen)
 
 
 def _home() -> Path:
@@ -83,12 +103,12 @@ class ClaudePlugins(Module):
                 data = loaded
         markets_raw = data.get("extraKnownMarketplaces")
         markets: dict[str, object] = markets_raw if isinstance(markets_raw, dict) else {}
-        for name, src in MARKETPLACES.items():
+        for name, src in marketplaces().items():
             markets[name] = {"source": src}
         data["extraKnownMarketplaces"] = markets
         enabled_raw = data.get("enabledPlugins")
         enabled: dict[str, object] = enabled_raw if isinstance(enabled_raw, dict) else {}
-        for plugin in ENABLED_PLUGINS:
+        for plugin in enabled_plugins():
             enabled[plugin] = True
         data["enabledPlugins"] = enabled
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +125,7 @@ class ClaudePlugins(Module):
         if not isinstance(data, dict):
             return False
         enabled = data.get("enabledPlugins")
-        return isinstance(enabled, dict) and all(p in enabled for p in ENABLED_PLUGINS)
+        return isinstance(enabled, dict) and all(p in enabled for p in enabled_plugins())
 
     def _install_plugins(self, ctx: Ctx) -> None:
         if not ctx.ex.which("claude"):
@@ -125,7 +145,7 @@ class ClaudePlugins(Module):
                     for e in entries
                     if isinstance(e, dict) and isinstance(e.get("name"), str)
                 }
-        for plugin in ENABLED_PLUGINS:
+        for plugin in enabled_plugins():
             name = plugin.split("@", 1)[0]
             if name in installed:
                 log.skip(f"claude-plugins: {plugin} already installed")
@@ -136,6 +156,10 @@ class ClaudePlugins(Module):
                 log.warn(f"claude-plugins: install {plugin} failed: {res.stderr.strip()}")
 
     def _resolve_clickup_token(self, ctx: Ctx) -> None:
+        # Only when the plugin that needs it is enabled: otherwise a stranger's install
+        # reaches into a `pass` store for an entry that was never theirs.
+        if not any(p.split("@", 1)[0] == _CLICKUP_PLUGIN for p in enabled_plugins()):
+            return
         token = pass_line(ctx, "clickup/api-token", who="claude-plugins")
         if token is None:
             return
