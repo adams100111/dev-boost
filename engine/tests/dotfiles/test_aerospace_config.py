@@ -92,3 +92,23 @@ def test_macos_apply_skips_the_xdg_config_next_to_a_legacy_one(chezmoi_apply: Ap
     assert not (home / ".config" / "aerospace").exists()
     assert (home / ".aerospace.toml").read_text(encoding="utf-8") == own
     assert (home / ".zshrc").is_file()  # the rest still applies
+
+
+def test_equal_sizes_has_a_key(tmp_path: Path) -> None:
+    """Dragging a split, or closing one of three windows, leaves the rest uneven. Without
+    a binding the only way back to an even split is the CLI or flattening the whole tree,
+    which also undoes any nesting you meant to keep."""
+    assert _main(tmp_path)["ctrl-alt-0"] == "balance-sizes"
+
+
+def test_windows_land_only_where_devboost_installed_the_app(tmp_path: Path) -> None:
+    """Placement rules must not assume apps dev-boost does not install: an earlier draft
+    shipped Edge, Chrome, Slack, WhatsApp and Safari rules, copied from one machine."""
+    rules = _cfg(tmp_path)["on-window-detected"]
+    ids = {r["if"]["app-id"] for r in rules}
+    assert ids == {
+        "com.mitchellh.ghostty",   # ghostty module
+        "dev.zed.Zed",             # zed module
+        "md.obsidian",             # obsidian module
+        "com.apple.systempreferences",  # ships with macOS; floated, not placed
+    }

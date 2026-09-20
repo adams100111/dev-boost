@@ -58,6 +58,10 @@ def _i(x: int) -> Value:
     return Value("int", x)
 
 
+def _f(x: float) -> Value:
+    return Value("float", x)
+
+
 def _s(x: str) -> Value:
     return Value("string", x)
 
@@ -85,6 +89,12 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(_DS, "DSDontWriteNetworkStores", _b(True)),
     Setting(_DS, "DSDontWriteUSBStores", _b(True)),
     Setting(_DOCK, "autohide", _b(True), "Dock"),
+    # A hidden Dock is only pleasant if revealing it feels deliberate. macOS waits ~0.5s
+    # before showing it and animates slowly; zero delay is worse, not better — a tiling
+    # WM sends the pointer to screen edges constantly, and the Dock then flies out while
+    # you work. A short delay with a quick animation reveals on purpose, not by accident.
+    Setting(_DOCK, "autohide-delay", _f(0.25), "Dock"),
+    Setting(_DOCK, "autohide-time-modifier", _f(0.3), "Dock"),
     Setting(_DOCK, "tilesize", _i(48), "Dock"),
     Setting(_DOCK, "show-recents", _b(False), "Dock"),
     # Screenshots land on the clipboard, ready for `herdr --remote` Ctrl+V image paste;

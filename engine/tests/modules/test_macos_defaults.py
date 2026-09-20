@@ -48,7 +48,12 @@ def test_table_matches_the_spec_with_typed_values() -> None:
     assert by_id["com.apple.AppleMultitouchTrackpad:Clicking"] == Value("bool", True)
     bt = "com.apple.driver.AppleBluetoothMultitouch.trackpad:Clicking"
     assert by_id[bt] == Value("bool", True)
-    assert len(by_id) == len(md.SETTINGS) == 20  # ids are unique
+    # A hidden Dock needs a deliberate reveal: macOS's ~0.5s wait feels broken, and zero
+    # delay fires by accident every time a tiling WM sends the pointer to a screen edge.
+    assert by_id["com.apple.dock:autohide"] == Value("bool", True)
+    assert by_id["com.apple.dock:autohide-delay"] == Value("float", 0.25)
+    assert by_id["com.apple.dock:autohide-time-modifier"] == Value("float", 0.3)
+    assert len(by_id) == len(md.SETTINGS) == 22  # ids are unique
 
 
 def test_apply_writes_typed_values_and_restarts_each_process_once() -> None:

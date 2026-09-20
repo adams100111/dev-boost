@@ -67,6 +67,11 @@ ctrl-alt-shift-7 = 'move-node-to-workspace 7'
 ctrl-alt-shift-8 = 'move-node-to-workspace 8'
 ctrl-alt-shift-9 = 'move-node-to-workspace 9'
 
+# ⌃⌥0 — make every window on this workspace the same size again. Dragging a split, or
+# closing one of three windows, leaves the rest unevenly divided and there is no other way
+# back to an even split short of flattening the whole tree.
+ctrl-alt-0 = 'balance-sizes'
+
 ctrl-alt-tab = 'workspace-back-and-forth'
 ctrl-alt-shift-tab = 'move-workspace-to-monitor --wrap-around next'
 ctrl-alt-shift-semicolon = 'mode service'
@@ -77,6 +82,45 @@ ctrl-alt-shift-semicolon = 'mode service'
 # The pinned binary (devboost voxtype); bash expands the quoted $HOME, spaces and all.
 ctrl-alt-d = 'exec-and-forget "$HOME/.local/bin/voxtype" record toggle --model large-v3-turbo'
 {{- end }}
+
+# --- where windows land ---------------------------------------------------------------
+# Without rules, every app opens on whatever workspace you are looking at. Four windows on
+# one workspace is where tiling stops helping: each gets a quarter of the width and two of
+# them become unreadable slivers. `devboost` therefore places only the apps it installs
+# itself; everything else opens where you are, which is what you want for one-offs.
+#
+# The convention: 1 terminal · 4 editor · 5 notes. 2 and 3 are left free for you —
+# a browser and a chat app are the usual pair, but dev-boost does not install either and
+# will not guess which you use.
+#
+# To add your own, find the bundle id and copy the shape below:
+#
+#   osascript -e 'id of app "Safari"'      -> com.apple.Safari
+#
+#   [[on-window-detected]]
+#   if.app-id = 'com.apple.Safari'
+#   run = 'move-node-to-workspace 2'
+#
+# This file is yours once chezmoi has applied it; see docs/macos-apps.md.
+
+[[on-window-detected]]
+if.app-id = 'com.mitchellh.ghostty'
+run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+if.app-id = 'dev.zed.Zed'
+run = 'move-node-to-workspace 4'
+
+[[on-window-detected]]
+if.app-id = 'md.obsidian'
+run = 'move-node-to-workspace 5'
+
+# Fixed-size windows tile badly: a preference pane cannot resize, so tiling it squeezes
+# whatever shares the workspace. Float them instead. System Settings ships with macOS, so
+# this one applies to every machine.
+[[on-window-detected]]
+if.app-id = 'com.apple.systempreferences'
+run = 'layout floating'
 
 [mode.service.binding]
 esc = ['reload-config', 'mode main']
