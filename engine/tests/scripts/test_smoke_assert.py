@@ -33,7 +33,9 @@ def test_smoke_assert_all_pass(stub_path: StubPath) -> None:
     result = run_bash(SCRIPT, "macos", env=_linux_env(stub_path))
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == ""
+    # A pass says so: a silent success reads exactly like a smoke that never ran, and a
+    # rehearsal log is the only record that it did.
+    assert result.stdout == "smoke-assert: all checks passed (macos)\n"
     assert result.stderr == ""
 
 

@@ -68,4 +68,10 @@ if [ -n "${shell_err}" ]; then
   note "${shell_desc} wrote to stderr: ${shell_err}"
 fi
 
+# A silent pass is indistinguishable from a smoke that never ran: say so explicitly, so a
+# green rehearsal log carries positive evidence rather than an absence of FAIL lines.
+if [ "${fail}" -eq 0 ]; then
+  printf 'smoke-assert: all checks passed (%s)\n' "$*"
+fi
+
 exit "${fail}"
