@@ -5,6 +5,17 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [Unreleased]
+
+### Fixed
+- **`timemachine-exclusions` runs after the container runtime** — `tmutil addexclusion`
+  only accepts paths that exist, and the largest ones the sweep targets are Colima's VM
+  disks, which the `docker` module creates later in the same run. A fresh Mac therefore
+  finished with `~/.colima` and `~/.config/colima` still backed up by Time Machine, and
+  `devboost verify` reporting `timemachine-exclusions: missing` immediately after a
+  successful install. It now declares `after = (Docker,)` — ordering only, so `docker` is
+  never pulled into a plan that did not ask for it.
+
 ## [1.1.1] — 2026-09-20
 
 ### Changed

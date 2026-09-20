@@ -295,3 +295,24 @@ def test_tm_verify_tolerates_the_docker_container_it_cannot_exclude(
         (("tmutil", "isexcluded"), Result(0, "[Excluded]  x\n")),
     ])
     assert ms.TimemachineExclusions().verify(_ctx(npm_in)) is False
+
+
+def test_the_sweep_runs_after_the_container_runtime_creates_its_vm_disks() -> None:
+    """`tmutil addexclusion` only takes paths that exist, and the largest ones the sweep
+    targets are a container runtime's VM disks — created by that runtime's own install.
+
+    Running first left a freshly installed Mac with ~/.colima and ~/.config/colima still
+    backed up, and `devboost verify` reporting `missing` right after a clean install.
+    Observed on a real Mac: Library/Caches and .npm were Excluded while both Colima homes
+    were Included.
+    """
+    from pathlib import Path as _Path
+
+    from devboost.cli.app import _order
+    from devboost.modules.docker import Docker
+
+    assert Docker in ms.TimemachineExclusions.after
+
+    root = _Path(__file__).resolve().parents[3]
+    order, _ = _order(["macos"], root)
+    assert order.index("docker") < order.index("timemachine-exclusions")
