@@ -1,6 +1,6 @@
 [project]
 name = "devboost"
-version = "1.0.0"
+version = "1.1.0"
 description = "dev-boost — typed-Python developer-workstation bootstrap engine"
 readme = "README.md"
 license = "MIT"

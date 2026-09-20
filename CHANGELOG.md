@@ -5,7 +5,7 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
-## [Unreleased]
+## [1.1.0] — 2026-09-20
 
 ### Changed
 - **`stats` sets up its own menu bar, and starts on install** — a `curl | bash` Mac used
