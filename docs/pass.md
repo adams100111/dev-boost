@@ -11,6 +11,8 @@ way; only the passphrase prompt (pinentry-mac) and the sync scheduler (launchd, 
 systemd) differ per OS — see [Model](#model) and [Sync](#sync) below.
 
 
+Every dev-boost setting lives in one place: **[configuration](configuration.md)**.
+
 ## Where your store lives
 
 dev-boost ships **no default repo**. It finds yours in this order:

@@ -14,6 +14,8 @@ Linux runs Docker's own engine (docker-ce). A Mac needs a Linux VM, and dev-boos
 
 The Mac does employer and client work, so dev-boost defaults to Colima. With ddev's default Mutagen sync, its performance is close to OrbStack's. Picking OrbStack or Docker Desktop prints the licence line above as a warning.
 
+Every dev-boost setting lives in one place: **[configuration](configuration.md)**.
+
 ## Choosing a runtime
 
 Precedence: `DEVBOOST_DOCKER_RUNTIME` > `docker_runtime` in `~/.config/devboost/config.toml` > `colima`.
