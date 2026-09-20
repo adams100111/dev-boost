@@ -60,8 +60,24 @@ sudo devboost installer            # wizard: pick the USB, confirm the wipe
 `-- usb` also downloads the Ventoy injection archive, so `installer` works with no clone/build; it
 auto-fetches Ventoy + the Fedora ISOs at build time. See [docs/ventoy.md](docs/ventoy.md).
 
-**macOS (Apple Silicon):** `devboost install` from a clone installs the workstation — see
-[docs/macos.md](docs/macos.md) (`curl … | bash` lands in M6).
+**macOS (Apple Silicon):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- macos
+```
+
+Downloads the matching `devboost-darwin-arm64` binary and verifies its SHA256 **first**;
+only then does it bootstrap Homebrew (and the Xcode Command Line Tools) if missing, install
+the binary onto PATH, and run `devboost install macos` — so a missing or bad release leaves
+the Mac untouched. A release that has no Mac binary yet (anything before v1.0.0) is reported
+as `no devboost-darwin-arm64 in release <tag> yet — macOS support starts with v1.0.0`, and a
+failed download as a network error, with nothing installed either way. Apple Silicon only, from a native (arm64) terminal: Intel is refused, and
+so is a Rosetta-translated shell ("open a native (arm64) terminal"). macOS 27 Golden Gate
+and 26 Tahoe are supported, 15 is best-effort. `curl … | bash` sets no quarantine attribute, so
+the binary just runs; a binary you instead fetch with a **browser** is quarantined by
+Gatekeeper — clear it first: `xattr -d com.apple.quarantine ~/Downloads/devboost-darwin-arm64`.
+From a clone (or for what's not yet automated on macOS): see [docs/macos.md](docs/macos.md).
+
 Docker on a Mac is Colima by default (free for work use); see
 [docs/docker-runtimes.md](docs/docker-runtimes.md) for OrbStack / Docker Desktop and
 `devboost docker use`.

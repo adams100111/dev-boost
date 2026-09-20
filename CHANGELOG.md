@@ -5,7 +5,12 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-20
+
+First release with **macOS support**. One catalog now drives both Linux (Omarchy/Arch,
+Fedora, Ubuntu) and Apple Silicon macOS, and `curl … | bash` sets up a fresh Mac end to
+end. The 1.0 line marks that the install surface is committed to, not that the module
+catalog is closed.
 
 ### Security
 - **browser-mcp is opt-in everywhere** — port 8931 runs code as you for any tailnet peer
@@ -24,6 +29,62 @@ git history and the GitHub release notes.
   bind `0.0.0.0` when there is no tailnet IP and accepts its MagicDNS name as a host.
 
 ### Added
+- **macOS delivery (M6)** — `curl … | bash` now works on a fresh Mac: `scripts/get.sh`
+  gained a Darwin path (Homebrew + CLT bootstrap, macOS-version gate, root refusal, HTTPS-
+  only fetch) that installs the frozen `devboost-darwin-arm64` binary — no clone, no
+  Ventoy archive. It downloads and **verifies the binary before installing Homebrew or the
+  CLT**, so a missing asset or a checksum failure leaves the Mac untouched; a release with no
+  Mac binary is reported as `no devboost-darwin-arm64 in release <tag> yet — macOS support
+  starts with v1.0.0`, and a download that fails for another reason (timeout, TLS, DNS) as a
+  network error with curl's own message, not as a missing asset. It refuses an Intel Mac, a Rosetta-translated shell ("open a native
+  (arm64) terminal" — Homebrew's installer aborts under Rosetta) and root, all before any
+  network call; refuses the `usb` profile
+  on macOS before any network call or filesystem change (it's Linux-only); fails **closed**
+  — refuses, rather than continuing — when the macOS version can't be read at all; warns
+  loudly, naming the host, whenever `DEVBOOST_RELEASE_BASE` overrides the official release
+  (both the binary and the checksums that vouch for it would then come from that same
+  un-official place); pins every fetch with `--proto '=https,file' --proto-redir
+  '=https'` so a redirect can never downgrade to plaintext; and cleans up its temp
+  download dir on every exit path — a normal return, a `set -e` abort, and `INT`/`HUP`/
+  `TERM`. `scripts/build-bundle.sh` and `scripts/release.sh` build/publish it (ad-hoc
+  `codesign --verify --strict`, one-line `checksums-darwin-arm64.txt`). `release.yml` is
+  the one canonical release path and now publishes through a **draft**: upload every asset
+  and `checksums.txt`, download and verify them, and only then publish and mark latest.
+  `release.sh` does the same, but is emergency-only: it refuses while `release.yml` is
+  enabled (its published draft would create the tag and start the workflow, which would
+  upload over it) unless `DEVBOOST_RELEASE_EMERGENCY=1`, and even then publishes only a tag
+  that is already on origin. `devboost self-update` resolves its release asset by
+  `(os, arch)`, **refuses to downgrade** the running binary, refuses to run outside the
+  frozen binary (it would otherwise overwrite the Python interpreter), and reports an
+  unwritable install dir or a garbled `checksums.txt` as `self-update failed: …` instead of
+  a traceback. CI gained a `macos-15` / `xcode-27` (preview, non-blocking) matrix
+  and a `binary-compat` job proving the macos-15-built binary also runs on macos-26; the
+  release workflow publishes all three binaries plus one shared `checksums.txt`, after
+  checking every asset against the per-arch checksums its build runner wrote. The
+  deprecated `ubuntu-22.04` runner is gone: the Linux binaries build on `ubuntu-24.04` inside
+  an `ubuntu:22.04` container, keeping the **glibc 2.35 floor**, which a new
+  `scripts/check-glibc-floor.sh` step enforces over libpython and every extension module
+  inside the onefile (not just its bootloader stub).
+  `scripts/vm-test-macos.sh` rehearses the whole install in a throwaway tart VM
+  (create/snapshot/revert/list/destroy/run/shell, `--local` for an unpublished build),
+  running `smoke-assert.sh` in a fresh `zsh -lc` login shell after the install;
+  `.github/workflows/vm-smoke.yml` gained an advisory `linux-smoke` job (Fedora/Arch
+  containers + the Ubuntu host) alongside the existing Kickstart smoke. Root-owned files a
+  root-run profile leaves behind under the demoting executor are now reclaimed: after a
+  root-run `devboost accounts bootstrap`, a TOCTOU-safe walk (`os.fwalk` plus
+  `dir_fd`-relative `stat`/`chown`, immune to a directory being swapped for a symlink
+  mid-pass) hands every root-owned path under the managed user's HOME back to them; a HOME
+  that is itself a symlink is refused outright (nothing under it is touched), and because
+  `chown` follows a hardlink to its inode, a multiply-linked regular file is only reclaimed
+  when `fs.protected_hardlinks` is on (the default on every distro dev-boost targets). With
+  it off, each candidate is opened `O_NOFOLLOW|O_NONBLOCK`, re-checked on the fd and
+  `fchown`-ed through that same fd, so a hardlink planted mid-pass is caught; multiply-linked
+  files (and symlinks) are then left root-owned and the skip is logged. `bash-config` is no longer
+  silently skipped on an unrecognized Linux distro (only macOS drops it now,
+  `provided-by-macos`), and — because it now runs there instead of being dropped from the
+  plan — its `verify` fails loudly on an unrecognised distro whose own packaging already
+  owns `~/.bashrc` rather than dev-boost's dotfiles, instead of the module simply never
+  running.
 - **macOS desktop (M5)** — `macos-defaults` with snapshot + `devboost revert
   macos-defaults [key…]`, open-files limit, firewall, Time Machine exclusions,
   Raycast/AeroSpace (+config)/AltTab/Thaw/MonitorControl/Keka/Stats/Quick Look, code files

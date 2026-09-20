@@ -23,9 +23,12 @@ echo "preflight: mypy --strict"     && uv run mypy
 echo "preflight: pytest"            && uv run pytest -q
 
 # Version triple must agree, or release.yml's tag check fails.
-v="$(grep -m1 -oP '^version = "\K[^"]+' pyproject.toml)"
-i="$(grep -m1 -oP '^__version__ = "\K[^"]+' src/devboost/__init__.py)"
-l="$(grep -A1 '^name = "devboost"' uv.lock | grep -m1 -oP 'version = "\K[^"]+')"
+# `sed -nE` (POSIX ERE), not `grep -oP`: BSD/macOS grep has no -P, and this script runs on
+# the Mac too.
+v="$(sed -nE 's/^version = "([^"]+)".*/\1/p' pyproject.toml | head -n1)"
+i="$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' src/devboost/__init__.py | head -n1)"
+l="$(grep -A1 '^name = "devboost"' uv.lock |
+  sed -nE 's/^version = "([^"]+)".*/\1/p' | head -n1)"
 if [ "$v" != "$i" ] || [ "$v" != "$l" ]; then
   echo "preflight: version mismatch — pyproject=$v __version__=$i uv.lock=$l" >&2
   exit 1

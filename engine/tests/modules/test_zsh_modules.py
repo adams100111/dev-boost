@@ -344,8 +344,11 @@ def test_dotfiles_leaves_bashrc_alone_on_omarchy(home: Path) -> None:
     assert not _digests_file(home).exists()
 
 
-def test_bash_config_is_linux_only() -> None:
-    assert BashConfig.families == ("fedora", "debian", "arch")
+def test_bash_config_is_planned_everywhere_but_provided_by_macos() -> None:
+    # M6-D11: not an allow-list of families (an unknown distro would lose bash-config);
+    # macOS declares itself the provider instead, so the plan reports the skip.
+    assert BashConfig.families == ()
+    assert BashConfig.provided_by == ("macos",)
 
 
 def test_terminal_and_shell_install_the_zsh_setup() -> None:

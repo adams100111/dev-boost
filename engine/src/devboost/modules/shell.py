@@ -541,8 +541,12 @@ class BashConfig(Module):
     description = "Wire dev-boost's bash init into ~/.bashrc (appending where the OS owns it)."
     requires = (Dotfiles,)
     profiles = ("shell",)
-    # bash is the interactive shell on Linux only; macOS runs zsh (zsh-config).
-    families: ClassVar[tuple[str, ...]] = ("fedora", "debian", "arch")
+    # Every Linux keeps bash-config, including a distro whose family we don't recognise
+    # (osinfo falls back to its own id) — an allow-list of families would drop it silently
+    # there. macOS runs zsh instead, so it reports an explicit `provided-by-macos` skip
+    # (zsh-config covers that side).
+    families: ClassVar[tuple[str, ...]] = ()
+    provided_by: ClassVar[tuple[str, ...]] = ("macos",)
 
     def _owns_bashrc(self, ctx: Ctx) -> bool:
         """True when dev-boost's own dotfiles supply ~/.bashrc wholesale.

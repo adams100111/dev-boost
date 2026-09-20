@@ -1,19 +1,74 @@
 #!/usr/bin/env bash
 # scripts/get.sh — dev-boost public bootstrap (one of two bash files in the shipped tree).
 # Usage: curl -fsSL https://raw.githubusercontent.com/adams100111/dev-boost/main/scripts/get.sh | bash -s -- terminal
-# Downloads the arch-matched frozen devboost binary from the latest GitHub Release, verifies
-# SHA256, installs it (onto PATH via a symlink in the user bin dir), and runs `devboost install`.
-# No data tarball — profiles + templates are
-# bundled inside the binary (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/link/exec.
+# Downloads the (os, arch)-matched frozen devboost binary from the latest GitHub Release,
+# verifies SHA256, installs it (onto PATH via a symlink in the user bin dir), and runs
+# `devboost install`. On Linux it also fetches the Ventoy injection archive; macOS has none.
+# No data tarball for the engine — profiles + templates are bundled inside the binary
+# (resolved via devboost.exec.resources). Zero logic beyond fetch/verify/link/exec.
+#
+# macOS notes: only Apple Silicon in a native (arm64) shell — a Rosetta-translated shell is
+# refused, because Homebrew's own installer aborts under it — macOS 15+, never as root.
+# Order: every refusal, then fetch + verify the release binary, and only THEN bootstrap
+# Homebrew (which brings the command-line tools) after a single `sudo -v` read from the
+# tty. A missing asset or a checksum failure therefore leaves the Mac untouched, and the
+# whole thing works under `curl | bash`.
+#
+# Only bash 3.2 features: a fresh Mac runs this under /bin/bash 3.2.
 set -Eeuo pipefail
 
 GS_REPO="adams100111/dev-boost"
-GS_BASE="https://github.com/${GS_REPO}/releases/latest/download"
+GS_DEFAULT_BASE="https://github.com/${GS_REPO}/releases/latest/download"
+# DEVBOOST_RELEASE_BASE lets a pre-release rehearsal point at a local dir (file://…).
+GS_BASE="${DEVBOOST_RELEASE_BASE:-$GS_DEFAULT_BASE}"
 GS_PREFIX="${HOME}/.local/share/devboost"
+# Test seams: the Homebrew prefix to probe, and the tty prompts/stdin are read from.
+GS_BREW_PREFIX="${GS_BREW_PREFIX:-/opt/homebrew}"
+GS_TTY="${GS_TTY:-/dev/tty}"
+GS_BREW_INSTALLER="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+GS_MACOS_MIN=15
+GS_MACOS_TESTED=27
+# The download dir, as a global so the EXIT/signal traps can still see it.
+GS_TMP=""
 
 gs_err() { echo "get.sh: $*" >&2; }
 
+gs_os() {
+  case "$(uname -s)" in
+    Linux) echo linux ;;
+    Darwin) echo darwin ;;
+    *) gs_err "unsupported OS: $(uname -s) (Linux and macOS only)"; return 1 ;;
+  esac
+}
+
+# gs_arch — the release asset key for this host: x86_64 | aarch64 | darwin-arm64.
 gs_arch() {
+  local os
+  os="$(gs_os)" || return 1
+  if [ "$os" = darwin ]; then
+    # A Rosetta-translated shell: Homebrew's installer aborts under it ("only supported on
+    # Apple Silicon"), and everything it installed would be x86_64. Refuse up front.
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 1 ]; then
+      gs_err "this shell runs under Rosetta (x86_64) — open a native (arm64) terminal" \
+        "and re-run"
+      return 1
+    fi
+    case "$(uname -m)" in
+      arm64|aarch64) echo darwin-arm64 ;;
+      x86_64|amd64)
+        # Belt and braces: an x86_64 shell on an arm64 host is translated even if the
+        # proc_translated probe could not be read.
+        if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then
+          gs_err "this shell runs under Rosetta (x86_64) — open a native (arm64) terminal" \
+            "and re-run"
+        else
+          gs_err "Intel Macs are not supported — dev-boost needs Apple Silicon (arm64)"
+        fi
+        return 1 ;;
+      *) gs_err "unsupported architecture: $(uname -m) (arm64 only on macOS)"; return 1 ;;
+    esac
+    return 0
+  fi
   case "$(uname -m)" in
     x86_64|amd64) echo x86_64 ;;
     aarch64|arm64) echo aarch64 ;;
@@ -21,11 +76,86 @@ gs_arch() {
   esac
 }
 
+# gs_macos_check_version — refuse below 15, warn on 15 and on anything past the tested 27.
+gs_macos_check_version() {
+  local version major
+  version="$(sw_vers -productVersion 2>/dev/null || echo '')"
+  major="${version%%.*}"
+  case "$major" in
+    ''|*[!0-9]*)
+      # Fail closed: an unreadable probe is not evidence of a supported macOS.
+      gs_err "the macOS version could not be read — dev-boost needs macOS 15 or newer" \
+        "(27 recommended)"
+      return 1 ;;
+  esac
+  if [ "$major" -lt "$GS_MACOS_MIN" ]; then
+    gs_err "macOS ${version} is not supported — dev-boost needs macOS 15 or newer" \
+      "(27 recommended)"
+    return 1
+  fi
+  if [ "$major" -eq "$GS_MACOS_MIN" ]; then
+    gs_err "macOS 15 is best-effort (untested); 27 and 26 are supported"
+  elif [ "$major" -gt "$GS_MACOS_TESTED" ]; then
+    gs_err "macOS ${version} is newer than tested (27) — continuing"
+  fi
+}
+
+# gs_macos_precheck — the cheap half of the Homebrew bootstrap, run before any download:
+# when Homebrew is missing, the sudo prompt needs a terminal, so refuse now if there is
+# none rather than after the download.
+gs_macos_precheck() {
+  if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ] && ! ( : <"$GS_TTY" ) 2>/dev/null; then
+    gs_err "no terminal available for the sudo prompt — install Homebrew first," \
+      "then re-run this script"
+    return 1
+  fi
+}
+
+# gs_macos_prereqs — make sure Homebrew is there (it installs the command-line tools too),
+# then put it on PATH. A present Homebrew is left completely alone. Runs only once the
+# release binary has been downloaded and verified.
+gs_macos_prereqs() {
+  if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ]; then
+    gs_err "Homebrew is missing — installing it (this also installs the Xcode CLT)."
+    gs_macos_precheck || return 1
+    gs_err "macOS needs your password now (sudo may ask again if the CLT download is slow)."
+    # The redirect is this (user) shell's, on purpose: sudo must read the password from
+    # the tty, not from the script `curl` is piping into bash. SC2024 is about the
+    # opposite case (redirecting *output* into a root-owned path).
+    # shellcheck disable=SC2024
+    sudo -v <"$GS_TTY" || { gs_err "sudo failed — cannot install Homebrew"; return 1; }
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "${GS_CURL_PROTO[@]}" "$GS_BREW_INSTALLER")" \
+      || { gs_err "the Homebrew installer failed"; return 1; }
+    if [ ! -x "${GS_BREW_PREFIX}/bin/brew" ]; then
+      gs_err "the Homebrew installer finished, but ${GS_BREW_PREFIX}/bin/brew is missing"
+      return 1
+    fi
+  fi
+  eval "$("${GS_BREW_PREFIX}/bin/brew" shellenv)"
+}
+
+# --proto/--proto-redir: an https:// release must stay https:// even across a 302, so a
+# redirect cannot silently downgrade the fetch to plaintext. file:// is the D9 local
+# rehearsal hatch, allowed on the first hop only.
+GS_CURL_PROTO=(--proto '=https,file' --proto-redir '=https')
+
 gs_fetch() {
   local url="$1" out="$2"
-  if command -v curl >/dev/null 2>&1; then curl -fsSL "$url" -o "$out"
+  if command -v curl >/dev/null 2>&1
+  then curl -fsSL "${GS_CURL_PROTO[@]}" "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then wget -qO "$out" "$url"
   else gs_err "need curl or wget"; return 1; fi
+}
+
+# gs_not_found RC — true when gs_fetch's exit code RC means "the server has no such file",
+# as opposed to a network, DNS, TLS or timeout failure. curl -f: 22 is an HTTP error
+# (404 …), 37 a file:// path that cannot be read; wget: 8 is a server error response.
+gs_not_found() {
+  if command -v curl >/dev/null 2>&1; then
+    [ "$1" -eq 22 ] || [ "$1" -eq 37 ]
+  else
+    [ "$1" -eq 8 ]
+  fi
 }
 
 gs_sha256() {
@@ -34,38 +164,174 @@ gs_sha256() {
   else gs_err "need sha256sum or shasum"; return 1; fi
 }
 
+# gs_entry DIR FILE — print FILE's line from DIR/checksums.txt (an exact name match, so a
+# `.` is not a wildcard and one name never matches several lines). Fails when absent.
+gs_entry() {
+  awk -v f="$2" '$2 == f { print; found = 1; exit } END { exit !found }' "$1/checksums.txt"
+}
+
 # gs_verify DIR FILE — verify FILE in DIR against DIR/checksums.txt.
 gs_verify() {
   local dir="$1" file="$2" line
-  line="$(grep -E "  ${file}\$" "${dir}/checksums.txt")" || {
+  line="$(gs_entry "$dir" "$file")" || {
     gs_err "no checksum entry for ${file}"; return 1
   }
   printf '%s\n' "$line" | ( cd "$dir" && gs_sha256 -c - ) >/dev/null
 }
 
-gs_main() {
-  local arch tmp profiles bindir link
-  arch="$(gs_arch)" || return 1
-  profiles=("$@"); [ "${#profiles[@]}" -eq 0 ] && profiles=(terminal)
+# gs_release_tag — best effort, for error messages only: the tag behind the latest-release
+# redirect (e.g. v0.1.80), or a description of where the release came from.
+gs_release_tag() {
+  local url tag
+  if [ "$GS_BASE" != "$GS_DEFAULT_BASE" ]; then
+    echo "at ${GS_BASE}"
+    return 0
+  fi
+  url="$(curl -fsSLI "${GS_CURL_PROTO[@]}" -o /dev/null -w '%{url_effective}' \
+    "https://github.com/${GS_REPO}/releases/latest" 2>/dev/null || true)"
+  tag="${url##*/}"
+  case "$tag" in
+    v[0-9]*) echo "$tag" ;;
+    *) echo "(latest)" ;;
+  esac
+}
 
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+# gs_missing_asset ASSET OS — the release exists but has no ASSET for this host. Say so
+# plainly (a bare curl 404 sends people after the wrong problem). Nothing has been
+# installed at this point.
+gs_missing_asset() {
+  local asset="$1" os="$2" tag
+  tag="$(gs_release_tag)"
+  if [ "$os" = darwin ]; then
+    gs_err "no ${asset} in release ${tag} yet — macOS support starts with v1.0.0"
+  else
+    gs_err "no ${asset} in release ${tag} yet"
+  fi
+  gs_err "nothing was installed."
+}
+
+# gs_check_base — never fetch the release over plaintext. file:// is the local-rehearsal
+# escape hatch (DEVBOOST_RELEASE_BASE), everything else must be HTTPS.
+gs_check_base() {
+  case "$GS_BASE" in
+    https://*|file://*) : ;;
+    *) gs_err "refusing a non-HTTPS release base: ${GS_BASE}"; return 1 ;;
+  esac
+}
+
+# gs_warn_base — an overridden base is where BOTH the binary and its checksums come from,
+# so the checksum chain cannot vouch for it. Say so, loudly, and name the host.
+gs_warn_base() {
+  local host
+  if [ "$GS_BASE" = "$GS_DEFAULT_BASE" ]; then
+    return 0
+  fi
+  host="${GS_BASE#*://}"
+  host="${host%%/*}"
+  if [ -z "$host" ]; then host="(this machine)"; fi
+  gs_err "WARNING: DEVBOOST_RELEASE_BASE overrides the official release."
+  gs_err "WARNING: devboost AND its checksums will be fetched from: ${host}"
+  gs_err "WARNING: full base: ${GS_BASE}"
+}
+
+# gs_cleanup — remove the download dir, from any exit path. Safe to call twice.
+gs_cleanup() {
+  if [ -n "$GS_TMP" ]; then
+    rm -rf "$GS_TMP"
+    GS_TMP=""
+  fi
+  return 0
+}
+
+# gs_on_signal RC — clean up, then really die (a bare trap would resume the script).
+gs_on_signal() {
+  gs_cleanup
+  exit "$1"
+}
+
+gs_main() {
+  local os arch tmp profiles bindir link rc
+  gs_check_base || return 1
+  os="$(gs_os)" || return 1
+
+  if [ "$#" -eq 0 ]; then profiles=(terminal); else profiles=("$@"); fi
+
+  # Every macOS refusal fires before any network call or any change to HOME.
+  if [ "$os" = darwin ]; then
+    if [ "$(id -u)" = 0 ]; then
+      gs_err "don't run this as root on macOS — Homebrew refuses root. Run it as your user."
+      return 1
+    fi
+    if [ "${profiles[0]}" = "usb" ]; then
+      gs_err "the USB builder is Linux-only"
+      return 1
+    fi
+  fi
+
+  arch="$(gs_arch)" || return 1
+
+  if [ "$os" = darwin ]; then
+    gs_macos_check_version || return 1
+    gs_macos_precheck || return 1
+  fi
+
+  gs_warn_base
+
+  # Clean the download dir on EVERY exit path: a plain return, a `set -e` abort, and
+  # Ctrl-C / SIGHUP / SIGTERM. (`exec` fires no trap, so that path removes it by hand.)
+  trap 'gs_cleanup' EXIT RETURN
+  trap 'gs_on_signal 130' INT
+  trap 'gs_on_signal 129' HUP
+  trap 'gs_on_signal 143' TERM
+  GS_TMP="$(mktemp -d)"
+  chmod 700 "$GS_TMP"
+  tmp="$GS_TMP"
 
   gs_err "downloading devboost-${arch} from the latest release…"
   gs_fetch "${GS_BASE}/checksums.txt" "${tmp}/checksums.txt" \
-    || { gs_err "no published release yet (or network error). See README for releasing."; return 1; }
-  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" || return 1
+    || { gs_err "no published release yet (or network error). See README for releasing."
+         return 1; }
+  # A release without this host's asset (e.g. a Linux-only release fetched from a Mac):
+  # either checksums.txt has no entry for it, or the asset itself 404s.
+  if ! gs_entry "$tmp" "devboost-${arch}" >/dev/null; then
+    gs_missing_asset "devboost-${arch}" "$os"
+    return 1
+  fi
+  # A 404 is a missing asset; anything else (timeout, TLS, reset, DNS) is a network error
+  # and is reported as one, with the downloader's own message, not as a missing asset.
+  rc=0
+  gs_fetch "${GS_BASE}/devboost-${arch}" "${tmp}/devboost-${arch}" 2>"${tmp}/fetch.err" \
+    || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if gs_not_found "$rc"; then
+      gs_missing_asset "devboost-${arch}" "$os"
+    else
+      gs_err "downloading devboost-${arch} failed (network error, exit ${rc}):"
+      sed 's/^/  /' "${tmp}/fetch.err" >&2
+      gs_err "nothing was installed. Check the connection and re-run."
+    fi
+    return 1
+  fi
   gs_verify "$tmp" "devboost-${arch}" || { gs_err "checksum mismatch: devboost-${arch}"; return 1; }
-  # The Ventoy injection archive is shipped alongside the binary so the online-installed
-  # `devboost installer` can build a USB with no clone/build.
-  gs_fetch "${GS_BASE}/devboost-${arch}.tar.gz" "${tmp}/devboost-${arch}.tar.gz" || return 1
-  gs_verify "$tmp" "devboost-${arch}.tar.gz" \
-    || { gs_err "checksum mismatch: devboost-${arch}.tar.gz"; return 1; }
+  if [ "$os" = linux ]; then
+    # The Ventoy injection archive is shipped alongside the binary so the online-installed
+    # `devboost installer` can build a USB with no clone/build. The builder is Linux-only.
+    gs_fetch "${GS_BASE}/devboost-${arch}.tar.gz" "${tmp}/devboost-${arch}.tar.gz" || return 1
+    gs_verify "$tmp" "devboost-${arch}.tar.gz" \
+      || { gs_err "checksum mismatch: devboost-${arch}.tar.gz"; return 1; }
+  fi
+
+  # Verified. Only now touch the machine: Homebrew + the CLT first (macOS), then devboost.
+  if [ "$os" = darwin ]; then
+    gs_macos_prereqs || return 1
+  fi
 
   mkdir -p "${GS_PREFIX}/bin"
   install -m 0755 "${tmp}/devboost-${arch}" "${GS_PREFIX}/bin/devboost"
-  install -m 0644 "${tmp}/devboost-${arch}.tar.gz" "${GS_PREFIX}/bin/devboost-${arch}.tar.gz"
-  rm -rf "$tmp"
+  if [ "$os" = linux ]; then
+    install -m 0644 "${tmp}/devboost-${arch}.tar.gz" "${GS_PREFIX}/bin/devboost-${arch}.tar.gz"
+  fi
+  gs_cleanup
 
   # Put `devboost` on PATH: keep the payload in the data dir, link it into the user bin dir.
   bindir="${XDG_BIN_HOME:-${HOME}/.local/bin}"
@@ -76,22 +342,39 @@ gs_main() {
   case ":${PATH}:" in
     *":${bindir}:"*) : ;;
     *) gs_err "note: ${bindir} is not on PATH — add it for future shells:"
-       gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.bashrc" ;;
+       if [ "$os" = darwin ]; then
+         gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.zshrc"
+         gs_err "      (dev-boost's shell config adds it for you once installed)"
+       else
+         gs_err "      echo 'export PATH=\"${bindir}:\$PATH\"' >> ~/.bashrc"
+       fi ;;
   esac
 
-  # Also link into a root-PATH dir (when sudo permits) so `sudo devboost …` resolves
-  # — Fedora's sudo secure_path excludes ~/.local/bin. Best-effort; never fatal.
-  if sudo -n true 2>/dev/null; then
-    sudo -n ln -sf "${GS_PREFIX}/bin/devboost" /usr/local/bin/devboost 2>/dev/null || true
+  if [ "$os" = linux ]; then
+    # Also link into a root-PATH dir (when sudo permits) so `sudo devboost …` resolves
+    # — Fedora's sudo secure_path excludes ~/.local/bin. Best-effort; never fatal.
+    if sudo -n true 2>/dev/null; then
+      sudo -n ln -sf "${GS_PREFIX}/bin/devboost" /usr/local/bin/devboost 2>/dev/null || true
+    fi
   fi
 
   # `usb`/`none` => install the builder only; do NOT configure this machine.
+  # (On Darwin `usb` was already refused, before any download.)
   if [ "${profiles[0]}" = "usb" ] || [ "${profiles[0]}" = "none" ]; then
+    if [ "$os" = darwin ]; then
+      gs_err "devboost installed. Configure this machine with:  devboost install terminal"
+      return 0
+    fi
     gs_err "devboost installed (with the USB injection archive)."
     gs_err "build a bootable USB on this machine:  sudo devboost installer"
     return 0
   fi
   gs_err "running: devboost install ${profiles[*]}"
+  # Under `curl … | bash` stdin is the script itself, so any prompt would read the script.
+  # On macOS, read the install's stdin from the tty instead (when there is one).
+  if [ "$os" = darwin ] && [ ! -t 0 ] && ( : <"$GS_TTY" ) 2>/dev/null; then
+    exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}" <"$GS_TTY"
+  fi
   exec "${GS_PREFIX}/bin/devboost" install "${profiles[@]}"
 }
 

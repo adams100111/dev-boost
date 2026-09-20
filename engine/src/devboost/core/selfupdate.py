@@ -12,6 +12,7 @@ import sys
 import tempfile
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -92,13 +93,39 @@ def is_frozen() -> bool:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class ReleaseAsset:
+    """The release files for one (os, arch): the key, the binary and the Ventoy archive.
+
+    ``archive`` is ``None`` on Darwin: the Ventoy injection builder is Linux-only, so a
+    Mac release ships no ``.tar.gz``.
+    """
+
+    key: str
+    binary: str
+    archive: str | None
+
+
+_LINUX_KEYS = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
+
+
+def release_asset(system: str | None = None, machine: str | None = None) -> ReleaseAsset:
+    """Resolve the release asset for *system*/*machine* (default: the running host)."""
+    system = platform.system() if system is None else system
+    machine = platform.machine() if machine is None else machine
+    arch = machine.lower()
+    if system == "Linux" and arch in _LINUX_KEYS:
+        key = _LINUX_KEYS[arch]
+        return ReleaseAsset(key, f"devboost-{key}", f"devboost-{key}.tar.gz")
+    if system == "Darwin" and arch in ("arm64", "aarch64"):
+        return ReleaseAsset("darwin-arm64", "devboost-darwin-arm64", None)
+    if system == "Darwin" and arch == "x86_64":
+        raise RuntimeError("Intel Macs are not supported (Apple Silicon only)")
+    raise RuntimeError(f"unsupported platform: {system}/{machine}")
+
+
 def _arch() -> str:
-    machine = platform.machine().lower()
-    if machine in ("x86_64", "amd64"):
-        return "x86_64"
-    if machine in ("aarch64", "arm64"):
-        return "aarch64"
-    raise RuntimeError(f"unsupported architecture: {machine}")
+    return release_asset().key
 
 
 def _sha256_file(path: Path) -> str:
@@ -135,8 +162,23 @@ def update_frozen(
     """Download, verify checksums, and atomically install the latest release.
 
     Returns ``(old_version, new_version)``.
-    Raises ``RuntimeError`` on download failure or checksum mismatch.
+    Raises ``RuntimeError`` on download failure or checksum mismatch, and when not running
+    as the frozen binary: from source, ``sys.executable`` is the Python interpreter, which
+    this would otherwise overwrite with a devboost binary. ``OSError`` (e.g. an install
+    directory the user cannot write) and ``UnicodeDecodeError`` (a garbled checksums.txt)
+    can also escape.
+
+    Every download is verified before anything on disk is replaced, and each replacement is
+    an atomic ``os.replace``, so any failure up to and including the binary's own
+    replacement leaves the old binary in place. On Linux the Ventoy archive is replaced
+    *after* the binary: if that second replacement raises ``OSError``, the new binary is
+    already installed and the old archive stays beside it.
     """
+    if not is_frozen():
+        raise RuntimeError(
+            "self-update only applies to the frozen devboost binary "
+            "(from a source checkout, use `git pull`)"
+        )
     _fetch_url = fetch_url if fetch_url is not None else _default_fetch_url
     _fetch_file = fetch_file if fetch_file is not None else _default_fetch_file
 
@@ -144,17 +186,22 @@ def update_frozen(
     if new_ver is None:
         raise RuntimeError("could not determine latest version from the GitHub release redirect")
 
-    arch = _arch()
-    bin_name = f"devboost-{arch}"
-    tar_name = f"devboost-{arch}.tar.gz"
+    if version_tuple(new_ver) < version_tuple(devboost.__version__):
+        raise RuntimeError(
+            f"refusing to downgrade {devboost.__version__} to {new_ver} (latest release)"
+        )
+
+    asset = release_asset()
+    # Only the binary and, on Linux, the Ventoy archive; Darwin ships no archive.
+    names = [asset.binary] if asset.archive is None else [asset.binary, asset.archive]
 
     with tempfile.TemporaryDirectory(prefix="devboost-update-") as tmpdir:
         tmp = Path(tmpdir)
 
         try:
             _fetch_file(f"{LATEST}/checksums.txt", tmp / "checksums.txt")
-            _fetch_file(f"{LATEST}/{bin_name}", tmp / bin_name)
-            _fetch_file(f"{LATEST}/{tar_name}", tmp / tar_name)
+            for fname in names:
+                _fetch_file(f"{LATEST}/{fname}", tmp / fname)
         except Exception as exc:
             raise RuntimeError(f"download failed: {exc}") from exc
 
@@ -165,7 +212,8 @@ def update_frozen(
             if len(halves) == 2:
                 expected[halves[1].strip()] = halves[0].strip()
 
-        for fname in (bin_name, tar_name):
+        # Verify every download before anything on disk is replaced.
+        for fname in names:
             if fname not in expected:
                 raise RuntimeError(f"no checksum entry for {fname} in checksums.txt")
             actual = _sha256_file(tmp / fname)
@@ -175,15 +223,17 @@ def update_frozen(
                 )
 
         real_binary = Path(sys.executable).resolve()
-        real_archive = injection_archive_path(arch)
+        real_archive = None if asset.archive is None else injection_archive_path(asset.key)
 
-        _mode_exe = (
-            stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-        )
+        _mode_exe = stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
         _mode_data = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
 
-        _atomic_replace(tmp / bin_name, real_binary, _mode_exe)
-        _atomic_replace(tmp / tar_name, real_archive, _mode_data)
+        # On Darwin the new file carries no com.apple.quarantine xattr: urllib is not a
+        # quarantine-aware downloader, so Gatekeeper never assesses it. The PyInstaller
+        # ad-hoc signature is kept byte-for-byte (V5).
+        _atomic_replace(tmp / asset.binary, real_binary, _mode_exe)
+        if asset.archive is not None and real_archive is not None:
+            _atomic_replace(tmp / asset.archive, real_archive, _mode_data)
 
     return devboost.__version__, new_ver
 

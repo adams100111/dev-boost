@@ -45,15 +45,67 @@ the package in place.
 6. `uv run pytest` (+ `mypy --strict` + ruff) green in `engine/`.
 
 ## Cutting a release
-The frozen `devboost-<arch>` binaries that `scripts/get.sh` installs come from a GitHub Release.
-Bump the version in **both** `engine/pyproject.toml` and `engine/src/devboost/__init__.py` (they must
-match — CI and the local script both guard this), then publish either way:
+The frozen binaries `scripts/get.sh` installs — `devboost-x86_64`, `devboost-aarch64` and
+`devboost-darwin-arm64` — come from a GitHub Release, alongside the two Linux-only Ventoy
+injection archives and **one shared `checksums.txt`** covering all five files. Bump the
+version in **both** `engine/pyproject.toml` and `engine/src/devboost/__init__.py` (they
+must match — CI and the local script both guard this).
 
-- **CI (multi-arch, recommended):** `git tag vX.Y.Z && git push origin vX.Y.Z` → `.github/workflows/release.yml`
-  builds x86_64 + aarch64 on native runners, assembles `checksums.txt`, and publishes the release.
-- **Local (`scripts/release.sh`):** builds the **host arch only** (PyInstaller can't cross-compile),
-  then creates/updates the `vX.Y.Z` release and regenerates `checksums.txt` from every binary on it.
-  Run it on an x86_64 box *and* an aarch64 box for a full release; `--dry-run` prints the steps.
+**Before tagging:** rehearse the macOS `curl | bash` path in a tart VM against your own
+unpublished build, so a broken install is caught before it ships, not after —
+`bash scripts/build-bundle.sh` then `scripts/vm-test-macos.sh run --local dist` (see
+[docs/vm-testing.md](vm-testing.md), "macOS (tart)", D9). This needs a Mac; if you're
+releasing from Linux, CI's `binary-compat` job below is the equivalent check.
+
+Publish through CI. `release.yml` is the **one canonical release path**; `scripts/release.sh`
+is an emergency fallback that refuses to run while the workflow is enabled (below).
+
+- **CI (multi-arch, canonical):** `git tag vX.Y.Z && git push origin vX.Y.Z` →
+  `.github/workflows/release.yml`:
+  1. `checks` — the full test suite on `ubuntu-24.04` **and** `macos-15`; everything below
+     needs this to pass first.
+  2. `binary` — builds (and, on macOS, ad-hoc-signs + `codesign --verify --strict`s) all
+     three binaries on their native runners (`ubuntu-24.04`, `ubuntu-24.04-arm`,
+     `macos-15`). The two Linux legs build inside an `ubuntu:22.04` container, which keeps
+     the published binaries' **glibc 2.35 floor** (Ubuntu 22.04+, Debian 12, Fedora 36+)
+     now that the `ubuntu-22.04` runner image is deprecated. `scripts/check-glibc-floor.sh`
+     fails the leg if any ELF object that ships needs a `GLIBC_` symbol newer than 2.35: it
+     runs `objdump -T` over the bootloader stub **and** over every ELF inside the onefile's
+     embedded archive — libpython and every extension module / shared library PyInstaller
+     collected — which `scripts/pyi_bundle_elfs.py` extracts. (The stub alone can never
+     fail: PyInstaller's prebuilt bootloader needs only about `GLIBC_2.14`.) An archive it
+     cannot read, or one with no ELF libpython, errors instead of passing.
+  3. `binary-compat` — re-runs the **macos-15-built** `devboost-darwin-arm64` unmodified on
+     `macos-26` (blocking) and the `xcode-27` preview image (non-blocking): `--version`,
+     `list macos`, `codesign --verify --strict` again — proving the oldest-supported-macOS
+     build stays forward-compatible on the newer OSes it also targets.
+  4. `release` — collects all three binaries and both Ventoy archives (`x86_64`/`aarch64`
+     only — Darwin ships none), verifies every one against the per-arch
+     `checksums-<arch>.txt` its build runner wrote (`sha256sum -c`) and regenerates the
+     single `checksums.txt`. It then creates the release as a **draft** (refusing if the
+     tag's release is already published — a re-run reuses its own draft), uploads all six
+     files, downloads them back and checks there are exactly those six, that every asset has
+     a `checksums.txt` entry and that every hash matches, and only as its **last step**
+     publishes the release and marks it latest. Until then `releases/latest` (and so
+     `get.sh` / `self-update`) still serves the previous release.
+- **Emergency only — local (`scripts/release.sh`):** it **refuses** while
+  `.github/workflows/release.yml` exists and is enabled (or its state can't be read), because
+  the paths collide: publishing a `release.sh` draft creates the `v*` tag with your own token,
+  which starts `release.yml`, which rebuilds every binary (not byte-reproducible) and uploads
+  it over the release you just verified. To use it anyway, either disable the workflow
+  (`gh workflow disable release.yml`, and re-enable it afterwards), or set
+  `DEVBOOST_RELEASE_EMERGENCY=1`: that prints a loud warning and publishes **only if the tag
+  already exists on origin** (publishing then pushes no tag, so starts no workflow); for a
+  tag not yet pushed it stops at a verified draft. It builds and uploads the **host arch
+  only** (PyInstaller can't cross-compile — run it once per arch, one host after another,
+  never at the same time: an x86_64 box, an aarch64 box, and a Mac, for a full 3-arch
+  release). The first run creates the release as a **draft**, which
+  `releases/latest` (and so `get.sh` / `self-update`) never sees. Each run uploads its arch,
+  regenerates `checksums.txt` from every binary on the release, downloads everything back
+  and verifies it, and only then — once all five assets are there — publishes the release
+  and marks it latest; until then it says which assets are still missing. `--publish` ships
+  a deliberately partial release; `--dry-run` prints the steps without running them. An
+  already-published release never has an existing asset replaced.
 
 `get.sh` is anonymous `curl … | bash`, so its `releases/latest` only resolves when the **repo is public**.
 

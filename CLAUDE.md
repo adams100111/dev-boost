@@ -1,8 +1,11 @@
 # dev-boost — Mission (read first)
 
 **Goal:** From a fresh laptop, with effectively zero config, reach a fully-configured
-developer workstation in minutes — delivered by an unattended **Ventoy USB** (primary:
-`curl … | bash`; bonus: zero-touch Kickstart). "Production ready" means the box can
+developer workstation in minutes. On Linux this is an unattended **Ventoy USB** (primary:
+`curl … | bash`; bonus: zero-touch Kickstart); **macOS is a first-class family too**,
+delivered by the same `curl … | bash` (`scripts/get.sh`) fetching a frozen, ad-hoc-signed
+`devboost-darwin-arm64` binary — no Python, no clone, no Ventoy (Macs don't boot it).
+"Production ready" means the box can
 **build, out of the box**: **Laravel** (ddev), **.NET + Aspire**, **Python** (uv),
 **Next.js / React** (web), and **React Native + Expo** (Android) — plus editors
 (Zed + fresh; VS Code opt-in), GUI apps (Obsidian w/ GitHub sync, Bruno, dbgate, Bitwarden, …),

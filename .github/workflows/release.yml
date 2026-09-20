@@ -6,13 +6,22 @@ on:
 permissions:
   contents: write
 
+# One release run per tag at a time: a re-run never races the first one's draft.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   # Gate the whole release on the same checks CI runs. ci.yml was red for 20+ runs while
   # releases shipped regardless, because release.yml never ran the tests — it only built the
   # binary. Run them here too, and make everything downstream need them, so a tag can never
   # publish a tree that would fail CI.
   checks:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: engine
@@ -24,26 +33,46 @@ jobs:
       - run: uv sync
       - run: uv run ruff check
       - run: uv run mypy
-      - run: uv run pytest -q
+      - run: uv run pytest -n 4
 
+  # The Linux legs build inside an ubuntu:22.04 container on current runners (ruling
+  # C-M6-R1): the ubuntu-22.04 runner image is deprecated, but its glibc (2.35) is the floor
+  # the published Linux binaries promise — a 24.04-native build would need glibc 2.39 and
+  # drop Ubuntu 22.04 and Debian 12. check-glibc-floor.sh fails the leg if it ever slips:
+  # it checks libpython and every bundled extension module, not just the bootloader stub.
   binary:
     needs: [checks]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             arch: x86_64
+            container: ubuntu:22.04
           - runner: ubuntu-24.04-arm
             arch: aarch64
+            container: ubuntu:22.04
+          - runner: macos-15
+            arch: darwin-arm64
+            container: ''
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     steps:
+      # A bare ubuntu:22.04 image: git (so checkout clones instead of falling back to the
+      # REST tarball), binutils (objdump — PyInstaller's dependency analysis and the glibc
+      # floor check both need it), and CA certificates for uv's downloads.
+      - name: Build prerequisites (ubuntu:22.04 container)
+        if: matrix.container != ''
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            binutils ca-certificates git
       - uses: actions/checkout@v7
       - name: Check tag matches version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pyproject="$(grep -m1 -oP '^version = "\K[^"]+' engine/pyproject.toml)"
-          init="$(grep -m1 -oP '^__version__ = "\K[^"]+' engine/src/devboost/__init__.py)"
+          pyproject="$(sed -nE 's/^version = "([^"]+)".*/\1/p' engine/pyproject.toml | head -n1)"
+          init="$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' engine/src/devboost/__init__.py | head -n1)"
           echo "tag=${tag}  pyproject=${pyproject}  __version__=${init}"
           if [ "${tag}" != "${pyproject}" ] || [ "${tag}" != "${init}" ]; then
             echo "::error::tag v${tag} must match pyproject (${pyproject}) and __version__ (${init})"
@@ -52,17 +81,50 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
+      - name: Check the glibc floor (<= 2.35)
+        if: matrix.arch != 'darwin-arm64'
+        run: bash scripts/check-glibc-floor.sh "dist/devboost-${{ matrix.arch }}" 2.35
       - uses: actions/upload-artifact@v7
         with:
           name: devboost-${{ matrix.arch }}
+          if-no-files-found: error
           path: |
-            dist/devboost-${{ matrix.arch }}
-            dist/devboost-${{ matrix.arch }}.tar.gz
+            dist/devboost-${{ matrix.arch }}*
             dist/checksums-${{ matrix.arch }}.txt
 
-  release:
+  # The binary job builds and ad-hoc-signs the Darwin binary on macos-15 (the oldest
+  # supported macOS, so the frozen bundle stays forward-compatible). This job proves that
+  # same macos-15-built binary also runs, unmodified, on the newer macOS the M6 spec
+  # targets — macos-26 (blocking) and the xcode-27 preview image (non-blocking, since
+  # Preview images can change without notice).
+  binary-compat:
     needs: [binary]
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, xcode-27]
+    continue-on-error: ${{ matrix.os == 'xcode-27' }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: devboost-darwin-arm64
+          path: dist
+      - name: Verify the macos-15-built binary runs here
+        run: |
+          # The bytes that arrived are the bytes build-bundle hashed on the build runner.
+          ( cd dist && shasum -a 256 -c checksums-darwin-arm64.txt )
+          chmod +x dist/devboost-darwin-arm64
+          ./dist/devboost-darwin-arm64 --version
+          ./dist/devboost-darwin-arm64 list macos
+          codesign --verify --strict dist/devboost-darwin-arm64
+
+  # Publishing builds nothing, so it has no glibc floor to keep: a plain current runner.
+  # This workflow is the canonical release path: scripts/release.sh refuses to publish while
+  # it is enabled (publishing a release.sh draft creates the tag, which would start this).
+  release:
+    needs: [binary, binary-compat]
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -72,16 +134,81 @@ jobs:
           mkdir -p out
           cp artifacts/devboost-x86_64/devboost-x86_64 out/
           cp artifacts/devboost-aarch64/devboost-aarch64 out/
+          cp artifacts/devboost-darwin-arm64/devboost-darwin-arm64 out/
           cp artifacts/devboost-x86_64/devboost-x86_64.tar.gz out/     # Ventoy injection (x86_64)
           cp artifacts/devboost-aarch64/devboost-aarch64.tar.gz out/   # Ventoy injection (aarch64)
-          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 \
+          # Gate on the build-time hashes: every asset about to be published must match the
+          # per-arch checksums its own build runner wrote, so an artifact truncated or
+          # altered between the build and here fails the release instead of being re-hashed.
+          cat artifacts/devboost-x86_64/checksums-x86_64.txt \
+              artifacts/devboost-aarch64/checksums-aarch64.txt \
+              artifacts/devboost-darwin-arm64/checksums-darwin-arm64.txt > per-arch-checksums.txt
+          ( cd out && sha256sum -c ../per-arch-checksums.txt )
+          for f in out/*; do
+            awk -v f="${f##*/}" '$2 == f { found = 1 } END { exit !found }' per-arch-checksums.txt \
+              || { echo "::error::${f##*/} has no build-time checksum"; exit 1; }
+          done
+          ( cd out && sha256sum devboost-x86_64 devboost-aarch64 devboost-darwin-arm64 \
               devboost-x86_64.tar.gz devboost-aarch64.tar.gz > checksums.txt )
-      - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            out/devboost-x86_64
-            out/devboost-aarch64
-            out/devboost-x86_64.tar.gz
-            out/devboost-aarch64.tar.gz
+      # Draft -> upload -> verify -> publish, with gh (preinstalled on the runner). Nothing is
+      # public until the last step: a draft is invisible to `releases/latest`, so get.sh and
+      # self-update never see a release whose assets are still uploading or unverified. The
+      # GITHUB_TOKEN's own writes (publishing, the tag it points at) trigger no workflow.
+      - name: Create the release as a draft (never over a published one)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            if [ "$(gh release view "${TAG}" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::${TAG} is already published; a release is never re-uploaded over"
+              exit 1
+            fi
+            echo "${TAG}: reusing the existing draft (a re-run); its assets are replaced"
+          else
+            gh release create "${TAG}" --draft --verify-tag \
+              --title "dev-boost ${TAG}" \
+              --notes "Frozen dev-boost binaries for ${TAG}. Install: scripts/get.sh."
+          fi
+      - name: Upload every asset + checksums.txt to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "${TAG}" --clobber \
+            out/devboost-x86_64 \
+            out/devboost-aarch64 \
+            out/devboost-darwin-arm64 \
+            out/devboost-x86_64.tar.gz \
+            out/devboost-aarch64.tar.gz \
             out/checksums.txt
+      - name: Verify the draft's assets against checksums.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p verify
+          gh release download "${TAG}" --dir verify --clobber
+          # Exactly the six files, no strays, every asset listed, every hash matching.
+          expected="checksums.txt devboost-aarch64 devboost-aarch64.tar.gz devboost-darwin-arm64"
+          expected="${expected} devboost-x86_64 devboost-x86_64.tar.gz"
+          got="$(cd verify && printf '%s\n' * | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          if [ "${got}" != "${expected}" ]; then
+            echo "::error::draft ${TAG} has [${got}], want [${expected}]"
+            exit 1
+          fi
+          for f in verify/devboost-*; do
+            awk -v f="${f##*/}" '$2 == f { found = 1 } END { exit !found }' verify/checksums.txt \
+              || { echo "::error::${f##*/} has no entry in checksums.txt"; exit 1; }
+          done
+          ( cd verify && sha256sum -c checksums.txt )
+          cmp verify/checksums.txt out/checksums.txt
+      - name: Publish the release and mark it latest (last step)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "${TAG}" --draft=false --latest

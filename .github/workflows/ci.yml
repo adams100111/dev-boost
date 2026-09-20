@@ -6,7 +6,12 @@ on:
 
 jobs:
   engine:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, xcode-27]
+    continue-on-error: ${{ matrix.os == 'xcode-27' }}
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: engine
@@ -16,12 +21,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: pass + gpg for the pass integration test
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y pass
       # Pinned chezmoi so the hermetic Linux `chezmoi apply` tests (tests/dotfiles, the
       # M2 Linux gate) run here instead of skipping. Same version as the macOS dev box's
       # brew chezmoi. The .deb is checked against the release checksums file AND the
       # pinned digest below before dpkg sees it — no curl | sh.
       - name: chezmoi (pinned, checksum-verified)
+        if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}
         env:
           CHEZMOI_VERSION: 2.72.2
@@ -36,20 +43,48 @@ jobs:
           echo "${CHEZMOI_DEB_SHA256}  ${deb}" | sha256sum -c -
           sudo dpkg -i "${deb}"
           chezmoi --version
+      # macOS has no apt; pass and chezmoi both ship as bottled homebrew-core formulas,
+      # so a plain `brew install` covers both hermetic tests here (no pinning needed —
+      # Homebrew bottles are already content-addressed and signed).
+      - name: pass + chezmoi (Homebrew)
+        if: runner.os == 'macOS'
+        run: brew install pass chezmoi
       - run: uv sync
       - name: ruff
         run: uv run ruff check
       - name: mypy --strict
         run: uv run mypy
       - name: pytest
-        run: uv run pytest -q
+        run: uv run pytest -n 4
 
+  # Built the way release.yml builds it: Linux inside ubuntu:22.04 (the glibc 2.35 floor,
+  # checked over libpython and every extension module inside the onefile).
   frozen-smoke:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            key: x86_64
+            container: ubuntu:22.04
+          - os: macos-15
+            key: darwin-arm64
+            container: ''
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
+      - name: Build prerequisites (ubuntu:22.04 container)
+        if: matrix.container != ''
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            binutils ca-certificates git
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Build + smoke the frozen binary
         run: bash scripts/build-bundle.sh
       - name: Verify it runs without a Python runtime
-        run: ./dist/devboost-x86_64 --version
+        run: ./dist/devboost-${{ matrix.key }} --version
+      - name: Check the glibc floor (<= 2.35)
+        if: matrix.key != 'darwin-arm64'
+        run: bash scripts/check-glibc-floor.sh "dist/devboost-${{ matrix.key }}" 2.35
