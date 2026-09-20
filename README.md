@@ -350,7 +350,7 @@ See **[docs/remote-fleet.md](docs/remote-fleet.md)** for the full operator guide
 | `devboost update [--profile a,b]` | Propose pinned bumps + regenerate `devboost.lock`; never auto-commits. |
 | `devboost self-update` | `git pull` dev-boost, then re-validate. |
 | `devboost dev <status\|gc\|down>` | Dev-environment resource hygiene (orphan Aspire AppHost GC). |
-| `devboost pass <status\|devices\|enroll\|approve\|revoke\|sync\|audit>` | The shared pass store: per-device keys, enroll/approve/revoke, auto-sync, recipient audit (Linux + macOS; see [docs/pass.md](docs/pass.md)). |
+| `devboost pass <status\|devices\|enroll\|adopt\|approve\|revoke\|sync\|audit>` | The shared pass store: per-device keys, enroll/approve/revoke, auto-sync, recipient audit (Linux + macOS; see [docs/pass.md](docs/pass.md)). |
 | `devboost installer [--device …] [--iso …] [--dry-run] [--refresh-iso] [--yes]` | Build **or non-destructively update** a bootable Ventoy USB: interactive wizard (or flags) — lists removable disks, probes the target (blank / foreign-Ventoy / existing dev-boost → offers update), stages **both the Live (manual) and netinst (zero-touch) ISOs**, downloads + verifies + caches each with a live progress bar, stages the binary/ks.cfg, and prints a final summary. `--dry-run` previews the whole plan and touches nothing. |
 
 ## Recovery walkthrough
@@ -446,7 +446,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 
 ## Docs
 
-[architecture](docs/architecture.md) · [macos](docs/macos.md) · [macos-primer](docs/macos-primer.md) · [recovery-runbook](docs/recovery-runbook.md) ·
+[configuration](docs/configuration.md) · [architecture](docs/architecture.md) · [macos](docs/macos.md) · [macos-primer](docs/macos-primer.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
 [remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [zed](docs/zed.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)

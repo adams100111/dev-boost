@@ -5,7 +5,17 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
-## [Unreleased]
+## [1.2.0] — 2026-09-20
+
+dev-boost no longer ships **any** of its author's personal repos as defaults. Anyone can
+install it and get a working machine; anything private is theirs to configure. New:
+**[docs/configuration.md](docs/configuration.md)**, every setting and environment variable
+in one place.
+
+### Added
+- **[docs/configuration.md](docs/configuration.md)** — every `config.toml` key and every
+  `DEVBOOST_*` variable in one place, with precedence (env beats file) and a note that
+  unknown keys are ignored, so a typo silently falls back to the default.
 
 ### Changed
 - **Plugin marketplaces no longer ship a private repo.** `claude-plugins` and

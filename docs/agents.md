@@ -83,6 +83,8 @@ no API keys in Zed's settings. Details: [zed](zed.md).
 
 ## Adding your own plugin marketplaces
 
+Every dev-boost setting lives in one place: **[configuration](configuration.md)**.
+
 The marketplaces dev-boost ships are all public, so every install can register them. Your
 own — private ones included — go in `~/.config/devboost/config.toml`:
 
