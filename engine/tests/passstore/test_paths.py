@@ -12,7 +12,6 @@ from devboost.passstore import paths
 def test_pass_repo_env_beats_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
     assert paths.pass_repo(UserConfig(pass_repo="me/cfg")) == "me/cfg"
-    assert paths.pass_repo(UserConfig()) == "adams100111/password-store"
     monkeypatch.setenv("DEVBOOST_PASS_REPO", "me/env")
     assert paths.pass_repo(UserConfig(pass_repo="me/cfg")) == "me/env"
 
@@ -65,3 +64,31 @@ def test_devboost_bin_prefers_path(
     assert paths.devboost_bin() == "/home/u/.local/bin/devboost"
     monkeypatch.setattr("devboost.passstore.paths.shutil.which", lambda _c: None)
     assert paths.devboost_bin() == "devboost"
+
+
+def test_no_repo_configured_is_none_not_someone_elses_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """dev-boost used to fall back to its author's private repo, so every other install
+    tried to clone a store it could not read."""
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PASSWORD_STORE_DIR", str(tmp_path / "nope"))
+    assert paths.pass_repo(UserConfig()) is None
+
+
+def test_an_existing_clone_supplies_its_own_repo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A machine that already has the store needs no configuration: read its origin."""
+    monkeypatch.delenv("DEVBOOST_PASS_REPO", raising=False)
+    root = tmp_path / "store"
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "config").write_text(
+        '[core]\n\trepositoryformatversion = 0\n'
+        '[remote "origin"]\n\turl = https://github.com/someone/their-store.git\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PASSWORD_STORE_DIR", str(root))
+    assert paths.pass_repo(UserConfig()) == "https://github.com/someone/their-store.git"
+    assert paths.origin_url(tmp_path / "absent") is None

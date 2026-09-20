@@ -80,7 +80,7 @@ def status() -> None:
     except DevbootError as exc:
         _fail(exc)
     name = acc.record.name if acc.record else device
-    typer.echo(f"repo:      {repo}")
+    typer.echo(f"repo:      {repo or '(not configured — see `devboost pass adopt`)'}")
     typer.echo(f"store:     {store.root}")
     typer.echo(f"device:    {name} ({acc.state})")
     typer.echo(f"key:       {acc.key.fingerprint if acc.key else '-'}")
@@ -188,6 +188,33 @@ def enroll_cmd(
     except DevbootError as exc:
         _fail(exc)
     typer.echo(f"this device is enrolled as {acc.record.name if acc.record else device}")
+
+
+@app.command(name="adopt")
+def adopt_cmd() -> None:
+    """Replace an existing non-clone store with a clone of your repo (backs it up first)."""
+    ctx, store = _ctx(), _store()
+    try:
+        result = enroll_flow.adopt(ctx, store, paths.pass_repo())
+    except NeedsUser as exc:
+        typer.echo(f"{exc.reason}\nnext: {exc.how_to_fix}")
+        return
+    except DevbootError as exc:
+        _fail(exc)
+    typer.echo(f"moved your old store to {result.backup} (nothing was deleted)")
+    typer.echo(f"cloned your pass repo into {store.root}")
+    typer.echo(f"entries in both: {result.shared}")
+    if result.only_local:
+        typer.echo(f"ONLY in the old copy ({len(result.only_local)}) — still at {result.backup}:")
+        for name in result.only_local:
+            typer.echo(f"  {name}")
+        typer.echo("add them with `pass insert`, or copy the .gpg files across and commit.")
+    if result.only_remote:
+        typer.echo(f"new from the repo ({len(result.only_remote)}):")
+        for name in result.only_remote:
+            typer.echo(f"  {name}")
+    if not result.only_local:
+        typer.echo(f"nothing was only in the old copy — delete {result.backup} when happy.")
 
 
 @app.command(name="audit")

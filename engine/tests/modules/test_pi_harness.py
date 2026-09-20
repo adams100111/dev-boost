@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from devboost.core.errors import ConfigError
+from devboost.core.errors import ConfigError, NeedsUser
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.model import Ctx
 from devboost.modules.pi_harness import PiHarness
 
 FEDORA = OsInfo("fedora", "fedora", "x86_64")
+
+
+@pytest.fixture(autouse=True)
+def _harness_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test but the unset one needs a repo: there is no built-in default any more."""
+    monkeypatch.setenv("DEVBOOST_HARNESS_REPO", "adams100111/agent-harness")
 
 
 def _ctx(**kw: object) -> Ctx:
@@ -84,3 +90,26 @@ def test_guarded_install_never_raises(
     ctx = _ctx(present={"node", "harness", "pass"}, scripts={"harness": Result(1)})
     PiHarness().install(ctx)  # must NOT raise
     assert any("harness install --yes" in c for c in _joined(ctx))
+
+
+def test_no_harness_repo_configured_is_blocked_not_a_clone_of_a_private_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dev-boost used to default to its author's PRIVATE agent-harness repo, so every
+    other install cloned something it could not read. With nothing configured there is
+    simply no source to build from: that is a step for the user, reported blocked."""
+    monkeypatch.delenv("DEVBOOST_HARNESS_REPO", raising=False)
+    ctx = _ctx(present={"node", "harness"})
+    with pytest.raises(NeedsUser, match="no harness repo is configured") as err:
+        PiHarness().install(ctx)
+    assert "DEVBOOST_HARNESS_REPO" in err.value.how_to_fix
+    assert not [c for c in _joined(ctx) if "git clone" in c]
+
+
+def test_a_full_git_url_is_used_as_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not everyone's harness lives on github.com."""
+    monkeypatch.setenv("DEVBOOST_HARNESS_REPO", "git@git.example.com:team/harness.git")
+    ctx = _ctx(present={"node", "harness"})
+    PiHarness().install(ctx)
+    assert any("git@git.example.com:team/harness.git" in c for c in _joined(ctx))
+    assert not [c for c in _joined(ctx) if "github.com/git@" in c]

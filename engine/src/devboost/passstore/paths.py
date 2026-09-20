@@ -14,12 +14,53 @@ from devboost.core.selfupdate import is_frozen
 from devboost.core.userconfig import UserConfig, load_user_config
 
 
-def pass_repo(cfg: UserConfig | None = None) -> str:
-    """Repo name (owner/repo) or URL; env DEVBOOST_PASS_REPO wins."""
+def origin_url(root: Path) -> str | None:
+    """The `origin` remote of the clone at *root*, read from .git/config, or None.
+
+    Parsed rather than shelled out to: this runs during config resolution, where there is
+    no executor, and a missing/odd file must degrade to None rather than raise.
+    """
+    config = root / ".git" / "config"
+    try:
+        text = config.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    in_origin = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            in_origin = line.replace(" ", "").lower() in ('[remote"origin"]',)
+            continue
+        if in_origin and line.lower().startswith("url"):
+            _, _, value = line.partition("=")
+            return value.strip() or None
+    return None
+
+
+def pass_repo(cfg: UserConfig | None = None) -> str | None:
+    """Where the pass store lives, or None when nothing says.
+
+    In order: `DEVBOOST_PASS_REPO`, `pass_repo` in the user config, then the `origin` of an
+    existing clone — a machine that already has the store needs no configuration at all.
+    There is deliberately no built-in default: a pass store is personal, and one person's
+    repo as the fallback makes every other install try to clone a repo it cannot read.
+    """
     env = os.environ.get("DEVBOOST_PASS_REPO")
     if env:
         return env
-    return (cfg if cfg is not None else load_user_config()).pass_repo
+    configured = (cfg if cfg is not None else load_user_config()).pass_repo
+    if configured:
+        return configured
+    return origin_url(store_dir())
+
+
+#: What to tell someone who has no pass repo configured.
+NO_PASS_REPO_FIX = (
+    "set it once, either way:\n"
+    "  - `pass_repo = \"<owner>/<repo>\"` in ~/.config/devboost/config.toml\n"
+    "  - or export DEVBOOST_PASS_REPO=<owner/repo or git url>\n"
+    "A private GitHub repo holding your `pass` store; `gh auth login` covers access."
+)
 
 
 def clone_url(repo: str) -> str:
