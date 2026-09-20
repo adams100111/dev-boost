@@ -138,14 +138,22 @@ cmd_shell() {
 GUEST_SHARE="/Volumes/My Shared Files/dist"
 GUEST_SHARE_URL="file:///Volumes/My%20Shared%20Files/dist"
 
+# What the guest-side smoke verifies. NOT the install profiles: an unattended guest has
+# no password, no TCC grants and no GitHub session, so the modules that need a human are
+# reported `blocked` by design and `devboost verify macos` can never exit 0 there (see
+# docs/vm-testing.md "accepted non-green items"). `cli` is the largest set that a guest
+# with nobody at the keyboard CAN have fully green, so a real regression still fails it.
+SMOKE_PROFILES_DEFAULT="cli"
+
 cmd_run() {
-  local os="" name="" local_dir="" profiles="macos"
+  local os="" name="" local_dir="" profiles="macos" smoke_profiles=""
   while (($#)); do
     case "$1" in
       --os) os="$2"; shift 2 ;;
       --name) name="$2"; shift 2 ;;
       --local) local_dir="$2"; shift 2 ;;
       --profiles) profiles="$2"; shift 2 ;;
+      --smoke-profiles) smoke_profiles="$2"; shift 2 ;;
       *) die "run: unknown option '$1'" ;;
     esac
   done
@@ -177,11 +185,11 @@ cmd_run() {
     # A script FILE operand: its arguments are the profiles, with no `-s --` (that form is
     # only for bash reading the script from stdin, as in `curl | bash -s -- …`).
     install_cmd="DEVBOOST_RELEASE_BASE=${GUEST_SHARE_URL} bash \"${GUEST_SHARE}/get.sh\" ${profiles}"
-    smoke_cmd="sh \"${GUEST_SHARE}/smoke-assert.sh\" ${profiles}"
+    smoke_cmd="sh \"${GUEST_SHARE}/smoke-assert.sh\" ${smoke_profiles:-${SMOKE_PROFILES_DEFAULT}}"
   else
     install_cmd="curl -fsSL ${RAW_BASE}/smoke-assert.sh -o \"\$HOME/smoke-assert.sh\""
     install_cmd+=" && curl -fsSL ${RAW_BASE}/get.sh | bash -s -- ${profiles}"
-    smoke_cmd="sh \"\$HOME/smoke-assert.sh\" ${profiles}"
+    smoke_cmd="sh \"\$HOME/smoke-assert.sh\" ${smoke_profiles:-${SMOKE_PROFILES_DEFAULT}}"
   fi
   # The smoke runs in a SECOND exec: a brand-new zsh login shell (the user's real macOS
   # shell) started after the install returned, so it sees the PATH the install wired up

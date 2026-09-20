@@ -127,7 +127,7 @@ scripts/vm-test-macos.sh destroy --os 27                 # stop + tart delete
 ```
 `run` boots the VM headless (`tart run --no-graphics`), waits on `tart ip --wait 120`, then
 runs the public one-liner (`curl … get.sh | bash -s -- macos`) inside the guest via
-`tart exec -i`. Only when that succeeds does it run `scripts/smoke-assert.sh macos` in a
+`tart exec -i`. Only when that succeeds does it run `scripts/smoke-assert.sh cli` in a
 **second** `tart exec`: a fresh `zsh -lc` login shell (the user's real macOS shell), so the
 smoke sees the PATH the install wired up (`~/.local/bin`, Homebrew, mise) rather than the
 PATH of the shell that ran `get.sh`. It exits with the first failing command's exit code.
@@ -155,6 +155,13 @@ renamed to `checksums.txt`, the name `get.sh` / `self-update` verify against.
 cannot drive or observe a GUI step. For a one-off GUI need, boot with graphics instead of
 headless (`tart run <vm>`, not this script's always-headless `run` verb) rather than
 reaching for VNC.
+
+**The smoke verifies `cli`, not the install profiles.** An unattended guest has no
+password, no TCC grants and no GitHub session, so every module that needs a human is
+reported `blocked` by design and `devboost verify macos` can never exit 0 there. `cli`
+is the largest set a guest with nobody at the keyboard can have fully green, so a real
+regression still fails the smoke. Override with `--smoke-profiles "<profiles>"` when a
+human is driving the guest.
 
 **The only accepted non-green items in a macOS guest:**
 - **No nested virtualization** — a Colima VM (what `docker` / `data-services` / `ddev`

@@ -97,7 +97,9 @@ def test_dry_run_run_local_exact_guest_commands(stub_path: StubPath, tmp_path: P
         "+ tart ip --wait 120 devboost-mac27",
         f"+ tart exec -i devboost-mac27 /bin/bash -lc 'DEVBOOST_RELEASE_BASE={GUEST_URL} "
         f'bash "{GUEST}/get.sh" macos\'',
-        f"+ tart exec -i devboost-mac27 /bin/zsh -lc 'sh \"{GUEST}/smoke-assert.sh\" macos'",
+        # the smoke verifies `cli`, not the install profiles: an unattended guest can
+        # never have the human-gated modules green (docs/vm-testing.md)
+        f"+ tart exec -i devboost-mac27 /bin/zsh -lc 'sh \"{GUEST}/smoke-assert.sh\" cli'",
     ]
     assert " -s " not in out
     assert not mktemp_log.exists(), "a preview must stage nothing"
@@ -111,7 +113,7 @@ def test_dry_run_run_remote_exact_guest_commands(stub_path: StubPath) -> None:
         "+ tart ip --wait 120 devboost-mac27",
         f"+ tart exec -i devboost-mac27 /bin/bash -lc 'curl -fsSL {raw}/smoke-assert.sh "
         f'-o "$HOME/smoke-assert.sh" && curl -fsSL {raw}/get.sh | bash -s -- macos cli\'',
-        "+ tart exec -i devboost-mac27 /bin/zsh -lc 'sh \"$HOME/smoke-assert.sh\" macos cli'",
+        "+ tart exec -i devboost-mac27 /bin/zsh -lc 'sh \"$HOME/smoke-assert.sh\" cli'",
     ]
 
 
