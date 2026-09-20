@@ -5,7 +5,12 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-20
+
+First release with **macOS support**. One catalog now drives both Linux (Omarchy/Arch,
+Fedora, Ubuntu) and Apple Silicon macOS, and `curl … | bash` sets up a fresh Mac end to
+end. The 1.0 line marks that the install surface is committed to, not that the module
+catalog is closed.
 
 ### Security
 - **browser-mcp is opt-in everywhere** — port 8931 runs code as you for any tailnet peer
