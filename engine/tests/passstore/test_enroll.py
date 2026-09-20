@@ -174,7 +174,8 @@ def test_ensure_clone_refuses_non_git_dir(tmp_path: Path) -> None:
     (root / "x.gpg").write_text("x", encoding="utf-8")
     with pytest.raises(NeedsUser, match="not a git clone") as err:
         enroll.ensure_clone(_ctx(RuleExecutor()), Store(root), "me/store")
-    assert err.value.how_to_fix == "move it aside and re-run"
+    assert "devboost pass adopt" in err.value.how_to_fix
+    assert "nothing is deleted" in err.value.how_to_fix
 
 
 def test_import_device_keys_only_verified_and_listed(tmp_path: Path) -> None:

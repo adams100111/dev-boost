@@ -10,6 +10,37 @@ installs `pass` + `pass-store`, like `base` does on Linux) enrolls this device t
 way; only the passphrase prompt (pinentry-mac) and the sync scheduler (launchd, not
 systemd) differ per OS — see [Model](#model) and [Sync](#sync) below.
 
+
+## Where your store lives
+
+dev-boost ships **no default repo**. It finds yours in this order:
+
+1. `DEVBOOST_PASS_REPO` (owner/repo or a git URL)
+2. `pass_repo` in `~/.config/devboost/config.toml`
+3. the `origin` remote of an existing clone at `~/.password-store`
+
+```toml
+# ~/.config/devboost/config.toml
+pass_repo = "<owner>/<repo>"
+```
+
+If none of those answer, `pass-store` reports **blocked** with both ways to set it. It
+never guesses a repo: a pass store is personal, and a built-in fallback would make every
+other install try to clone a store it cannot read.
+
+### A store that is already there but is not a clone
+
+`devboost pass adopt`:
+
+1. moves `~/.password-store` to `~/.password-store.pre-devboost` — **moved, never deleted**
+2. clones your repo into its place
+3. reports entries only in the old copy, entries new from the repo, and how many match
+
+Only entry **names** are compared. Nothing is decrypted, and two GPG files holding the
+same secret never have the same bytes, so contents cannot be compared without your
+passphrase. Anything listed as "only in the old copy" is still on disk in the backup.
+
+
 ## Model
 
 - **Per-device keys.** Each device generates an ed25519 key (`cv25519` encryption subkey,

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from devboost.core import log
-from devboost.core.errors import ConfigError
+from devboost.core.errors import ConfigError, NeedsUser
 from devboost.core.registry import register
 from devboost.exec.primitives import mise
 from devboost.model import Ctx, Module
@@ -15,8 +15,14 @@ from devboost.modules.mise import Mise
 from devboost.modules.pass_store import PassStore
 from devboost.modules.secrets import Secrets
 
-DEFAULT_HARNESS_REPO = "adams100111/agent-harness"
+#: No default repo: the harness source is private to whoever runs it, and shipping one
+#: person's repo as the fallback makes every other install clone something it cannot read.
+#: Unset means "this module has nothing to install" — reported blocked, with the fix.
 DEFAULT_HARNESS_REF = "main"
+HARNESS_REPO_FIX = (
+    "set DEVBOOST_HARNESS_REPO=<owner/repo or git url> (and DEVBOOST_HARNESS_REF if not "
+    "`main`), then re-run. Without it dev-boost has no harness source to build from."
+)
 
 
 @register
@@ -34,8 +40,8 @@ class PiHarness(Module):
     def verify(self, ctx: Ctx) -> bool:
         return ctx.ex.which("harness")
 
-    def _repo(self) -> str:
-        return os.environ.get("DEVBOOST_HARNESS_REPO", DEFAULT_HARNESS_REPO)
+    def _repo(self) -> str | None:
+        return os.environ.get("DEVBOOST_HARNESS_REPO") or None
 
     def _ref(self) -> str:
         return os.environ.get("DEVBOOST_HARNESS_REF", DEFAULT_HARNESS_REF)
@@ -57,7 +63,11 @@ class PiHarness(Module):
         # _credentials.github_credentials. Shallow-clone the default branch just to obtain
         # install.sh; it then does the HARNESS_REF-pinned clone itself.
         repo, ref = self._repo(), self._ref()
-        url = f"https://github.com/{repo}"
+        if repo is None:
+            # Nothing to build FROM. Naming the source is a step for the user, so this is
+            # blocked with the fix, not a failed clone of somebody else's private repo.
+            raise NeedsUser("no harness repo is configured", HARNESS_REPO_FIX)
+        url = repo if "://" in repo or repo.startswith("git@") else f"https://github.com/{repo}"
         # install.sh re-clones $HARNESS_REPO@$HARNESS_REF into ~/.local/share/harness itself
         # (our temp checkout is only the source of install.sh's bytes), so BOTH env vars must be
         # passed — and install.sh's HARNESS_REPO is a full URL, not owner/repo.

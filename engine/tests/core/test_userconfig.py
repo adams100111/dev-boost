@@ -5,12 +5,14 @@ from pathlib import Path
 import pytest
 
 from devboost.core.errors import ConfigError
-from devboost.core.userconfig import DEFAULT_PASS_REPO, config_path, load_user_config
+from devboost.core.userconfig import config_path, load_user_config
 
 
 def test_missing_file_gives_defaults(tmp_path: Path) -> None:
     cfg = load_user_config(tmp_path / "absent.toml")
-    assert cfg.pass_repo == DEFAULT_PASS_REPO == "adams100111/password-store"
+    # No built-in pass repo: one person's store as the fallback makes every other install
+    # try to clone a repo it cannot read. Unset means "discover, else ask".
+    assert cfg.pass_repo is None
     assert cfg.device_name is None
 
 

@@ -79,7 +79,12 @@ def test_chezmoi_repo_without_a_repo_needs_the_user(
         ChezmoiRepo().install(Ctx(os=FEDORA, ex=FakeExecutor(scripts={"age": Result(1)})))
 
 
-def test_pi_harness_failure_points_at_the_real_github_auth() -> None:
+def test_pi_harness_failure_points_at_the_real_github_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # There is no built-in harness repo any more (it was the author's private one), so a
+    # test about the CLONE failing has to say where it is cloning from.
+    monkeypatch.setenv("DEVBOOST_HARNESS_REPO", "someone/their-harness")
     ex = FakeExecutor(scripts={"sh": Result(1)})
     with pytest.raises(ConfigError) as exc:
         PiHarness().install(Ctx(os=MAC, ex=ex))

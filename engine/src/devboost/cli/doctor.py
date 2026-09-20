@@ -134,8 +134,9 @@ def _pass_checks(ctx: Ctx) -> list[Check]:
 def _pass_state(ctx: Ctx) -> list[Check]:
     store = Store(pass_paths.store_dir())
     if not store.is_clone():
-        return [Check("pass", True, f"no store at {store.root} yet — `devboost install` "
-                                    f"clones {pass_paths.pass_repo()}")]
+        repo = pass_paths.pass_repo()
+        where = f"clones {repo}" if repo else "needs `pass_repo` set (devboost pass status)"
+        return [Check("pass", True, f"no store at {store.root} yet — `devboost install` {where}")]
     device = pass_paths.device_name()
     acc = pass_enroll.local_access(ctx, store, device)
     name = acc.record.name if acc.record else device
