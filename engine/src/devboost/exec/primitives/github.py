@@ -44,6 +44,27 @@ def _headers(pat: str) -> dict[str, str]:
     }
 
 
+def host_keys(http: HttpFn = _urllib_http) -> list[str]:
+    """GitHub's own SSH host keys, from its published metadata.
+
+    `api.github.com/meta` is fetched over TLS, so the keys are authenticated by GitHub's
+    certificate. That is the difference from `ssh-keyscan github.com`, which asks the
+    server it is trying to authenticate and trusts whatever answers — fine interactively,
+    where a human compares the fingerprint, useless unattended.
+
+    Returns [] on any failure: seeding known_hosts is best-effort, never a failed install.
+    """
+    res = http("GET", "https://api.github.com/meta", {"Accept": "application/vnd.github+json"},
+               None)
+    if res.status != 200:
+        return []
+    try:
+        keys = json.loads(res.body).get("ssh_keys", [])
+    except json.JSONDecodeError:
+        return []
+    return [k for k in keys if isinstance(k, str) and k.strip()]
+
+
 def upload_ssh_key(
     pat: str,
     pubkey_body: str,
