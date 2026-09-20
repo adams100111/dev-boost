@@ -297,7 +297,11 @@ def install(
     app: AppOpt = [],
     update: UpdateOpt = False,
 ) -> None:
-    """Install one or more profiles/modules (default: `full`; `omarchy` on Omarchy)."""
+    """Install one or more profiles/modules.
+
+    With none named, the default comes from this OS: `macos` on a Mac, `omarchy` on
+    Omarchy, `full` everywhere else (`default_profile`).
+    """
     if force and update:
         raise typer.BadParameter("--force and --update are mutually exclusive")
     _run(profiles, root, dry_run, force, offline, all_=all_, apps=app, update=update)
