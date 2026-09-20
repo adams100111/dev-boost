@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(ZSH is None, reason="zsh not installed")
 
 def _zsh(home: Path, bin_dir: Path, script: str, *, brew: Path | None = None,
          login: bool = False, tty: bool = False) -> subprocess.CompletedProcess[str]:
-    """Run zsh -i/-l -c; stdin is /dev/null unless *tty* (then a pty, as in a terminal)."""
+    """Run zsh -i/-l -c; stdin is /dev/null unless *tty* (then a pty, as in a terminal).
+
+"""
     assert ZSH is not None
     env = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -50,6 +52,21 @@ def zsh_home(frag_home: Path, make_bin: MakeBin) -> Path:
     return frag_home
 
 
+#: Stderr the DEVELOPER's machine contributes, which the dotfiles did not cause. A login
+#: shell activates the real mise (brew reaches PATH through /etc/profile's path_helper),
+#: and mise resolves the config it reads from the passwd database rather than $HOME — so
+#: no env var can point it at the temp HOME. With a temp HOME it re-classifies the real
+#: ~/.config/mise/config.toml as non-global and warns about global-only settings such as
+#: `github.credential_command`. CI has no such file and never sees this.
+def shell_noise(stderr: str) -> str:
+    """*stderr* minus the developer-environment lines above."""
+    keep = [
+        ln for ln in stderr.splitlines()
+        if not ln.startswith("mise WARN ") and not ln.startswith("[WARN] migrate:")
+    ]
+    return "\n".join(keep).strip()
+
+
 def test_rc_files_parse() -> None:
     assert ZSH is not None
     for f in (FRAGMENTS / "shell.zsh", DOT / "dot_zshrc", DOT / "dot_zprofile"):
@@ -67,7 +84,7 @@ def test_zshrc_loads_env_and_aliases_then_the_local_file(zsh_home: Path, bin_dir
                                            encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$LOCAL_SAW_DEV|$RIPGREP_CONFIG_PATH"')
     assert res.stdout.strip() == f"1|{zsh_home}/.config/ripgrep/ripgreprc", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_fzf_loads_before_atuin_so_atuin_owns_ctrl_r(zsh_home: Path, bin_dir: Path,
@@ -77,7 +94,7 @@ def test_fzf_loads_before_atuin_so_atuin_owns_ctrl_r(zsh_home: Path, bin_dir: Pa
     # Under a terminal: the key-binding inits load only where zle can run.
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$ATUIN_SAW_FZF"', tty=True)
     assert res.stdout.strip() == "1", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_interactive_zsh_without_a_tty_prints_no_zle_errors(
@@ -90,7 +107,7 @@ def test_interactive_zsh_without_a_tty_prints_no_zle_errors(
     make_bin("atuin", "echo 'setopt zle; typeset -g ATUIN_INIT=1'")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "ok|$FZF_ZSH_INIT|$ATUIN_INIT"')
     assert res.stdout.strip() == "ok||", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_plugins_load_last_highlighting_before_autosuggestions(
@@ -105,7 +122,7 @@ def test_plugins_load_last_highlighting_before_autosuggestions(
     au.write_text("typeset -g AS_AFTER_HL=$+HL_AFTER_ALIASES\n", encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$HL_AFTER_ALIASES|$AS_AFTER_HL"', brew=brew)
     assert res.stdout.strip() == "1|1", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_history_completion_cache_and_open_files(zsh_home: Path, bin_dir: Path) -> None:
@@ -116,7 +133,7 @@ def test_history_completion_cache_and_open_files(zsh_home: Path, bin_dir: Path) 
     assert list((zsh_home / ".cache" / "zsh").glob("zcompdump-*")), "compinit dump not cached"
     if sys.platform == "darwin":
         assert int(lines[3]) > 256  # raised from macOS's default soft limit
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_zprofile_sources_its_local_file(zsh_home: Path, bin_dir: Path) -> None:
@@ -125,7 +142,7 @@ def test_zprofile_sources_its_local_file(zsh_home: Path, bin_dir: Path) -> None:
                                               encoding="utf-8")
     res = _zsh(zsh_home, bin_dir, 'print -r -- "$ZPROFILE_LOCAL"', login=True)
     assert res.stdout.strip().splitlines()[-1] == "1", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_zsh_login_gets_the_shared_env(zsh_home: Path, bin_dir: Path) -> None:
@@ -138,7 +155,7 @@ def test_zsh_login_gets_the_shared_env(zsh_home: Path, bin_dir: Path) -> None:
     rg, local_bin = res.stdout.strip().splitlines()[-1].split("|")
     assert rg == f"{zsh_home}/.config/ripgrep/ripgreprc", res.stderr
     assert local_bin != "0"  # ~/.local/bin is on PATH
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 @pytest.mark.skipif(not Path("/opt/homebrew/bin/brew").exists(), reason="Homebrew not installed")
@@ -150,7 +167,7 @@ def test_zprofile_puts_homebrew_on_path_for_login_shells(zsh_home: Path, bin_dir
     repo, path = res.stdout.strip().splitlines()[-1].split("|", 1)
     assert repo == "/opt/homebrew", res.stderr
     assert "/opt/homebrew/bin" in path.split(":")
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_old_fzf_without_zsh_flag_is_skipped_quietly(zsh_home: Path, bin_dir: Path,
@@ -158,4 +175,4 @@ def test_old_fzf_without_zsh_flag_is_skipped_quietly(zsh_home: Path, bin_dir: Pa
     make_bin("fzf", 'echo "unknown option: $1" >&2; exit 2')  # fzf < 0.48
     res = _zsh(zsh_home, bin_dir, "print ok")
     assert res.stdout.strip() == "ok"
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""

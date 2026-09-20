@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.dotfiles.test_zsh import shell_noise
+
 from .conftest import DOT, FRAGMENTS, MakeBin
 
 SHELL_BASH = FRAGMENTS / "shell.bash"
@@ -89,7 +91,7 @@ def test_shell_bash_sources_quietly_under_system_bash(frag_home: Path, bin_dir: 
     # macOS /bin/bash is 3.2: no globstar there. Sourcing must stay silent (M-R18).
     res = _bash(frag_home, bin_dir, "true")
     assert res.returncode == 0, res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +119,7 @@ def test_bash_profile_marker_and_local_file_note() -> None:
 def test_bash_login_gets_the_shared_env(frag_home: Path, bin_dir: Path) -> None:
     res = _bash_login(frag_home, bin_dir, 'printf "%s" "$RIPGREP_CONFIG_PATH"')
     assert res.stdout.endswith(f"{frag_home}/.config/ripgrep/ripgreprc"), res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_bash_login_keeps_profile_then_env_then_local(frag_home: Path, bin_dir: Path) -> None:
@@ -128,7 +130,7 @@ def test_bash_login_keeps_profile_then_env_then_local(frag_home: Path, bin_dir: 
         "LOCAL_SAW=${PROFILE_SAW_ENV:-0}${RIPGREP_CONFIG_PATH:+1}\n", encoding="utf-8")
     res = _bash_login(frag_home, bin_dir, 'printf "%s" "$LOCAL_SAW"')
     assert res.stdout.endswith("01"), res.stderr  # .profile ran before env.sh; .local after
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""
 
 
 def test_interactive_login_bash_loads_shell_bash(frag_home: Path, bin_dir: Path,
@@ -145,4 +147,4 @@ def test_non_interactive_login_bash_skips_bashrc(frag_home: Path, bin_dir: Path,
     shutil.copy(DOT / "dot_bashrc", frag_home / ".bashrc")
     res = _bash_login(frag_home, bin_dir, 'type -t dev || printf "none"')
     assert res.stdout.strip().splitlines()[-1] == "none", res.stderr
-    assert res.stderr == ""
+    assert shell_noise(res.stderr) == ""

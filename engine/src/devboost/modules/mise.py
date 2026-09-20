@@ -23,6 +23,21 @@ _NOTE_SDKMAN = "# devboost: migrated sdkman init to mise"
 # binary in ~/.local/bin (on the executor's PATH), so verify (`which mise`) succeeds.
 _MISE_INSTALL = "curl https://mise.run | sh"
 
+#: mise downloads release assets from the GitHub API, which allows 60 requests per hour
+#: per IP unauthenticated. A `base` install resolves seven GitHub-backed tools (marksman,
+#: taplo, k9s, helm, kubectl, opentofu, tofu-ls), and anything else on the same IP — a
+#: second machine, CI, an office NAT — shares that budget. Past it, GitHub answers 403 and
+#: the tools fail to install.
+#:
+#: mise's own mechanism for this is a credential command, which it runs on demand, so the
+#: token is never written to disk and never appears in the environment. `gh` is already
+#: part of dev-boost's `cli` profile and authenticated per user, which raises the limit to
+#: 5000/hour. When `gh` is missing or logged out the command simply fails and mise falls
+#: back to unauthenticated requests — exactly today's behaviour, never an error.
+#: Docs: https://mise.jdx.dev/dev-tools/github-tokens.html
+_GH_CREDENTIAL_KEY = "github.credential_command"
+_GH_CREDENTIAL_CMD = 'gh auth token --hostname "$MISE_CREDENTIAL_HOST"'
+
 #: rc files nvm/sdkman may have written `# BEGIN ...` / `# END ...` blocks into, per OS
 #: family (Z2 ruling R2). macOS: M2 leaves ~/.zshrc.local, ~/.zprofile.local and
 #: ~/.bash_profile.local to the user — ~/.zshrc / ~/.zprofile are chezmoi-managed, and
@@ -48,6 +63,10 @@ class Mise(Module):
     per_os = OsMap(macos=BrewFormula("mise"))
 
     def verify(self, ctx: Ctx) -> bool:
+        # Strategy-only, per the os-strategy contract: a module's verify must match its
+        # declared strategy. The GitHub credential command is ensured by install(), which
+        # is idempotent, so `devboost install base` / `--update` repairs a machine that
+        # predates it.
         if (s := self.os_strategy(ctx)) is not None:
             return s.verify(ctx)
         return ctx.ex.which("mise")
@@ -63,8 +82,23 @@ class Mise(Module):
                 # is not in Fedora's default repos (`dnf install mise` fails), so use the
                 # script on every OS.
                 ctx.ex.run(["sh", "-c", _MISE_INSTALL])
+        self._authenticate_github(ctx)
         self._migrate_nvm(ctx)
         self._migrate_sdkman(ctx)
+
+    def _authenticate_github(self, ctx: Ctx) -> None:
+        """Point mise at `gh` for GitHub tokens, so tool installs are not rate-limited.
+
+        Idempotent, and it never overwrites a credential command the user chose: a machine
+        with its own token source (a work PAT, an Enterprise host) keeps it.
+        """
+        current = mise.setting_get(ctx, _GH_CREDENTIAL_KEY)
+        if current == _GH_CREDENTIAL_CMD:
+            return
+        if current is not None:
+            log.info(f"mise: keeping your own {_GH_CREDENTIAL_KEY}")
+            return
+        mise.setting_set(ctx, _GH_CREDENTIAL_KEY, _GH_CREDENTIAL_CMD)
 
     def _cleanup_legacy_apt_source(self, ctx: Ctx) -> None:
         """Remove the malformed mise apt repo earlier versions (≤0.1.5) wrote.
