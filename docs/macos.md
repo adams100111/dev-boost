@@ -119,6 +119,53 @@ config merge always runs, and the default-apps step can still report `blocked` i
 is unattended. Modules with their own macOS provisioning (a custom `per_os.macos` strategy,
 not a bare formula/cask) are not part of `--update`, as on Linux.
 
+## Desktop apps: when they start, and what they are set to
+
+A cask app is opened once (`open -g -a`, never stealing focus) on the run that first
+installs it, so macOS registers its login item and it can ask for its permissions. Two
+rules shape that:
+
+- **An app that needs a TCC grant is never opened unattended.** Nothing may wait on a
+  dialog nobody can see, so a `curl | bash` run reports it `blocked` with the exact fix
+  (`devboost permissions --confirm <module>`) instead.
+- **An app is not opened unattended unless it asks to be** (`launch_unattended`). Opening
+  apps mid-install is a surprising side effect — but a menu-bar monitor that is installed
+  and never started shows the user nothing at all, so `stats` opts in.
+
+### Seeded app settings
+
+A module may seed keys into an app's own defaults domain (`defaults_domain` /
+`defaults_seed`). Two rules make that safe:
+
+- **Only absent keys are written.** Once you change a setting in the app's own UI the key
+  exists, and no later dev-boost run will undo your choice.
+- **Seeding happens before the app is ever opened.** An app that reads its whole defaults
+  domain into memory at startup — Stats does — would ignore a write made while it is
+  running and then overwrite it on exit.
+
+`stats` ships this menu bar: **disk, RAM, CPU and GPU, and nothing else.**
+
+| Key (`eu.exelban.Stats`) | dev-boost | Stats' own default |
+|---|---|---|
+| `Disk_state` | on | on |
+| `RAM_state` | on | on |
+| `CPU_state` | on | on |
+| `GPU_state` | **on** | off |
+| `Network_state` | **off** | on |
+| `Battery_state` | **off** | on |
+| `Sensors_state`, `Bluetooth_state`, `Clock_state`, `Remote_state` | off | off |
+
+Every key is written, including the ones that already match, because an absent key means
+"whatever this version of Stats defaults to" — a future Stats release that changes a
+`defaultState` would otherwise rearrange your menu bar silently.
+
+The key uses the readout's *display* name, which is not always its module name: the `Net`
+module's key is `Network_state`.
+
+To change the layout, toggle it in Stats' own settings; dev-boost will leave it alone from
+then on. To hand a readout back to dev-boost, delete its key
+(`defaults delete eu.exelban.Stats GPU_state`) and re-run `devboost install stats`.
+
 ## Shell
 
 zsh is the shell on macOS (bash on Linux). The files are shared where they can be:

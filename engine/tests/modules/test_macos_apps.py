@@ -39,11 +39,16 @@ class _Brew(FakeExecutor):
     """
 
     def __init__(
-        self, present: set[str] | None = None, auto_updates: set[str] | None = None
+        self,
+        present: set[str] | None = None,
+        auto_updates: set[str] | None = None,
+        defaults: dict[str, bool] | None = None,
     ) -> None:
         super().__init__()
         self.present: set[str] = set(present) if present else set()
         self.auto_updates: set[str] = set(auto_updates) if auto_updates else set()
+        #: Keys already in the defaults domain, as `defaults read-type` would see them.
+        self.defaults: dict[str, bool] = dict(defaults) if defaults else {}
 
     def run(
         self,
@@ -72,6 +77,17 @@ class _Brew(FakeExecutor):
             cask = a[-1]
             body = {"casks": [{"token": cask, "auto_updates": cask in self.auto_updates}]}
             return Result(0, stdout=json.dumps(body))
+        # `defaults` against a domain: absent keys must FAIL read-type, the way the real
+        # tool does — a blanket Result(0) would make every key look already-set.
+        if a[:2] == ["defaults", "read-type"]:
+            return Result(0, stdout="Type is boolean\n") if a[3] in self.defaults else Result(1)
+        if a[:2] == ["defaults", "read"]:
+            if a[2] not in ("eu.exelban.Stats",) or a[3] not in self.defaults:
+                return Result(1)
+            return Result(0, stdout="1\n" if self.defaults[a[3]] else "0\n")
+        if a[:2] == ["defaults", "write"]:
+            self.defaults[a[3]] = a[-1] in ("1", "true", "YES", "-bool")
+            return Result(0)
         return Result(0)
 
 
@@ -227,14 +243,70 @@ def test_unattended_fresh_install_of_a_tcc_app_raises_needs_user_and_never_opens
     assert "devboost permissions --confirm raycast" in exc_info.value.how_to_fix
 
 
+class _Quiet(CaskApp):
+    """A cask with `launch` but no `tcc` and no `launch_unattended` — the default shape."""
+
+    name = "quiet-app"
+    cask = "quiet-app"
+    launch = "QuietApp"
+
+
 @pytest.mark.usefixtures("unattended")
 def test_unattended_fresh_install_without_tcc_just_skips_the_launch() -> None:
-    """Stats has `launch` but no `tcc`: nothing only a human can unblock, so it installs
-    cleanly unattended — no `open`, no `NeedsUser`."""
+    """No `tcc` means nothing only a human can unblock, so the install is clean — but the
+    app is still not opened on an unattended run unless it asks to be."""
+    ex = _Brew()
+    _Quiet().install(Ctx(os=MAC, ex=ex))  # must not raise
+    assert [c for c in ex.calls if c[:1] == ["open"]] == []
+    assert ["brew", "install", "--cask", "-y", "--adopt", "quiet-app"] in ex.calls
+
+
+@pytest.mark.usefixtures("unattended")
+def test_stats_starts_unattended_so_the_menu_bar_is_not_empty() -> None:
+    """A monitor nobody started monitors nothing: Stats opts into `launch_unattended`, so
+    a `curl | bash` Mac gets its readouts without a second, manual step."""
     ex = _Brew()
     apps.Stats().install(Ctx(os=MAC, ex=ex))  # must not raise
-    assert [c for c in ex.calls if c[:1] == ["open"]] == []
-    assert ["brew", "install", "--cask", "-y", "--adopt", "stats"] in ex.calls
+    assert [c for c in ex.calls if c[:1] == ["open"]] == [["open", "-g", "-a", "Stats"]]
+
+
+@pytest.mark.usefixtures("unattended")
+def test_stats_seeds_disk_ram_cpu_gpu_before_it_launches() -> None:
+    """The requested menu bar: disk, RAM, CPU, GPU and nothing else. Every readout is
+    written explicitly, and all of them before the app starts — Stats caches its domain at
+    startup, so a write to a running Stats is ignored and then overwritten."""
+    ex = _Brew()
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+
+    wrote = {c[3]: c[-1] for c in ex.calls if c[:2] == ["defaults", "write"]}
+    assert wrote == {
+        "CPU_state": "true",
+        "RAM_state": "true",
+        "Disk_state": "true",
+        "GPU_state": "true",
+        "Network_state": "false",
+        "Battery_state": "false",
+        "Sensors_state": "false",
+        "Bluetooth_state": "false",
+        "Clock_state": "false",
+        "Remote_state": "false",
+    }
+    last_write = max(i for i, c in enumerate(ex.calls) if c[:2] == ["defaults", "write"])
+    opened = next(i for i, c in enumerate(ex.calls) if c[:1] == ["open"])
+    assert last_write < opened, "every readout must be seeded before Stats starts"
+
+
+@pytest.mark.usefixtures("unattended")
+def test_stats_never_overwrites_a_readout_the_user_already_chose() -> None:
+    """Once someone toggles a readout in Stats' own UI the key exists. dev-boost seeds
+    only absent keys, so a later run never undoes that choice."""
+    ex = _Brew(defaults={"Network_state": True, "GPU_state": False})
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+
+    wrote = {c[3] for c in ex.calls if c[:2] == ["defaults", "write"]}
+    assert "Network_state" not in wrote
+    assert "GPU_state" not in wrote
+    assert "CPU_state" in wrote  # the untouched ones are still seeded
 
 
 @pytest.mark.usefixtures("interactive")

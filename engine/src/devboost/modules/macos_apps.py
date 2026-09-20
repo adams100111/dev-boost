@@ -22,14 +22,48 @@ from devboost.modules.shell import Dotfiles
 _DESKTOP = ("macos-desktop",)
 
 
+#: Stats keeps one bool per readout, `<Name>_state`, in its own defaults domain. The key
+#: uses the module's *display* name, which is not always its source directory: the `Net`
+#: module's key is `Network_state`. Verified against exelban/stats Modules/*/config.plist
+#: and Kit/module/module.swift (`Store.shared.bool(key: "\(config.name)_state", …)`).
+_STATS_DOMAIN = "eu.exelban.Stats"
+
+#: The menu bar dev-boost sets up: disk, RAM, CPU and GPU, nothing else. Stats ships GPU
+#: OFF and Network + Battery ON, so three of these differ from its own defaults. Every key
+#: is listed, including the ones that already match, because an absent key means "whatever
+#: this version of Stats defaults to" — a future release changing a `defaultState` would
+#: silently rearrange the menu bar. Writing them all makes the layout ours.
+_STATS_READOUTS: tuple[tuple[str, bool], ...] = (
+    ("CPU", True),
+    ("RAM", True),
+    ("Disk", True),
+    ("GPU", True),
+    ("Network", False),
+    ("Battery", False),
+    ("Sensors", False),
+    ("Bluetooth", False),
+    ("Clock", False),
+    ("Remote", False),
+)
+
+
 @register
 class Stats(CaskApp):
     name = "stats"
     category = "macos-desktop"
-    description = "Stats — menu-bar CPU/RAM/disk/network monitor (MIT)."
+    description = "Stats — menu-bar disk/RAM/CPU/GPU monitor (MIT)."
     profiles = _DESKTOP
     cask = "stats"
     launch = "Stats"
+    #: A monitor that is installed but never started shows nothing; start it even on an
+    #: unattended `curl | bash` run. It needs no TCC grant, so nothing can block on a
+    #: dialog nobody is there to answer.
+    launch_unattended = True
+    #: Seeded before Stats is ever opened. Stats reads its whole domain into an in-process
+    #: cache at startup and writes that cache back on exit (Kit/plugins/Store.swift), so a
+    #: `defaults write` against a *running* Stats is ignored and then overwritten.
+    defaults_domain = _STATS_DOMAIN
+    defaults_seed = tuple((f"{name}_state", on) for name, on in _STATS_READOUTS)
 
 
 @register

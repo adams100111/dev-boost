@@ -284,7 +284,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `snapper-dnf-hook` | system | dnf plugin: snapshot before/after transactions. |
 | `ssh-setup` | base | Generate ed25519 key and register it with GitHub (non-blocking). |
 | `starship` | shell | Cross-shell prompt. |
-| `stats` | macos-desktop | Stats — menu-bar CPU/RAM/disk/network monitor (MIT). |
+| `stats` | macos-desktop | Stats — menu-bar disk/RAM/CPU/GPU monitor (MIT). |
 | `swapfile` | system | Disk swapfile sized to RAM for OOM headroom (page-out overflow above zram). |
 | `tailscale` | server | Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key). |
 | `tealdeer` | cli |  |

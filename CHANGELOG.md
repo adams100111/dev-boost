@@ -5,6 +5,19 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [Unreleased]
+
+### Changed
+- **`stats` sets up its own menu bar, and starts on install** — a `curl | bash` Mac used
+  to get Stats installed but never launched (an app with no TCC grant skipped its `open`
+  on an unattended run), so nothing appeared in the menu bar until you opened it by hand
+  and clicked through its setup. Stats now opts into `launch_unattended`, and dev-boost
+  seeds its readouts first: **disk, RAM, CPU and GPU, and nothing else** (Stats ships GPU
+  off and Network + Battery on). Only *absent* keys are written, so a readout you toggle
+  in Stats' own settings is never undone by a later run, and seeding happens before the
+  app starts, because Stats caches its whole defaults domain at startup and writes it back
+  on exit. See docs/macos.md "Desktop apps".
+
 ## [1.0.0] — 2026-09-20
 
 First release with **macOS support**. One catalog now drives both Linux (Omarchy/Arch,
