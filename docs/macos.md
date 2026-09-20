@@ -139,6 +139,10 @@ A module may seed keys into an app's own defaults domain (`defaults_domain` /
 
 - **Only absent keys are written.** Once you change a setting in the app's own UI the key
   exists, and no later dev-boost run will undo your choice.
+- **An app that is already running gets restarted** when seeding changed a key — on an
+  attended run only, and never when nothing changed. Without that the settings are written
+  correctly and silently never apply, because the app writes its in-memory copy back when
+  it exits. Unattended, dev-boost prints the `killall … && open -a …` instead.
 - **Seeding happens before the app is ever opened.** An app that reads its whole defaults
   domain into memory at startup — Stats does — would ignore a write made while it is
   running and then overwrite it on exit.

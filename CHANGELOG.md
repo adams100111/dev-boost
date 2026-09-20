@@ -5,6 +5,18 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [Unreleased]
+
+### Fixed
+- **Seeded app settings now take effect on a machine where the app is already running.**
+  `stats` wrote `Disk/RAM/CPU/GPU` correctly and the menu bar did not change: Stats reads
+  its whole defaults domain once at startup and writes that in-memory copy back when it
+  exits, so a write to a **running** Stats is ignored and then discarded. Seeding before
+  dev-boost's own launch only covers a fresh install. The cask strategy now restarts an
+  app when seeding actually changed a key and the app is up — on an attended run only,
+  and never when nothing changed, the same rule `macos-defaults` uses for Dock and Finder.
+  Unattended it prints the `killall … && open -a …` to apply it.
+
 ## [1.2.0] — 2026-09-20
 
 dev-boost no longer ships **any** of its author's personal repos as defaults. Anyone can

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from devboost.core import log
 from devboost.core.errors import InstallError, NeedsUser
 from devboost.core.macver import macos_version
 from devboost.core.osinfo import OsInfo, OsMap
@@ -72,11 +73,38 @@ class CaskInstall:
     def verify(self, ctx: Ctx) -> bool:
         return self._brew_cask().verify(ctx)
 
-    def _seed_defaults(self, ctx: Ctx) -> None:
-        """Write the seeded keys the domain does not already carry."""
+    def _seed_defaults(self, ctx: Ctx) -> bool:
+        """Write the seeded keys the domain does not already carry. True if any were."""
+        wrote = False
         for key, on in self.defaults_seed:
             if macdefaults.read(ctx, self.defaults_domain, key) is None:
                 macdefaults.write(ctx, self.defaults_domain, key, macdefaults.Value("bool", on))
+                wrote = True
+        return wrote
+
+    def _apply_seeded(self, ctx: Ctx, wrote: bool) -> None:
+        """Restart the app when seeding changed something and it is ALREADY running.
+
+        An app that reads its whole defaults domain at startup does not notice a write —
+        and worse, writes its in-memory copy back when it exits, discarding what we set.
+        Seeding before *our* launch is not enough: on a machine where the app was already
+        up, the settings were written correctly and silently never took effect.
+
+        Restart only on an attended run, and only when something actually changed, the
+        same rule `macos-defaults` uses for Dock and Finder: killing a GUI app on a
+        desktop that may be in use is not something to do unasked.
+        """
+        if not wrote or self.launch is None:
+            return
+        if not ctx.ex.run(["pgrep", "-x", self.launch]).ok:
+            return  # not running: it will read the seeded values when it next starts
+        if not is_interactive():
+            log.info(f"{self.launch} not restarted (nobody at the terminal); the new "
+                     f"settings apply next time it starts, or now with "
+                     f"`killall {self.launch} && open -a {self.launch}`")
+            return
+        ctx.ex.run(["killall", self.launch])
+        ctx.ex.run(["open", "-g", "-a", self.launch])
 
     def install(self, ctx: Ctx) -> None:
         already = self.verify(ctx)
@@ -93,8 +121,11 @@ class CaskInstall:
         # Before the `already`/launch returns below: an app that reads its settings once
         # at startup must be seeded while it is not running, and seeding is idempotent
         # (absent keys only), so it is safe on a re-run of an already-present cask.
-        self._seed_defaults(ctx)
+        seeded = self._seed_defaults(ctx)
         if already or self.launch is None:
+            # Already present: our launch below never runs, so an app that is up right now
+            # would otherwise keep — and then write back — its pre-seeding settings.
+            self._apply_seeded(ctx, seeded)
             return
         if not is_interactive():
             if self.tcc:
