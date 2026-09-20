@@ -37,7 +37,9 @@ git history and the GitHub release notes.
   TLS so they are authenticated by GitHub's certificate — unlike `ssh-keyscan github.com`,
   which asks the very server it is trying to authenticate. A `github.com` entry you already
   have (pinned or hashed) is never touched, and with no network the install carries on and
-  the next run retries.
+  the next run retries. `verify` deliberately does not check the entry: it would make a
+  machine that cannot reach `api.github.com` report a broken install for something that
+  is hygiene, and `install` is idempotent, so a re-run repairs a machine that predates it.
 
 ## [1.1.2] — 2026-09-20
 

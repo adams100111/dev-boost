@@ -9,6 +9,7 @@ import pytest
 from devboost.core import osinfo
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
+from devboost.exec.primitives import github as _github
 from devboost.model import Ctx
 from devboost.modules import _credentials as creds
 from devboost.modules import secrets
@@ -55,6 +56,12 @@ class _GhEx(FakeExecutor):
         if list(argv[:3]) == ["gh", "auth", "token"]:
             return Result(0, stdout="gho_tok\n")
         return Result(0)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_key_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ssh-setup seeds GitHub's host keys on install; unit tests must not hit the network."""
+    monkeypatch.setattr(_github, "host_keys", lambda: [])
 
 
 def test_macos_gh_source_uses_gh_setup_git_and_no_plaintext(home: Path) -> None:

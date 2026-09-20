@@ -106,13 +106,11 @@ class SshSetup(Module):
     portable = True
 
     def verify(self, ctx: Ctx) -> bool:
-        kh = _known_hosts()
-        trusted = kh.exists() and github_known(kh.read_text(encoding="utf-8"))
-        return (
-            (home() / ".ssh" / "id_ed25519.pub").exists()
-            and _state_marker().exists()
-            and trusted
-        )
+        # Deliberately NOT including the known_hosts entry: seeding it needs a network
+        # fetch, so a machine that cannot reach api.github.com would verify as broken for
+        # something that is hygiene, not a broken install. install() seeds it and is
+        # idempotent, so a re-run repairs a machine that predates this.
+        return (home() / ".ssh" / "id_ed25519.pub").exists() and _state_marker().exists()
 
     def install(self, ctx: Ctx) -> None:
         ssh = home() / ".ssh"

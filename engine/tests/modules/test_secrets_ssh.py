@@ -9,6 +9,7 @@ from devboost.core.errors import GithubError
 from devboost.core.osinfo import OsInfo
 from devboost.exec.executor import FakeExecutor, Result
 from devboost.exec.primitives import github
+from devboost.exec.primitives import github as _github
 from devboost.model import Ctx
 from devboost.modules.secrets import Secrets, _bootstrap_root
 from devboost.modules.ssh_setup import SshSetup
@@ -70,6 +71,13 @@ def test_secrets_verify_true_after_install(home_env: Path) -> None:
 
 def test_ssh_setup_requires_secrets() -> None:
     assert Secrets in SshSetup.requires
+
+
+@pytest.fixture(autouse=True)
+def _no_host_key_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ssh-setup seeds GitHub's host keys on install; unit tests must not hit the network.
+    Covered on its own in tests/modules/test_ssh_known_hosts.py."""
+    monkeypatch.setattr(_github, "host_keys", lambda: [])
 
 
 def test_ssh_setup_install_hardens_config_and_writes_marker(
