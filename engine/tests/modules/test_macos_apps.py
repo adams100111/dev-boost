@@ -61,7 +61,7 @@ class _Brew(FakeExecutor):
         interactive: bool = False,
         timeout: float | None = None,
     ) -> Result:
-        super().run(
+        base = super().run(
             argv, sudo=sudo, stdin=stdin, env=env, cwd=cwd, interactive=interactive, timeout=timeout
         )
         a = list(argv)
@@ -88,7 +88,9 @@ class _Brew(FakeExecutor):
         if a[:2] == ["defaults", "write"]:
             self.defaults[a[3]] = a[-1] in ("1", "true", "YES", "-bool")
             return Result(0)
-        return Result(0)
+        # Anything this fake does not model itself keeps FakeExecutor's answer, so a
+        # `scripts={"pgrep": Result(1)}` is honoured instead of being flattened to 0.
+        return base
 
 
 @pytest.fixture
@@ -339,3 +341,47 @@ def test_every_desktop_app_uses_brew_and_requires_homebrew(name: str) -> None:
     cls = mods[name]
     assert getattr(cls.per_os.macos, "uses_brew", False) is True
     assert cls.requires == (mods["homebrew"],)
+
+
+@pytest.mark.usefixtures("interactive")
+def test_an_already_running_app_is_restarted_when_seeding_changed_something() -> None:
+    """Observed on a real Mac: the keys were written correctly and the menu bar did not
+    change. Stats reads its whole defaults domain at startup and writes that copy back on
+    exit, so a write to a RUNNING Stats is ignored and then discarded. Seeding before our
+    own launch does not help when the app was already up."""
+    ex = _Brew(present={"stats"})  # already installed: the install path returns early
+    ex.scripts["pgrep"] = Result(0)  # ...and Stats is running right now
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+
+    assert ["killall", "Stats"] in ex.calls
+    assert ["open", "-g", "-a", "Stats"] in ex.calls
+    assert ex.calls.index(["killall", "Stats"]) > max(
+        i for i, c in enumerate(ex.calls) if c[:2] == ["defaults", "write"]
+    )
+
+
+@pytest.mark.usefixtures("interactive")
+def test_nothing_is_restarted_when_the_keys_were_already_set() -> None:
+    """A re-run must not kill a GUI app for no reason."""
+    ex = _Brew(present={"stats"}, defaults={f"{n}_state": v for n, v in apps._STATS_READOUTS})
+    ex.scripts["pgrep"] = Result(0)
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+    assert not [c for c in ex.calls if c[0] == "killall"]
+
+
+@pytest.mark.usefixtures("interactive")
+def test_an_app_that_is_not_running_is_not_started_just_to_apply_settings() -> None:
+    ex = _Brew(present={"stats"})
+    ex.scripts["pgrep"] = Result(1)  # not running
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+    assert not [c for c in ex.calls if c[0] == "killall"]
+
+
+@pytest.mark.usefixtures("unattended")
+def test_unattended_says_how_to_apply_instead_of_killing_a_gui_app() -> None:
+    """Killing a GUI app on a desktop that may be in use is not something to do unasked —
+    the same rule macos-defaults uses for Dock and Finder."""
+    ex = _Brew(present={"stats"})
+    ex.scripts["pgrep"] = Result(0)
+    apps.Stats().install(Ctx(os=MAC, ex=ex))
+    assert not [c for c in ex.calls if c[0] == "killall"]
