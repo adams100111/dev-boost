@@ -5,7 +5,7 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
-## [Unreleased]
+## [1.1.1] — 2026-09-20
 
 ### Changed
 - **`curl … | bash` picks the profile for the OS it is running on** — with no profile
