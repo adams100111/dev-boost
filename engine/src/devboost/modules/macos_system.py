@@ -17,6 +17,7 @@ from devboost.core.errors import InstallError
 from devboost.core.registry import register
 from devboost.exec.primitives import launchd
 from devboost.model import Ctx, Module
+from devboost.modules.docker import Docker
 
 _MACOS: tuple[str, ...] = ("macos",)
 _PROFILES: tuple[str, ...] = ("macos-desktop",)
@@ -209,6 +210,13 @@ class TimemachineExclusions(Module):
     profiles = _PROFILES
     families: ClassVar[tuple[str, ...]] = _MACOS
     portable: ClassVar[bool] = True
+    # The sweep can only exclude paths that exist when it runs, and the biggest ones it
+    # targets are a container runtime's VM disks — which that runtime creates on ITS
+    # install. Running first meant a fresh Mac finished with ~/.colima and
+    # ~/.config/colima still backed up by Time Machine, and verify reporting `missing`
+    # immediately after a successful install. `after` (not `requires`) never pulls docker
+    # into a plan that did not ask for it.
+    after = (Docker,)
 
     def verify(self, ctx: Ctx) -> bool:
         best_effort = {_home() / rel for rel in TM_BEST_EFFORT}
