@@ -17,6 +17,30 @@ git history and the GitHub release notes.
   and never when nothing changed, the same rule `macos-defaults` uses for Dock and Finder.
   Unattended it prints the `killall … && open -a …` to apply it.
 
+## [Unreleased]
+
+### Added
+- **[docs/macos-apps.md](docs/macos-apps.md)** — what each `macos-desktop` app is for and
+  the keys that make it useful, written with the symbols on the keyboard (**⌃⌥H**, not
+  `ctrl-alt-h`). Covers the two ways AeroSpace looks broken when it is not — no
+  Accessibility grant (it runs, the keys do nothing) and too many windows on one
+  workspace (four windows, four unreadable columns) — plus `aerospace list-windows` as the
+  diagnosis, and the limits macOS imposes on any tiling WM.
+- **AeroSpace places the apps dev-boost installs** — Ghostty on workspace 1, Zed on 4,
+  Obsidian on 5, System Settings floated (fixed-size windows tile badly). Workspaces 2
+  and 3 are left free: dev-boost installs no browser and no chat app and will not guess
+  which you use. The config shows how to add your own with `osascript -e 'id of app …'`.
+- **⌃⌥0 makes every window on the workspace the same size** (`balance-sizes`). AeroSpace
+  has always had the command; nothing was bound to it, so the only way back from a skewed
+  split was the CLI or flattening the whole tree, which also discards nesting you meant
+  to keep.
+
+### Changed
+- **The hidden Dock reveals deliberately** — `autohide-delay 0.25` and
+  `autohide-time-modifier 0.3`. macOS waits about half a second and animates slowly; zero
+  delay is worse, not better, because a tiling WM sends the pointer to screen edges
+  constantly and the Dock then flies out mid-work.
+
 ## [1.2.0] — 2026-09-20
 
 dev-boost no longer ships **any** of its author's personal repos as defaults. Anyone can

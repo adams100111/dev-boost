@@ -446,7 +446,7 @@ the laptop you connected from, so it works on any server from any laptop with no
 
 ## Docs
 
-[configuration](docs/configuration.md) · [architecture](docs/architecture.md) · [macos](docs/macos.md) · [macos-primer](docs/macos-primer.md) · [recovery-runbook](docs/recovery-runbook.md) ·
+[configuration](docs/configuration.md) · [architecture](docs/architecture.md) · [macos](docs/macos.md) · [macos-apps](docs/macos-apps.md) · [macos-primer](docs/macos-primer.md) · [recovery-runbook](docs/recovery-runbook.md) ·
 [adding-a-module](docs/adding-a-module.md) · [maintenance](docs/maintenance.md) ·
 [obsidian-sync](docs/obsidian-sync.md) · [remote-dev](docs/remote-dev.md) ·
 [remote-fleet](docs/remote-fleet.md) · [agents](docs/agents.md) · [zed](docs/zed.md) · [omarchy](docs/omarchy.md) · [credentials](docs/credentials.md) · [ventoy](docs/ventoy.md) · [vm-testing](docs/vm-testing.md) · [roadmap](docs/roadmap.md) · [changelog](CHANGELOG.md)
