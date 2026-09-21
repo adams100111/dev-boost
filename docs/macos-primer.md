@@ -174,17 +174,43 @@ pick a location for that capture (or every capture, from the same menu).
 
 ## 8. Dictation (Voxtype)
 
-**Hold Right Option (⌥, the placeholder default), speak, release.** Voxtype transcribes
+**Hold Right Option (⌥), speak, release.** Voxtype transcribes
 locally (Whisper `small.en`, on-device, no network) and types the text wherever the
 cursor is. Upstream defaults to the Globe/fn key on macOS, but macOS already binds that to
 the emoji picker and system dictation, so dev-boost's default is **Right Option**
 instead — left Option keeps its accent-character role (§1), and Right Option types
 nothing on its own, so there is no collision.
 
-**To use your own Omarchy hotkey**, edit the marked `PLACEHOLDER` block in
+**To use a different key**, edit the `[hotkey]` block in
 `dotfiles/dot_config/voxtype/config.toml.tmpl` (in the dev-boost repo, not `~/.config`
-directly) with the `key`/`mode` values from your Omarchy `~/.config/voxtype/config.toml`,
-then run `devboost install dotfiles` to re-render it onto every machine.
+directly — chezmoi rewrites that file), then run `devboost install dotfiles` to re-render
+it onto every machine. macOS takes a single key (`RIGHTALT`, `FN`, `F13`, …) and ignores
+`modifiers`; Linux takes evdev names (`SCROLLLOCK`, `PAUSE`, `F13`, …).
+
+**If dictation types the word "you" and nothing else, the microphone captured silence.**
+That is Whisper's output for an empty buffer, not a hotkey problem. The usual cause on
+macOS is that capture follows the **system default input**, and the default moves on its
+own:
+
+- **A Bluetooth headset.** macOS cannot run A2DP (high-quality output) and the headset
+  microphone at the same time, so opening the mic either fails or forces the whole device
+  down to ~8–16 kHz mono. Connect earbuds and they silently become the default input.
+- **A virtual device** — `ZoomAudioDevice`, Loopback, BlackHole — which has inputs but
+  carries no live audio unless something is routing into it.
+
+Pin a real device instead of following the default. Push-to-talk is held on a keyboard
+key, so you are always within arm's reach of the built-in microphone anyway — a headset
+buys nothing here and costs you the A2DP downgrade every time you speak:
+
+```sh
+voxtype info devices                      # names, exactly as they must be written
+echo 'MacBook Pro Microphone' > ~/.config/devboost/voxtype-device
+devboost install dotfiles                 # re-renders the config with the pin
+```
+
+dev-boost writes `audio.feedback.enabled = true`, so you hear a cue when recording starts
+and stops. Without it a recording that captured nothing is indistinguishable from one that
+worked, until the wrong text appears.
 
 **Arabic dictation** is opt-in: `devboost install voxtype-arabic` downloads the larger
 `large-v3-turbo` model (1.6 GB) and switches the config to a secondary model. Toggle it

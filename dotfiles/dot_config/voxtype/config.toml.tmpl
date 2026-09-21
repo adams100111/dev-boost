@@ -1,5 +1,8 @@
 {{- /* devboost — managed by chezmoi. One Voxtype config for every OS (spec §2). */ -}}
 {{- $arabic := stat (joinPath .chezmoi.homeDir ".config/devboost/voxtype-arabic") -}}
+{{- $devicePath := joinPath .chezmoi.homeDir ".config/devboost/voxtype-device" -}}
+{{- $device := "" -}}
+{{- if stat $devicePath }}{{ $device = trim (output "cat" $devicePath) }}{{ end -}}
 # devboost — managed by chezmoi (dotfiles/dot_config/voxtype/config.toml.tmpl)
 # Voxtype push-to-talk dictation — https://github.com/peteonrails/voxtype (docs/CONFIGURATION.md)
 # Edit the template in the dev-boost repo, then run: devboost install dotfiles
@@ -7,22 +10,48 @@
 engine = "whisper"
 
 [hotkey]
-# ── PLACEHOLDER: hotkey ───────────────────────────────────────────────────────────
-# Replace `key` and `mode` below with the values from the author's Omarchy
-# ~/.config/voxtype/config.toml. Linux takes evdev names (SCROLLLOCK, PAUSE, F13, …);
-# macOS takes RIGHTALT, FN, F13 … (macOS ignores `modifiers`). Until then these defaults
-# work: hold the key, speak, release.
+# Hold the key, speak, release.
+#
+# macOS: Right Option. Upstream defaults to Globe/fn, but macOS already binds that to
+# the emoji picker and system dictation. Left Option types accented characters, so it is
+# not free either. Right Option produces nothing on its own — the only modifier on the
+# keyboard that collides with nothing.
+#
+# Linux: Scroll Lock. Present on the evdev layer of most keyboards, and no desktop
+# environment binds it.
+#
+# To use a different key, change it here and run `devboost install dotfiles`. Linux takes
+# evdev names (SCROLLLOCK, PAUSE, F13, …); macOS takes RIGHTALT, FN, F13 … and ignores
+# `modifiers` entirely, so a macOS hotkey must be a single key.
 {{- if eq .chezmoi.os "darwin" }}
 key = "RIGHTALT"
 {{- else }}
 key = "SCROLLLOCK"
 {{- end }}
 mode = "push_to_talk"
-# ── END PLACEHOLDER ───────────────────────────────────────────────────────────────
 {{- if and $arabic (ne .chezmoi.os "darwin") }}
 # voxtype-arabic: hold Left Shift with the hotkey to dictate with the Arabic model.
 model_modifier = "LEFTSHIFT"
 {{- end }}
+
+[audio]
+{{- if $device }}
+# Pinned by ~/.config/devboost/voxtype-device. Without this, capture follows the SYSTEM
+# default input, which moves on its own: connect a Bluetooth headset and it becomes the
+# default, but macOS cannot run A2DP and the microphone at once, so capture returns
+# silence — and Whisper transcribes silence as the word "you". A virtual device
+# (ZoomAudioDevice, Loopback, …) becoming default does the same thing.
+device = {{ $device | quote }}
+{{- else }}
+# Follow the system default input. To pin one instead — strongly recommended on macOS,
+# where a Bluetooth headset or a virtual device silently becomes the default and captures
+# silence — write its name from `voxtype info devices` into
+# ~/.config/devboost/voxtype-device, then run `devboost install dotfiles`.
+device = "default"
+{{- end }}
+# A start/stop cue: without it, a recording that captured nothing is indistinguishable
+# from one that worked until the wrong text appears.
+feedback.enabled = true
 
 [whisper]
 model = "small.en"

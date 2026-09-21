@@ -29,10 +29,53 @@ def _cfg(os_name: str, home: Path) -> tuple[str, dict[str, Any]]:
 def test_english_default_everywhere(os_name: str, key: str, tmp_path: Path) -> None:
     raw, cfg = _cfg(os_name, tmp_path)
     assert "devboost — managed by chezmoi" in raw
-    assert "PLACEHOLDER" in raw  # the author's Omarchy hotkey goes here (D16)
+    # The shipped config belongs to whoever installed dev-boost. It carries a real,
+    # reasoned default and says how to change it — never a placeholder pointing at
+    # the author's own machine.
+    assert "PLACEHOLDER" not in raw
+    assert "author" not in raw.lower()
+    assert "devboost install dotfiles" in raw  # how to change the key, in the file itself
     assert cfg["engine"] == "whisper"
     assert cfg["hotkey"] == {"key": key, "mode": "push_to_talk"}
     assert cfg["whisper"] == {"model": "small.en", "language": "en"}
+
+
+def _device(home: Path, name: str) -> None:
+    marker = home / ".config" / "devboost" / "voxtype-device"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{name}\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("os_name", ["darwin", "linux"])
+def test_capture_follows_the_system_default_until_pinned(
+    os_name: str, tmp_path: Path
+) -> None:
+    _, cfg = _cfg(os_name, tmp_path)
+    assert cfg["audio"]["device"] == "default"
+
+
+@pytest.mark.parametrize("os_name", ["darwin", "linux"])
+def test_a_pinned_device_is_used_verbatim(os_name: str, tmp_path: Path) -> None:
+    """Capture must not follow the SYSTEM default input, which moves on its own: a
+    Bluetooth headset becoming default cannot deliver a microphone under A2DP, so
+    capture returns silence — which Whisper transcribes as the word "you"."""
+    _device(tmp_path, "MacBook Pro Microphone")
+    _, cfg = _cfg(os_name, tmp_path)
+    assert cfg["audio"]["device"] == "MacBook Pro Microphone"
+
+
+def test_a_pinned_device_name_with_spaces_survives_quoting(tmp_path: Path) -> None:
+    _device(tmp_path, 'Scarlett "2i2" USB')
+    _, cfg = _cfg("darwin", tmp_path)
+    assert cfg["audio"]["device"] == 'Scarlett "2i2" USB'
+
+
+@pytest.mark.parametrize("os_name", ["darwin", "linux"])
+def test_recording_always_has_an_audible_cue(os_name: str, tmp_path: Path) -> None:
+    """Without a cue, a recording that captured nothing looks exactly like one that
+    worked, until the wrong text appears."""
+    _, cfg = _cfg(os_name, tmp_path)
+    assert cfg["audio"]["feedback"]["enabled"] is True
 
 
 def _arabic(home: Path) -> None:
@@ -52,6 +95,8 @@ def test_arabic_adds_an_on_demand_secondary_model(tmp_path: Path) -> None:
     }
     assert "on_demand_loading" not in cfg["whisper"]  # would unload the primary too (D17)
     assert cfg["hotkey"]["model_modifier"] == "LEFTSHIFT"
+    # [audio] follows [hotkey]; keys must not drift into the table that comes after.
+    assert "model_modifier" not in cfg["audio"]
 
 
 def test_macos_arabic_has_no_model_modifier(tmp_path: Path) -> None:
