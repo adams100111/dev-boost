@@ -249,11 +249,27 @@ confirmed.
 | Voxtype | Microphone, Input Monitoring, Accessibility |
 
 Run **`devboost permissions`** to list every outstanding grant for apps that are already
-installed; it opens each System Settings pane in turn. After you flip the switch, confirm
-it with **`devboost permissions --confirm <module>`** (or answer "yes" to the prompt
-`devboost permissions` itself asks, when run at a terminal), which records the grant so
-future runs stop asking. Scripts cannot flip the switch themselves: Apple's TCC database
-has no supported API for a script to grant these, only to ask and to read back state.
+installed; it opens each System Settings pane in turn and asks about **one switch at a
+time** — "Is Voxtype switched ON under Microphone?" — recording only what you say yes to.
+You can also record a whole module's grants at once with **`devboost permissions
+--confirm <module>`**. Scripts cannot flip the switches themselves: Apple's TCC database
+has no supported API for a script to grant these.
+
+**Why one prompt per switch.** The prompt used to be one question per *module* —
+"Granted everything for voxtype?" — covering Microphone, Input Monitoring and
+Accessibility together. Answer yes having flipped two of three and the third was marked
+done forever. That is how a machine ended up reporting `permissions: all granted` while
+Voxtype's microphone was off, and dictation silently transcribed the word "you" from an
+empty buffer for hours.
+
+**Why a grant can expire.** macOS binds a privacy grant to the app's **code signature**.
+Rebuild the bundle and macOS sees a different app, so the grant stops applying — and a
+background daemon cannot show a prompt, so it gets silence instead of an error. dev-boost
+records the signature (`codesign -d --verbose=4` → `CandidateCDHash`) alongside each
+confirmation and asks again when it changes. Apps signed ad-hoc (`TeamIdentifier=not
+set`) are re-signed on every rebuild, so this is routine, not rare. If dev-boost cannot
+read an app's signature it says nothing rather than nagging — no opinion is not evidence
+that a permission was lost.
 
 ## 10. Launch at login
 
