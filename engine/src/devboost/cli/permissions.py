@@ -40,9 +40,15 @@ def permissions(
     if not todo:
         log.ok("permissions: all granted")
         return
+    # One prompt per grant. Asking "Granted everything for <module>?" once, across
+    # Microphone, Input Monitoring and Accessibility, meant a single yes marked all
+    # three done forever — including the ones the user had not actually switched on.
     for name, grants in todo.items():
         for g in grants:
-            log.warn(f"{name}: allow {g.app} in {tcc.label(g.service)}")
+            setting = tcc.label(g.service)
+            log.warn(f"{name}: allow {g.app} in {setting}")
             ctx.ex.run(["open", tcc.settings_url(g.service)])
-        if sys.stdin.isatty() and typer.confirm(f"Granted everything for {name}?", default=False):
-            tcc.confirm(name, grants)
+            if sys.stdin.isatty() and typer.confirm(
+                f"  Is {g.app} switched ON under {setting}?", default=False
+            ):
+                tcc.confirm(name, [g])
