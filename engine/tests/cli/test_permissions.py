@@ -104,13 +104,14 @@ def test_each_grant_is_confirmed_on_its_own(monkeypatch: pytest.MonkeyPatch) -> 
     "all granted" with its microphone off."""
     from devboost.cli import permissions as perms
 
-    monkeypatch.setattr(perms.osinfo, "detect", lambda: MAC)
+    monkeypatch.setattr("devboost.cli.permissions.osinfo.detect", lambda: MAC)
     monkeypatch.setattr(perms, "load", lambda: {"needs-two": _NeedsTwo})
     monkeypatch.setattr(perms, "RealExecutor", FakeExecutor)
-    monkeypatch.setattr(perms.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
     answers = iter([True, False])  # yes to Microphone, no to Input Monitoring
-    monkeypatch.setattr(perms.typer, "confirm", lambda *a, **k: next(answers))
+    monkeypatch.setattr("devboost.cli.permissions.typer.confirm",
+                        lambda *a, **k: next(answers))
 
     perms.permissions()
 
@@ -121,10 +122,10 @@ def test_each_grant_is_confirmed_on_its_own(monkeypatch: pytest.MonkeyPatch) -> 
 def test_a_prompt_names_the_exact_switch(monkeypatch: pytest.MonkeyPatch) -> None:
     from devboost.cli import permissions as perms
 
-    monkeypatch.setattr(perms.osinfo, "detect", lambda: MAC)
+    monkeypatch.setattr("devboost.cli.permissions.osinfo.detect", lambda: MAC)
     monkeypatch.setattr(perms, "load", lambda: {"needs-two": _NeedsTwo})
     monkeypatch.setattr(perms, "RealExecutor", FakeExecutor)
-    monkeypatch.setattr(perms.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
     asked: list[str] = []
 
@@ -132,7 +133,7 @@ def test_a_prompt_names_the_exact_switch(monkeypatch: pytest.MonkeyPatch) -> Non
         asked.append(text)
         return False
 
-    monkeypatch.setattr(perms.typer, "confirm", _confirm)
+    monkeypatch.setattr("devboost.cli.permissions.typer.confirm", _confirm)
     perms.permissions()
 
     assert any("Microphone" in q and "Tiler" in q for q in asked)

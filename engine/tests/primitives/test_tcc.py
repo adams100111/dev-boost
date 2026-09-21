@@ -65,7 +65,8 @@ def test_signature_is_read_from_codesigns_stderr(monkeypatch: pytest.MonkeyPatch
             "CandidateCDHash sha256=abc123\n"
         )
 
-    monkeypatch.setattr(tcc.subprocess, "run", lambda *a, **k: _P())
+    monkeypatch.setattr("devboost.exec.primitives.tcc.subprocess.run",
+                        lambda *a, **k: _P())
     assert tcc.signature("Thing") == "sha256=abc123"
 
 
@@ -81,7 +82,7 @@ def test_signature_is_none_when_codesign_cannot_run(monkeypatch: pytest.MonkeyPa
     def _boom(*a: object, **k: object) -> None:
         raise OSError("no codesign")
 
-    monkeypatch.setattr(tcc.subprocess, "run", _boom)
+    monkeypatch.setattr("devboost.exec.primitives.tcc.subprocess.run", _boom)
     assert tcc.signature("Thing") is None
 
 
