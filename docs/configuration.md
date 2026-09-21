@@ -85,6 +85,41 @@ unset means the notifier stays unconfigured, which is a warning, never a failure
 `DEVBOOST_ORCA_*` redirect a system path or pin a version so the tests never touch the
 real machine. Not meant for everyday use.
 
+## `~/.ssh/config` — the managed block
+
+`ssh-setup` writes one delimited block into `~/.ssh/config`. Everything outside the
+markers is yours and is never touched; the block itself is replaced wholesale on every
+run, so a re-run upgrades a machine installed by an older dev-boost.
+
+```
+# BEGIN devboost-managed
+Host *
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  AddKeysToAgent yes
+  HashKnownHosts yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+  TCPKeepAlive yes
+# END devboost-managed
+```
+
+| Setting | Why |
+|---|---|
+| `IdentityFile` / `IdentitiesOnly` | Offer the dev-boost key and only that key, so a full agent does not exhaust the server's auth-tries limit. |
+| `AddKeysToAgent` | Unlock the key once per session instead of once per connection. |
+| `HashKnownHosts` | `known_hosts` stops being a readable list of every host you reach. |
+| `ServerAliveInterval` / `ServerAliveCountMax` / `TCPKeepAlive` | Keep a long, quiet session from being dropped by NAT or a stateful firewall. |
+
+The keepalive matters more than it looks. `docker buildx` reaches a **remote builder** by
+shelling out to `ssh … docker system dial-stdio`, and that stream sits idle for as long as
+the compile takes. A 25-minute build survives without keepalive; an 80-minute one dies
+with `client_loop: send disconnect: Broken pipe` *after* the work is finished, and the
+build is lost. One packet every 30s removes the whole class of failure.
+
+Since `Host *` supplies these as defaults, a per-host block in your own config still wins
+— SSH takes the first value it sees for a keyword, and your entries come first.
+
 ## What dev-boost never assumes
 
 It ships **no personal defaults**. Everything below is reachable by anyone who installs

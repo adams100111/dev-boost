@@ -98,6 +98,55 @@ def test_ssh_setup_install_hardens_config_and_writes_marker(
     assert SshSetup().verify(ctx) is True
 
 
+def test_ssh_setup_config_keeps_long_sessions_alive(
+    home_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A remote container build reaches its builder over `ssh … dial-stdio`, and that
+    stream is idle for as long as the compile takes. Without keepalive a NAT or
+    stateful firewall drops it and the build is lost AFTER the work is done."""
+    ssh = home_env / ".ssh"
+    ssh.mkdir(mode=0o700)
+    (ssh / "id_ed25519").write_text("priv", encoding="utf-8")
+    (ssh / "id_ed25519.pub").write_text("ssh-ed25519 AAA", encoding="utf-8")
+    monkeypatch.setattr(github, "upload_ssh_key", lambda *a, **k: True)
+
+    SshSetup().install(_ctx(present={"age"}))
+
+    cfg = (ssh / "config").read_text(encoding="utf-8")
+    assert "ServerAliveInterval 30" in cfg
+    assert "ServerAliveCountMax 10" in cfg
+    assert "TCPKeepAlive yes" in cfg
+
+
+def test_ssh_setup_repairs_a_config_written_by_an_older_devboost(
+    home_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Machines installed before keepalive existed carry the old managed block. The
+    block is delimited, so a re-run replaces it in place — the user's own entries
+    outside the markers are left exactly as they are."""
+    ssh = home_env / ".ssh"
+    ssh.mkdir(mode=0o700)
+    (ssh / "id_ed25519").write_text("priv", encoding="utf-8")
+    (ssh / "id_ed25519.pub").write_text("ssh-ed25519 AAA", encoding="utf-8")
+    (ssh / "config").write_text(
+        "Host my-box\n  HostName 10.0.0.1\n"
+        "# BEGIN devboost-managed\n"
+        "Host *\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n"
+        "# END devboost-managed\n"
+        "Host other\n  HostName 10.0.0.2\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(github, "upload_ssh_key", lambda *a, **k: True)
+
+    SshSetup().install(_ctx(present={"age"}))
+
+    cfg = (ssh / "config").read_text(encoding="utf-8")
+    assert "ServerAliveInterval 30" in cfg
+    assert cfg.count("# BEGIN devboost-managed") == 1
+    # the user's own hosts survive on both sides of the managed block
+    assert "Host my-box" in cfg and "Host other" in cfg
+
+
 def test_ssh_setup_marker_absent_when_upload_fails(
     home_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
