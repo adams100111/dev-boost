@@ -33,21 +33,24 @@ def test_ios_members() -> None:
     assert _expand("ios") == ["xcode", "ios-tooling"]
 
 
-def test_macos_includes_the_desktop_and_voxtype() -> None:
+def test_macos_includes_the_desktop() -> None:
     mac = set(_expand("macos"))
     assert set(_expand("macos-desktop")) <= mac
-    assert "voxtype" in mac
 
 
-def test_voxtype_is_in_base_everywhere() -> None:
+def test_voxtype_is_opt_in_everywhere() -> None:
+    """Dictation is an application preference, not toolchain. It also costs a 488 MB
+    model, three privacy grants and a Login Item, and is the one module that cannot
+    finish unattended — so no default profile may pull it in."""
     for aggregate in ("base", "full", "omarchy", "macos"):
-        assert "voxtype" in _expand(aggregate), aggregate
+        assert "voxtype" not in _expand(aggregate), aggregate
 
 
 def test_opt_ins_stay_out_of_every_default() -> None:
     for aggregate in ("full", "omarchy", "macos"):
         got = set(_expand(aggregate))
-        assert not {"voxtype-arabic", "android-emulator", "xcode", "maccy"} & got, aggregate
+        opt_ins = {"voxtype", "voxtype-arabic", "android-emulator", "xcode", "maccy"}
+        assert not opt_ins & got, aggregate
 
 
 def test_linux_drops_the_mac_only_sets(tmp_path: Path) -> None:
