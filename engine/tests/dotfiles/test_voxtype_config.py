@@ -47,7 +47,9 @@ def _device(home: Path, name: str) -> None:
 
 
 @pytest.mark.parametrize("os_name", ["darwin", "linux"])
-def test_capture_follows_the_system_default_until_one_is_pinned(os_name: str, tmp_path: Path) -> None:
+def test_capture_follows_the_system_default_until_pinned(
+    os_name: str, tmp_path: Path
+) -> None:
     _, cfg = _cfg(os_name, tmp_path)
     assert cfg["audio"]["device"] == "default"
 
@@ -93,7 +95,8 @@ def test_arabic_adds_an_on_demand_secondary_model(tmp_path: Path) -> None:
     }
     assert "on_demand_loading" not in cfg["whisper"]  # would unload the primary too (D17)
     assert cfg["hotkey"]["model_modifier"] == "LEFTSHIFT"
-    assert "model_modifier" not in cfg["audio"]  # [audio] follows [hotkey]; keys must not drift into it
+    # [audio] follows [hotkey]; keys must not drift into the table that comes after.
+    assert "model_modifier" not in cfg["audio"]
 
 
 def test_macos_arabic_has_no_model_modifier(tmp_path: Path) -> None:
