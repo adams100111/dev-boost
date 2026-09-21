@@ -29,7 +29,12 @@ def _cfg(os_name: str, home: Path) -> tuple[str, dict[str, Any]]:
 def test_english_default_everywhere(os_name: str, key: str, tmp_path: Path) -> None:
     raw, cfg = _cfg(os_name, tmp_path)
     assert "devboost — managed by chezmoi" in raw
-    assert "PLACEHOLDER" in raw  # the author's Omarchy hotkey goes here (D16)
+    # The shipped config belongs to whoever installed dev-boost. It carries a real,
+    # reasoned default and says how to change it — never a placeholder pointing at
+    # the author's own machine.
+    assert "PLACEHOLDER" not in raw
+    assert "author" not in raw.lower()
+    assert "devboost install dotfiles" in raw  # how to change the key, in the file itself
     assert cfg["engine"] == "whisper"
     assert cfg["hotkey"] == {"key": key, "mode": "push_to_talk"}
     assert cfg["whisper"] == {"model": "small.en", "language": "en"}

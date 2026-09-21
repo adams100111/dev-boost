@@ -174,17 +174,18 @@ pick a location for that capture (or every capture, from the same menu).
 
 ## 8. Dictation (Voxtype)
 
-**Hold Right Option (⌥, the placeholder default), speak, release.** Voxtype transcribes
+**Hold Right Option (⌥), speak, release.** Voxtype transcribes
 locally (Whisper `small.en`, on-device, no network) and types the text wherever the
 cursor is. Upstream defaults to the Globe/fn key on macOS, but macOS already binds that to
 the emoji picker and system dictation, so dev-boost's default is **Right Option**
 instead — left Option keeps its accent-character role (§1), and Right Option types
 nothing on its own, so there is no collision.
 
-**To use your own Omarchy hotkey**, edit the marked `PLACEHOLDER` block in
+**To use a different key**, edit the `[hotkey]` block in
 `dotfiles/dot_config/voxtype/config.toml.tmpl` (in the dev-boost repo, not `~/.config`
-directly) with the `key`/`mode` values from your Omarchy `~/.config/voxtype/config.toml`,
-then run `devboost install dotfiles` to re-render it onto every machine.
+directly — chezmoi rewrites that file), then run `devboost install dotfiles` to re-render
+it onto every machine. macOS takes a single key (`RIGHTALT`, `FN`, `F13`, …) and ignores
+`modifiers`; Linux takes evdev names (`SCROLLLOCK`, `PAUSE`, `F13`, …).
 
 **Arabic dictation** is opt-in: `devboost install voxtype-arabic` downloads the larger
 `large-v3-turbo` model (1.6 GB) and switches the config to a secondary model. Toggle it
