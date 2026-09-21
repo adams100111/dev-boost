@@ -79,3 +79,61 @@ def test_tcc_pending_does_not_block_dependents(monkeypatch: pytest.MonkeyPatch) 
     assert out["needs-a11y"][0] == "blocked"
     # … but installing is done, so its dependent runs instead of `required-failed`.
     assert out["after-a11y"] == ("ok", "")
+
+
+class _NeedsTwo(Module):
+    """Two grants, as voxtype has three — the case the old blanket prompt got wrong."""
+
+    name: ClassVar[str] = "needs-two"
+    tcc: ClassVar[tuple[TccGrant, ...]] = (
+        TccGrant("Microphone", "Tiler"),
+        TccGrant("ListenEvent", "Tiler"),
+    )
+
+    def verify(self, ctx: Ctx) -> bool:
+        return True
+
+    def install(self, ctx: Ctx) -> None:  # pragma: no cover
+        pass
+
+
+def test_each_grant_is_confirmed_on_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The old prompt asked once per MODULE — "Granted everything for voxtype?" — so a
+    single yes marked Microphone, Input Monitoring and Accessibility done forever, even
+    the ones the user had not switched on. That is how a machine ended up reporting
+    "all granted" with its microphone off."""
+    from devboost.cli import permissions as perms
+
+    monkeypatch.setattr(perms.osinfo, "detect", lambda: MAC)
+    monkeypatch.setattr(perms, "load", lambda: {"needs-two": _NeedsTwo})
+    monkeypatch.setattr(perms, "RealExecutor", FakeExecutor)
+    monkeypatch.setattr(perms.sys.stdin, "isatty", lambda: True)
+
+    answers = iter([True, False])  # yes to Microphone, no to Input Monitoring
+    monkeypatch.setattr(perms.typer, "confirm", lambda *a, **k: next(answers))
+
+    perms.permissions()
+
+    still = {g.service for g in tcc.pending("needs-two", _NeedsTwo.tcc)}
+    assert still == {"ListenEvent"}, "a 'no' must not be recorded as granted"
+
+
+def test_a_prompt_names_the_exact_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    from devboost.cli import permissions as perms
+
+    monkeypatch.setattr(perms.osinfo, "detect", lambda: MAC)
+    monkeypatch.setattr(perms, "load", lambda: {"needs-two": _NeedsTwo})
+    monkeypatch.setattr(perms, "RealExecutor", FakeExecutor)
+    monkeypatch.setattr(perms.sys.stdin, "isatty", lambda: True)
+
+    asked: list[str] = []
+
+    def _confirm(text: str, **k: object) -> bool:
+        asked.append(text)
+        return False
+
+    monkeypatch.setattr(perms.typer, "confirm", _confirm)
+    perms.permissions()
+
+    assert any("Microphone" in q and "Tiler" in q for q in asked)
+    assert any("Input Monitoring" in q and "Tiler" in q for q in asked)
