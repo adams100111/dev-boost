@@ -187,6 +187,31 @@ directly — chezmoi rewrites that file), then run `devboost install dotfiles` t
 it onto every machine. macOS takes a single key (`RIGHTALT`, `FN`, `F13`, …) and ignores
 `modifiers`; Linux takes evdev names (`SCROLLLOCK`, `PAUSE`, `F13`, …).
 
+**If dictation types the word "you" and nothing else, the microphone captured silence.**
+That is Whisper's output for an empty buffer, not a hotkey problem. The usual cause on
+macOS is that capture follows the **system default input**, and the default moves on its
+own:
+
+- **A Bluetooth headset.** macOS cannot run A2DP (high-quality output) and the headset
+  microphone at the same time, so opening the mic either fails or forces the whole device
+  down to ~8–16 kHz mono. Connect earbuds and they silently become the default input.
+- **A virtual device** — `ZoomAudioDevice`, Loopback, BlackHole — which has inputs but
+  carries no live audio unless something is routing into it.
+
+Pin a real device instead of following the default. Push-to-talk is held on a keyboard
+key, so you are always within arm's reach of the built-in microphone anyway — a headset
+buys nothing here and costs you the A2DP downgrade every time you speak:
+
+```sh
+voxtype info devices                      # names, exactly as they must be written
+echo 'MacBook Pro Microphone' > ~/.config/devboost/voxtype-device
+devboost install dotfiles                 # re-renders the config with the pin
+```
+
+dev-boost writes `audio.feedback.enabled = true`, so you hear a cue when recording starts
+and stops. Without it a recording that captured nothing is indistinguishable from one that
+worked, until the wrong text appears.
+
 **Arabic dictation** is opt-in: `devboost install voxtype-arabic` downloads the larger
 `large-v3-turbo` model (1.6 GB) and switches the config to a secondary model. Toggle it
 with **Ctrl+Alt+D** on macOS (bound in the AeroSpace config, since Voxtype's
