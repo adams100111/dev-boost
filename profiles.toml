@@ -45,7 +45,12 @@ base = ["xcode-clt","homebrew","rosetta",
         "secrets","ssh-setup","rpmfusion","dnf-tune","fedora-third-party","flatpak",
         "coreutils","git","curl","wget","unzip","jq","htop","ripgrep","fd","fzf","tmux",
         "build-tools","mise","chezmoi","chezmoi-repo","docker","docker-build-gc",
-        "pass","pass-store","voxtype"]
+        "pass","pass-store"]
+# voxtype is NOT here. Everything in `base` is toolchain — compilers, VCS, containers,
+# secrets. Dictation is an application preference, and an expensive one: a 488 MB Whisper
+# model, three macOS privacy grants and a Login Item, and an interactive setup step that
+# makes it the one module that CANNOT finish unattended (it raises NeedsUser and reports
+# `blocked`). macOS also ships dictation already. Opt in by name: `devboost install voxtype`.
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
         "fastfetch","claude-code","herdr-plugins","glow"]

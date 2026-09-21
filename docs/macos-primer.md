@@ -40,7 +40,7 @@ revert command.
 | `monitorcontrol` | External-display brightness/volume over DDC | menu bar | `brew uninstall --cask monitorcontrol` |
 | `keka` | Archiver (7z, zip, rar, …) | Finder → right-click → Services, or open the app | `brew uninstall --cask keka` |
 | `quicklook` | Quick Look previews for Markdown and source code | Space on a file in Finder (after enabling, §6) | `brew uninstall --cask qlmarkdown syntax-highlight` |
-| `voxtype` (`base`, every OS) | Push-to-talk dictation | hold Right Option (§8) | remove its Login Item, then `rm -rf /Applications/Voxtype.app ~/.local/bin/voxtype` |
+| `voxtype` (opt-in, every OS) | Push-to-talk dictation | hold Right Option (§8) | remove its Login Item, then `rm -rf /Applications/Voxtype.app ~/.local/bin/voxtype` |
 
 Example: `devboost revert macos-defaults tilesize` restores `com.apple.dock:tilesize` to
 whatever it read before dev-boost first changed it (or deletes the key if it was unset).
