@@ -5,6 +5,24 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [1.3.1] — 2026-09-21
+
+### Fixed
+- **Long SSH sessions no longer get dropped** — the managed `~/.ssh/config` block now
+  sets `ServerAliveInterval 30`, `ServerAliveCountMax 10` and `TCPKeepAlive yes`. A quiet
+  session is dropped by NAT and stateful firewalls, and the case that bites is a remote
+  container build: `docker buildx` reaches a remote builder over
+  `ssh … docker system dial-stdio`, and that stream is idle for as long as the compile
+  takes. A 25-minute build survives; an 80-minute one died with
+  `client_loop: send disconnect: Broken pipe` *after* the work was finished, losing the
+  whole build. The block is delimited and rewritten on every run, so re-running dev-boost
+  repairs a machine installed by an older version without touching anything outside the
+  markers. Because these arrive under `Host *`, a per-host entry of your own still wins.
+
+### Added
+- **[docs/configuration.md](docs/configuration.md) documents the managed `~/.ssh/config`
+  block** for the first time — every setting and why it is there.
+
 ## [1.3.0] — 2026-09-21
 
 ### Added
