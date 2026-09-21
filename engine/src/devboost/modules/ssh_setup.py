@@ -23,6 +23,15 @@ _BLOCK = (
     "  IdentitiesOnly yes\n"
     "  AddKeysToAgent yes\n"
     "  HashKnownHosts yes\n"
+    # Long-lived SSH sessions that go quiet get dropped by NAT and stateful firewalls.
+    # The case that bites is a remote container build: `docker buildx` reaches a remote
+    # builder by shelling out to `ssh … docker system dial-stdio`, and that stream is
+    # idle for as long as a compile takes. A 25-minute build survives; an 80-minute one
+    # dies with "client_loop: send disconnect: Broken pipe" AFTER the work is done, and
+    # the build is lost. Keepalive costs one packet every 30s and removes the class.
+    "  ServerAliveInterval 30\n"
+    "  ServerAliveCountMax 10\n"
+    "  TCPKeepAlive yes\n"
     f"{_END}"
 )
 
