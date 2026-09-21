@@ -5,6 +5,40 @@ see [releases](https://github.com/adams100111/dev-boost/releases). Format loosel
 [Keep a Changelog](https://keepachangelog.com/). Releases **≤ v0.1.77** predate this file; see
 git history and the GitHub release notes.
 
+## [1.4.0] — 2026-09-21
+
+### Changed
+- **`voxtype` is opt-in, not part of `base`.** Everything else in `base` is toolchain —
+  compilers, VCS, containers, secrets, SSH. Dictation is an application preference, and
+  an expensive one: a 488 MB Whisper model on every install, three macOS privacy grants
+  and a Login Item, and an interactive setup step that made it the one module that
+  **cannot finish unattended** (it raises `NeedsUser` and reports `blocked`). macOS ships
+  dictation already. Install it by name: `devboost install voxtype`.
+
+### Fixed
+- **`devboost permissions` no longer reports grants it cannot vouch for.** It said
+  `all granted` on a machine whose Voxtype **Microphone switch was off** — dictation then
+  transcribed the word "you" from an empty buffer for hours, because a denied microphone
+  on macOS delivers silence rather than an error. Two faults had to line up: the prompt
+  asked once per *module* (`Granted everything for voxtype?`) across Microphone, Input
+  Monitoring and Accessibility together, so one yes marked all three done forever; and
+  nothing ever expired an entry. It now asks **per grant**, naming the exact switch, and
+  stores each app's **code signature** (`CandidateCDHash`) with the confirmation — macOS
+  binds a grant to the signature, so a rebuilt bundle is a different app and the grant
+  stops applying. An unreadable signature yields no opinion and no nag. Entries written
+  by an older dev-boost still load, and are re-asked once where the app can be read.
+- **Voxtype shipped a placeholder hotkey.** The config told every user to replace it with
+  "the values from the author's Omarchy `~/.config/voxtype/config.toml`" — a machine they
+  do not have — and a test asserted the placeholder was present. The default behind it
+  was right all along: Right Option on macOS (Globe/fn is taken by the emoji picker and
+  system dictation; Left Option types accented characters), Scroll Lock on Linux.
+- **Voxtype capture can be pinned to a device**, from `~/.config/devboost/voxtype-device`.
+  Following the *system* default input is a moving target: connect a Bluetooth headset and
+  it becomes the default, but macOS cannot run A2DP and the microphone at once, so capture
+  returns silence. A virtual device (ZoomAudioDevice, Loopback) does the same.
+- **Recording is audible.** `audio.feedback.enabled` now defaults to true — without a cue,
+  a recording that captured nothing is indistinguishable from one that worked.
+
 ## [1.3.1] — 2026-09-21
 
 ### Fixed
