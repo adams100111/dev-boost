@@ -14,12 +14,17 @@ prefix = "ctrl+q"
 # word-jump is unbound there so these reach herdr; zsh keeps word-jump on alt+b / alt+f.
 # Letter chords use only letters zsh (emacs keymap) and Claude Code leave free: e i j k m r v
 # (zsh binds alt+d kill-word, alt+t transpose-words, alt+z; Claude Code binds meta+p/o/t/w).
-focus_pane_left = ["prefix+h", "alt+left"]
-focus_pane_down = ["prefix+j", "alt+down"]
-focus_pane_up = ["prefix+k", "alt+up"]
-focus_pane_right = ["prefix+l", "alt+right"]
-previous_tab = ["prefix+p", "alt+shift+left"]
-next_tab = ["prefix+n", "alt+shift+right"]
+# Arrows, matching the Linux setup: plain Alt walks the 1-D lists (tabs across, workspaces down
+# the sidebar); Alt+Shift walks the 2-D pane grid in all four directions. Terminals can't tell
+# left from right Alt, so either Option key works on macOS (arrows count as Alt on both sides).
+previous_tab = ["prefix+p", "alt+left"]
+next_tab = ["prefix+n", "alt+right"]
+previous_workspace = "alt+up"
+next_workspace = "alt+down"
+focus_pane_left = ["prefix+h", "alt+shift+left"]
+focus_pane_down = ["prefix+j", "alt+shift+down"]
+focus_pane_up = ["prefix+k", "alt+shift+up"]
+focus_pane_right = ["prefix+l", "alt+shift+right"]
 new_tab = ["prefix+c", "alt+e"]
 split_vertical = ["prefix+v", "alt+v"]
 split_horizontal = ["prefix+minus", "alt+shift+v"]

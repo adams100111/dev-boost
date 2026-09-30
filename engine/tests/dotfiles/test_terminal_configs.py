@@ -128,15 +128,17 @@ def test_herdr_alt_chords_reach_herdr_on_macos(chezmoi_render: Render) -> None:
             key = c.removeprefix("alt+").removeprefix("shift+")
             assert not (len(key) == 1 and key in taken), c
     for action, chord in {
-        "focus_pane_left": "alt+left",
-        "focus_pane_down": "alt+down",
-        "focus_pane_up": "alt+up",
-        "focus_pane_right": "alt+right",
-        "previous_tab": "alt+shift+left",
-        "next_tab": "alt+shift+right",
+        "previous_tab": "alt+left",
+        "next_tab": "alt+right",
+        "focus_pane_left": "alt+shift+left",
+        "focus_pane_down": "alt+shift+down",
+        "focus_pane_up": "alt+shift+up",
+        "focus_pane_right": "alt+shift+right",
     }.items():
         assert chord in keys[action], action
         assert any(c.startswith("prefix+") for c in keys[action]), action
+    assert keys["previous_workspace"] == "alt+up"
+    assert keys["next_workspace"] == "alt+down"
     binds = _binds(_settings(chezmoi_render(GHOSTTY, "darwin", "macos")))
     assert "alt+arrow_left=unbind" in binds
     assert "alt+arrow_right=unbind" in binds
