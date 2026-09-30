@@ -119,7 +119,14 @@ def test_herdr_alt_chords_reach_herdr_on_macos(chezmoi_render: Render) -> None:
     keys = tomllib.loads((DOT / "dot_config" / "herdr" / "config.toml").read_text())["keys"]
     chords = [c for v in keys.values() for c in (v if isinstance(v, list) else [v])]
     assert not [c for c in chords if c.startswith("ctrl+alt")]
-    assert keys["prefix"] != "ctrl+b"  # Claude Code backgrounds a command on ctrl+b
+    # Claude Code: ctrl+b backgrounds a command, ctrl+] opens an artifact.
+    assert keys["prefix"] not in ("ctrl+b", "ctrl+]")
+    # Alt+letter chords avoid zsh's emacs-keymap bindings and Claude Code's meta+p/o/t/w.
+    taken = set("abcdfghlnpqstuwxyz") | {"o"}
+    for c in chords:
+        if c.startswith("alt+"):
+            key = c.removeprefix("alt+").removeprefix("shift+")
+            assert not (len(key) == 1 and key in taken), c
     for action, chord in {
         "focus_pane_left": "alt+left",
         "focus_pane_down": "alt+down",
