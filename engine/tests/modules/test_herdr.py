@@ -172,7 +172,7 @@ def test_herdr_plugins_configure_notify_skips_when_env_unset(
 def test_herdr_config_parses_and_sets_prefix() -> None:
     cfg = settings.root / "dotfiles" / "dot_config" / "herdr" / "config.toml"
     data = tomllib.loads(cfg.read_text(encoding="utf-8"))
-    assert data["keys"]["prefix"] == "ctrl+b"
+    assert data["keys"]["prefix"] == "ctrl+q"  # ctrl+b is Claude Code's background key
     assert "theme" in data
 
 
