@@ -57,4 +57,8 @@ keybind = super+shift+z=toggle_split_zoom
 keybind = super+equal=increase_font_size:1
 keybind = super+minus=decrease_font_size:1
 keybind = super+zero=reset_font_size
+# macOS: Ghostty's default alt+left/right (word jump) would swallow herdr's Alt+arrow pane
+# focus; unbind them so the chords reach herdr (word jump stays on alt+b / alt+f in zsh).
+keybind = alt+arrow_left=unbind
+keybind = alt+arrow_right=unbind
 {{- end }}
