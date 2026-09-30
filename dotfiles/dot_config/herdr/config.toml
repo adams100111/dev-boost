@@ -3,12 +3,24 @@
 # after apply and confirm no config warnings. Docs: https://herdr.dev/docs/configuration/
 
 [keys]
-prefix = "ctrl+b"          # tmux-style prefix — muscle memory carries over
-new_tab = "prefix+c"
-next_tab = "prefix+n"
-previous_tab = "prefix+p"
-split_horizontal = "prefix+minus"
-focus_pane_left = "prefix+h"
+# Prefix ctrl+] (not tmux's ctrl+b): herdr swallows its prefix before the pane sees it, and
+# ctrl+b is Claude Code's "background this command", Vim's page-up and readline's back-char.
+# Daily moves use the Alt chords below, so the prefix only serves the rarer actions.
+prefix = "ctrl+]"
+# Prefix-free Alt chords on top of every prefix binding. Plain Alt, never Ctrl+Alt: AeroSpace
+# owns ctrl+alt+* on macOS (and GNOME/Ghostty take ctrl+alt+arrows). On macOS, Alt = the LEFT
+# Option key (Ghostty macos-option-as-alt = left), and Ghostty's default alt+left/right
+# word-jump is unbound there so these reach herdr; zsh keeps word-jump on alt+b / alt+f.
+focus_pane_left = ["prefix+h", "alt+left"]
+focus_pane_down = ["prefix+j", "alt+down"]
+focus_pane_up = ["prefix+k", "alt+up"]
+focus_pane_right = ["prefix+l", "alt+right"]
+previous_tab = ["prefix+p", "alt+shift+left"]
+next_tab = ["prefix+n", "alt+shift+right"]
+new_tab = ["prefix+c", "alt+t"]
+split_vertical = ["prefix+v", "alt+d"]
+split_horizontal = ["prefix+minus", "alt+shift+d"]
+zoom = ["prefix+z", "alt+z"]
 # herdr --remote pastes a local clipboard image into the remote pane on Ctrl+V (herdr's
 # default since 0.7.1, pinned here on purpose): no terminal config binds Ctrl+V.
 remote_image_paste = "ctrl+v"

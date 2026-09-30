@@ -109,3 +109,27 @@ def test_wezterm_lua_compiles() -> None:
     for f in WEZ.rglob("*.lua"):
         res = subprocess.run(["luac", "-p", str(f)], capture_output=True, text=True)
         assert res.returncode == 0, (f, res.stderr)
+
+
+def test_herdr_alt_chords_reach_herdr_on_macos(chezmoi_render: Render) -> None:
+    """herdr's prefix-free Alt chords: plain Alt only (AeroSpace owns ctrl+alt on macOS),
+    every prefix binding kept, and Ghostty's macOS alt+left/right word jump unbound."""
+    import tomllib
+
+    keys = tomllib.loads((DOT / "dot_config" / "herdr" / "config.toml").read_text())["keys"]
+    chords = [c for v in keys.values() for c in (v if isinstance(v, list) else [v])]
+    assert not [c for c in chords if c.startswith("ctrl+alt")]
+    assert keys["prefix"] != "ctrl+b"  # Claude Code backgrounds a command on ctrl+b
+    for action, chord in {
+        "focus_pane_left": "alt+left",
+        "focus_pane_down": "alt+down",
+        "focus_pane_up": "alt+up",
+        "focus_pane_right": "alt+right",
+        "previous_tab": "alt+shift+left",
+        "next_tab": "alt+shift+right",
+    }.items():
+        assert chord in keys[action], action
+        assert any(c.startswith("prefix+") for c in keys[action]), action
+    binds = _binds(_settings(chezmoi_render(GHOSTTY, "darwin", "macos")))
+    assert "alt+arrow_left=unbind" in binds
+    assert "alt+arrow_right=unbind" in binds
