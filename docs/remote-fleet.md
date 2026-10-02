@@ -378,6 +378,48 @@ These are documented, copy-pasteable options for when the shipped defaults (Mosh
 Caddy `tls internal`, `tailscale serve`/`funnel`, the `devbrain` managed-account
 sandbox) don't cover what you need.
 
+### Alternative mesh control planes (headscale, NetBird)
+
+Tailscale is the shipped default for every profile that needs the mesh (`remote`,
+`server`, `brain-host`). Its *client* is BSD-3-Clause, but its coordination server is
+proprietary — so "escape the closed control plane" is a reasonable thing to want.
+
+**Both alternatives cost you `fleet expose`.** Verified 2026-10-02: headscale's own
+feature list carries Serve and Funnel only as open tracking issues (juanfont/headscale
+#1921 and #1040), and NetBird's Reverse Proxy is public-internet-facing and in beta —
+neither has a tailnet-only, auto-TLS equivalent of `tailscale serve`. That breaks
+`fleet expose`, the `expose`/`exposed`/`unexpose` aliases, and the way `code-server`
+and `browser-view` are fronted. The degradation path is the brain's Caddy with
+`tls internal` plus `*.localhost` (§6), which dev-boost already installs.
+
+**headscale** — the cheap option. It is a self-hosted (BSD-3-Clause) control plane
+that the *unmodified Tailscale client* talks to, so MagicDNS, Tailscale SSH, exit
+nodes, ACLs, pre-auth keys and OIDC SSO all keep working, and every Tailscale-shaped
+call site in dev-boost (`orca.py`'s `tailscale ip -4`, `tsdev-sync`, the
+`allow in on tailscale0` ufw rule, the macOS CLI shim) is untouched. On each client,
+instead of a plain `tailscale up`:
+
+```bash
+sudo tailscale up --login-server https://headscale.example.com --authkey <pre-auth-key>
+```
+
+**NetBird** — the expensive option. A different agent entirely (AGPLv3 control plane,
+official dnf/apt repos, a notarized macOS pkg, no `~/.local/bin` CLI shim needed). It
+has SSH, ACLs, exit nodes and setup keys, but every `tailscale`-shaped call site above
+would need rewriting, and its MagicDNS equivalent does **not** resolve on macOS without
+explicit nameserver configuration — a zero-config regression on a first-class family.
+
+```bash
+# Fedora
+sudo dnf install -y netbird
+netbird up --setup-key <KEY> --management-url https://netbird.example.com
+```
+
+Self-hosting either one means new always-on infrastructure (for NetBird: a
+publicly-reachable VM on TCP 80/443 + UDP 3478, a domain, Docker Compose, management +
+signal + relay + dashboard, and an IdP). Neither is wired into any profile or `fleet`
+verb; `remote` keeps resolving to Tailscale.
+
 ### Eternal Terminal (`et`)
 
 Evaluated against Mosh and not chosen as the default (Mosh already covers UDP
