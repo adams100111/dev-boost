@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from devboost.cli import devhygiene as dh
@@ -51,9 +52,17 @@ def test_write_lock_is_sorted_and_deterministic(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     lock = lc.write_lock(tmp_path)
-    lines = lock.read_text(encoding="utf-8").splitlines()
+    first = lock.read_text(encoding="utf-8")
+    lines = first.splitlines()
     assert lines == sorted(lines)
-    assert "ddev" in lines and "ripgrep" in lines
+    # spec 009 contract (contracts/devboost-lock.md): `module<TAB>resolved-version`,
+    # sorted, trailing newline. No version is resolved per module yet, so it is `-`.
+    assert all(re.fullmatch(r"[^\t\n]+\t\S+", ln) for ln in lines), lines[:3]
+    assert "ddev\t-" in lines and "ripgrep\t-" in lines
+    assert first.endswith("\n")
+    # determinism: same resolved state → byte-identical file.
+    lc.write_lock(tmp_path)
+    assert lock.read_text(encoding="utf-8") == first
 
 
 def test_export_snapshot_writes_files(tmp_path: Path) -> None:

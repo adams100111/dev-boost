@@ -43,11 +43,17 @@ def scaffold_module(modules_pkg: Path, name: str) -> Path:
 
 
 def lock_lines(root: Path) -> list[str]:
-    """Deterministic lock content: the sorted registered module names."""
+    """Deterministic lock content: sorted `module<TAB>resolved-version` rows.
+
+    Spec 009 `contracts/devboost-lock.md` fixes the format (TSV, sorted by module,
+    trailing newline, no secrets) and the committed lock has always carried it. No
+    per-module version is resolved yet, so the version column is `-`; that is the
+    column `devboost update` fills once pin resolution lands.
+    """
     modules = load()
     profiles = load_profiles(root / "profiles.toml")
     validate_profiles(modules, set(profiles))
-    return sorted(modules)
+    return [f"{name}\t-" for name in sorted(modules)]
 
 
 def write_lock(root: Path) -> Path:
