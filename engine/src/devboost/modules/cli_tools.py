@@ -531,3 +531,47 @@ class Gh(PackageModule):
             ctx.ex.run(["sh", "-c", _GH_DEBIAN])
         else:
             pkg.install(ctx, self._resolve_pkg(ctx))
+
+
+# --- superfile (opt-in; not in any profile) ----------------------------------------------
+
+#: Pinned so the install is reproducible and the script skips its unauthenticated
+#: api.github.com "latest release" lookup, which hard-exits when that call is rate-limited
+#: (60/h per IP). `SPF_INSTALL_VERSION` is upstream's documented override.
+SUPERFILE_VERSION = "1.6.0"
+
+# Neither Fedora nor Debian/Ubuntu packages superfile (Fedora has only personal COPRs, none
+# of them atim-grade), so both take the one installer upstream documents — the same call as
+# the Lazydocker path above. It runs as ROOT on purpose: the script's own
+# `sudo mv ./spf /usr/local/bin/` then succeeds, so its fallback branch — which appends
+# `export PATH="${HOME}/.local/bin":${PATH}` to ~/.bashrc / ~/.zshrc, files chezmoi owns
+# here — never executes. `-f` so an HTTP error page is never piped into bash.
+_SUPERFILE_INSTALL = (
+    "set -e\n"
+    f"SPF_INSTALL_VERSION={SUPERFILE_VERSION} "
+    'bash -c "$(curl -fsSLo- https://superfile.dev/install.sh)"\n'
+)
+
+
+@register
+class Superfile(PackageModule):
+    """superfile — a TUI file manager. Opt-in by name: `devboost install superfile`.
+
+    Deliberately in no profile. `cli` is a toolchain tier, and a file manager is an
+    application preference (the reasoning `base` already spells out for voxtype); what it
+    does is also largely covered there by eza + fd + fzf + zoxide + bat.
+    """
+
+    name = "superfile"
+    category = "cli"
+    description = "superfile — modern TUI file manager (binary `spf`)."
+    profiles = ()
+    cmd = "spf"  # upstream renamed the binary: package `superfile`, command `spf`
+    fedora_pkg = "superfile"  # unused on Fedora (see below) — Arch resolves through it
+    arch_pkg = "superfile"  # Arch packages it properly in `extra`; let pacman own it
+
+    def install_linux(self, ctx: Ctx) -> None:
+        if ctx.os.family == "arch":
+            super().install_linux(ctx)
+            return
+        ctx.ex.run(["sh", "-c", _SUPERFILE_INSTALL], sudo=True)
