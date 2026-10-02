@@ -167,7 +167,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `claude-mcp` | cli | Register user-global MCP servers (google-docs, fathom). |
 | `claude-notify` | shell | Notify on Claude task-done / needs-input: macOS notification + ntfy (phone). |
 | `claude-plugins` | cli | Register Claude marketplaces + install enabled plugins; resolve CLICKUP token. |
-| `claude-skills` | cli | Reproduce lockfile-tracked skills via `npx skills add`. |
+| `claude-skills` | cli | Reproduce lockfile-tracked skills (vendored copy, else `npx skills add`). |
 | `claude-statusline` | shell | Point Claude Code's statusLine at the managed ~/.claude/statusline.sh. |
 | `code-server` | brain-host | code-server — VS Code in the browser (front with tailscale serve; any device). |
 | `codecs` | multimedia | Install the @multimedia codec group (Fedora-only via RPM Fusion). |
@@ -285,6 +285,7 @@ enrollment on NVIDIA when Secure Boot is on.
 | `ssh-setup` | base | Generate ed25519 key and register it with GitHub (non-blocking). |
 | `starship` | shell | Cross-shell prompt. |
 | `stats` | macos-desktop | Stats — menu-bar disk/RAM/CPU/GPU monitor (MIT). |
+| `superfile` | cli | superfile — modern TUI file manager (binary `spf`). |
 | `swapfile` | system | Disk swapfile sized to RAM for OOM headroom (page-out overflow above zram). |
 | `tailscale` | server | Tailscale mesh VPN + Tailscale SSH (unattended via a secrets auth-key). |
 | `tealdeer` | cli |  |
