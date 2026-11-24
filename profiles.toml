@@ -53,7 +53,7 @@ base = ["xcode-clt","homebrew","rosetta",
 # `blocked`). macOS also ships dictation already. Opt in by name: `devboost install voxtype`.
 cli  = ["eza","bat","btop","zoxide","atuin","direnv","delta","lazygit","lazydocker",
         "dust","duf","sd","yq","gh","tealdeer","tpm","tmux-persist","herdr","mosh",
-        "fastfetch","claude-code","herdr-plugins","glow"]
+        "fastfetch","claude-code","herdr-plugins","glow","worktrunk","worktrunk-agents"]
 shell = ["starship","bash-config","zsh-config","zsh-plugins","bash","ghostty",
          "nerd-fonts","dotfiles","claude-statusline","claude-notify","wl-clipboard"]
 # browser-mcp is NOT here: it puts an unauthenticated code-execution port (tcp:8931) on the
@@ -66,7 +66,7 @@ codex = ["codex-code","codex-config","codex-plugins","codex-mcp","codex-skills"]
 # pi — bootstrap the operator's Pi coding-agent harness (harness-cli) and delegate config.
 pi = ["pi-harness"]
 brain-host = ["mosh","caddy","crossarch-build","code-server","browser-view"]
-brain-tools = ["herdr","herdr-plugins"]
+brain-tools = ["herdr","herdr-plugins","worktrunk","worktrunk-agents"]
 gnome            = ["gnome-settings","gnome-extensions","gnome-manager-apps"]
 gnome-aesthetics = ["gnome-aesthetics-bundle"]
 gnome-theme      = ["gnome-theme-bundle"]
