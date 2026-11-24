@@ -69,6 +69,26 @@ def enabled_plugins(cfg: UserConfig | None = None) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def claude_plugin_names(entries: object) -> set[str]:
+    """Plugin names from `claude plugin list --json`.
+
+    Current Claude Code (2.1.x) gives each entry an ``id`` of ``name@marketplace`` and no
+    ``name``; older builds gave ``name``. Both are read, so an installed plugin is never
+    mistaken for a missing one (and reinstalled on every run).
+    """
+    names: set[str] = set()
+    if not isinstance(entries, list):
+        return names
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        if isinstance(e.get("name"), str):
+            names.add(e["name"])
+        elif isinstance(e.get("id"), str):
+            names.add(e["id"].split("@", 1)[0])
+    return names
+
+
 def _home() -> Path:
     return Path(os.environ["HOME"])
 
@@ -136,15 +156,9 @@ class ClaudePlugins(Module):
         installed: set[str] = set()
         if listed.ok:
             try:
-                entries = json.loads(listed.stdout)
+                installed = claude_plugin_names(json.loads(listed.stdout))
             except ValueError:
-                entries = []
-            if isinstance(entries, list):
-                installed = {
-                    e["name"]
-                    for e in entries
-                    if isinstance(e, dict) and isinstance(e.get("name"), str)
-                }
+                installed = set()
         for plugin in enabled_plugins():
             name = plugin.split("@", 1)[0]
             if name in installed:
