@@ -115,6 +115,27 @@ def test_install_plugins_adds_only_missing(
     assert not any("superpowers@claude-plugins-official" in j for j in install_calls)
 
 
+def test_install_plugins_reads_the_current_id_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Claude Code 2.1.x lists `{"id": "name@marketplace", ...}` with no `name` field; an
+    # installed plugin must still be recognised, not reinstalled on every run.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from devboost.exec.executor import Result
+
+    ctx = _ctx(
+        present={"claude"},
+        scripts={
+            "claude": Result(0, stdout='[{"id":"superpowers@claude-plugins-official"}]')
+        },
+    )
+    ClaudePlugins()._install_plugins(ctx)
+    joined = [" ".join(c) for c in ctx.ex.calls]  # type: ignore[attr-defined]
+    install_calls = [j for j in joined if "plugin install" in j]
+    assert install_calls
+    assert not any("superpowers@claude-plugins-official" in j for j in install_calls)
+
+
 def test_install_plugins_noop_without_claude(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

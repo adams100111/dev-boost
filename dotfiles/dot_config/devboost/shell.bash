@@ -63,6 +63,9 @@ fi
 # zoxide — smarter cd
 command -v zoxide &>/dev/null && eval "$(zoxide init bash)"
 
+# worktrunk — `wt switch` changes directory through this wrapper.
+command -v wt &>/dev/null && eval "$(command wt config shell init bash)"
+
 # direnv — per-directory env
 command -v direnv &>/dev/null && eval "$(direnv hook bash)"
 

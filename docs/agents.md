@@ -13,10 +13,19 @@ dev-boost reproduces your AI coding-agent setup across devices. Install a profil
 | `pi` | `pi-harness` — bootstraps your Pi harness (`harness-cli`) | yes |
 | `orca` | `orca-ide` — Orca desktop app + `orca-ide` CLI | no (opt-in) |
 | `orca-box` | `orca-ide` + `orca-serve` — headless Orca server | no (opt-in) |
-| `cli` (every OS) | … includes herdr + herdr-plugins (pinned, curated) and glow | yes |
+| `cli` (every OS) | … includes herdr + herdr-plugins (pinned, curated), worktrunk + worktrunk-agents, and glow | yes |
 
 herdr and its pinned plugin set are installed by default on every OS (macOS included;
 Omarchy ships its own herdr). herdr is pinned to 0.9.1 per OS and arch in `catalog.toml`.
+
+**worktrunk** (`wt`, git worktrees for parallel agents) is pinned the same way (`[worktrunk]` in
+`catalog.toml`, SHA256-verified, `wt` + `git-wt` into `~/.local/bin`). Shell integration (so
+`wt switch` can change directory) is in `shell.zsh` / `shell.bash`, not written by
+`wt config shell install`, because chezmoi owns the rc files. `worktrunk-agents` then runs
+`wt config plugins claude|codex install --yes` for each harness on the box: in Claude Code its
+`WorktreeCreate`/`WorktreeRemove` hooks make every agent worktree (`isolation: "worktree"`) a
+`wt switch --create` / `wt remove`; Codex gets the skill and the `wt list` activity markers.
+Upgrade the pin by editing `[worktrunk]` (version, URLs, and each asset's `.sha256` from the release).
 
 ## Claude / Codex
 

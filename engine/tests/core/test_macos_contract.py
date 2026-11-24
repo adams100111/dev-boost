@@ -94,6 +94,7 @@ def test_the_macos_profile_plans_the_workstation(tmp_path: Path) -> None:
     assert not [n for n, r in reasons.items() if r == "unsupported-os"]
     for want in (
         "xcode-clt", "homebrew", "rosetta", "zed", "fresh", "herdr", "herdr-plugins", "glow",
+        "worktrunk", "worktrunk-agents",
         "dotnet-sdk", "aspire", "android-sdk", "expo", "ddev", "uv", "web-runtimes",
         "tailscale", "mosh", "obsidian", "bruno", "claude-code", "codex-code", "pi-harness",
         "ghostty", "zsh-config", "dotfiles", "pass", "pass-store", "utiluti",

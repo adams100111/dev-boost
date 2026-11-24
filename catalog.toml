@@ -68,6 +68,24 @@ sha256 = "f4ccf4de745f2cb9a39a983e9ba3703dad50ec2a58dea83026ceab721bbd8d9e"
 url = "https://github.com/herdrdev/herdr/releases/download/v0.9.1/herdr-macos-aarch64"
 sha256 = "5fc7a7e7adfaca56fa80aa89dcb025693357268dab8285b9ce2d08a2313c89de"
 
+# worktrunk (`wt`, git worktrees for parallel agents) — .tar.xz assets keyed "<os>-<arch>"
+# like herdr; each holds `wt` and `git-wt`. sha256 = the release's own <asset>.sha256 files
+# (github.com/max-sixty/worktrunk/releases/tag/v0.83.0, read 2026-11-24).
+[worktrunk]
+version = "0.83.0"
+
+[worktrunk.assets.linux-x86_64]
+url = "https://github.com/max-sixty/worktrunk/releases/download/v0.83.0/worktrunk-x86_64-unknown-linux-musl.tar.xz"
+sha256 = "e0dd5e5eb365890ddc7b255183c227e441fbb7da04cab5b72e54fa80fd21818b"
+
+[worktrunk.assets.linux-aarch64]
+url = "https://github.com/max-sixty/worktrunk/releases/download/v0.83.0/worktrunk-aarch64-unknown-linux-musl.tar.xz"
+sha256 = "92c68827a18b037c608b7728bcf7ce1d594771ac814bec7412a35129f276d4ae"
+
+[worktrunk.assets.macos-aarch64]
+url = "https://github.com/max-sixty/worktrunk/releases/download/v0.83.0/worktrunk-aarch64-apple-darwin.tar.xz"
+sha256 = "5e489089672b553b6277595875ef3479df011755153021c84def90eddaeef7b8"
+
 [xcode]
 # Opt-in `ios` profile (xcodes). Newest GA at M5: Xcode 27 (27A266a, 2026-09-14), which
 # requires macOS 26.6+ — the xcode/ios-tooling modules are gated on min_macos.

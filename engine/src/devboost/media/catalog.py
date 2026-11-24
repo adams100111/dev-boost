@@ -26,7 +26,7 @@ from devboost.core.settings import settings
 from devboost.media.config import IsoSpec
 
 # Keys in catalog.toml that are not OS entries and must be stripped before OS validation.
-_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy", "herdr", "xcode", "voxtype"})
+_NON_OS_SECTIONS: frozenset[str] = frozenset({"ventoy", "herdr", "worktrunk", "xcode", "voxtype"})
 
 
 @dataclass(frozen=True)
@@ -50,17 +50,22 @@ class VentoySpec:
 
 
 @dataclass(frozen=True)
-class HerdrAsset:
+class BinaryAsset:
     url: str
     sha256: str
 
 
 @dataclass(frozen=True)
-class HerdrSpec:
-    """Pinned herdr release (from the ``[herdr]`` block in catalog.toml)."""
+class BinarySpec:
+    """A pinned release binary (``[herdr]``, ``[worktrunk]``, … blocks in catalog.toml)."""
 
     version: str
-    assets: dict[str, HerdrAsset]  # "<os>-<arch>" (see asset_key) -> asset
+    assets: dict[str, BinaryAsset]  # "<os>-<arch>" (see asset_key) -> asset
+
+
+#: herdr was the first pinned binary; its names stay for existing callers.
+HerdrAsset = BinaryAsset
+HerdrSpec = BinarySpec
 
 
 _ASSET_KEY = re.compile(r"^(linux|macos)-(x86_64|aarch64)$")
@@ -220,19 +225,30 @@ def ventoy_pin() -> VentoySpec:
     return VentoySpec(version=row.version, url=row.url, sha256=row.sha256)
 
 
-@cache
-def herdr_pin() -> HerdrSpec:
-    """The pinned herdr release (cached). Read from the ``[herdr]`` block in catalog.toml."""
+def _binary_pin(section: str) -> BinarySpec:
+    """A ``[<section>]`` pinned-binary block: version + ``<os>-<arch>`` keyed assets."""
     path = settings.catalog_path
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
-        row = _HerdrRow.model_validate(raw["herdr"])
+        row = _HerdrRow.model_validate(raw[section])
     except (OSError, KeyError, ValueError) as exc:
-        raise MediaError(f"[herdr] pin missing or invalid in {path}: {exc}") from exc
-    return HerdrSpec(
+        raise MediaError(f"[{section}] pin missing or invalid in {path}: {exc}") from exc
+    return BinarySpec(
         version=row.version,
-        assets={a: HerdrAsset(url=r.url, sha256=r.sha256) for a, r in row.assets.items()},
+        assets={a: BinaryAsset(url=r.url, sha256=r.sha256) for a, r in row.assets.items()},
     )
+
+
+@cache
+def herdr_pin() -> BinarySpec:
+    """The pinned herdr release (cached). Read from the ``[herdr]`` block in catalog.toml."""
+    return _binary_pin("herdr")
+
+
+@cache
+def worktrunk_pin() -> BinarySpec:
+    """The pinned worktrunk (``wt``) release (cached), from the ``[worktrunk]`` block."""
+    return _binary_pin("worktrunk")
 
 
 def _section(name: str) -> object:
@@ -251,9 +267,7 @@ def xcode_pin() -> XcodeSpec:
     except ValueError as exc:
         raise MediaError(f"[xcode] pin invalid: {exc}") from exc
     major, minor = (int(p) for p in row.min_macos.split("."))
-    return XcodeSpec(
-        version=row.version, ios_runtime=row.ios_runtime, min_macos=(major, minor)
-    )
+    return XcodeSpec(version=row.version, ios_runtime=row.ios_runtime, min_macos=(major, minor))
 
 
 @cache

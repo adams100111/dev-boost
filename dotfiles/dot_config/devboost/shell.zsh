@@ -48,6 +48,8 @@ if [[ -o zle && -t 0 ]]; then
 fi
 (( $+commands[zoxide] ))   && eval "$(zoxide init zsh)"
 (( $+commands[direnv] ))   && eval "$(direnv hook zsh)"
+# worktrunk — `wt switch` changes directory through this wrapper.
+(( $+commands[wt] ))       && eval "$(command wt config shell init zsh)"
 
 # Helpers (dev, expose, pw-*, …) and aliases — shared with bash.
 [[ -r "${HOME}/.config/devboost/aliases.sh" ]] && source "${HOME}/.config/devboost/aliases.sh"
